@@ -1,0 +1,21 @@
+# Django & Core Web Framework (Security Patched)
+Django>=5.1.15,<6.0
+djangorestframework>=3.15.2
+django-cors-headers>=4.7.0
+djangorestframework-simplejwt>=5.5.1
+python-dotenv>=1.0.1
+Pillow>=11.1.0
+gunicorn>=23.0.0
+requests>=2.32.4
+urllib3>=2.3.0
+PyJWT>=2.10.1
+
+# Celery & Distributed Task Processing
+celery>=5.4.0
+redis>=5.2.1
+django-celery-beat>=2.7.0
+django-celery-results>=2.5.1
+
+# Database Drivers & PostgreSQL
+psycopg2-binary>=2.9.10
+dj-database-url>=2.3.0

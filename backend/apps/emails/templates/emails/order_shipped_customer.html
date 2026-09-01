@@ -1,0 +1,37 @@
+{% extends "emails/base.html" %}
+
+{% block title %}Your Order Has Shipped! #{{ order_short_id }} | {{ brand_name }}{% endblock %}
+
+{% block header_style %}
+background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+{% endblock %}
+
+{% block header %}
+<span class="header-badge" style="background: rgba(255,255,255,0.25);">Package En Route</span>
+<h1 class="header-title">Your Order Has Shipped!</h1>
+<p class="header-subtitle">Order #{{ order_short_id }} • {{ current_time_utc }}</p>
+{% endblock %}
+
+{% block content %}
+<p style="font-size: 15px; margin: 0 0 12px 0;">Hi <strong>{{ customer_name }}</strong>,</p>
+<p style="font-size: 14px; color: #4b5563; line-height: 1.6; margin: 0 0 16px 0;">
+    Exciting news! Your package for Order <strong>#{{ order_short_id }}</strong> has been packed and handed over to our dispatch courier.
+</p>
+
+<div class="highlight-badge" style="background-color: #eff6ff; border-left-color: #2563eb; color: #1e40af;">
+    <strong>📦 Courier Tracking Reference:</strong> <code>{{ tracking_number|default:"Standard Logistics Hub Dispatch" }}</code>
+    <br/>
+    <span style="font-size: 12px;">Estimated Delivery: <strong>1–2 Business Days</strong></span>
+</div>
+
+<div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 14px; margin: 18px 0; font-size: 12px; color: #475569;">
+    <p style="margin: 0 0 4px 0; font-weight: 600; color: #1e293b;">📍 Destination Address:</p>
+    <p style="margin: 0;">{{ shipping_address|default:"Customer Address / Nairobi Hub" }}</p>
+</div>
+
+<div style="text-align: center; margin: 24px 0 8px 0;">
+    <a href="{{ frontend_url }}/orders" class="btn-primary" style="background-color: #2563eb;">
+        Track Shipment Progress →
+    </a>
+</div>
+{% endblock %}

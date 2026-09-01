@@ -1,0 +1,23 @@
+{
+  "name": "Veloce eCommerce & Affiliate Marketplace",
+  "short_name": "Veloce",
+  "description": "Unified eCommerce marketplace featuring physical products, digital assets, custom fashion tailoring, and affiliate tracking.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#090d16",
+  "theme_color": "#090d16",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": [
+    "shopping",
+    "business",
+    "lifestyle"
+  ]
+}

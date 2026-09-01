@@ -1,0 +1,102 @@
+{% extends "emails/base.html" %}
+
+{% block title %}Order Confirmed #{{ order_short_id }} | {{ brand_name }}{% endblock %}
+
+{% block header_style %}
+background: linear-gradient(135deg, #059669 0%, #047857 100%);
+{% endblock %}
+
+{% block header %}
+<span class="header-badge" style="background: rgba(255,255,255,0.25);">Order Confirmed</span>
+<h1 class="header-title">Thank You For Your Order!</h1>
+<p class="header-subtitle">Order #{{ order_short_id }} • {{ order_date|default:current_time_utc }}</p>
+{% endblock %}
+
+{% block content %}
+<p style="font-size: 15px; margin: 0 0 12px 0;">Hi <strong>{{ customer_name }}</strong>,</p>
+<p style="font-size: 14px; color: #4b5563; line-height: 1.6; margin: 0 0 16px 0;">
+    We have received your order <strong>#{{ order_short_id }}</strong> and our fulfillment hub has initiated processing.
+    {% if is_pending_verification %}
+    Your payment is currently undergoing verification by our billing desk.
+    {% else %}
+    Your payment of <strong>KSh {{ total_formatted }}</strong> has been verified.
+    {% endif %}
+</p>
+
+<div class="highlight-badge" style="background-color: #ecfdf5; border-left-color: #059669; color: #065f46;">
+    <strong>✓ Status:</strong> {{ status_display|default:"Processing & Preparation for Dispatch" }}
+    <br/>
+    <span style="font-size: 12px; opacity: 0.9;">Payment Method: <strong>{{ payment_method }}</strong>{% if payment_reference %} (Ref: <code>{{ payment_reference }}</code>){% endif %}</span>
+</div>
+
+<h3 style="font-size: 13px; text-transform: uppercase; letter-spacing: 0.5px; color: #6b7280; margin: 24px 0 10px 0; font-weight: 700;">
+    Items in Your Order
+</h3>
+<table style="width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 13px;">
+    <thead>
+        <tr style="background-color: #f9fafb; border-bottom: 2px solid #e5e7eb; text-align: left;">
+            <th style="padding: 10px 8px; color: #4b5563; font-weight: 600;">Product</th>
+            <th style="padding: 10px 8px; text-align: center; color: #4b5563; font-weight: 600;">Qty</th>
+            <th style="padding: 10px 8px; text-align: right; color: #4b5563; font-weight: 600;">Total</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for item in items %}
+        <tr style="border-bottom: 1px solid #f3f4f6;">
+            <td style="padding: 10px 8px; color: #1f2937;">
+                <strong>{{ item.product_name }}</strong>
+                {% if item.selected_variations %}
+                <br/><span style="font-size: 11px; color: #6b7280;">Specs: {{ item.selected_variations }}</span>
+                {% endif %}
+            </td>
+            <td style="padding: 10px 8px; text-align: center; color: #4b5563;">{{ item.quantity }}</td>
+            <td style="padding: 10px 8px; text-align: right; color: #1f2937; font-weight: 600;">KSh {{ item.total_formatted }}</td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="3" style="padding: 12px; text-align: center; color: #9ca3af;">Catalog merchandise items</td></tr>
+        {% endfor %}
+    </tbody>
+</table>
+
+<!-- Financial Summary -->
+<div class="summary-box">
+    <table style="width: 100%; font-size: 13px; color: #374151;">
+        <tr>
+            <td style="padding: 4px 0;">Subtotal</td>
+            <td style="padding: 4px 0; text-align: right; font-weight: 600;">KSh {{ subtotal_formatted }}</td>
+        </tr>
+        {% if discount > 0 %}
+        <tr>
+            <td style="padding: 4px 0; color: #059669;">Discount Savings</td>
+            <td style="padding: 4px 0; text-align: right; color: #059669; font-weight: 600;">-KSh {{ discount_formatted }}</td>
+        </tr>
+        {% endif %}
+        <tr>
+            <td style="padding: 4px 0;">Shipping Fee</td>
+            <td style="padding: 4px 0; text-align: right; font-weight: 600;">KSh {{ shipping_fee_formatted }}</td>
+        </tr>
+        {% if tax_amount > 0 %}
+        <tr>
+            <td style="padding: 4px 0;">VAT Tax (16% Included)</td>
+            <td style="padding: 4px 0; text-align: right; font-weight: 600;">KSh {{ tax_amount_formatted }}</td>
+        </tr>
+        {% endif %}
+        <tr style="border-top: 2px solid #e5e7eb;">
+            <td style="padding: 10px 0 2px 0; font-size: 15px; font-weight: 700; color: #059669;">Grand Total</td>
+            <td style="padding: 10px 0 2px 0; text-align: right; font-size: 16px; font-weight: 800; color: #059669;">KSh {{ total_formatted }}</td>
+        </tr>
+    </table>
+</div>
+
+<!-- Shipping / Fulfillment Destination -->
+<div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 14px; margin: 18px 0; font-size: 12px; color: #475569;">
+    <p style="margin: 0 0 4px 0; font-weight: 600; color: #1e293b;">📍 Fulfillment Destination:</p>
+    <p style="margin: 0;">{{ shipping_address|default:"Direct Customer Pickup / Standard Logistics Hub" }}</p>
+</div>
+
+<div style="text-align: center; margin: 24px 0 8px 0;">
+    <a href="{{ frontend_url }}/orders" class="btn-primary" style="background-color: #059669;">
+        View Order in Dashboard →
+    </a>
+</div>
+{% endblock %}

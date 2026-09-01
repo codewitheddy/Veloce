@@ -1,0 +1,355 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
+@import "tailwindcss";
+
+@variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --radius: 0px;
+  --radius-xs: 0px;
+  --radius-sm: 0px;
+  --radius-md: 0px;
+  --radius-lg: 0px;
+  --radius-xl: 0px;
+  --radius-2xl: 0px;
+  --radius-3xl: 0px;
+  --radius-4xl: 0px;
+  --radius-full: 0px;
+
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Space Grotesk", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+
+  /* Standard Brand Primary Palette (#4F46E5 / #4338CA / #EEF2FF) */
+  --color-indigo-50: #eef2ff;
+  --color-indigo-100: #e0e7ff;
+  --color-indigo-200: #c7d2fe;
+  --color-indigo-300: #a5b4fc;
+  --color-indigo-400: #818cf8;
+  --color-indigo-500: #6366f1;
+  --color-indigo-600: #4f46e5; /* Primary Brand CTA */
+  --color-indigo-650: #4338ca; /* Primary Hover */
+  --color-indigo-700: #4338ca;
+  --color-indigo-800: #3730a3;
+  --color-indigo-900: #312e81;
+  --color-indigo-950: #1e1b4b;
+  
+  /* Standard Neutral Slate & Gray Palette */
+  --color-slate-50: #f8fafc;  /* Page Background */
+  --color-slate-100: #f1f5f9; /* Subtle Surface */
+  --color-slate-200: #e2e8f0; /* Default Border */
+  --color-slate-300: #cbd5e1; /* Strong Border */
+  --color-slate-400: #94a3b8; /* Muted Text */
+  --color-slate-500: #64748b;
+  --color-slate-600: #475569; /* Secondary Text */
+  --color-slate-700: #334155;
+  --color-slate-800: #1e293b;
+  --color-slate-900: #0f172a; /* Primary Text */
+  --color-slate-950: #020617;
+
+  /* Legacy gray aliases mapped to pristine slate palette */
+  --color-gray-50: #f8fafc;
+  --color-gray-55: #f8fafc;
+  --color-gray-100: #f1f5f9;
+  --color-gray-150: #e2e8f0;
+  --color-gray-200: #e2e8f0;
+  --color-gray-250: #cbd5e1;
+  --color-gray-300: #cbd5e1;
+  --color-gray-400: #94a3b8;
+  --color-gray-450: #94a3b8;
+  --color-gray-500: #64748b;
+  --color-gray-505: #64748b;
+  --color-gray-600: #475569;
+  --color-gray-700: #334155;
+  --color-gray-750: #1e293b;
+  --color-gray-800: #1e293b;
+  --color-gray-850: #0f172a;
+  --color-gray-900: #0f172a;
+  --color-gray-950: #020617;
+
+  /* Standard Accent Palette (#F59E0B Amber) */
+  --color-amber-50: #fffbeb;
+  --color-amber-100: #fef3c7;
+  --color-amber-200: #fde68a;
+  --color-amber-300: #fcd34d;
+  --color-amber-400: #fbbf24;
+  --color-amber-500: #f59e0b; /* Commercial Accent */
+  --color-amber-600: #d97706; /* Accent Hover */
+  --color-amber-700: #b45309;
+  --color-amber-800: #92400e;
+  --color-amber-900: #78350f;
+
+  /* Standard Semantic State Palettes */
+  --color-emerald-50: #ecfdf5;
+  --color-emerald-100: #d1fae5;
+  --color-emerald-500: #10b981; /* Success */
+  --color-emerald-600: #059669;
+  --color-emerald-700: #047857;
+
+  --color-red-50: #fef2f2;
+  --color-red-100: #fee2e2;
+  --color-red-500: #ef4444; /* Error */
+  --color-red-600: #dc2626;
+  --color-red-700: #b91c1c;
+
+  --color-orange-50: #fff7ed;
+  --color-orange-100: #ffedd5;
+  --color-orange-500: #f97316; /* Warning */
+  --color-orange-600: #ea580c;
+
+  /* Brand Palette Variables */
+  --color-brand-primary: #4f46e5;
+  --color-brand-hover: #4338ca;
+  --color-brand-soft: #eef2ff;
+  --color-brand-deep: #1e1b4b;
+  --color-brand-accent: #f59e0b;
+  --color-brand-muted: #94a3b8;
+
+  /* Standardized Surface & Card Color Tokens */
+  --color-surface-card: #ffffff;
+  --color-surface-subtle: #f8fafc;
+  --color-surface-muted: #f1f5f9;
+  --color-surface-dark: #0f172a;
+
+  /* Standardized Border Tokens */
+  --color-border-subtle: #f1f5f9;
+  --color-border-default: #e2e8f0;
+  --color-border-hover: #cbd5e1;
+
+  /* Standardized Text Tokens */
+  --color-text-main: #0f172a;
+  --color-text-subtle: #475569;
+  --color-text-muted: #94a3b8;
+
+  /* Major Third (1.25 Ratio) Mathematical Font Scale */
+  --text-xs: 0.8rem;       /* 12.8px */
+  --text-sm: 0.875rem;     /* 14px */
+  --text-base: 1rem;       /* 16px */
+  --text-lg: 1.25rem;      /* 20px */
+  --text-xl: 1.5625rem;    /* 25px */
+  --text-2xl: 1.953rem;    /* 31.25px */
+  --text-3xl: 2.441rem;    /* 39px */
+  --text-4xl: 3.052rem;    /* 48.8px */
+  --text-5xl: 3.815rem;    /* 61px */
+}
+
+:root {
+  --primary: #4F46E5;
+  --primary-hover: #4338CA;
+  --primary-soft: #EEF2FF;
+
+  --accent: #F59E0B;
+  --accent-hover: #D97706;
+  --accent-soft: #FFFBEB;
+
+  --success: #10B981;
+  --success-soft: #ECFDF5;
+
+  --error: #EF4444;
+  --error-soft: #FEF2F2;
+
+  --warning: #F97316;
+  --warning-soft: #FFF7ED;
+
+  --background: #F8FAFC;
+  --surface: #FFFFFF;
+  --surface-muted: #F1F5F9;
+
+  --text-primary: #0F172A;
+  --text-secondary: #475569;
+  --text-muted: #94A3B8;
+
+  --border: #E2E8F0;
+  --border-strong: #CBD5E1;
+}
+
+/* Base Typographic & Flat Design Standards */
+@layer base {
+  *, ::before, ::after {
+    border-radius: 0px !important;
+  }
+
+  html, body {
+    font-size: 16px;
+    line-height: 1.6;
+  }
+
+  p {
+    line-height: 1.6;
+    max-width: 68ch;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    font-family: var(--font-display);
+    line-height: 1.2;
+    letter-spacing: -0.02em;
+  }
+}
+
+/* Hide scrollbar for Chrome, Safari and Opera */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+/* Hide scrollbar for IE, Edge and Firefox */
+.no-scrollbar {
+  -ms-overflow-style: none;  /* IE and Edge */
+  scrollbar-width: none;  /* Firefox */
+}
+
+/* Custom scrollbar and premium utility styles */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(156, 163, 175, 0.3);
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(156, 163, 175, 0.5);
+}
+
+/* Custom horizontal tab & table scrollbars */
+.custom-tab-scroll {
+  overflow-x: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(99, 102, 241, 0.4) transparent;
+  scroll-behavior: smooth;
+}
+.custom-tab-scroll::-webkit-scrollbar {
+  height: 6px;
+}
+.custom-tab-scroll::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.04);
+  border-radius: 9999px;
+}
+.custom-tab-scroll::-webkit-scrollbar-thumb {
+  background: rgba(99, 102, 241, 0.4);
+  border-radius: 9999px;
+}
+.custom-tab-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgba(99, 102, 241, 0.7);
+}
+
+.custom-table-scroll {
+  overflow-x: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(156, 163, 175, 0.4) transparent;
+  scroll-behavior: smooth;
+}
+.custom-table-scroll::-webkit-scrollbar {
+  height: 6px;
+}
+.custom-table-scroll::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.03);
+  border-radius: 9999px;
+}
+.custom-table-scroll::-webkit-scrollbar-thumb {
+  background: rgba(156, 163, 175, 0.4);
+  border-radius: 9999px;
+}
+.custom-table-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgba(156, 163, 175, 0.7);
+}
+
+.font-display {
+  font-family: var(--font-display);
+}
+
+.font-mono {
+  font-family: var(--font-mono);
+}
+
+@media print {
+  /* Hide all generic elements on the screen during document rendering */
+  body * {
+    visibility: hidden;
+  }
+  /* Specifically expose and absolute-position our high-fidelity print node */
+  #printable-receipt-area, #printable-receipt-area * {
+    visibility: visible;
+  }
+  #printable-receipt-area {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    margin: 0;
+    padding: 0;
+    background: #ffffff !important;
+    color: #000000 !important;
+    box-shadow: none !important;
+    border: none !important;
+  }
+  /* Ensure active control buttons or exit toggles do not persist on printed templates */
+  .no-print {
+    display: none !important;
+  }
+}
+
+/* ==========================================================================
+   Automated Elegant Dark Mode Mapping for unannotated light-mode utility classes
+   ========================================================================== */
+.dark, .dark * {
+  /* Automatically map light backgrounds to slate/gray-900 palettes */
+  &.bg-white, &.bg-white\/80, &.bg-white\/90 {
+    background-color: #0f172a !important; /* Deep rich slate-900 */
+    border-color: #1e293b !important; /* slate-800 border */
+  }
+  
+  &.bg-gray-50, &.bg-\[\#f8faff\], &.bg-slate-50, &.bg-\[\#F9FAFB\], &.bg-indigo-50\/30 {
+    background-color: #030712 !important; /* Deep black space background */
+  }
+  
+  &.bg-\[\#EEF2F6\]\/55 {
+    background-color: #0f172a !important;
+  }
+
+  &.bg-indigo-50, &.bg-indigo-50\/25, &.bg-indigo-50\/50, &.bg-indigo-100\/60 {
+    background-color: rgba(30, 41, 59, 0.45) !important;
+    border-color: rgba(51, 65, 85, 0.5) !important;
+    color: #cbd5e1 !important;
+  }
+
+  /* Automatically map high-contrast text colors */
+  &.text-gray-950, &.text-gray-900, &.text-gray-805, &.text-gray-800, &.text-gray-750, &.text-gray-700 {
+    color: #f8fafc !important; /* Crisp slate-50 */
+  }
+
+  &.text-gray-600, &.text-gray-550, &.text-gray-500 {
+    color: #94a3b8 !important; /* Slate-400 */
+  }
+  
+  &.text-gray-400 {
+    color: #64748b !important; /* Slate-500 */
+  }
+
+  &.text-indigo-805, &.text-indigo-800, &.text-indigo-900 {
+    color: #c7d2fe !important; /* Indigo-200 */
+  }
+
+  /* Automatically map border colors */
+  &.border-gray-50, &.border-gray-100, &.border-gray-150, &.border-gray-200, &.border-indigo-50, &.border-indigo-100, &.border-indigo-50\/65 {
+    border-color: #1e293b !important; /* slate-800 */
+  }
+
+  /* Map inputs, forms, textareas, etc. */
+  &.bg-white input, &.bg-white textarea, &.bg-white select,
+  &.bg-\[\#F9FAFB\] input, &.bg-\[\#F9FAFB\] textarea {
+    background-color: #0f172a !important;
+    color: #f8fafc !important;
+    border-color: #334155 !important;
+  }
+
+  &::placeholder {
+    color: #475569 !important;
+  }
+}
+
+/* Base override for body when dark mode is enabled */
+html.dark, html.dark body {
+  background-color: #030712 !important;
+  color: #cbd5e1 !important;
+}

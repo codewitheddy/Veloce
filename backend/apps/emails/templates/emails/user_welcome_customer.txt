@@ -1,0 +1,11 @@
+{% extends "emails/base.txt" %}
+
+{% block content %}
+Hello {{ user_name }},
+
+Welcome to {{ brand_name }}! We're excited to have you join our shopping community.
+
+Your account is now active and 150 Loyalty Welcome Points have been credited to your profile.
+
+Store Link: {{ frontend_url }}
+{% endblock %}

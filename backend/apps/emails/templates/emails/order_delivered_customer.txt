@@ -1,0 +1,9 @@
+{% extends "emails/base.txt" %}
+
+{% block content %}
+Dear {{ customer_name }},
+
+Your order #{{ order_short_id }} has been DELIVERED and COMPLETED.
+
+We hope you love your purchase! You can view invoices and leave product reviews at: {{ frontend_url }}/orders
+{% endblock %}

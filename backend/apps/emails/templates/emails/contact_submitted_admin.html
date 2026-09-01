@@ -1,0 +1,59 @@
+{% extends "emails/base.html" %}
+
+{% block title %}📩 [Contact Inquiry] {{ subject_clean }} - From {{ sender_name }}{% endblock %}
+
+{% block header_style %}
+background: linear-gradient(135deg, #4338ca 0%, #3730a3 100%);
+{% endblock %}
+
+{% block header %}
+<span class="header-badge" style="background: rgba(255,255,255,0.2);">Support Helpdesk</span>
+<h1 class="header-title">New Contact Form Message</h1>
+<p class="header-subtitle">Received via Veloce Storefront • {{ current_time_utc }}</p>
+{% endblock %}
+
+{% block content %}
+<!-- Sender Details Card -->
+<div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 18px; margin-bottom: 24px;">
+    <h3 style="font-size: 13px; text-transform: uppercase; color: #475569; letter-spacing: 0.5px; margin: 0 0 12px 0; font-weight: 700;">
+        👤 Sender Details
+    </h3>
+    <table style="width: 100%; font-size: 13px; border-collapse: collapse;">
+        <tr>
+            <td style="padding: 6px 0; color: #64748b; width: 120px; font-weight: 500;">Full Name:</td>
+            <td style="padding: 6px 0; color: #0f172a; font-weight: 700;">{{ sender_name }}</td>
+        </tr>
+        <tr>
+            <td style="padding: 6px 0; color: #64748b; font-weight: 500;">Email:</td>
+            <td style="padding: 6px 0; color: #0f172a;">
+                <a href="mailto:{{ sender_email }}" style="color: #4f46e5; font-weight: 600; text-decoration: underline;">{{ sender_email }}</a>
+            </td>
+        </tr>
+        <tr>
+            <td style="padding: 6px 0; color: #64748b; font-weight: 500;">Phone:</td>
+            <td style="padding: 6px 0; color: #0f172a;">
+                {% if sender_phone %}
+                <a href="tel:{{ sender_phone }}" style="color: #0f172a; text-decoration: none; font-weight: 600;">{{ sender_phone }}</a>
+                {% else %}
+                <span style="color: #94a3b8; font-style: italic;">Not provided</span>
+                {% endif %}
+            </td>
+        </tr>
+        <tr>
+            <td style="padding: 6px 0; color: #64748b; font-weight: 500;">Subject Topic:</td>
+            <td style="padding: 6px 0; color: #4338ca; font-weight: 700;">{{ subject_clean }}</td>
+        </tr>
+    </table>
+</div>
+
+<!-- Message Content -->
+<h3 style="font-size: 13px; text-transform: uppercase; color: #64748b; letter-spacing: 0.5px; margin: 0 0 10px 0; font-weight: 700;">
+    Customer Inquiry Content
+</h3>
+<div style="background-color: #ffffff; border: 1px solid #cbd5e1; border-left: 4px solid #4f46e5; border-radius: 6px; padding: 18px; margin-bottom: 24px; font-size: 14px; line-height: 1.6; color: #1e293b; white-space: pre-wrap;">{{ message }}</div>
+
+<!-- Quick Reply Alert -->
+<div style="background-color: #eef2ff; border: 1px solid #c7d2fe; border-radius: 8px; padding: 14px 18px; font-size: 12px; color: #3730a3;">
+    <strong>💡 Quick Response:</strong> The <code>reply_to</code> header on this email is configured to <strong>{{ sender_email }}</strong>. You can simply click <em>Reply</em> in your email app to message the customer directly.
+</div>
+{% endblock %}

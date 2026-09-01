@@ -1,0 +1,28 @@
+{% extends "emails/base.html" %}
+
+{% block title %}Payment Alert #{{ order_short_id }} | {{ brand_name }}{% endblock %}
+
+{% block header_style %}
+background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+{% endblock %}
+
+{% block header %}
+<span class="header-badge" style="background: rgba(255,255,255,0.25);">Action Needed</span>
+<h1 class="header-title">Payment Verification Update</h1>
+<p class="header-subtitle">Order #{{ order_short_id }} • {{ current_time_utc }}</p>
+{% endblock %}
+
+{% block content %}
+<p style="font-size: 15px; margin: 0 0 12px 0;">Hi <strong>{{ customer_name }}</strong>,</p>
+<p style="font-size: 14px; color: #4b5563; line-height: 1.6; margin: 0 0 16px 0;">
+    We were unable to verify payment of <strong>KSh {{ total_formatted }}</strong> for your order <strong>#{{ order_short_id }}</strong>.
+</p>
+
+<div class="highlight-badge" style="background-color: #fffbeb; border-left-color: #f59e0b; color: #92400e;">
+    <strong>Reason:</strong> {{ reason|default:"Transaction reference mismatch or network timeout." }}
+</div>
+
+<p style="font-size: 13px; color: #4b5563; line-height: 1.5;">
+    Please verify your M-Pesa transaction reference or contact our billing desk at <a href="mailto:{{ support_email }}">{{ support_email }}</a>.
+</p>
+{% endblock %}

@@ -1,0 +1,6 @@
+{
+  "name": "Affiliate & Commerce Platform",
+  "description": "A premium, unified affiliate marketing dashboard and eCommerce marketplace featuring physical products, digital downloads, professional services, and high-conversion affiliate tracking.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

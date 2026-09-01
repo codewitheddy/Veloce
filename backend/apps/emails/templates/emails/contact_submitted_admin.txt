@@ -1,0 +1,18 @@
+{% extends "emails/base.txt" %}
+
+{% block content %}
+NEW CONTACT FORM INQUIRY
+========================
+Date   : {{ current_time_utc }}
+Sender : {{ sender_name }}
+Email  : {{ sender_email }}
+Phone  : {{ sender_phone|default:"Not provided" }}
+Subject: {{ subject_clean }}
+
+MESSAGE CONTENT:
+----------------------------------------
+{{ message }}
+----------------------------------------
+
+* Quick Reply: Simply hit Reply in your email client to message {{ sender_name }} directly.
+{% endblock %}

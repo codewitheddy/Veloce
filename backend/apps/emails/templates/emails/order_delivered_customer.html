@@ -1,0 +1,34 @@
+{% extends "emails/base.html" %}
+
+{% block title %}Order Delivered & Completed #{{ order_short_id }} | {{ brand_name }}{% endblock %}
+
+{% block header_style %}
+background: linear-gradient(135deg, #059669 0%, #047857 100%);
+{% endblock %}
+
+{% block header %}
+<span class="header-badge" style="background: rgba(255,255,255,0.25);">Delivered</span>
+<h1 class="header-title">Your Order Has Been Delivered!</h1>
+<p class="header-subtitle">Order #{{ order_short_id }} • {{ current_time_utc }}</p>
+{% endblock %}
+
+{% block content %}
+<p style="font-size: 15px; margin: 0 0 12px 0;">Hi <strong>{{ customer_name }}</strong>,</p>
+<p style="font-size: 14px; color: #4b5563; line-height: 1.6; margin: 0 0 16px 0;">
+    Your order <strong>#{{ order_short_id }}</strong> has been marked as <strong>DELIVERED & COMPLETED</strong>.
+</p>
+
+<div class="highlight-badge" style="background-color: #ecfdf5; border-left-color: #059669; color: #065f46;">
+    🎉 <strong>Enjoy your gear!</strong> Any digital keys, warranty certificates, or invoices are accessible inside your account portal.
+</div>
+
+<p style="font-size: 13px; color: #4b5563; line-height: 1.6; margin: 18px 0;">
+    ⭐ <strong>Share Your Feedback:</strong> How was your experience? Take 60 seconds to review your items on our store to help other shoppers.
+</p>
+
+<div style="text-align: center; margin: 24px 0 8px 0;">
+    <a href="{{ frontend_url }}/orders" class="btn-primary" style="background-color: #059669;">
+        Review Your Products →
+    </a>
+</div>
+{% endblock %}

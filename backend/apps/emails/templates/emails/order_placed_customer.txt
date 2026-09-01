@@ -1,0 +1,27 @@
+{% extends "emails/base.txt" %}
+
+{% block content %}
+Dear {{ customer_name }},
+
+Thank you for your order with {{ brand_name }}!
+Order Reference: #{{ order_short_id }}
+Date: {{ order_date|default:current_time_utc }}
+
+ORDER SUMMARY:
+----------------------------------------
+{% for item in items %}
+• {{ item.product_name }} (x{{ item.quantity }}) - KSh {{ item.total_formatted }}
+{% endfor %}
+----------------------------------------
+Subtotal     : KSh {{ subtotal_formatted }}
+{% if discount > 0 %}Discount     : -KSh {{ discount_formatted }}
+{% endif %}Shipping Fee : KSh {{ shipping_fee_formatted }}
+{% if tax_amount > 0 %}VAT (16%)    : KSh {{ tax_amount_formatted }}
+{% endif %}Total Paid   : KSh {{ total_formatted }}
+
+Payment Method  : {{ payment_method }}{% if payment_reference %} (Ref: {{ payment_reference }}){% endif %}
+Status          : {{ status_display|default:"Processing / Confirmed" }}
+Shipping Address: {{ shipping_address|default:"Customer Pickup / Standard Delivery" }}
+
+Track your order anytime at: {{ frontend_url }}/orders
+{% endblock %}

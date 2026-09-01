@@ -1,0 +1,10 @@
+{% extends "emails/base.txt" %}
+
+{% block content %}
+Dear {{ customer_name }},
+
+We were unable to verify payment for Order #{{ order_short_id }}.
+Reason: {{ reason|default:"Transaction reference mismatch or timeout." }}
+
+Please contact support at {{ support_email }} or retry payment at {{ frontend_url }}/orders
+{% endblock %}

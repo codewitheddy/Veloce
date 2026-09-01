@@ -1,0 +1,9 @@
+{% extends "emails/base.txt" %}
+
+{% block content %}
+Dear {{ customer_name }},
+
+Your order #{{ order_short_id }} has been cancelled. Any pending transaction hold or refund will be processed per store policy.
+
+Support: {{ support_email }}
+{% endblock %}
