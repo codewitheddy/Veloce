@@ -161,6 +161,14 @@ export interface Product {
   expiryDate?: string; // YYYY-MM-DD
   batchLotNumber?: string;
 
+  // Sourcing & Supplier Sourcing Links
+  supplierId?: string;
+  supplierName?: string;
+  supplierSku?: string;
+  agreedCostPrice?: number;
+  leadTimeDays?: number;
+  isPrimarySupplier?: boolean;
+
   // SEO & Social
   metaTitle?: string;
   metaDescription?: string;

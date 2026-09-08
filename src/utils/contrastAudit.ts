@@ -173,12 +173,14 @@ export function runContrastAudit(): ContrastViolation[] {
 if (typeof window !== 'undefined') {
   (window as unknown as { runContrastAudit: typeof runContrastAudit }).runContrastAudit = runContrastAudit;
 
-  // Auto-run once on idle/load
-  if (document.readyState === 'complete') {
-    setTimeout(runContrastAudit, 2000);
-  } else {
-    window.addEventListener('load', () => {
+  // Auto-run only in development mode to avoid overhead in production
+  if (import.meta.env.DEV) {
+    if (document.readyState === 'complete') {
       setTimeout(runContrastAudit, 2000);
-    });
+    } else {
+      window.addEventListener('load', () => {
+        setTimeout(runContrastAudit, 2000);
+      });
+    }
   }
 }

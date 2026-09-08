@@ -26,6 +26,8 @@ import {
 } from './lib/emailNotifier';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { SEOHead } from './components/SEOHead';
+import MaintenanceModeView from './components/MaintenanceModeView';
+import { useSiteSettings } from './context/SiteSettingsContext';
 
 // Helper for resilient lazy loading with auto-retry and chunk error handling
 function lazyWithRetry<T extends React.ComponentType<any>>(
@@ -87,8 +89,12 @@ import {
 import api, { fetchProducts, productService, pushOrderToBackend, orderService, mapBackendProductToFrontend } from './services/api';
 import { mapBackendOrderToFrontend } from './api/orders';
 import { clearVeloceLocalStorageItems, checkAndPurgeBackendSyncStorage, safeLocalStorageSetItem, safeLocalStorageGetItem, saveToIndexedDb } from './lib/storage';
+import { siteSettingsApi } from './services/siteSettingsApi';
 
 export default function App() {
+  const { settings } = useSiteSettings();
+  const isMaintenanceActive = Boolean(settings?.general?.maintenance_mode);
+
   const [darkMode, setDarkMode] = useState<boolean>(() => {
     const saved = localStorage.getItem('theme');
     if (saved === 'dark') return true;
@@ -101,6 +107,11 @@ export default function App() {
   });
 
   const [showBackToTop, setShowBackToTop] = useState<boolean>(false);
+
+  // Initialize Site Settings & Appearance on boot
+  useEffect(() => {
+    siteSettingsApi.getSettings().catch((err) => console.warn('Site settings init note:', err));
+  }, []);
 
   useEffect(() => {
     const handleScroll = () => {
@@ -1800,6 +1811,10 @@ export default function App() {
             onSelectCategory={handleSelectCategory}
             onSelectSale={handleSelectSale}
             onTriggerCustomEmail={triggerCustomEmail}
+            onAddToCart={handleAddToCart}
+            wishlist={wishlist}
+            onToggleWishlist={handleToggleWishlist}
+            darkMode={darkMode}
           />
         );
       case 'store':
@@ -2019,6 +2034,20 @@ export default function App() {
     );
   }
 
+  // If maintenance mode is active and user is not an administrator, present full maintenance mode screen
+  if (isMaintenanceActive && userRole !== 'admin' && currentTab !== 'admin') {
+    return (
+      <>
+        <SEOHead
+          currentTab="maintenance"
+          products={products}
+          blogs={INITIAL_BLOGS}
+        />
+        <MaintenanceModeView onAdminLoginClick={() => handleTabChange('admin')} />
+      </>
+    );
+  }
+
   // Public Storefront layout
   return (
     <>
@@ -2031,12 +2060,30 @@ export default function App() {
         products={products}
         blogs={INITIAL_BLOGS}
       />
+      {isMaintenanceActive && userRole === 'admin' && (
+        <div className="bg-amber-600 text-white px-4 py-2.5 text-xs font-bold font-sans flex items-center justify-between shadow-md sticky top-0 z-[200]">
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="h-4 w-4 shrink-0 text-amber-200 animate-pulse" />
+            <span>
+              <strong>MAINTENANCE MODE IS ACTIVE:</strong> Public storefront is currently locked to regular visitors. You are viewing with administrator bypass.
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={() => handleTabChange('admin')}
+            className="px-3 py-1 bg-white text-amber-950 rounded-lg text-xs font-bold hover:bg-amber-50 transition-all cursor-pointer shadow-xs shrink-0 ml-3"
+          >
+            Open Admin Suite
+          </button>
+        </div>
+      )}
       <StorefrontLayout
         currentTab={currentTab}
         onTabChange={handleTabChange}
         cart={cart}
         wishlist={wishlist}
         products={products}
+        orders={orders}
         onSelectProduct={(p) => {
           setSelectedProduct(p);
           handleTabChange('store');

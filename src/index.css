@@ -1,5 +1,6 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
 @import "tailwindcss";
+@import "leaflet/dist/leaflet.css";
 
 @variant dark (&:where(.dark, .dark *));
 
@@ -95,6 +96,11 @@
   --color-orange-100: #ffedd5;
   --color-orange-500: #f97316; /* Warning */
   --color-orange-600: #ea580c;
+
+  /* WhatsApp Brand Palette */
+  --color-whatsapp: #25d366;
+  --color-whatsapp-hover: #20bd5a;
+  --color-whatsapp-dark: #128c7e;
 
   /* Brand Palette Variables */
   --color-brand-primary: #4f46e5;
@@ -308,9 +314,9 @@
   }
 
   &.bg-indigo-50, &.bg-indigo-50\/25, &.bg-indigo-50\/50, &.bg-indigo-100\/60 {
-    background-color: rgba(30, 41, 59, 0.45) !important;
-    border-color: rgba(51, 65, 85, 0.5) !important;
-    color: #cbd5e1 !important;
+    background-color: var(--color-indigo-950) !important;
+    border-color: var(--color-indigo-900) !important;
+    color: var(--color-indigo-200) !important;
   }
 
   /* Automatically map high-contrast text colors */
@@ -327,7 +333,7 @@
   }
 
   &.text-indigo-805, &.text-indigo-800, &.text-indigo-900 {
-    color: #c7d2fe !important; /* Indigo-200 */
+    color: var(--color-indigo-200) !important;
   }
 
   /* Automatically map border colors */

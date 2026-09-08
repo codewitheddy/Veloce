@@ -34,6 +34,7 @@ import {
 } from 'lucide-react';
 import { Order } from '../types';
 import { CurrencyType, formatPrice } from '../lib/currency';
+import { useSiteSettings } from '../context/SiteSettingsContext';
 
 export interface OrderReceiptPageProps {
   order: Order;
@@ -58,6 +59,16 @@ export default function OrderReceiptPage({
   onUpdateOrderPaymentStatus,
   currency = 'KSh',
 }: OrderReceiptPageProps) {
+  const { settings } = useSiteSettings();
+  const mpesaPaybill = settings.payments.mpesa_paybill || '303030';
+  const mpesaAccountNumber = settings.payments.mpesa_account_number || '2047728455';
+  const mpesaAccountName = settings.payments.mpesa_account_name || 'ROPENIX INVESTMENTS LTD';
+  const legalBusinessName = settings.receipts.legal_business_name || settings.general.site_name || 'ROPENIX INVESTMENTS LTD';
+  const businessAddress = settings.receipts.physical_address || settings.general.physical_address || 'Nairobi Central Business District, Nairobi, Kenya';
+  const businessEmail = settings.receipts.contact_email || settings.general.business_email || 'support@veloce.co.ke';
+  const businessPhone = settings.receipts.contact_phone || settings.general.support_phone || '+254 700 123 456';
+  const tagline = settings.general.tagline || 'Veloce Commerce & Logistics Operations';
+
   const [copiedField, setCopiedField] = useState<'paybill' | 'account' | 'orderId' | null>(null);
   const printableAreaRef = useRef<HTMLDivElement>(null);
 
@@ -257,7 +268,7 @@ export default function OrderReceiptPage({
             </span>
           </div>
           <span className="text-[11px] text-gray-500 dark:text-gray-400 font-mono block mt-1 truncate">
-            {order.paymentReference ? `Code: ${order.paymentReference}` : (order.paymentMethod === 'cod' ? 'Cash on Delivery' : 'M-PESA Paybill 303030')}
+            {order.paymentReference ? `Code: ${order.paymentReference}` : (order.paymentMethod === 'cod' ? 'Cash on Delivery' : `M-PESA Paybill ${mpesaPaybill}`)}
           </span>
         </div>
 
@@ -304,19 +315,19 @@ export default function OrderReceiptPage({
               </div>
               <div>
                 <span className="font-display text-lg sm:text-xl font-black tracking-tight text-gray-950 dark:text-white uppercase block">
-                  ROPENIX INVESTMENTS LTD
+                  {legalBusinessName}
                 </span>
                 <span className="font-mono text-[9px] font-extrabold text-indigo-600 dark:text-indigo-400 uppercase tracking-widest block">
-                  Veloce Commerce & Logistics Operations
+                  {tagline}
                 </span>
               </div>
             </div>
 
             <p className="text-xs text-gray-500 dark:text-gray-400 font-normal mt-3 leading-relaxed max-w-sm">
-              Nairobi Central Business District, Nairobi, Kenya<br />
+              {businessAddress}<br />
               P.O. Box 40404 - 00100 GPO, Nairobi<br />
-              <span className="font-semibold text-gray-700 dark:text-gray-300">Official M-PESA Paybill:</span> <strong className="font-mono text-emerald-600 font-bold">303030</strong> (Acc: <strong className="font-mono text-emerald-600 font-bold">2047728455</strong>)<br />
-              <span className="font-semibold text-gray-700 dark:text-gray-300">Support Hotline:</span> +254 700 123 456 • support@veloce.co.ke
+              <span className="font-semibold text-gray-700 dark:text-gray-300">Official M-PESA Paybill:</span> <strong className="font-mono text-emerald-600 font-bold">{mpesaPaybill}</strong> (Acc: <strong className="font-mono text-emerald-600 font-bold">{mpesaAccountNumber}</strong>)<br />
+              <span className="font-semibold text-gray-700 dark:text-gray-300">Support Hotline:</span> {businessPhone} • {businessEmail}
             </p>
           </div>
 
@@ -616,9 +627,9 @@ export default function OrderReceiptPage({
                 M-PESA Business Paybill Settlement
               </span>
               <p className="text-[11px] text-gray-600 dark:text-gray-300 mt-1 leading-relaxed">
-                Paybill: <strong className="font-mono text-emerald-700 dark:text-emerald-400 font-bold">303030</strong> • Account No: <strong className="font-mono text-emerald-700 dark:text-emerald-400 font-bold">2047728455</strong>
+                Paybill: <strong className="font-mono text-emerald-700 dark:text-emerald-400 font-bold">{mpesaPaybill}</strong> • Account No: <strong className="font-mono text-emerald-700 dark:text-emerald-400 font-bold">{mpesaAccountNumber}</strong>
                 <br />
-                Account Name: <strong className="font-semibold text-gray-900 dark:text-white">ROPENIX INVESTMENTS LTD</strong>
+                Account Name: <strong className="font-semibold text-gray-900 dark:text-white">{mpesaAccountName}</strong>
               </p>
               {order.paymentReference && (
                 <div className="mt-2 pt-2 border-t border-emerald-200/60 dark:border-emerald-850 font-mono text-[10.5px] space-y-0.5">

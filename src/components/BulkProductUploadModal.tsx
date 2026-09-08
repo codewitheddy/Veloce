@@ -582,6 +582,7 @@ export default function BulkProductUploadModal({
       let addedCount = 0;
       let updatedCount = 0;
       const uniqueNewCategories = new Set<string>();
+      const importedProducts: Product[] = [];
 
       validRows.forEach((row) => {
         const rowSku = row.product.sku;
@@ -610,9 +611,12 @@ export default function BulkProductUploadModal({
           }
           
           onUpdateProductDetails(existingProduct.id, updatedFields);
+          importedProducts.push({ ...existingProduct, ...updatedFields });
           updatedCount++;
         } else {
-          onAddProduct(row.product as Product);
+          const newProduct = row.product as Product;
+          onAddProduct(newProduct);
+          importedProducts.push(newProduct);
           addedCount++;
         }
       });
@@ -621,6 +625,15 @@ export default function BulkProductUploadModal({
         uniqueNewCategories.forEach(cat => {
           onAddCategory(cat);
         });
+      }
+
+      // Broadcast products updated event and sync to localStorage/IndexedDB
+      try {
+        const allProducts = [...products, ...importedProducts];
+        window.dispatchEvent(new CustomEvent('veloce_products_updated', { detail: allProducts }));
+        localStorage.setItem('veloce_products', JSON.stringify(allProducts));
+      } catch (err) {
+        console.warn('Failed to sync imported products to cache:', err);
       }
 
       setIsImporting(false);

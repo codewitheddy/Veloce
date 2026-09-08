@@ -110,4 +110,16 @@ export const productsApi = {
     const response = await api.post('/products/bulk_action/', payload);
     return response.data;
   },
+
+  /**
+   * Executes atomic bulk price adjustments across multiple catalog products
+   */
+  bulkPriceAdjustment: async (items: Array<{
+    id: string;
+    price: number;
+    original_price?: number | null;
+  }>): Promise<{ message: string; affected_count: number }> => {
+    const response = await api.post('/products/bulk_price_adjustment/', { items });
+    return response.data;
+  },
 };

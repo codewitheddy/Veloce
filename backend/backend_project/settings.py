@@ -51,6 +51,8 @@ INSTALLED_APPS = [
     'apps.affiliates',
     'apps.content',
     'apps.emails',
+    'apps.site_settings',
+    'apps.suppliers',
 ]
 
 MIDDLEWARE = [
@@ -169,7 +171,7 @@ SIMPLE_JWT = {
 }
 
 # ==============================================================================
-# CORS Configuration (Strict Whitelist)
+# CORS & CSRF Configuration (Strict Whitelist)
 # ==============================================================================
 CORS_ALLOW_ALL_ORIGINS = DEBUG and os.getenv('CORS_ALLOW_ALL_ORIGINS', 'False').lower() in ('true', '1')
 cors_whitelist_env = os.getenv(
@@ -178,6 +180,12 @@ cors_whitelist_env = os.getenv(
 )
 CORS_ALLOWED_ORIGINS = [origin.strip() for origin in cors_whitelist_env.split(',') if origin.strip()]
 CORS_ALLOW_CREDENTIALS = True
+
+csrf_trusted_env = os.getenv(
+    'CSRF_TRUSTED_ORIGINS',
+    'http://localhost:3000,http://127.0.0.1:3000,http://localhost:5173,http://127.0.0.1:5173,https://veloce.co.ke,https://marid.co.ke'
+)
+CSRF_TRUSTED_ORIGINS = [origin.strip() for origin in csrf_trusted_env.split(',') if origin.strip()]
 
 # ==============================================================================
 # Email Configuration (Environment Secrets & cPanel SMTP)

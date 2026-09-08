@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
+import DOMPurify from 'dompurify';
 import {
   Package,
   PackagePlus,
@@ -42,12 +43,38 @@ import {
   Film,
   GripVertical,
   RotateCw,
-  ArrowLeftRight,
+  Bold,
+  Italic,
+  Underline,
+  Strikethrough,
+  Heading2,
+  Heading3,
+  List,
+  ListOrdered,
+  Quote,
+  Code,
+  Table,
+  Link as LinkIcon,
+  ImagePlus,
+  LayoutTemplate,
+  Split,
+  MoveUp,
+  MoveDown,
+  RotateCcw,
+  FileSpreadsheet,
+  Columns,
   FileVideo,
   Play,
-  Pause
+  Pause,
+  Building2,
+  Phone,
+  Mail,
+  MapPin,
+  CreditCard
 } from 'lucide-react';
 import { Product, ProductVariant } from '../types';
+import { Supplier, SupplierPaymentTerms } from '../types/supplier';
+import { supplierApi } from '../services/supplierApi';
 import {
   getCategoryType,
   getSubcategoriesForCategory,
@@ -272,6 +299,124 @@ export function ProductFormEditor({
   const [taxClass, setTaxClass] = useState<string>(initialTaxInfo.taxClass);
   const [currency] = useState('KES');
 
+  // Supplier & Consignment Sourcing State
+  const [suppliersList, setSuppliersList] = useState<Supplier[]>([]);
+  const [isLoadingSuppliers, setIsLoadingSuppliers] = useState<boolean>(false);
+  const [supplierId, setSupplierId] = useState<string>(initialProduct?.supplierId || '');
+  const [supplierName, setSupplierName] = useState<string>(initialProduct?.supplierName || '');
+  const [supplierSku, setSupplierSku] = useState<string>(initialProduct?.supplierSku || '');
+  const [agreedCostPrice, setAgreedCostPrice] = useState<number | ''>(
+    initialProduct?.agreedCostPrice !== undefined && initialProduct?.agreedCostPrice !== null
+      ? initialProduct.agreedCostPrice
+      : (initialCostPrice !== '' ? Number(initialCostPrice) : '')
+  );
+  const [leadTimeDays, setLeadTimeDays] = useState<number>(initialProduct?.leadTimeDays || 3);
+  const [isPrimarySupplier, setIsPrimarySupplier] = useState<boolean>(
+    initialProduct?.isPrimarySupplier !== undefined ? initialProduct.isPrimarySupplier : true
+  );
+  const [showQuickAddSupplierModal, setShowQuickAddSupplierModal] = useState<boolean>(false);
+  const [quickSupplierForm, setQuickSupplierForm] = useState<{
+    name: string;
+    company_name: string;
+    email: string;
+    phone: string;
+    payment_terms: SupplierPaymentTerms;
+    mpesa_number: string;
+    notes: string;
+  }>({
+    name: '',
+    company_name: '',
+    email: '',
+    phone: '',
+    payment_terms: 'Consignment Sale',
+    mpesa_number: '',
+    notes: ''
+  });
+  const [isSavingQuickSupplier, setIsSavingQuickSupplier] = useState<boolean>(false);
+
+  // Fetch available suppliers on mount
+  useEffect(() => {
+    let isMounted = true;
+    setIsLoadingSuppliers(true);
+    supplierApi
+      .getSuppliers()
+      .then((data) => {
+        if (isMounted) {
+          setSuppliersList(data);
+          if (initialProduct?.supplierId) {
+            const matched = data.find((s) => s.id === initialProduct.supplierId);
+            if (matched) {
+              setSupplierName(matched.name);
+            }
+          }
+        }
+      })
+      .catch((err) => console.warn('Could not load suppliers for product editor:', err))
+      .finally(() => {
+        if (isMounted) setIsLoadingSuppliers(false);
+      });
+    return () => {
+      isMounted = false;
+    };
+  }, [initialProduct?.supplierId]);
+
+  const handleSupplierChange = (newSupId: string) => {
+    setSupplierId(newSupId);
+    if (!newSupId) {
+      setSupplierName('');
+      setSupplierSku('');
+      return;
+    }
+    const sup = suppliersList.find((s) => s.id === newSupId);
+    if (sup) {
+      setSupplierName(sup.name);
+      if (!supplierSku || supplierSku.startsWith('SUP-')) {
+        const categoryName = categories.find((c) => c.id === categoryId)?.name || initialProduct?.category || 'GEN';
+        const prodSkuPart = sku.trim() || generateSku(categoryName, title || 'PROD');
+        setSupplierSku(`${sup.code}-${prodSkuPart}`);
+      }
+      if (costPrice !== '' && (agreedCostPrice === '' || agreedCostPrice === 0)) {
+        setAgreedCostPrice(costPrice);
+      } else if (agreedCostPrice !== '' && (costPrice === '' || costPrice === 0)) {
+        setCostPrice(agreedCostPrice);
+      }
+    }
+  };
+
+  const handleCreateQuickSupplier = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!quickSupplierForm.name.trim()) return;
+    setIsSavingQuickSupplier(true);
+    try {
+      const created = await supplierApi.createSupplier(quickSupplierForm);
+      setSuppliersList((prev) => [created, ...prev]);
+      setSupplierId(created.id);
+      setSupplierName(created.name);
+      if (sku) {
+        setSupplierSku(`${created.code}-${sku}`);
+      }
+      if (costPrice !== '') {
+        setAgreedCostPrice(costPrice);
+      }
+      setShowQuickAddSupplierModal(false);
+      setQuickSupplierForm({
+        name: '',
+        company_name: '',
+        email: '',
+        phone: '',
+        payment_terms: 'Consignment Sale',
+        mpesa_number: '',
+        notes: ''
+      });
+    } catch (err) {
+      alert('Failed to register supplier. Please try again.');
+    } finally {
+      setIsSavingQuickSupplier(false);
+    }
+  };
+
+  const selectedSupplier = suppliersList.find((s) => s.id === supplierId);
+
   // Variants & Inventory
   const [hasVariants, setHasVariants] = useState<boolean>(
     initialProduct?.hasVariants || !!(initialProduct?.variantMatrix?.length)
@@ -388,6 +533,95 @@ export function ProductFormEditor({
   const [description, setDescription] = useState(
     initialProduct?.detailedDescription || initialProduct?.description || ''
   );
+  const descriptionTextareaRef = useRef<HTMLTextAreaElement>(null);
+  const [descViewMode, setDescViewMode] = useState<'edit' | 'preview' | 'split'>('edit');
+  const [showImageInsertModal, setShowImageInsertModal] = useState(false);
+  const [showLayoutTemplateModal, setShowLayoutTemplateModal] = useState(false);
+  const [showLinkModal, setShowLinkModal] = useState(false);
+  const [linkModalText, setLinkModalText] = useState('');
+  const [linkModalUrl, setLinkModalUrl] = useState('');
+  const [imageInsertType, setImageInsertType] = useState<'upload' | 'url' | 'gallery'>('upload');
+  const [imageInsertUrl, setImageInsertUrl] = useState('');
+  const [imageInsertAlt, setImageInsertAlt] = useState('');
+  const [imageInsertCaption, setImageInsertCaption] = useState('');
+  const [imageInsertLayout, setImageInsertLayout] = useState<'full' | 'split-left' | 'split-right' | 'center'>('full');
+  const [showSpecPresetModal, setShowSpecPresetModal] = useState(false);
+  const [specSearchTerm, setSpecSearchTerm] = useState('');
+
+  const insertIntoDescription = (before: string, after: string = '', defaultText: string = '') => {
+    const textarea = descriptionTextareaRef.current;
+    if (!textarea) {
+      setDescription(prev => prev + before + defaultText + after);
+      return;
+    }
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    const currentText = description;
+    const selectedText = currentText.substring(start, end) || defaultText;
+    const newText = currentText.substring(0, start) + before + selectedText + after + currentText.substring(end);
+    setDescription(newText);
+    setTimeout(() => {
+      textarea.focus();
+      textarea.setSelectionRange(start + before.length, start + before.length + selectedText.length);
+    }, 10);
+  };
+
+  const handleInsertImageFromModal = (url: string, alt: string, caption: string, layout: string) => {
+    if (!url.trim()) return;
+    let snippet = '';
+    const safeAlt = alt.trim() || 'Product Visual';
+    const safeCaption = caption.trim();
+
+    if (layout === 'full') {
+      snippet = `\n<div class="my-6 rounded-2xl overflow-hidden shadow-md border border-slate-100 bg-slate-900 text-white relative">
+  <img src="${url}" alt="${safeAlt}" class="w-full h-72 sm:h-96 object-cover" />
+  ${safeCaption ? `<div class="p-4 bg-slate-900/90 backdrop-blur-xs text-xs text-slate-300 italic text-center">${safeCaption}</div>` : ''}
+</div>\n`;
+    } else if (layout === 'split-left') {
+      snippet = `\n<div class="my-6 grid grid-cols-1 md:grid-cols-2 gap-6 items-center p-5 rounded-2xl border border-slate-200 bg-slate-50/50">
+  <div class="rounded-xl overflow-hidden aspect-video bg-slate-200">
+    <img src="${url}" alt="${safeAlt}" class="w-full h-full object-cover" />
+  </div>
+  <div class="space-y-2">
+    <h4 class="font-bold text-sm text-slate-900">${safeAlt}</h4>
+    <p class="text-xs text-slate-600 leading-relaxed font-light">${safeCaption || 'Engineered with high-tolerance industrial standards for enduring daily performance.'}</p>
+  </div>
+</div>\n`;
+    } else if (layout === 'split-right') {
+      snippet = `\n<div class="my-6 grid grid-cols-1 md:grid-cols-2 gap-6 items-center p-5 rounded-2xl border border-slate-200 bg-slate-50/50">
+  <div class="space-y-2 order-2 md:order-1">
+    <h4 class="font-bold text-sm text-slate-900">${safeAlt}</h4>
+    <p class="text-xs text-slate-600 leading-relaxed font-light">${safeCaption || 'Refined aesthetics paired with robust, premium-grade materials.'}</p>
+  </div>
+  <div class="rounded-xl overflow-hidden aspect-video bg-slate-200 order-1 md:order-2">
+    <img src="${url}" alt="${safeAlt}" class="w-full h-full object-cover" />
+  </div>
+</div>\n`;
+    } else {
+      snippet = `\n<div class="my-6 text-center">
+  <img src="${url}" alt="${safeAlt}" class="max-w-md mx-auto rounded-xl shadow-xs border border-slate-200" />
+  ${safeCaption ? `<p class="text-[11px] text-slate-400 mt-2 italic">${safeCaption}</p>` : ''}
+</div>\n`;
+    }
+
+    insertIntoDescription(snippet, '', '');
+    setShowImageInsertModal(false);
+    setImageInsertUrl('');
+    setImageInsertAlt('');
+    setImageInsertCaption('');
+  };
+
+  const handleUploadImageFileForDescription = (file: File) => {
+    const reader = new FileReader();
+    reader.onload = (uploadEvent) => {
+      const result = uploadEvent.target?.result as string;
+      if (result) {
+        setImageInsertUrl(result);
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
   const [specs, setSpecs] = useState<{ label: string; value: string }[]>(() => {
     if (Array.isArray(initialProduct?.specs) && initialProduct.specs.length > 0) {
       return initialProduct.specs;
@@ -400,6 +634,108 @@ export function ProductFormEditor({
       { label: 'Warranty', value: '1 Year Official Veloce Care' }
     ];
   });
+
+  const handleMoveSpecRow = (idx: number, direction: 'up' | 'down') => {
+    if (direction === 'up' && idx === 0) return;
+    if (direction === 'down' && idx === specs.length - 1) return;
+    const targetIdx = direction === 'up' ? idx - 1 : idx + 1;
+    const newSpecs = [...specs];
+    const item = newSpecs[idx];
+    newSpecs[idx] = newSpecs[targetIdx];
+    newSpecs[targetIdx] = item;
+    setSpecs(newSpecs);
+  };
+
+  const handleDuplicateSpecRow = (idx: number) => {
+    const item = specs[idx];
+    const newSpecs = [...specs];
+    newSpecs.splice(idx + 1, 0, { ...item, label: `${item.label} (Copy)` });
+    setSpecs(newSpecs);
+  };
+
+  const handleClearAllSpecs = () => {
+    if (window.confirm('Are you sure you want to clear all specifications?')) {
+      setSpecs([]);
+    }
+  };
+
+  const handleApplySpecPreset = (presetKey: string) => {
+    const PRESETS: Record<string, { label: string; value: string }[]> = {
+      electronics: [
+        { label: 'Brand & Model', value: 'Veloce Pro Series' },
+        { label: 'Display / Dimensions', value: '6.7" Super OLED (1440x3200)' },
+        { label: 'Processor / Chipset', value: 'Octa-Core High Performance 3.2GHz' },
+        { label: 'Memory & Storage', value: '16GB LPDDR5X RAM + 512GB UFS 4.0' },
+        { label: 'Battery & Charging', value: '5000mAh Battery + 65W Fast Charge' },
+        { label: 'Connectivity', value: 'Wi-Fi 6E, Bluetooth 5.3, 5G LTE, NFC' },
+        { label: 'Weight', value: '185 grams' },
+        { label: 'Warranty', value: '12 Months Official Brand Warranty' }
+      ],
+      apparel: [
+        { label: 'Material & Composition', value: '100% Organic Ring-Spun Cotton' },
+        { label: 'Fit Type', value: 'Tailored Regular Comfort Fit' },
+        { label: 'Fabric Weight', value: '240 GSM Heavyweight Jersey' },
+        { label: 'Origin', value: 'Ethically Crafted in Kenya' },
+        { label: 'Care Instructions', value: 'Machine wash cold inside-out, tumble dry low' },
+        { label: 'Closure / Stitching', value: 'Double-needle reinforced seams' },
+        { label: 'Available Sizes', value: 'XS, S, M, L, XL, XXL' }
+      ],
+      furniture: [
+        { label: 'Dimensions (LxWxH)', value: '140cm x 75cm x 73-120cm (Adjustable)' },
+        { label: 'Primary Material', value: 'Solid African Teak Wood & Steel Frame' },
+        { label: 'Weight Capacity', value: '120 kg max load' },
+        { label: 'Assembly', value: 'Tool-free quick assembly (~15 mins)' },
+        { label: 'Surface Finish', value: 'Matte Scratch-Resistant Hardwax Oil' },
+        { label: 'Warranty', value: '5-Year Structural Frame Warranty' }
+      ],
+      beauty: [
+        { label: 'Net Volume', value: '100ml / 3.4 fl oz' },
+        { label: 'Fragrance Profile', value: 'Warm Woody Amber & Citrus Bergamot' },
+        { label: 'Formulation', value: 'Concentrated Eau de Parfum (20% Oil)' },
+        { label: 'Skin Type', value: 'Suitable for all skin types, dermatologically tested' },
+        { label: 'Origin', value: 'Nairobi Botanical Lab, Kenya' },
+        { label: 'Shelf Life', value: '36 Months after opening' }
+      ],
+      food: [
+        { label: 'Net Weight', value: '500g (1.1 lbs)' },
+        { label: 'Roast / Flavor Notes', value: 'Medium-Dark Roast with Notes of Cocoa & Berry' },
+        { label: 'Origin Region', value: 'Nyeri Highlands, Mount Kenya (1,800m ASL)' },
+        { label: 'Certification', value: '100% Arabica, Fair Trade Certified' },
+        { label: 'Storage', value: 'Keep sealed in cool, dry place away from light' },
+        { label: 'Best Before', value: '12 Months from roast date' }
+      ]
+    };
+
+    if (PRESETS[presetKey]) {
+      setSpecs(PRESETS[presetKey]);
+      setShowSpecPresetModal(false);
+    }
+  };
+
+  const renderDescriptionPreview = (text: string) => {
+    if (!text || !text.trim()) {
+      return '<p class="text-slate-400 italic text-center py-8">No description copy entered yet. Use the editor toolbar or template blocks to compose long-form product details.</p>';
+    }
+    let html = text;
+    // Headings
+    html = html.replace(/^### (.*$)/gim, '<h3 class="text-base font-bold text-slate-900 dark:text-white mt-4 mb-2">$1</h3>');
+    html = html.replace(/^## (.*$)/gim, '<h2 class="text-lg font-bold text-slate-900 dark:text-white mt-5 mb-2.5 border-b border-slate-100 dark:border-slate-800 pb-1">$1</h2>');
+    html = html.replace(/^# (.*$)/gim, '<h1 class="text-xl font-extrabold text-slate-900 dark:text-white mt-6 mb-3">$1</h1>');
+    // Formatting
+    html = html.replace(/\*\*(.*?)\*\*/gim, '<strong>$1</strong>');
+    html = html.replace(/\*(.*?)\*/gim, '<em>$1</em>');
+    html = html.replace(/~~(.*?)~~/gim, '<del>$1</del>');
+    // Images
+    html = html.replace(/!\[(.*?)\]\((.*?)\)/gim, '<div class="my-4 rounded-xl overflow-hidden shadow-xs border border-slate-200"><img src="$2" alt="$1" class="w-full max-h-80 object-cover" /><p class="text-[11px] text-center text-slate-400 py-1.5 bg-slate-50">$1</p></div>');
+    // Links
+    html = html.replace(/\[(.*?)\]\((.*?)\)/gim, '<a href="$2" target="_blank" rel="noopener noreferrer" class="text-indigo-600 font-semibold underline hover:text-indigo-800">$1</a>');
+    // Blockquote
+    html = html.replace(/^\> (.*$)/gim, '<blockquote class="border-l-4 border-indigo-500 pl-4 py-2 my-3 bg-indigo-50/40 dark:bg-indigo-950/30 text-xs italic text-slate-700 dark:text-slate-300 rounded-r-lg">$1</blockquote>');
+    // Lists
+    html = html.replace(/^- (.*$)/gim, '<li class="ml-4 list-disc text-slate-700 dark:text-slate-300 my-0.5 text-xs">$1</li>');
+    html = html.replace(/^\* (.*$)/gim, '<li class="ml-4 list-disc text-slate-700 dark:text-slate-300 my-0.5 text-xs">$1</li>');
+    return html;
+  };
   const [whatsInTheBox, setWhatsInTheBox] = useState(
     initialProduct?.whatsInTheBox || '1x Main Unit, 1x Charging/Connect Cable, 1x Quick Start Guide, 1x Warranty Card'
   );
@@ -1335,9 +1671,28 @@ export function ProductFormEditor({
       shippingClass: shippingClass || initialProduct?.shippingClass || 'standard',
       deliveryZones: deliveryZones.length > 0 ? deliveryZones : (initialProduct?.deliveryZones || []),
       relatedProducts: relatedProducts.length > 0 ? relatedProducts : (initialProduct?.relatedProducts || []),
+      // Supplier Sourcing Link
+      supplierId: supplierId || undefined,
+      supplierName: supplierName || undefined,
+      supplierSku: supplierSku || undefined,
+      agreedCostPrice: agreedCostPrice !== '' ? Number(agreedCostPrice) : (costPrice !== '' ? Number(costPrice) : undefined),
+      leadTimeDays: leadTimeDays || 3,
+      isPrimarySupplier: isPrimarySupplier,
     };
 
     onSaveProduct(updatedProduct, publishImmediately);
+
+    // If linked to a supplier, record the relationship in supplier backend
+    if (supplierId) {
+      supplierApi.linkProductToSupplier({
+        supplier: supplierId,
+        product: updatedProduct.id,
+        agreed_cost_price: agreedCostPrice !== '' ? Number(agreedCostPrice) : (costPrice !== '' ? Number(costPrice) : 0),
+        selling_price: updatedProduct.price,
+        supplier_sku: supplierSku || updatedProduct.sku,
+        lead_time_days: leadTimeDays || 3,
+      }).catch((err) => console.warn('Supplier link synchronization note:', err));
+    }
   };
 
   return (
@@ -1747,90 +2102,955 @@ export function ProductFormEditor({
             </div>
           </div>
         </section>
-<section id="section-description" className="bg-white rounded-2xl border border-slate-200 p-5 sm:p-8 shadow-xs scroll-mt-24">
+        <section id="section-description" className="bg-white rounded-2xl border border-slate-200 p-5 sm:p-8 shadow-xs scroll-mt-24">
           <div className="space-y-6">
-            <div className="border-b border-slate-100 pb-4 flex items-center justify-between">
+            {/* Header with Stats and View Mode Toggle */}
+            <div className="border-b border-slate-100 pb-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
               <div>
                 <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
                   <Zap className="h-5 w-5 text-indigo-600" /> Rich Description & Specifications Table
                 </h3>
-                <p className="text-xs text-slate-500 mt-1">
-                  Format long-form copy and maintain technical specifications table.
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Format long-form copy, upload images, insert structured layout blocks, and manage technical specifications.
                 </p>
               </div>
-              
+
+              {/* View Mode Switcher */}
+              <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200 self-start sm:self-auto">
+                <button
+                  type="button"
+                  onClick={() => setDescViewMode('edit')}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
+                    descViewMode === 'edit'
+                      ? 'bg-white text-indigo-700 shadow-xs'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  <Edit2 className="h-3.5 w-3.5" /> Editor
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDescViewMode('preview')}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
+                    descViewMode === 'preview'
+                      ? 'bg-white text-indigo-700 shadow-xs'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  <Eye className="h-3.5 w-3.5" /> Live Preview
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDescViewMode('split')}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
+                    descViewMode === 'split'
+                      ? 'bg-white text-indigo-700 shadow-xs'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  <Split className="h-3.5 w-3.5" /> Split View
+                </button>
+              </div>
             </div>
 
-            {/* Rich Text Toolbar Mock */}
-            <div>
-              <div className="flex items-center gap-2 bg-slate-100 p-2 rounded-t-xl border border-slate-300 text-xs font-bold text-slate-700">
-                <span className="px-2 py-1 bg-white rounded border border-slate-200 cursor-pointer">B</span>
-                <span className="px-2 py-1 bg-white rounded border border-slate-200 italic cursor-pointer">I</span>
-                <span className="px-2 py-1 bg-white rounded border border-slate-200 underline cursor-pointer">U</span>
-                <span className="px-2 py-1 bg-white rounded border border-slate-200 cursor-pointer">• List</span>
-                <span className="px-2 py-1 bg-white rounded border border-slate-200 cursor-pointer">H2</span>
-                <span className="px-2 py-1 bg-white rounded border border-slate-200 cursor-pointer">H3</span>
+            {/* Rich Text Toolbar */}
+            <div className="space-y-2">
+              <div className="flex flex-wrap items-center justify-between gap-2 bg-slate-100/90 p-2 rounded-t-xl border border-slate-300">
+                {/* Formatting Tools */}
+                <div className="flex flex-wrap items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={() => insertIntoDescription('**', '**', 'bold text')}
+                    className="p-1.5 px-2 bg-white hover:bg-slate-50 text-slate-700 rounded border border-slate-200 text-xs font-black shadow-3xs cursor-pointer"
+                    title="Bold (**text**)"
+                  >
+                    <Bold className="h-3.5 w-3.5" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => insertIntoDescription('*', '*', 'italic text')}
+                    className="p-1.5 px-2 bg-white hover:bg-slate-50 text-slate-700 rounded border border-slate-200 text-xs italic shadow-3xs cursor-pointer"
+                    title="Italic (*text*)"
+                  >
+                    <Italic className="h-3.5 w-3.5" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => insertIntoDescription('<u>', '</u>', 'underlined text')}
+                    className="p-1.5 px-2 bg-white hover:bg-slate-50 text-slate-700 rounded border border-slate-200 text-xs underline shadow-3xs cursor-pointer"
+                    title="Underline (<u>text</u>)"
+                  >
+                    <Underline className="h-3.5 w-3.5" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => insertIntoDescription('~~', '~~', 'strikethrough text')}
+                    className="p-1.5 px-2 bg-white hover:bg-slate-50 text-slate-700 rounded border border-slate-200 text-xs line-through shadow-3xs cursor-pointer"
+                    title="Strikethrough (~~text~~)"
+                  >
+                    <Strikethrough className="h-3.5 w-3.5" />
+                  </button>
+
+                  <span className="h-4 w-px bg-slate-300 mx-1"></span>
+
+                  <button
+                    type="button"
+                    onClick={() => insertIntoDescription('## ', '\n', 'Section Title')}
+                    className="px-2 py-1 bg-white hover:bg-slate-50 text-slate-800 rounded border border-slate-200 text-xs font-bold shadow-3xs cursor-pointer"
+                    title="Heading 2 (## Title)"
+                  >
+                    H2
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => insertIntoDescription('### ', '\n', 'Subheading Title')}
+                    className="px-2 py-1 bg-white hover:bg-slate-50 text-slate-800 rounded border border-slate-200 text-xs font-bold shadow-3xs cursor-pointer"
+                    title="Heading 3 (### Subheading)"
+                  >
+                    H3
+                  </button>
+
+                  <span className="h-4 w-px bg-slate-300 mx-1"></span>
+
+                  <button
+                    type="button"
+                    onClick={() => insertIntoDescription('- ', '\n', 'Bullet point item')}
+                    className="p-1.5 px-2 bg-white hover:bg-slate-50 text-slate-700 rounded border border-slate-200 text-xs shadow-3xs cursor-pointer flex items-center gap-1"
+                    title="Bulleted List"
+                  >
+                    <List className="h-3.5 w-3.5" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => insertIntoDescription('1. ', '\n', 'Numbered list step')}
+                    className="p-1.5 px-2 bg-white hover:bg-slate-50 text-slate-700 rounded border border-slate-200 text-xs shadow-3xs cursor-pointer flex items-center gap-1"
+                    title="Numbered List"
+                  >
+                    <ListOrdered className="h-3.5 w-3.5" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => insertIntoDescription('> ', '\n', 'Key insight or customer testimonial quote')}
+                    className="p-1.5 px-2 bg-white hover:bg-slate-50 text-slate-700 rounded border border-slate-200 text-xs shadow-3xs cursor-pointer flex items-center gap-1"
+                    title="Blockquote (> Quote)"
+                  >
+                    <Quote className="h-3.5 w-3.5" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => insertIntoDescription('\n<div class="p-4 bg-indigo-50 border-l-4 border-indigo-600 rounded-r-xl my-3"><p class="text-xs font-semibold text-indigo-950">💡 Highlight: ', '</p></div>\n', 'Important product characteristic or special advisory.')}
+                    className="px-2 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-800 rounded border border-indigo-200 text-xs font-bold shadow-3xs cursor-pointer flex items-center gap-1"
+                    title="Insert Highlight Callout Box"
+                  >
+                    <Sparkles className="h-3.5 w-3.5 text-indigo-600" /> Callout
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => insertIntoDescription('\n| Feature | Specification |\n| :--- | :--- |\n| Material | Aerospace Aluminum |\n| Weight | 185g |\n\n', '', '')}
+                    className="p-1.5 px-2 bg-white hover:bg-slate-50 text-slate-700 rounded border border-slate-200 text-xs shadow-3xs cursor-pointer flex items-center gap-1"
+                    title="Insert Markdown Table"
+                  >
+                    <Table className="h-3.5 w-3.5" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowLinkModal(true)}
+                    className="p-1.5 px-2 bg-white hover:bg-slate-50 text-slate-700 rounded border border-slate-200 text-xs shadow-3xs cursor-pointer flex items-center gap-1"
+                    title="Insert Hyperlink"
+                  >
+                    <LinkIcon className="h-3.5 w-3.5" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => insertIntoDescription('\n---\n\n', '', '')}
+                    className="px-2 py-1 bg-white hover:bg-slate-50 text-slate-700 rounded border border-slate-200 text-xs font-mono shadow-3xs cursor-pointer"
+                    title="Insert Horizontal Divider (---)"
+                  >
+                    ⎯ Line
+                  </button>
+                </div>
+
+                {/* Media & Template Inserters */}
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowImageInsertModal(true)}
+                    className="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-lg transition shadow-xs flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <ImagePlus className="h-3.5 w-3.5" /> Upload / Insert Image
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowLayoutTemplateModal(true)}
+                    className="px-2.5 py-1 bg-slate-800 hover:bg-slate-900 text-white font-bold text-xs rounded-lg transition shadow-xs flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <LayoutTemplate className="h-3.5 w-3.5" /> Design Blocks
+                  </button>
+                </div>
               </div>
-              <textarea
-                rows={8}
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                placeholder="Full technical overview, manufacturing origin, and warranty details..."
-                className="w-full p-4 rounded-b-xl border-x border-b border-slate-300 text-xs font-mono leading-relaxed focus:ring-2 focus:ring-indigo-500"
-              />
+
+              {/* Editor / Live Preview Display Area */}
+              {descViewMode === 'edit' && (
+                <div>
+                  <textarea
+                    ref={descriptionTextareaRef}
+                    rows={12}
+                    value={description}
+                    onChange={(e) => setDescription(e.target.value)}
+                    placeholder="Full technical overview, manufacturing origin, craftsmanship story, feature highlights, and warranty details..."
+                    className="w-full p-4 rounded-b-xl border-x border-b border-slate-300 text-xs font-mono leading-relaxed focus:ring-2 focus:ring-indigo-500 bg-white"
+                  />
+                </div>
+              )}
+
+              {descViewMode === 'preview' && (
+                <div className="p-6 rounded-b-xl border-x border-b border-slate-300 bg-white min-h-[300px]">
+                  <div className="prose prose-sm max-w-none prose-slate">
+                    <div
+                      dangerouslySetInnerHTML={{
+                        __html: DOMPurify.sanitize(renderDescriptionPreview(description))
+                      }}
+                    />
+                  </div>
+                </div>
+              )}
+
+              {descViewMode === 'split' && (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-0 border-x border-b border-slate-300 rounded-b-xl overflow-hidden">
+                  <div className="border-r border-slate-200">
+                    <textarea
+                      ref={descriptionTextareaRef}
+                      rows={12}
+                      value={description}
+                      onChange={(e) => setDescription(e.target.value)}
+                      placeholder="Type markdown or HTML copy here..."
+                      className="w-full h-full p-4 text-xs font-mono leading-relaxed focus:outline-hidden focus:ring-1 focus:ring-indigo-500 bg-slate-50/30 resize-none"
+                    />
+                  </div>
+                  <div className="p-5 bg-white overflow-y-auto max-h-[360px]">
+                    <div className="text-[10px] uppercase font-mono font-bold text-slate-400 mb-2 border-b border-slate-100 pb-1 flex items-center gap-1">
+                      <Eye className="h-3 w-3" /> Live Customer Presentation Preview
+                    </div>
+                    <div
+                      className="prose prose-xs max-w-none text-slate-700"
+                      dangerouslySetInnerHTML={{
+                        __html: DOMPurify.sanitize(renderDescriptionPreview(description))
+                      }}
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* Description Stats Bar */}
+              <div className="flex flex-wrap items-center justify-between text-[11px] font-mono text-slate-500 px-1 pt-1">
+                <div className="flex items-center gap-4">
+                  <span>
+                    <strong>{description.trim() ? description.trim().split(/\s+/).length : 0}</strong> Words
+                  </span>
+                  <span>
+                    <strong>{description.length}</strong> Characters
+                  </span>
+                  <span>
+                    <strong>~{Math.max(1, Math.ceil((description.trim() ? description.trim().split(/\s+/).length : 0) / 200))} min</strong> Read Time
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-emerald-600 font-bold flex items-center gap-1">
+                    <CheckCircle2 className="h-3 w-3" /> Markdown & HTML Enabled
+                  </span>
+                </div>
+              </div>
             </div>
 
             {/* Technical Specs Key-Value Table */}
-            <div>
-              <div className="flex items-center justify-between mb-3">
-                <h4 className="font-bold text-xs text-slate-900 uppercase font-mono">Structured Technical Specifications</h4>
-                <button
-                  type="button"
-                  onClick={handleAddSpecRow}
-                  className="px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 font-bold text-xs rounded-lg transition flex items-center gap-1 cursor-pointer"
-                >
-                  <Plus className="h-3.5 w-3.5" /> Add Spec Line
-                </button>
-              </div>
-
-              <div className="space-y-2">
-                {specs.map((sp, idx) => (
-                  <div key={idx} className="flex items-center gap-2">
-                    <input
-                      type="text"
-                      value={sp.label}
-                      onChange={(e) => {
-                        const updated = [...specs];
-                        updated[idx].label = e.target.value;
-                        setSpecs(updated);
-                      }}
-                      placeholder="Label (e.g. Material)"
-                      className="w-1/3 h-10 px-3 rounded-lg border border-slate-300 text-xs font-bold"
-                    />
-                    <input
-                      type="text"
-                      value={sp.value}
-                      onChange={(e) => {
-                        const updated = [...specs];
-                        updated[idx].value = e.target.value;
-                        setSpecs(updated);
-                      }}
-                      placeholder="Value (e.g. Anodized Aluminum)"
-                      className="flex-1 h-10 px-3 rounded-lg border border-slate-300 text-xs font-mono"
-                    />
+            <div className="mt-8 pt-6 border-t border-slate-200">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
+                <div>
+                  <h4 className="font-bold text-xs text-slate-900 uppercase font-mono flex items-center gap-1.5">
+                    <FileSpreadsheet className="h-4 w-4 text-indigo-600" /> Structured Technical Specifications
+                  </h4>
+                  <p className="text-[11px] text-slate-500 font-normal mt-0.5">
+                    Maintain an accurate, crawlable tabular breakdown of technical dimensions, materials, and compliance standards.
+                  </p>
+                </div>
+                
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowSpecPresetModal(true)}
+                    className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-200 font-bold text-xs rounded-lg transition flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <Sparkles className="h-3.5 w-3.5 text-indigo-600" /> Load Industry Presets
+                  </button>
+                  {specs.length > 0 && (
                     <button
                       type="button"
-                      onClick={() => handleRemoveSpecRow(idx)}
-                      className="p-2 text-slate-400 hover:text-rose-600 rounded cursor-pointer"
+                      onClick={handleClearAllSpecs}
+                      className="px-2.5 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-bold text-xs rounded-lg transition cursor-pointer"
                     >
-                      <Trash2 className="h-4 w-4" />
+                      Clear All
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={handleAddSpecRow}
+                    className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-lg transition flex items-center gap-1 shadow-xs cursor-pointer"
+                  >
+                    <Plus className="h-3.5 w-3.5" /> Add Spec Line
+                  </button>
+                </div>
+              </div>
+
+              {specs.length === 0 ? (
+                <div className="text-center py-8 px-4 rounded-xl border border-dashed border-slate-300 bg-slate-50/50">
+                  <FileSpreadsheet className="h-8 w-8 text-slate-400 mx-auto mb-2" />
+                  <p className="text-xs font-bold text-slate-700">No specifications added yet</p>
+                  <p className="text-[11px] text-slate-400 mt-1 max-w-md mx-auto">
+                    Add custom specification rows or load industry presets for Electronics, Apparel, Furniture, Beauty, or Food items.
+                  </p>
+                  <div className="mt-4 flex justify-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => handleApplySpecPreset('electronics')}
+                      className="px-2.5 py-1 text-xs font-mono font-bold bg-white border border-slate-200 rounded-lg hover:bg-slate-50 cursor-pointer"
+                    >
+                      🖥️ Electronics
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleApplySpecPreset('apparel')}
+                      className="px-2.5 py-1 text-xs font-mono font-bold bg-white border border-slate-200 rounded-lg hover:bg-slate-50 cursor-pointer"
+                    >
+                      👔 Apparel
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleApplySpecPreset('furniture')}
+                      className="px-2.5 py-1 text-xs font-mono font-bold bg-white border border-slate-200 rounded-lg hover:bg-slate-50 cursor-pointer"
+                    >
+                      🪑 Furniture
                     </button>
                   </div>
-                ))}
-              </div>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {specs.map((sp, idx) => (
+                    <div key={idx} className="flex items-center gap-2 bg-slate-50/60 p-2 rounded-xl border border-slate-200 hover:border-indigo-200 transition">
+                      <span className="text-[10px] font-mono font-bold text-slate-400 w-6 text-center shrink-0">
+                        #{idx + 1}
+                      </span>
+                      <input
+                        type="text"
+                        value={sp.label}
+                        onChange={(e) => {
+                          const updated = [...specs];
+                          updated[idx].label = e.target.value;
+                          setSpecs(updated);
+                        }}
+                        placeholder="Specification Name (e.g. Battery Life)"
+                        className="w-1/3 h-10 px-3 rounded-lg border border-slate-300 text-xs font-bold bg-white focus:ring-2 focus:ring-indigo-500"
+                      />
+                      <input
+                        type="text"
+                        value={sp.value}
+                        onChange={(e) => {
+                          const updated = [...specs];
+                          updated[idx].value = e.target.value;
+                          setSpecs(updated);
+                        }}
+                        placeholder="Value / Detail (e.g. 5000 mAh Fast Charge)"
+                        className="flex-1 h-10 px-3 rounded-lg border border-slate-300 text-xs font-mono bg-white focus:ring-2 focus:ring-indigo-500"
+                      />
+                      
+                      {/* Row Actions */}
+                      <div className="flex items-center gap-1 shrink-0">
+                        <button
+                          type="button"
+                          disabled={idx === 0}
+                          onClick={() => handleMoveSpecRow(idx, 'up')}
+                          className="p-1.5 text-slate-500 hover:text-slate-800 disabled:opacity-25 rounded hover:bg-slate-200 transition cursor-pointer"
+                          title="Move row up"
+                        >
+                          <MoveUp className="h-3.5 w-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          disabled={idx === specs.length - 1}
+                          onClick={() => handleMoveSpecRow(idx, 'down')}
+                          className="p-1.5 text-slate-500 hover:text-slate-800 disabled:opacity-25 rounded hover:bg-slate-200 transition cursor-pointer"
+                          title="Move row down"
+                        >
+                          <MoveDown className="h-3.5 w-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDuplicateSpecRow(idx)}
+                          className="p-1.5 text-slate-500 hover:text-indigo-600 rounded hover:bg-slate-200 transition cursor-pointer"
+                          title="Duplicate row"
+                        >
+                          <Copy className="h-3.5 w-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveSpecRow(idx)}
+                          className="p-1.5 text-slate-400 hover:text-rose-600 rounded hover:bg-rose-50 transition cursor-pointer"
+                          title="Delete row"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         </section>
+
+        {/* Modal: Image Inserter & Custom Image Layouts */}
+        {showImageInsertModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4 animate-in fade-in duration-200">
+            <div className="bg-white rounded-2xl max-w-xl w-full p-6 shadow-2xl border border-slate-200 space-y-4 max-h-[90vh] overflow-y-auto">
+              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                <div className="flex items-center gap-2">
+                  <ImagePlus className="h-5 w-5 text-indigo-600" />
+                  <h3 className="font-bold text-sm text-slate-900">Upload & Embed Product Visual</h3>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowImageInsertModal(false)}
+                  className="p-1 text-slate-400 hover:text-slate-600 rounded-lg cursor-pointer"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+
+              {/* Source Tabs */}
+              <div className="flex gap-2 border-b border-slate-100 pb-3">
+                <button
+                  type="button"
+                  onClick={() => setImageInsertType('upload')}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
+                    imageInsertType === 'upload' ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                  }`}
+                >
+                  Upload File
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setImageInsertType('url')}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
+                    imageInsertType === 'url' ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                  }`}
+                >
+                  Direct URL
+                </button>
+                {images && images.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setImageInsertType('gallery')}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
+                      imageInsertType === 'gallery' ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                    }`}
+                  >
+                    From Product Gallery
+                  </button>
+                )}
+              </div>
+
+              {/* Tab 1: Upload File */}
+              {imageInsertType === 'upload' && (
+                <div className="space-y-3">
+                  <label className="block p-6 rounded-xl border-2 border-dashed border-indigo-200 bg-indigo-50/20 hover:bg-indigo-50/40 text-center cursor-pointer transition">
+                    <Upload className="h-8 w-8 text-indigo-500 mx-auto mb-2" />
+                    <span className="text-xs font-bold text-indigo-900 block">Click or drag an image here to upload</span>
+                    <span className="text-[11px] text-slate-400 mt-1 block">Supports PNG, JPG, WebP up to 10MB</span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) handleUploadImageFileForDescription(file);
+                      }}
+                    />
+                  </label>
+                  {imageInsertUrl && (
+                    <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 flex items-center gap-3">
+                      <img src={imageInsertUrl} alt="Preview" className="w-16 h-16 object-cover rounded-lg border border-slate-300" />
+                      <div className="flex-1 min-w-0">
+                        <span className="text-xs font-bold text-slate-800 block">Image Ready for Insertion</span>
+                        <span className="text-[10px] text-slate-400 block truncate">{imageInsertUrl.slice(0, 50)}...</span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Tab 2: Direct URL */}
+              {imageInsertType === 'url' && (
+                <div className="space-y-3">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 uppercase font-mono mb-1">Image URL</label>
+                    <input
+                      type="text"
+                      value={imageInsertUrl}
+                      onChange={(e) => setImageInsertUrl(e.target.value)}
+                      placeholder="https://images.unsplash.com/photo-..."
+                      className="w-full h-10 px-3 rounded-lg border border-slate-300 text-xs font-mono"
+                    />
+                  </div>
+                  {imageInsertUrl && (
+                    <div className="rounded-xl overflow-hidden aspect-video max-h-48 bg-slate-100 border border-slate-200">
+                      <img src={imageInsertUrl} alt="Preview" className="w-full h-full object-cover" />
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Tab 3: Select from Gallery */}
+              {imageInsertType === 'gallery' && (
+                <div className="space-y-3">
+                  <label className="block text-xs font-bold text-slate-700 uppercase font-mono">Select Uploaded Product Photo</label>
+                  <div className="grid grid-cols-3 sm:grid-cols-4 gap-2.5 max-h-48 overflow-y-auto p-1">
+                    {images.filter(Boolean).map((imgUrl, i) => (
+                      <div
+                        key={i}
+                        onClick={() => setImageInsertUrl(imgUrl)}
+                        className={`relative aspect-square rounded-lg overflow-hidden border-2 cursor-pointer transition ${
+                          imageInsertUrl === imgUrl ? 'border-indigo-600 ring-2 ring-indigo-200' : 'border-slate-200 hover:border-indigo-300'
+                        }`}
+                      >
+                        <img src={imgUrl} alt={`Gallery ${i}`} className="w-full h-full object-cover" />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Layout Choices */}
+              <div className="space-y-2 pt-2 border-t border-slate-100">
+                <label className="block text-xs font-bold text-slate-700 uppercase font-mono">Display Layout</label>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setImageInsertLayout('full')}
+                    className={`p-2.5 rounded-xl border text-left cursor-pointer transition ${
+                      imageInsertLayout === 'full' ? 'border-indigo-600 bg-indigo-50/50 text-indigo-900 font-bold' : 'border-slate-200 text-slate-600'
+                    }`}
+                  >
+                    <span className="text-xs block font-bold">Full Banner</span>
+                    <span className="text-[10px] text-slate-400 block font-light">Hero presentation</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setImageInsertLayout('split-left')}
+                    className={`p-2.5 rounded-xl border text-left cursor-pointer transition ${
+                      imageInsertLayout === 'split-left' ? 'border-indigo-600 bg-indigo-50/50 text-indigo-900 font-bold' : 'border-slate-200 text-slate-600'
+                    }`}
+                  >
+                    <span className="text-xs block font-bold">Image Left</span>
+                    <span className="text-[10px] text-slate-400 block font-light">Split copy right</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setImageInsertLayout('split-right')}
+                    className={`p-2.5 rounded-xl border text-left cursor-pointer transition ${
+                      imageInsertLayout === 'split-right' ? 'border-indigo-600 bg-indigo-50/50 text-indigo-900 font-bold' : 'border-slate-200 text-slate-600'
+                    }`}
+                  >
+                    <span className="text-xs block font-bold">Image Right</span>
+                    <span className="text-[10px] text-slate-400 block font-light">Split copy left</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setImageInsertLayout('center')}
+                    className={`p-2.5 rounded-xl border text-left cursor-pointer transition ${
+                      imageInsertLayout === 'center' ? 'border-indigo-600 bg-indigo-50/50 text-indigo-900 font-bold' : 'border-slate-200 text-slate-600'
+                    }`}
+                  >
+                    <span className="text-xs block font-bold">Centered</span>
+                    <span className="text-[10px] text-slate-400 block font-light">Medium graphic</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Alt & Caption */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 uppercase font-mono mb-1">Alt Text / Headline</label>
+                  <input
+                    type="text"
+                    value={imageInsertAlt}
+                    onChange={(e) => setImageInsertAlt(e.target.value)}
+                    placeholder="e.g. Ergonomic Cushion Structure"
+                    className="w-full h-9 px-3 rounded-lg border border-slate-300 text-xs"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 uppercase font-mono mb-1">Caption / Subtext</label>
+                  <input
+                    type="text"
+                    value={imageInsertCaption}
+                    onChange={(e) => setImageInsertCaption(e.target.value)}
+                    placeholder="e.g. Precision stitching designed for comfort."
+                    className="w-full h-9 px-3 rounded-lg border border-slate-300 text-xs"
+                  />
+                </div>
+              </div>
+
+              {/* Modal Footer */}
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setShowImageInsertModal(false)}
+                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={!imageInsertUrl}
+                  onClick={() => handleInsertImageFromModal(imageInsertUrl, imageInsertAlt, imageInsertCaption, imageInsertLayout)}
+                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 text-white font-bold text-xs rounded-xl shadow-xs cursor-pointer flex items-center gap-1.5"
+                >
+                  <Check className="h-4 w-4" /> Embed in Description
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Modal: Ready-to-use Design Block Templates */}
+        {showLayoutTemplateModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4 animate-in fade-in duration-200">
+            <div className="bg-white rounded-2xl max-w-2xl w-full p-6 shadow-2xl border border-slate-200 space-y-4 max-h-[90vh] overflow-y-auto">
+              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                <div className="flex items-center gap-2">
+                  <LayoutTemplate className="h-5 w-5 text-indigo-600" />
+                  <h3 className="font-bold text-sm text-slate-900">1-Click Content Layout Blocks</h3>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowLayoutTemplateModal(false)}
+                  className="p-1 text-slate-400 hover:text-slate-600 rounded-lg cursor-pointer"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+
+              <div className="space-y-3">
+                {/* Block 1 */}
+                <div className="p-4 rounded-xl border border-slate-200 hover:border-indigo-400 bg-slate-50/50 hover:bg-indigo-50/10 transition flex items-start justify-between gap-4">
+                  <div>
+                    <span className="text-xs font-bold text-indigo-900 flex items-center gap-1.5">
+                      🌟 Hero Spotlight Feature Banner
+                    </span>
+                    <p className="text-[11px] text-slate-500 mt-1">
+                      Dark-themed hero card with bold uppercase badge, main headline, and craftsmanship story narrative.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      insertIntoDescription(
+                        `\n<div class="my-6 p-6 rounded-2xl bg-slate-900 text-white shadow-xl relative overflow-hidden">
+  <span class="text-[10px] font-mono font-bold tracking-widest text-indigo-400 uppercase">SIGNATURE CRAFTSMANSHIP</span>
+  <h3 class="text-xl font-bold mt-1 mb-2">Uncompromising Performance & Elegance</h3>
+  <p class="text-xs text-slate-300 leading-relaxed font-light">Every component is precision-engineered from top-tier materials to deliver unparalleled longevity and flawless daily utility.</p>
+</div>\n`,
+                        '',
+                        ''
+                      );
+                      setShowLayoutTemplateModal(false);
+                    }}
+                    className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-lg shrink-0 cursor-pointer shadow-xs"
+                  >
+                    Insert Block
+                  </button>
+                </div>
+
+                {/* Block 2 */}
+                <div className="p-4 rounded-xl border border-slate-200 hover:border-indigo-400 bg-slate-50/50 hover:bg-indigo-50/10 transition flex items-start justify-between gap-4">
+                  <div>
+                    <span className="text-xs font-bold text-indigo-900 flex items-center gap-1.5">
+                      ⚡ 3-Pillar Highlight Grid
+                    </span>
+                    <p className="text-[11px] text-slate-500 mt-1">
+                      Three responsive side-by-side cards highlighting speed, military-grade durability, and sustainability.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      insertIntoDescription(
+                        `\n<div class="my-6 grid grid-cols-1 sm:grid-cols-3 gap-4">
+  <div class="p-4 rounded-xl border border-indigo-100 bg-white shadow-xs text-center">
+    <div class="text-2xl mb-1">⚡</div>
+    <h5 class="font-bold text-xs text-slate-900 uppercase tracking-tight">Ultra Fast</h5>
+    <p class="text-[11px] text-slate-500 mt-1 font-light">Instant responsiveness and low-latency interaction.</p>
+  </div>
+  <div class="p-4 rounded-xl border border-indigo-100 bg-white shadow-xs text-center">
+    <div class="text-2xl mb-1">🛡️</div>
+    <h5 class="font-bold text-xs text-slate-900 uppercase tracking-tight">Military Grade</h5>
+    <p class="text-[11px] text-slate-500 mt-1 font-light">Tested against extreme stress and continuous daily strain.</p>
+  </div>
+  <div class="p-4 rounded-xl border border-indigo-100 bg-white shadow-xs text-center">
+    <div class="text-2xl mb-1">🌱</div>
+    <h5 class="font-bold text-xs text-slate-900 uppercase tracking-tight">Sustainable</h5>
+    <p class="text-[11px] text-slate-500 mt-1 font-light">Responsibly sourced materials crafted for longevity.</p>
+  </div>
+</div>\n`,
+                        '',
+                        ''
+                      );
+                      setShowLayoutTemplateModal(false);
+                    }}
+                    className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-lg shrink-0 cursor-pointer shadow-xs"
+                  >
+                    Insert Block
+                  </button>
+                </div>
+
+                {/* Block 3 */}
+                <div className="p-4 rounded-xl border border-slate-200 hover:border-indigo-400 bg-slate-50/50 hover:bg-indigo-50/10 transition flex items-start justify-between gap-4">
+                  <div>
+                    <span className="text-xs font-bold text-indigo-900 flex items-center gap-1.5">
+                      📦 Package Contents & Unboxing Box
+                    </span>
+                    <p className="text-[11px] text-slate-500 mt-1">
+                      Emerald-accented container itemizing all included accessories, chargers, and manuals.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      insertIntoDescription(
+                        `\n<div class="my-6 p-5 rounded-xl border border-emerald-200 bg-emerald-50/40">
+  <h4 class="font-bold text-xs text-emerald-900 uppercase tracking-wider font-mono flex items-center gap-1.5">📦 What's Inside The Box</h4>
+  <ul class="mt-2.5 grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs text-slate-700">
+    <li>• 1x Main Unit</li>
+    <li>• 1x High-Speed Braided Cable</li>
+    <li>• 1x Certificate of Authenticity</li>
+    <li>• 1x User Manual & Quick Guide</li>
+  </ul>
+</div>\n`,
+                        '',
+                        ''
+                      );
+                      setShowLayoutTemplateModal(false);
+                    }}
+                    className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-lg shrink-0 cursor-pointer shadow-xs"
+                  >
+                    Insert Block
+                  </button>
+                </div>
+
+                {/* Block 4 */}
+                <div className="p-4 rounded-xl border border-slate-200 hover:border-indigo-400 bg-slate-50/50 hover:bg-indigo-50/10 transition flex items-start justify-between gap-4">
+                  <div>
+                    <span className="text-xs font-bold text-indigo-900 flex items-center gap-1.5">
+                      🛡️ Official Warranty & Guarantee Callout
+                    </span>
+                    <p className="text-[11px] text-slate-500 mt-1">
+                      Prominent brand assurance callout guaranteeing customer satisfaction and genuine parts.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      insertIntoDescription(
+                        `\n<div class="my-6 p-4 rounded-xl border-l-4 border-indigo-600 bg-indigo-50/60 flex items-start gap-3">
+  <div class="text-lg">🛡️</div>
+  <div>
+    <h5 class="font-bold text-xs text-indigo-950 uppercase font-mono">Official Veloce 1-Year Guarantee</h5>
+    <p class="text-xs text-slate-600 mt-0.5 font-light">Backed by our comprehensive hassle-free replacement warranty and local East Africa support center.</p>
+  </div>
+</div>\n`,
+                        '',
+                        ''
+                      );
+                      setShowLayoutTemplateModal(false);
+                    }}
+                    className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-lg shrink-0 cursor-pointer shadow-xs"
+                  >
+                    Insert Block
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Modal: Hyperlink Inserter */}
+        {showLinkModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4 animate-in fade-in duration-200">
+            <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200 space-y-4">
+              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                <div className="flex items-center gap-2">
+                  <LinkIcon className="h-5 w-5 text-indigo-600" />
+                  <h3 className="font-bold text-sm text-slate-900">Insert Hyperlink</h3>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowLinkModal(false)}
+                  className="p-1 text-slate-400 hover:text-slate-600 rounded-lg cursor-pointer"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 uppercase font-mono mb-1">Link Display Text</label>
+                  <input
+                    type="text"
+                    value={linkModalText}
+                    onChange={(e) => setLinkModalText(e.target.value)}
+                    placeholder="e.g. View Technical Certificate"
+                    className="w-full h-10 px-3 rounded-lg border border-slate-300 text-xs"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 uppercase font-mono mb-1">Destination URL</label>
+                  <input
+                    type="text"
+                    value={linkModalUrl}
+                    onChange={(e) => setLinkModalUrl(e.target.value)}
+                    placeholder="https://..."
+                    className="w-full h-10 px-3 rounded-lg border border-slate-300 text-xs font-mono"
+                  />
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setShowLinkModal(false)}
+                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={!linkModalUrl}
+                  onClick={() => {
+                    const text = linkModalText.trim() || 'Link';
+                    insertIntoDescription(`[${text}](${linkModalUrl.trim()})`, '', '');
+                    setShowLinkModal(false);
+                    setLinkModalText('');
+                    setLinkModalUrl('');
+                  }}
+                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 text-white font-bold text-xs rounded-xl shadow-xs cursor-pointer"
+                >
+                  Insert Link
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Modal: Specification Industry Presets */}
+        {showSpecPresetModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4 animate-in fade-in duration-200">
+            <div className="bg-white rounded-2xl max-w-xl w-full p-6 shadow-2xl border border-slate-200 space-y-4 max-h-[90vh] overflow-y-auto">
+              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                <div className="flex items-center gap-2">
+                  <Sparkles className="h-5 w-5 text-indigo-600" />
+                  <h3 className="font-bold text-sm text-slate-900">Industry Technical Specification Templates</h3>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowSpecPresetModal(false)}
+                  className="p-1 text-slate-400 hover:text-slate-600 rounded-lg cursor-pointer"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+
+              <p className="text-xs text-slate-500">
+                Choose a pre-filled specification template tailored to your product category. You can edit, add, or remove rows anytime.
+              </p>
+
+              <div className="space-y-2.5">
+                <div
+                  onClick={() => handleApplySpecPreset('electronics')}
+                  className="p-4 rounded-xl border border-slate-200 hover:border-indigo-500 bg-slate-50/50 hover:bg-indigo-50/20 transition cursor-pointer flex items-center justify-between"
+                >
+                  <div>
+                    <h5 className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
+                      🖥️ Electronics & Smart Hardware
+                    </h5>
+                    <p className="text-[11px] text-slate-500 mt-0.5">
+                      Includes Display, Processor, RAM/Storage, Battery, Connectivity, Weight & Warranty.
+                    </p>
+                  </div>
+                  <span className="text-xs font-bold text-indigo-600">Apply Template &rarr;</span>
+                </div>
+
+                <div
+                  onClick={() => handleApplySpecPreset('apparel')}
+                  className="p-4 rounded-xl border border-slate-200 hover:border-indigo-500 bg-slate-50/50 hover:bg-indigo-50/20 transition cursor-pointer flex items-center justify-between"
+                >
+                  <div>
+                    <h5 className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
+                      👔 Apparel, Footwear & Fashion
+                    </h5>
+                    <p className="text-[11px] text-slate-500 mt-0.5">
+                      Includes Composition, Fit Type, Fabric Weight (GSM), Origin, Wash Care & Stitching.
+                    </p>
+                  </div>
+                  <span className="text-xs font-bold text-indigo-600">Apply Template &rarr;</span>
+                </div>
+
+                <div
+                  onClick={() => handleApplySpecPreset('furniture')}
+                  className="p-4 rounded-xl border border-slate-200 hover:border-indigo-500 bg-slate-50/50 hover:bg-indigo-50/20 transition cursor-pointer flex items-center justify-between"
+                >
+                  <div>
+                    <h5 className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
+                      🪑 Furniture & Workspace Objects
+                    </h5>
+                    <p className="text-[11px] text-slate-500 mt-0.5">
+                      Includes Dimensions, Primary Wood/Metal, Weight Capacity, Assembly Time & Surface Finish.
+                    </p>
+                  </div>
+                  <span className="text-xs font-bold text-indigo-600">Apply Template &rarr;</span>
+                </div>
+
+                <div
+                  onClick={() => handleApplySpecPreset('beauty')}
+                  className="p-4 rounded-xl border border-slate-200 hover:border-indigo-500 bg-slate-50/50 hover:bg-indigo-50/20 transition cursor-pointer flex items-center justify-between"
+                >
+                  <div>
+                    <h5 className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
+                      💄 Beauty, Fragrance & Skincare
+                    </h5>
+                    <p className="text-[11px] text-slate-500 mt-0.5">
+                      Includes Net Volume, Scent Profile, Formulation, Dermatological Testing & Shelf Life.
+                    </p>
+                  </div>
+                  <span className="text-xs font-bold text-indigo-600">Apply Template &rarr;</span>
+                </div>
+
+                <div
+                  onClick={() => handleApplySpecPreset('food')}
+                  className="p-4 rounded-xl border border-slate-200 hover:border-indigo-500 bg-slate-50/50 hover:bg-indigo-50/20 transition cursor-pointer flex items-center justify-between"
+                >
+                  <div>
+                    <h5 className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
+                      ☕ Food, Gourmet & Beverages
+                    </h5>
+                    <p className="text-[11px] text-slate-500 mt-0.5">
+                      Includes Net Weight, Flavor Notes, Geographic Origin, Fair Trade Certification & Expiry.
+                    </p>
+                  </div>
+                  <span className="text-xs font-bold text-indigo-600">Apply Template &rarr;</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
 <section id="section-media" className="bg-white rounded-2xl border border-slate-200 p-5 sm:p-8 shadow-xs scroll-mt-24">
           <div className="space-y-6">
             <div className="border-b border-slate-100 pb-4 flex items-center justify-between">
@@ -2473,6 +3693,172 @@ export function ProductFormEditor({
                 </div>
               </div>
             )}
+
+            {/* Supplier Sourcing & Consignment Link (Requirement) */}
+            <div className="bg-slate-50/80 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-200/80 dark:border-slate-800 pb-3">
+                <div className="flex items-center gap-2.5">
+                  <div className="p-2 rounded-xl bg-indigo-100 dark:bg-indigo-950/70 text-indigo-700 dark:text-indigo-400">
+                    <Truck className="h-4.5 w-4.5" />
+                  </div>
+                  <div>
+                    <h4 className="text-xs font-bold text-slate-900 dark:text-white uppercase font-mono tracking-wider flex items-center gap-2">
+                      Supplier & Consignment Sourcing
+                    </h4>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400 font-normal">
+                      Link this product to a registered supplier to automate goods received notes (GRN), consignment payables, and profitability reports.
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setShowQuickAddSupplierModal(true)}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-50 dark:bg-indigo-950/70 hover:bg-indigo-100 dark:hover:bg-indigo-900 text-indigo-700 dark:text-indigo-300 text-xs font-bold border border-indigo-200 dark:border-indigo-800 transition cursor-pointer self-start sm:self-auto shrink-0 shadow-2xs"
+                >
+                  <Plus className="h-3.5 w-3.5" /> Quick Add Supplier
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {/* Supplier Selection */}
+                <div className="lg:col-span-1">
+                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase font-mono mb-1.5">
+                    Source Supplier
+                  </label>
+                  <select
+                    value={supplierId}
+                    onChange={(e) => handleSupplierChange(e.target.value)}
+                    className="w-full h-11 px-3.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white text-xs font-semibold focus:outline-hidden focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+                  >
+                    <option value="">Direct In-House / Manufactured In-House</option>
+                    {suppliersList.map((sup) => (
+                      <option key={sup.id} value={sup.id}>
+                        {sup.name} {sup.company_name ? `(${sup.company_name})` : `[${sup.code}]`} — {sup.payment_terms}
+                      </option>
+                    ))}
+                  </select>
+                  <span className="block text-[10px] text-slate-400 mt-1">
+                    {supplierId ? 'Linked to supplier for consignment and debt calculation.' : 'No external supplier linked.'}
+                  </span>
+                </div>
+
+                {/* Supplier SKU */}
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase font-mono mb-1.5 flex items-center justify-between">
+                    <span>Supplier SKU / Part #</span>
+                    {selectedSupplier && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const categoryName = categories.find((c) => c.id === categoryId)?.name || initialProduct?.category || 'GEN';
+                          const prodSkuPart = sku.trim() || generateSku(categoryName, title || 'PROD');
+                          setSupplierSku(`${selectedSupplier.code}-${prodSkuPart}`);
+                        }}
+                        className="text-[10px] text-indigo-600 dark:text-indigo-400 hover:underline font-sans font-bold cursor-pointer"
+                      >
+                        Auto-Gen
+                      </button>
+                    )}
+                  </label>
+                  <input
+                    type="text"
+                    disabled={!supplierId}
+                    value={supplierSku}
+                    onChange={(e) => setSupplierSku(e.target.value)}
+                    placeholder={supplierId ? 'e.g. SUP-NRB-01-BLZ' : 'Select supplier first'}
+                    className={`w-full h-11 px-3.5 rounded-xl border text-xs font-mono font-bold transition ${
+                      !supplierId
+                        ? 'bg-slate-100 dark:bg-slate-800/50 border-slate-200 dark:border-slate-800 text-slate-400 cursor-not-allowed'
+                        : 'border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white focus:outline-hidden focus:ring-2 focus:ring-indigo-500'
+                    }`}
+                  />
+                  <span className="block text-[10px] text-slate-400 mt-1">Supplier's internal product reference code.</span>
+                </div>
+
+                {/* Agreed Cost & Lead Time */}
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase font-mono mb-1.5">
+                      Agreed Cost ({currency})
+                    </label>
+                    <input
+                      type="number"
+                      disabled={!supplierId}
+                      min={0}
+                      value={agreedCostPrice ?? ''}
+                      onChange={(e) => {
+                        const val = e.target.value === '' ? '' : Number(e.target.value);
+                        setAgreedCostPrice(val);
+                        if (val !== '') {
+                          setCostPrice(val);
+                        }
+                      }}
+                      placeholder="e.g. 2500"
+                      className={`w-full h-11 px-3.5 rounded-xl border text-xs font-mono font-bold transition ${
+                        !supplierId
+                          ? 'bg-slate-100 dark:bg-slate-800/50 border-slate-200 dark:border-slate-800 text-slate-400 cursor-not-allowed'
+                          : 'border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white focus:outline-hidden focus:ring-2 focus:ring-indigo-500'
+                      }`}
+                    />
+                    <span className="block text-[10px] text-slate-400 mt-1">Contract unit cost.</span>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase font-mono mb-1.5">
+                      Lead Time
+                    </label>
+                    <input
+                      type="number"
+                      disabled={!supplierId}
+                      min={1}
+                      max={90}
+                      value={leadTimeDays}
+                      onChange={(e) => setLeadTimeDays(Math.max(1, Number(e.target.value)))}
+                      className={`w-full h-11 px-3.5 rounded-xl border text-xs font-mono font-bold transition ${
+                        !supplierId
+                          ? 'bg-slate-100 dark:bg-slate-800/50 border-slate-200 dark:border-slate-800 text-slate-400 cursor-not-allowed'
+                          : 'border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white focus:outline-hidden focus:ring-2 focus:ring-indigo-500'
+                      }`}
+                    />
+                    <span className="block text-[10px] text-slate-400 mt-1">Days to restock.</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Selected Supplier Info Card */}
+              {selectedSupplier && (
+                <div className="p-3.5 rounded-xl bg-indigo-50/70 dark:bg-indigo-950/40 border border-indigo-200/80 dark:border-indigo-900/50 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+                  <div className="flex items-center gap-3">
+                    <div className="h-9 w-9 rounded-xl bg-indigo-600 text-white flex items-center justify-center font-bold text-sm shrink-0 shadow-2xs">
+                      {selectedSupplier.name.charAt(0)}
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="font-bold text-slate-900 dark:text-white">{selectedSupplier.name}</span>
+                        {selectedSupplier.company_name && (
+                          <span className="text-slate-500 dark:text-slate-400 font-medium">({selectedSupplier.company_name})</span>
+                        )}
+                        <span className="px-2 py-0.5 rounded-full bg-indigo-100 dark:bg-indigo-900 text-indigo-800 dark:text-indigo-200 font-mono text-[10px] font-bold">
+                          {selectedSupplier.code}
+                        </span>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-slate-600 dark:text-slate-300 mt-0.5">
+                        <span>Terms: <strong className="text-indigo-700 dark:text-indigo-300 font-semibold">{selectedSupplier.payment_terms}</strong></span>
+                        {selectedSupplier.phone && <span>Tel: {selectedSupplier.phone}</span>}
+                        {selectedSupplier.mpesa_number && <span>M-PESA: {selectedSupplier.mpesa_number}</span>}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="text-right shrink-0">
+                    <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 font-mono text-[11px] font-bold">
+                      <CheckCircle2 className="h-3.5 w-3.5" /> Consignment Linked
+                    </span>
+                  </div>
+                </div>
+              )}
+            </div>
 
             {/* Product-Level Tax Classification (Requirement 6.1) */}
             <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 space-y-3">
@@ -4566,6 +5952,126 @@ export function ProductFormEditor({
                 Close Checklist
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Quick Add Supplier Modal */}
+      {showQuickAddSupplierModal && (
+        <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-xs animate-in fade-in duration-150 font-sans">
+          <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xl max-w-lg w-full p-6 text-slate-900 dark:text-white space-y-4 animate-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 rounded-xl bg-indigo-100 dark:bg-indigo-950 text-indigo-600 dark:text-indigo-400">
+                  <Truck className="h-5 w-5" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-slate-900 dark:text-white">Quick Register Supplier</h3>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">Add a new supplier to immediately link to this product</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowQuickAddSupplierModal(false)}
+                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleCreateQuickSupplier} className="space-y-3.5 text-xs">
+              <div>
+                <label className="block text-slate-700 dark:text-slate-300 font-semibold mb-1">
+                  Supplier / Contact Person Name <span className="text-rose-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={quickSupplierForm.name}
+                  onChange={(e) => setQuickSupplierForm((prev) => ({ ...prev, name: e.target.value }))}
+                  placeholder="e.g. David Kiprono"
+                  className="w-full h-10 px-3 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-slate-700 dark:text-slate-300 font-semibold mb-1">
+                    Company / Trading Name
+                  </label>
+                  <input
+                    type="text"
+                    value={quickSupplierForm.company_name}
+                    onChange={(e) => setQuickSupplierForm((prev) => ({ ...prev, company_name: e.target.value }))}
+                    placeholder="e.g. Savannah Leatherworks"
+                    className="w-full h-10 px-3 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-slate-700 dark:text-slate-300 font-semibold mb-1">
+                    Payment Terms
+                  </label>
+                  <select
+                    value={quickSupplierForm.payment_terms}
+                    onChange={(e) => setQuickSupplierForm((prev) => ({ ...prev, payment_terms: e.target.value as SupplierPaymentTerms }))}
+                    className="w-full h-10 px-3 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white cursor-pointer"
+                  >
+                    <option value="Consignment Sale">Consignment Sale (Pay on Sale)</option>
+                    <option value="Immediate">Immediate (On Delivery)</option>
+                    <option value="Net 15">Net 15 (15 Days)</option>
+                    <option value="Net 30">Net 30 (30 Days)</option>
+                    <option value="Bi-weekly">Bi-weekly (Every 2 Weeks)</option>
+                    <option value="Monthly">Monthly (End of Month)</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-slate-700 dark:text-slate-300 font-semibold mb-1">
+                    Phone Number
+                  </label>
+                  <input
+                    type="tel"
+                    value={quickSupplierForm.phone}
+                    onChange={(e) => setQuickSupplierForm((prev) => ({ ...prev, phone: e.target.value }))}
+                    placeholder="+254 7..."
+                    className="w-full h-10 px-3 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-slate-700 dark:text-slate-300 font-semibold mb-1">
+                    M-PESA Number / Till / Paybill
+                  </label>
+                  <input
+                    type="text"
+                    value={quickSupplierForm.mpesa_number}
+                    onChange={(e) => setQuickSupplierForm((prev) => ({ ...prev, mpesa_number: e.target.value }))}
+                    placeholder="e.g. 522522 / Acc: 123"
+                    className="w-full h-10 px-3 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white"
+                  />
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-100 dark:border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setShowQuickAddSupplierModal(false)}
+                  className="px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 font-semibold cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSavingQuickSupplier}
+                  className="px-5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold transition shadow-sm cursor-pointer disabled:opacity-50"
+                >
+                  {isSavingQuickSupplier ? 'Saving...' : 'Register & Select Supplier'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

@@ -1,4 +1,5 @@
 import uuid
+from decimal import Decimal
 from django.db.models import Q
 from rest_framework import serializers
 from .models import Product, ProductCategory
@@ -47,9 +48,9 @@ class ProductCategorySerializer(serializers.ModelSerializer):
         return super().update(instance, validated_data)
 
 class ProductSerializer(serializers.ModelSerializer):
-    price = serializers.DecimalField(max_digits=12, decimal_places=2, min_value=0)
-    original_price = serializers.DecimalField(max_digits=12, decimal_places=2, min_value=0, required=False, allow_null=True)
-    cost_price = serializers.DecimalField(max_digits=12, decimal_places=2, min_value=0, required=False, allow_null=True)
+    price = serializers.DecimalField(max_digits=12, decimal_places=2, min_value=Decimal('0'))
+    original_price = serializers.DecimalField(max_digits=12, decimal_places=2, min_value=Decimal('0'), required=False, allow_null=True)
+    cost_price = serializers.DecimalField(max_digits=12, decimal_places=2, min_value=Decimal('0'), required=False, allow_null=True)
     stock = serializers.IntegerField(min_value=0, default=10)
     low_stock_threshold = serializers.IntegerField(min_value=0, default=5)
     sku = serializers.CharField(max_length=64, required=False, allow_blank=True)

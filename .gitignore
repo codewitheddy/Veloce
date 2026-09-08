@@ -1,8 +1,44 @@
+# Dependencies
 node_modules/
+backend/venv/
+.venv/
+env/
+
+# Build & Bundles
 build/
 dist/
 coverage/
-.DS_Store
 *.log
+*.tsbuildinfo
+
+# Environment & Secrets
 .env*
 !.env.example
+*.pem
+*.key
+
+# Database Files
+*.sqlite
+*.sqlite3
+*.sqlite3-journal
+*.sqlite-journal
+veloce.sqlite*
+db.sqlite3*
+
+# Python & Django
+__pycache__/
+*.py[cod]
+*$py.class
+backend/staticfiles/
+backend/media/
+staticfiles/
+media/
+.notified_expiry_products.json
+
+# OS & IDE
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+.gemini/
+

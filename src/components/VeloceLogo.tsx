@@ -5,9 +5,11 @@ interface VeloceLogoProps {
   iconOnly?: boolean;
   size?: 'sm' | 'md' | 'lg';
   light?: boolean;
+  customLogoUrl?: string;
 }
 
-export default function VeloceLogo({ className = '', iconOnly = false, size = 'md', light = false }: VeloceLogoProps) {
+export default function VeloceLogo({ className = '', iconOnly = false, size = 'md', light = false, customLogoUrl }: VeloceLogoProps) {
+  const [imgError, setImgError] = React.useState(false);
   // Dimensions based on size preset
   const iconSize = {
     sm: 'h-6 w-6',
@@ -50,6 +52,27 @@ export default function VeloceLogo({ className = '', iconOnly = false, size = 'm
       />
     </svg>
   );
+
+  const imgSizeClass = {
+    sm: 'h-8 sm:h-9 max-h-9',
+    md: 'h-12 sm:h-14 md:h-16 max-h-16',
+    lg: 'h-20 sm:h-24 max-h-24'
+  }[size];
+
+  const logoSrc = customLogoUrl || (light ? '/veloce_logo_white.png' : '/veloce_logo-02.png');
+
+  if (logoSrc && !imgError) {
+    return (
+      <div className={`flex items-center gap-2.5 select-none ${className}`}>
+        <img
+          src={logoSrc}
+          alt="Veloce Logo"
+          onError={() => setImgError(true)}
+          className={`${imgSizeClass} w-auto object-contain shrink-0 transition-transform duration-200 hover:scale-105`}
+        />
+      </div>
+    );
+  }
 
   if (iconOnly) {
     return logoMarkSvg;

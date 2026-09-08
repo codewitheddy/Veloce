@@ -105,7 +105,7 @@ export default function AdminLayout({
   // If not logged in as admin, present the dedicated Django Superuser Login view
   if (userRole !== 'admin') {
     return (
-      <div className={`min-h-screen bg-slate-950 text-white font-sans ${darkMode ? 'dark' : ''}`}>
+      <div className={`min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white font-sans ${darkMode ? 'dark' : ''}`}>
         <DjangoAdminLogin
           onLoginSuccess={() => {
             setUserRole('admin');
@@ -186,7 +186,7 @@ export default function AdminLayout({
             </div>
             <h3 className="text-lg font-bold text-white tracking-tight">Logout Superuser?</h3>
             <p className="text-xs text-slate-400 leading-relaxed">
-              You will be logged out of the Django Administration Suite and returned to the customer storefront.
+              You will be logged out of the Veloce Administration Suite and returned to the customer storefront.
             </p>
             <div className="flex gap-3 pt-2">
               <button

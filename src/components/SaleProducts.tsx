@@ -66,7 +66,7 @@ export default function SaleProducts({
 
   return (
     <section className="bg-slate-50 dark:bg-slate-900/60 py-16 border-t border-slate-200/80 dark:border-slate-800" id="promotional-sales-section">
-      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+      <div className="w-full max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8">
         
         {/* Editorial Promotion Header */}
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between border-b border-rose-100 pb-8 mb-10 gap-6">

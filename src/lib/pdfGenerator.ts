@@ -28,6 +28,21 @@ export function exportSingleReceiptPDF(order: Order) {
   const pageHeight = doc.internal.pageSize.getHeight();
   const margin = 20;
 
+  function getCachedSettings() {
+    try {
+      const cached = localStorage.getItem('veloce_site_settings_cache');
+      if (cached) return JSON.parse(cached);
+    } catch {}
+    return null;
+  }
+  const settings = getCachedSettings();
+  const brandName = settings?.receipts?.legal_business_name || settings?.general?.site_name || "ROPENIX INVESTMENTS LTD";
+  const tagline = settings?.general?.tagline || "VELOCE COMMERCE & LOGISTICS OPERATIONS";
+  const address = settings?.receipts?.physical_address || settings?.general?.physical_address || "Nairobi CBD, Nairobi, Kenya";
+  const paybill = settings?.payments?.mpesa_paybill || "303030";
+  const account = settings?.payments?.mpesa_account_number || "2047728455";
+  const email = settings?.receipts?.contact_email || settings?.general?.business_email || "support@veloce.co.ke";
+
   // Header Background Accent Bar
   doc.setFillColor(primaryColor[0], primaryColor[1], primaryColor[2]);
   doc.rect(0, 0, pageWidth, 12, 'F');
@@ -36,18 +51,18 @@ export function exportSingleReceiptPDF(order: Order) {
   doc.setFont('Helvetica', 'bold');
   doc.setFontSize(16);
   doc.setTextColor(secondaryColor[0], secondaryColor[1], secondaryColor[2]);
-  doc.text("ROPENIX INVESTMENTS LTD", margin, 28);
+  doc.text(brandName.toUpperCase(), margin, 28);
 
   doc.setFont('Helvetica', 'normal');
   doc.setFontSize(8);
   doc.setTextColor(107, 114, 128); // Gray-500
-  doc.text('VELOCE COMMERCE & LOGISTICS OPERATIONS', margin, 33);
+  doc.text(tagline.toUpperCase(), margin, 33);
 
   // Brand Contact Details (Right Aligned)
   doc.setFontSize(8);
-  doc.text('Nairobi CBD, Nairobi, Kenya', pageWidth - margin, 26, { align: 'right' });
-  doc.text('Paybill: 303030 | Acc: 2047728455', pageWidth - margin, 30, { align: 'right' });
-  doc.text('support@veloce.co.ke', pageWidth - margin, 34, { align: 'right' });
+  doc.text(address, pageWidth - margin, 26, { align: 'right' });
+  doc.text(`Paybill: ${paybill} | Acc: ${account}`, pageWidth - margin, 30, { align: 'right' });
+  doc.text(email, pageWidth - margin, 34, { align: 'right' });
 
   // Horizontal Divider
   doc.setDrawColor(borderGray[0], borderGray[1], borderGray[2]);

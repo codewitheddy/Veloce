@@ -118,7 +118,7 @@ export default function BlogPanel({ blogs }: BlogPanelProps) {
   }
 
   return (
-    <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+    <div className="w-full max-w-[1440px] mx-auto px-4 py-8 sm:px-6 lg:px-8">
       {/* Title */}
       <div className="border-b border-gray-100 pb-6">
         <h1 className="font-display text-2xl font-semibold text-gray-900">Veloce Insights</h1>

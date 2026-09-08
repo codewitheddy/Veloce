@@ -4,22 +4,31 @@
  */
 
 import React from 'react';
-import { Mail, Facebook, Twitter, Instagram, ArrowUpCircle } from 'lucide-react';
+import { Mail, Facebook, Twitter, Instagram, ArrowUpCircle, MapPin, Phone } from 'lucide-react';
 import VeloceLogo from './VeloceLogo';
 import NewsletterSubscription from './NewsletterSubscription';
+import { useSiteSettings } from '../context/SiteSettingsContext';
 
 interface FooterProps {
   setCurrentTab: (tab: string) => void;
 }
 
 export default function Footer({ setCurrentTab }: FooterProps) {
+  const { settings } = useSiteSettings();
   const scrollToTop = () => {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
+  const currentYear = new Date().getFullYear();
+  const siteName = settings.general.site_name || 'Veloce Collective';
+  const tagline = settings.general.tagline || 'Premium master accessories engineered with solid Oak and carbon steel. Curators of professional workspace machinery and high-output digital assets.';
+  const businessEmail = settings.general.business_email || 'concierge@veloce.co.ke';
+  const supportPhone = settings.general.support_phone || '+254 700 000 000';
+  const physicalAddress = settings.general.physical_address || 'Enterprise Road, Industrial Area, Nairobi, Kenya';
+
   return (
     <footer className="w-full bg-gray-950 text-gray-200 border-t border-gray-900 mt-20">
-      <div className="mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:px-8">
+      <div className="w-full max-w-[1440px] mx-auto px-4 py-12 sm:px-6 lg:px-8">
         <div className="grid grid-cols-1 md:grid-cols-12 gap-10">
           {/* Brand */}
           <div className="md:col-span-4 flex flex-col justify-between">
@@ -28,8 +37,18 @@ export default function Footer({ setCurrentTab }: FooterProps) {
                 <VeloceLogo size="md" light />
               </div>
               <p className="mt-4 text-xs font-extralight text-gray-400 leading-relaxed max-w-xs">
-                Premium master accessories engineered with solid Oak and carbon steel. Curators of professional workspace machinery and high-output digital assets.
+                {tagline}
               </p>
+              <div className="mt-3 space-y-1 text-[11px] text-gray-400 font-extralight">
+                <p className="flex items-start gap-1.5">
+                  <MapPin className="h-3.5 w-3.5 shrink-0 text-indigo-400 mt-0.5" />
+                  <span>{physicalAddress}</span>
+                </p>
+                <p className="flex items-center gap-1.5">
+                  <Phone className="h-3.5 w-3.5 shrink-0 text-indigo-400" />
+                  <span>{supportPhone}</span>
+                </p>
+              </div>
             </div>
             <div className="mt-6 flex items-center gap-4 text-gray-400">
               <a href="https://twitter.com/veloce_ke" target="_blank" rel="noopener noreferrer" aria-label="Visit Veloce Twitter / X profile" title="Twitter / X" className="hover:text-white transition-colors"><Twitter className="h-4 w-4" /></a>
@@ -69,7 +88,7 @@ export default function Footer({ setCurrentTab }: FooterProps) {
                 <NewsletterSubscription variant="compact" source="Footer Widget" />
               </div>
               <ul className="mt-4 flex flex-col gap-2 text-xs text-gray-400 font-extralight">
-                <li className="flex items-center gap-1.5"><Mail className="h-3.5 w-3.5" /> support@marid.co.ke</li>
+                <li className="flex items-center gap-1.5"><Mail className="h-3.5 w-3.5" /> {businessEmail}</li>
                 <li className="font-mono text-[10px] text-emerald-400">● VERIFIED TLS NODE ACTIVE</li>
               </ul>
             </div>
@@ -78,7 +97,7 @@ export default function Footer({ setCurrentTab }: FooterProps) {
 
         {/* Bottom bar */}
         <div className="mt-12 border-t border-gray-900 pt-8 flex flex-col sm:flex-row justify-between items-center text-xs text-gray-500 font-light gap-4">
-          <p>© 2026 Veloce Collective. Meticulously engineered in San Francisco. All rights reserved.</p>
+          <p>© {currentYear} {siteName}. All rights reserved.</p>
           <button
             onClick={scrollToTop}
             aria-label="Scroll back to top of page"
@@ -91,3 +110,4 @@ export default function Footer({ setCurrentTab }: FooterProps) {
     </footer>
   );
 }
+

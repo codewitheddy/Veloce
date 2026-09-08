@@ -17,7 +17,9 @@ import {
   Calculator,
   Layers,
   Save,
-  RotateCcw
+  RotateCcw,
+  Navigation,
+  Globe
 } from 'lucide-react';
 import { ShippingZone, ShippingRate, HappyHourWindow } from '../types/shipping';
 import { calculate_delivery_fee, DeliveryCalculationResult } from '../services/deliveryEngine';
@@ -25,6 +27,7 @@ import { getDrivingDistance, getDistanceCacheStats, clearDistanceCache, DEFAULT_
 import { RateTestingTool } from './RateTestingTool';
 import ShippingZonesPanel from './ShippingZonesPanel';
 import ZoneValidationVisualizer from './ZoneValidationVisualizer';
+import InteractiveDeliveryMap from './InteractiveDeliveryMap';
 
 // Initial Mock Shipping Zones
 const DEFAULT_SHIPPING_ZONES: ShippingZone[] = [
@@ -93,24 +96,36 @@ const DEFAULT_HAPPY_HOUR_WINDOWS: HappyHourWindow[] = [
 export function ShippingSettingsPanel() {
   // Persistence state
   const [zones, setZones] = useState<ShippingZone[]>(() => {
-    const saved = localStorage.getItem('veloce_shipping_zones');
-    return saved ? JSON.parse(saved) : DEFAULT_SHIPPING_ZONES;
+    try {
+      const saved = localStorage.getItem('veloce_shipping_zones');
+      if (saved) return JSON.parse(saved);
+    } catch {}
+    return DEFAULT_SHIPPING_ZONES;
   });
 
   const [happyHours, setHappyHours] = useState<HappyHourWindow[]>(() => {
-    const saved = localStorage.getItem('veloce_happy_hour_windows');
-    return saved ? JSON.parse(saved) : DEFAULT_HAPPY_HOUR_WINDOWS;
+    try {
+      const saved = localStorage.getItem('veloce_happy_hour_windows');
+      if (saved) return JSON.parse(saved);
+    } catch {}
+    return DEFAULT_HAPPY_HOUR_WINDOWS;
   });
 
   // Global thresholds & rates
   const [freeThreshold, setFreeThreshold] = useState<number>(() => {
-    const saved = localStorage.getItem('veloce_free_delivery_threshold');
-    return saved ? Number(saved) : 5000;
+    try {
+      const saved = localStorage.getItem('veloce_free_delivery_threshold');
+      if (saved) return Number(saved);
+    } catch {}
+    return 5000;
   });
 
   const [expressSurcharge, setExpressSurcharge] = useState<number>(() => {
-    const saved = localStorage.getItem('veloce_express_surcharge');
-    return saved ? Number(saved) : 150;
+    try {
+      const saved = localStorage.getItem('veloce_express_surcharge');
+      if (saved) return Number(saved);
+    } catch {}
+    return 150;
   });
 
   const [defaultBaseDistance, setDefaultBaseDistance] = useState<number>(5);
@@ -119,22 +134,10 @@ export function ShippingSettingsPanel() {
   const [maxRadiusKm, setMaxRadiusKm] = useState<number>(50);
 
   // Active Sub View
-  const [activeTab, setActiveTab] = useState<'zones' | 'validation' | 'rates' | 'happy_hour' | 'simulator'>('zones');
+  const [activeTab, setActiveTab] = useState<'zones' | 'map_routing' | 'validation' | 'rates' | 'happy_hour' | 'simulator'>('zones');
 
   // Status & Notification
   const [saveSuccessMsg, setSaveSuccessMsg] = useState<string>('');
-
-  // Editing state for Zones
-  const [editingZone, setEditingZone] = useState<ShippingZone | null>(null);
-  const [showAddZoneModal, setShowAddZoneModal] = useState(false);
-  const [zoneName, setZoneName] = useState('');
-  const [zoneDesc, setZoneDesc] = useState('');
-  const [zoneMinDist, setZoneMinDist] = useState(0);
-  const [zoneMaxDist, setZoneMaxDist] = useState(15);
-  const [zoneBaseFee, setZoneBaseFee] = useState(200);
-  const [zonePerKmRate, setZonePerKmRate] = useState(25);
-  const [zoneEstTime, setZoneEstTime] = useState('30-45 mins');
-  const [zoneRegions, setZoneRegions] = useState('');
 
   // Editing state for Happy Hour
   const [editingHappyHour, setEditingHappyHour] = useState<HappyHourWindow | null>(null);
@@ -146,22 +149,19 @@ export function ShippingSettingsPanel() {
   const [hhDesc, setHhDesc] = useState('');
   const [hhDays, setHhDays] = useState<number[]>([1, 2, 3, 4, 5]);
 
-  // Delivery Fee Simulator States
-  const [simSubtotal, setSimSubtotal] = useState<number>(3500);
-  const [simDistance, setSimDistance] = useState<number>(7.5);
-  const [simIsExpress, setSimIsExpress] = useState<boolean>(false);
-  const [simForceHappyHour, setSimForceHappyHour] = useState<boolean>(true);
-  const [simCustomerLat, setSimCustomerLat] = useState<number>(-1.3000);
-  const [simCustomerLng, setSimCustomerLng] = useState<number>(36.8200);
-  const [simCalculationResult, setSimCalculationResult] = useState<DeliveryCalculationResult | null>(null);
-  const [cacheStats, setCacheStats] = useState<{ cachedEntriesCount: number; cacheTtlHours: number }>(getDistanceCacheStats());
-
-  // Save changes to local storage
+  // Save changes to local storage & broadcast event
   const handleSaveChanges = () => {
     localStorage.setItem('veloce_shipping_zones', JSON.stringify(zones));
     localStorage.setItem('veloce_happy_hour_windows', JSON.stringify(happyHours));
     localStorage.setItem('veloce_free_delivery_threshold', freeThreshold.toString());
     localStorage.setItem('veloce_express_surcharge', expressSurcharge.toString());
+
+    // Dispatch custom event for immediate checkout synchronization
+    window.dispatchEvent(
+      new CustomEvent('veloce_shipping_settings_updated', {
+        detail: { zones, happyHours, freeThreshold, expressSurcharge }
+      })
+    );
 
     setSaveSuccessMsg('✓ Shipping & delivery settings saved successfully!');
     setTimeout(() => setSaveSuccessMsg(''), 4000);
@@ -181,118 +181,6 @@ export function ShippingSettingsPanel() {
       setSaveSuccessMsg('✓ Shipping settings reset to default.');
       setTimeout(() => setSaveSuccessMsg(''), 4000);
     }
-  };
-
-  // Trigger calculation whenever simulator parameters change
-  useEffect(() => {
-    const result = calculate_delivery_fee({
-      orderSubtotal: simSubtotal,
-      distanceKm: simDistance,
-      isExpress: simIsExpress,
-      isHappyHour: simForceHappyHour,
-      freeDeliveryThreshold: freeThreshold,
-      baseDistanceKm: defaultBaseDistance,
-      baseFee: defaultBaseFee,
-      perKmRate: defaultPerKmRate,
-      maxDistanceKm: maxRadiusKm
-    });
-    setSimCalculationResult(result);
-  }, [
-    simSubtotal,
-    simDistance,
-    simIsExpress,
-    simForceHappyHour,
-    freeThreshold,
-    defaultBaseDistance,
-    defaultBaseFee,
-    defaultPerKmRate,
-    maxRadiusKm
-  ]);
-
-  // Handle Map distance calculation test
-  const handleTestMapCalculation = async () => {
-    const res = await getDrivingDistance(DEFAULT_STORE_LOCATION, { lat: simCustomerLat, lng: simCustomerLng });
-    setSimDistance(res.distanceKm);
-    setCacheStats(getDistanceCacheStats());
-  };
-
-  // Toggle Zone active state
-  const handleToggleZone = (id: string) => {
-    setZones(prev => prev.map(z => z.id === id ? { ...z, isActive: !z.isActive } : z));
-  };
-
-  // Delete Zone
-  const handleDeleteZone = (id: string) => {
-    if (confirm('Are you sure you want to delete this shipping zone?')) {
-      setZones(prev => prev.filter(z => z.id !== id));
-    }
-  };
-
-  // Save/Create Zone
-  const handleSaveZone = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!zoneName.trim()) return;
-
-    const regionsList = zoneRegions
-      .split(',')
-      .map(s => s.trim())
-      .filter(Boolean);
-
-    if (editingZone) {
-      setZones(prev => prev.map(z => z.id === editingZone.id ? {
-        ...z,
-        name: zoneName,
-        description: zoneDesc,
-        minDistanceKm: Number(zoneMinDist),
-        maxDistanceKm: Number(zoneMaxDist),
-        baseFee: Number(zoneBaseFee),
-        perKmRate: Number(zonePerKmRate),
-        estimatedDeliveryTime: zoneEstTime,
-        regions: regionsList
-      } : z));
-    } else {
-      const newZone: ShippingZone = {
-        id: `zone-${Date.now()}`,
-        name: zoneName,
-        description: zoneDesc,
-        minDistanceKm: Number(zoneMinDist),
-        maxDistanceKm: Number(zoneMaxDist),
-        baseFee: Number(zoneBaseFee),
-        perKmRate: Number(zonePerKmRate),
-        isActive: true,
-        estimatedDeliveryTime: zoneEstTime,
-        regions: regionsList
-      };
-      setZones(prev => [...prev, newZone]);
-    }
-
-    setShowAddZoneModal(false);
-    setEditingZone(null);
-    resetZoneForm();
-  };
-
-  const resetZoneForm = () => {
-    setZoneName('');
-    setZoneDesc('');
-    setZoneMinDist(0);
-    setZoneMaxDist(15);
-    setZoneBaseFee(200);
-    setZonePerKmRate(25);
-    setZoneEstTime('30-45 mins');
-    setZoneRegions('');
-  };
-
-  const handleStartEditZone = (z: ShippingZone) => {
-    setEditingZone(z);
-    setZoneName(z.name);
-    setZoneDesc(z.description || '');
-    setZoneMinDist(z.minDistanceKm);
-    setZoneMaxDist(z.maxDistanceKm);
-    setZoneBaseFee(z.baseFee);
-    setZonePerKmRate(z.perKmRate);
-    setZoneEstTime(z.estimatedDeliveryTime || '30-45 mins');
-    setZoneRegions(z.regions ? z.regions.join(', ') : '');
-    setShowAddZoneModal(true);
   };
 
   // Toggle Happy Hour
@@ -377,7 +265,7 @@ export function ShippingSettingsPanel() {
             </h2>
           </div>
           <p className="text-xs text-gray-500 dark:text-gray-400 font-extralight mt-1">
-            Configure delivery zones, distance pricing matrices, free shipping thresholds, Happy Hour windows, and live simulation testing.
+            Configure delivery zones, distance pricing matrices, free shipping thresholds, Happy Hour windows, and live simulation testing with free OpenStreetMap routing.
           </p>
         </div>
 
@@ -407,10 +295,10 @@ export function ShippingSettingsPanel() {
       </div>
 
       {/* Sub Navigation Tabs */}
-      <div className="flex items-center gap-2 border-b border-gray-200 dark:border-gray-800 pb-2">
+      <div className="flex flex-wrap items-center gap-2 border-b border-gray-200 dark:border-gray-800 pb-2">
         <button
           onClick={() => setActiveTab('zones')}
-          className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-2 ${
+          className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
             activeTab === 'zones'
               ? 'bg-indigo-600 text-white shadow-xs'
               : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700'
@@ -421,35 +309,47 @@ export function ShippingSettingsPanel() {
         </button>
 
         <button
+          onClick={() => setActiveTab('map_routing')}
+          className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+            activeTab === 'map_routing'
+              ? 'bg-indigo-600 text-white shadow-xs'
+              : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700'
+          }`}
+        >
+          <Globe className="h-4 w-4 text-emerald-400" />
+          <span>Live Map & OSRM Routing</span>
+          <span className="px-1.5 py-0.2 rounded-full bg-emerald-500 text-white text-[8.5px] font-mono uppercase font-bold">
+            Free Map
+          </span>
+        </button>
+
+        <button
           onClick={() => setActiveTab('validation')}
-          className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-2 ${
+          className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
             activeTab === 'validation'
               ? 'bg-rose-600 text-white shadow-xs'
               : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700'
           }`}
         >
           <AlertCircle className="h-4 w-4" />
-          <span>Real-Time Validation Visualizer</span>
-          <span className="px-1.5 py-0.5 rounded-full bg-rose-500 text-white text-[9px] font-black uppercase animate-pulse">
-            Live
-          </span>
+          <span>Zone Validation Visualizer</span>
         </button>
 
         <button
           onClick={() => setActiveTab('rates')}
-          className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-2 ${
+          className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
             activeTab === 'rates'
               ? 'bg-indigo-600 text-white shadow-xs'
               : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700'
           }`}
         >
           <DollarSign className="h-4 w-4" />
-          <span>Global Rates & Thresholds</span>
+          <span>Pricing Matrix & Thresholds</span>
         </button>
 
         <button
           onClick={() => setActiveTab('happy_hour')}
-          className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-2 ${
+          className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
             activeTab === 'happy_hour'
               ? 'bg-indigo-600 text-white shadow-xs'
               : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700'
@@ -457,21 +357,21 @@ export function ShippingSettingsPanel() {
         >
           <Clock className="h-4 w-4" />
           <span>Happy Hour Windows ({happyHours.length})</span>
-          <span className="px-1.5 py-0.5 rounded-full bg-amber-400 text-amber-950 text-[9px] font-black uppercase">
+          <span className="px-1.5 py-0.2 rounded-full bg-amber-400 text-amber-950 text-[8.5px] font-mono uppercase font-bold">
             Promo
           </span>
         </button>
 
         <button
           onClick={() => setActiveTab('simulator')}
-          className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-2 ${
+          className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
             activeTab === 'simulator'
               ? 'bg-emerald-600 text-white shadow-xs'
               : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700'
           }`}
         >
           <Calculator className="h-4 w-4" />
-          <span>Fee Simulator & Maps Test</span>
+          <span>Live Rate Simulator</span>
         </button>
       </div>
 
@@ -484,7 +384,37 @@ export function ShippingSettingsPanel() {
         />
       )}
 
-      {/* TAB 1.5: REAL-TIME VALIDATION VISUALIZER */}
+      {/* TAB 2: LIVE MAP & OSRM ROUTING SIMULATOR */}
+      {activeTab === 'map_routing' && (
+        <div className="space-y-4">
+          <div className="bg-indigo-50/60 dark:bg-indigo-950/40 p-4 rounded-2xl border border-indigo-100 dark:border-indigo-900/60 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+            <div>
+              <h3 className="font-display text-sm font-bold text-indigo-950 dark:text-indigo-200 flex items-center gap-1.5">
+                <Globe className="h-4 w-4 text-indigo-600 dark:text-indigo-400" /> Free OpenStreetMap (OSM) & OSRM Routing Engine
+              </h3>
+              <p className="text-xs text-indigo-800/80 dark:text-indigo-300/80 font-light mt-0.5">
+                Real-world road distance calculation and live delivery costing without requiring any paid Google Maps API keys.
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="px-2.5 py-1 rounded-full bg-emerald-100 dark:bg-emerald-950/70 text-emerald-800 dark:text-emerald-300 text-[10px] font-mono font-bold flex items-center gap-1">
+                <CheckCircle2 className="h-3 w-3 text-emerald-600" /> 100% Free & Open Source
+              </span>
+            </div>
+          </div>
+
+          <InteractiveDeliveryMap
+            storeLocation={DEFAULT_STORE_LOCATION}
+            zones={zones}
+            happyHours={happyHours}
+            orderSubtotal={3500}
+            freeThreshold={freeThreshold}
+            height="520px"
+          />
+        </div>
+      )}
+
+      {/* TAB 3: REAL-TIME VALIDATION VISUALIZER */}
       {activeTab === 'validation' && (
         <ZoneValidationVisualizer
           zones={zones}
@@ -493,7 +423,7 @@ export function ShippingSettingsPanel() {
         />
       )}
 
-      {/* TAB 2: GLOBAL RATES & FREE THRESHOLDS */}
+      {/* TAB 4: GLOBAL RATES & FREE THRESHOLDS */}
       {activeTab === 'rates' && (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           {/* Free Shipping & Express Thresholds */}
@@ -507,14 +437,14 @@ export function ShippingSettingsPanel() {
 
             <div>
               <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 mb-1">
-                Free Delivery Order Subtotal Threshold (KES)
+                Free Delivery Order Subtotal Threshold (KSh)
               </label>
               <p className="text-[11px] text-gray-400 mb-2">
                 Orders with a cart subtotal equal to or above this amount automatically qualify for 100% free delivery.
               </p>
               <div className="relative">
                 <span className="absolute left-3 top-1/2 -translate-y-1/2 font-mono text-xs font-bold text-gray-400">
-                  KES
+                  KSh
                 </span>
                 <input
                   type="number"
@@ -529,14 +459,14 @@ export function ShippingSettingsPanel() {
 
             <div>
               <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 mb-1">
-                Express Priority Rush Surcharge (KES)
+                Express Priority Rush Surcharge (KSh)
               </label>
               <p className="text-[11px] text-gray-400 mb-2">
                 Additional fee added when customers choose Express Rush delivery at checkout.
               </p>
               <div className="relative">
                 <span className="absolute left-3 top-1/2 -translate-y-1/2 font-mono text-xs font-bold text-gray-400">
-                  KES
+                  KSh
                 </span>
                 <input
                   type="number"
@@ -575,7 +505,7 @@ export function ShippingSettingsPanel() {
 
               <div>
                 <label className="block text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase font-mono mb-1">
-                  Base Delivery Fee (KES)
+                  Base Delivery Fee (KSh)
                 </label>
                 <input
                   type="number"
@@ -588,7 +518,7 @@ export function ShippingSettingsPanel() {
 
               <div>
                 <label className="block text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase font-mono mb-1">
-                  Per-KM Surcharge Rate (KES/KM)
+                  Per-KM Surcharge Rate (KSh/KM)
                 </label>
                 <input
                   type="number"
@@ -620,7 +550,7 @@ export function ShippingSettingsPanel() {
         </div>
       )}
 
-      {/* TAB 3: HAPPY HOUR WINDOWS */}
+      {/* TAB 5: HAPPY HOUR WINDOWS */}
       {activeTab === 'happy_hour' && (
         <div className="space-y-4">
           <div className="flex items-center justify-between">
@@ -722,129 +652,9 @@ export function ShippingSettingsPanel() {
         </div>
       )}
 
-      {/* TAB 4: FEE SIMULATOR & TESTING TOOL */}
+      {/* TAB 6: FEE SIMULATOR & TESTING TOOL */}
       {activeTab === 'simulator' && (
-        <RateTestingTool />
-      )}
-
-      {/* MODAL: ADD / EDIT ZONE */}
-      {showAddZoneModal && (
-        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-gray-800 rounded-2xl max-w-lg w-full p-6 shadow-xl border border-gray-200 dark:border-gray-700 space-y-4 animate-in fade-in zoom-in duration-200">
-            <h3 className="font-display text-base font-bold text-gray-950 dark:text-white">
-              {editingZone ? 'Edit Shipping Zone' : 'Add New Shipping Zone'}
-            </h3>
-
-            <form onSubmit={handleSaveZone} className="space-y-3 text-xs">
-              <div>
-                <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Zone Name</label>
-                <input
-                  type="text"
-                  required
-                  value={zoneName}
-                  onChange={(e) => setZoneName(e.target.value)}
-                  placeholder="e.g. Nairobi CBD & Suburbs"
-                  className="h-9 w-full rounded-xl border border-gray-200 dark:border-gray-700 px-3 text-xs font-bold text-gray-950 dark:text-white bg-white dark:bg-gray-900"
-                />
-              </div>
-
-              <div>
-                <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Description</label>
-                <input
-                  type="text"
-                  value={zoneDesc}
-                  onChange={(e) => setZoneDesc(e.target.value)}
-                  placeholder="e.g. Central Business District and surrounding inner ring"
-                  className="h-9 w-full rounded-xl border border-gray-200 dark:border-gray-700 px-3 text-xs text-gray-950 dark:text-white bg-white dark:bg-gray-900"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Min Distance (KM)</label>
-                  <input
-                    type="number"
-                    min={0}
-                    value={zoneMinDist}
-                    onChange={(e) => setZoneMinDist(Number(e.target.value))}
-                    className="h-9 w-full rounded-xl border border-gray-200 dark:border-gray-700 px-3 font-mono font-bold bg-white dark:bg-gray-900"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Max Distance (KM)</label>
-                  <input
-                    type="number"
-                    min={1}
-                    value={zoneMaxDist}
-                    onChange={(e) => setZoneMaxDist(Number(e.target.value))}
-                    className="h-9 w-full rounded-xl border border-gray-200 dark:border-gray-700 px-3 font-mono font-bold bg-white dark:bg-gray-900"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Base Fee (KES)</label>
-                  <input
-                    type="number"
-                    min={0}
-                    value={zoneBaseFee}
-                    onChange={(e) => setZoneBaseFee(Number(e.target.value))}
-                    className="h-9 w-full rounded-xl border border-gray-200 dark:border-gray-700 px-3 font-mono font-bold bg-white dark:bg-gray-900"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Per-KM Rate (KES)</label>
-                  <input
-                    type="number"
-                    min={0}
-                    value={zonePerKmRate}
-                    onChange={(e) => setZonePerKmRate(Number(e.target.value))}
-                    className="h-9 w-full rounded-xl border border-gray-200 dark:border-gray-700 px-3 font-mono font-bold bg-white dark:bg-gray-900"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Est. Delivery Timeframe</label>
-                <input
-                  type="text"
-                  value={zoneEstTime}
-                  onChange={(e) => setZoneEstTime(e.target.value)}
-                  placeholder="e.g. 20-35 mins"
-                  className="h-9 w-full rounded-xl border border-gray-200 dark:border-gray-700 px-3 text-xs bg-white dark:bg-gray-900"
-                />
-              </div>
-
-              <div>
-                <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Coverage Regions (Comma-separated)</label>
-                <input
-                  type="text"
-                  value={zoneRegions}
-                  onChange={(e) => setZoneRegions(e.target.value)}
-                  placeholder="CBD, Westlands, Kilimani"
-                  className="h-9 w-full rounded-xl border border-gray-200 dark:border-gray-700 px-3 text-xs bg-white dark:bg-gray-900"
-                />
-              </div>
-
-              <div className="flex justify-end gap-2 pt-3">
-                <button
-                  type="button"
-                  onClick={() => setShowAddZoneModal(false)}
-                  className="h-9 px-4 rounded-xl border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300 font-semibold cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="h-9 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold cursor-pointer"
-                >
-                  Save Zone
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+        <RateTestingTool zones={zones} happyHours={happyHours} />
       )}
 
       {/* MODAL: ADD / EDIT HAPPY HOUR */}
@@ -852,25 +662,25 @@ export function ShippingSettingsPanel() {
         <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
           <div className="bg-white dark:bg-gray-800 rounded-2xl max-w-lg w-full p-6 shadow-xl border border-gray-200 dark:border-gray-700 space-y-4 animate-in fade-in zoom-in duration-200">
             <h3 className="font-display text-base font-bold text-gray-950 dark:text-white">
-              {editingHappyHour ? 'Edit Happy Hour Window' : 'Add Happy Hour Window'}
+              {editingHappyHour ? 'Edit Happy Hour Schedule' : 'Create Happy Hour Window'}
             </h3>
 
             <form onSubmit={handleSaveHappyHour} className="space-y-3 text-xs">
               <div>
-                <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Window Title</label>
+                <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Window Name</label>
                 <input
                   type="text"
                   required
                   value={hhName}
                   onChange={(e) => setHhName(e.target.value)}
                   placeholder="e.g. Afternoon Rush 50% Off"
-                  className="h-9 w-full rounded-xl border border-gray-200 dark:border-gray-700 px-3 text-xs font-bold text-gray-950 dark:text-white bg-white dark:bg-gray-900"
+                  className="h-9 w-full rounded-xl border border-gray-200 dark:border-gray-700 px-3 font-bold bg-white dark:bg-gray-900"
                 />
               </div>
 
-              <div className="grid grid-cols-3 gap-3">
+              <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Start Time (HH:mm)</label>
+                  <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Start Time (24h)</label>
                   <input
                     type="time"
                     required
@@ -880,7 +690,7 @@ export function ShippingSettingsPanel() {
                   />
                 </div>
                 <div>
-                  <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">End Time (HH:mm)</label>
+                  <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">End Time (24h)</label>
                   <input
                     type="time"
                     required
@@ -889,54 +699,57 @@ export function ShippingSettingsPanel() {
                     className="h-9 w-full rounded-xl border border-gray-200 dark:border-gray-700 px-3 font-mono font-bold bg-white dark:bg-gray-900"
                   />
                 </div>
-                <div>
-                  <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Discount %</label>
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Discount Rate (%)</label>
+                <div className="relative">
                   <input
                     type="number"
                     min={1}
                     max={100}
+                    required
                     value={hhDiscount}
                     onChange={(e) => setHhDiscount(Number(e.target.value))}
                     className="h-9 w-full rounded-xl border border-gray-200 dark:border-gray-700 px-3 font-mono font-bold bg-white dark:bg-gray-900"
                   />
+                  <span className="absolute right-3 top-1/2 -translate-y-1/2 font-mono text-gray-400 font-bold">%</span>
                 </div>
-              </div>
-
-              <div>
-                <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Description / Banner Copy</label>
-                <input
-                  type="text"
-                  value={hhDesc}
-                  onChange={(e) => setHhDesc(e.target.value)}
-                  placeholder="50% Off Delivery Fee on weekday afternoons!"
-                  className="h-9 w-full rounded-xl border border-gray-200 dark:border-gray-700 px-3 text-xs bg-white dark:bg-gray-900"
-                />
               </div>
 
               <div>
                 <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Active Days of Week</label>
-                <div className="flex gap-2">
-                  {dayNames.map((day, idx) => (
+                <div className="flex gap-1.5 mt-1">
+                  {dayNames.map((d, i) => (
                     <button
+                      key={i}
                       type="button"
-                      key={idx}
                       onClick={() => {
-                        if (hhDays.includes(idx)) {
-                          setHhDays(hhDays.filter(d => d !== idx));
-                        } else {
-                          setHhDays([...hhDays, idx]);
-                        }
+                        setHhDays((prev) =>
+                          prev.includes(i) ? prev.filter((x) => x !== i) : [...prev, i]
+                        );
                       }}
-                      className={`flex-1 h-8 rounded-lg text-xs font-mono font-bold cursor-pointer transition-colors ${
-                        hhDays.includes(idx)
-                          ? 'bg-indigo-600 text-white'
-                          : 'bg-gray-100 dark:bg-gray-700 text-gray-500'
+                      className={`flex-1 py-1.5 rounded-lg text-xs font-mono font-bold transition-all cursor-pointer ${
+                        hhDays.includes(i)
+                          ? 'bg-indigo-600 text-white shadow-xs'
+                          : 'bg-gray-100 dark:bg-gray-900 text-gray-400 hover:bg-gray-200'
                       }`}
                     >
-                      {day}
+                      {d}
                     </button>
                   ))}
                 </div>
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Promotional Description</label>
+                <textarea
+                  rows={2}
+                  value={hhDesc}
+                  onChange={(e) => setHhDesc(e.target.value)}
+                  placeholder="e.g. Save 50% on all deliveries between 2 PM and 4 PM!"
+                  className="w-full rounded-xl border border-gray-200 dark:border-gray-700 p-2 text-xs bg-white dark:bg-gray-900"
+                />
               </div>
 
               <div className="flex justify-end gap-2 pt-3">
@@ -961,3 +774,4 @@ export function ShippingSettingsPanel() {
     </div>
   );
 }
+export default ShippingSettingsPanel;

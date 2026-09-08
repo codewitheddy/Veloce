@@ -52,8 +52,11 @@
   <meta name="twitter:image:alt" content="Veloce Marketplace Platform" />
 
   <!-- Favicons, Icons, Web Manifest -->
-  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-  <link rel="apple-touch-icon" href="/favicon.svg" />
+  <link rel="shortcut icon" href="/favicon.ico" />
+  <link rel="icon" type="image/x-icon" href="/favicon.ico" />
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
+  <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
+  <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
   <link rel="manifest" href="/site.webmanifest" />
 
   <!-- Preconnect & DNS-Prefetch for Speed & Core Web Vitals -->
@@ -61,6 +64,45 @@
   <link rel="dns-prefetch" href="https://images.unsplash.com" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+
+  <!-- Early Theme & Font Bootstrap (Zero Flash) -->
+  <script>
+    (function() {
+      try {
+        var raw = localStorage.getItem('veloce_site_settings_cache');
+        if (raw) {
+          var data = JSON.parse(raw);
+          if (data && data.appearance) {
+            var app = data.appearance;
+            var root = document.documentElement;
+            if (app.primary_color) {
+              root.style.setProperty('--color-primary', app.primary_color);
+              root.style.setProperty('--color-indigo-600', app.primary_color);
+              root.style.setProperty('--color-brand-primary', app.primary_color);
+              root.style.setProperty('--primary', app.primary_color);
+            }
+            if (app.accent_color) {
+              root.style.setProperty('--color-accent', app.accent_color);
+              root.style.setProperty('--color-amber-500', app.accent_color);
+              root.style.setProperty('--color-brand-accent', app.accent_color);
+              root.style.setProperty('--accent', app.accent_color);
+            }
+            if (app.secondary_color) {
+              root.style.setProperty('--color-secondary', app.secondary_color);
+              root.style.setProperty('--color-cyan-500', app.secondary_color);
+            }
+            if (app.font_scale) {
+              var scaleMap = { '87%': '0.875', '100%': '1', '116%': '1.16', '130%': '1.3' };
+              var scale = scaleMap[app.font_scale] || '1';
+              root.style.setProperty('--font-scale', scale);
+              root.style.setProperty('--app-font-scale', scale);
+              root.style.fontSize = (Number(scale) * 100) + '%';
+            }
+          }
+        }
+      } catch (e) {}
+    })();
+  </script>
 
   <!-- Base Structured Data (JSON-LD) for Search Engines -->
   <script type="application/ld+json" id="structured-data-organization">

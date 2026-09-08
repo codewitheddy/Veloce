@@ -13,12 +13,17 @@ import {
   Sparkles,
   RefreshCw,
   Search,
-  Navigation
+  Navigation,
+  Globe
 } from 'lucide-react';
 import { calculate_delivery_fee, DeliveryCalculationResult, isCurrentHappyHour } from '../services/deliveryEngine';
-import { getDrivingDistance, DEFAULT_STORE_LOCATION, DistanceResult } from '../services/maps';
+import { getDrivingDistance, DEFAULT_STORE_LOCATION, DistanceResult, PRESET_KENYA_HUBS } from '../services/maps';
+import { ShippingZone, HappyHourWindow } from '../types/shipping';
+import InteractiveDeliveryMap from './InteractiveDeliveryMap';
 
 export interface RateTestingToolProps {
+  zones?: ShippingZone[];
+  happyHours?: HappyHourWindow[];
   className?: string;
   onFeeCalculated?: (result: DeliveryCalculationResult) => void;
 }
@@ -34,13 +39,18 @@ const ADDRESS_PRESETS = [
   { name: 'Naivasha Town (Out of Range)', lat: -0.7171, lng: 36.4310, distanceKm: 88.0 }
 ];
 
-export function RateTestingTool({ className = '', onFeeCalculated }: RateTestingToolProps) {
+export function RateTestingTool({
+  zones = [],
+  happyHours = [],
+  className = '',
+  onFeeCalculated
+}: RateTestingToolProps) {
   // Input States
   const [deliveryAddress, setDeliveryAddress] = useState('Westlands (Sarit Centre), Nairobi');
   const [customerLat, setCustomerLat] = useState<number>(-1.2642);
   const [customerLng, setCustomerLng] = useState<number>(36.8048);
   const [cartSubtotal, setCartSubtotal] = useState<number>(3500);
-  
+
   // Datetime simulation state (defaulting to current date/time in local format)
   const [simDatetime, setSimDatetime] = useState<string>(() => {
     const now = new Date();
@@ -51,6 +61,7 @@ export function RateTestingTool({ className = '', onFeeCalculated }: RateTesting
   const [distanceKm, setDistanceKm] = useState<number>(4.8);
   const [isExpress, setIsExpress] = useState<boolean>(false);
   const [forceHappyHour, setForceHappyHour] = useState<'auto' | 'force_on' | 'force_off'>('auto');
+  const [showInteractiveMap, setShowInteractiveMap] = useState<boolean>(true);
 
   // Rate System Configurations (loaded from localStorage if present)
   const [freeThreshold, setFreeThreshold] = useState<number>(() => {
@@ -90,7 +101,10 @@ export function RateTestingTool({ className = '', onFeeCalculated }: RateTesting
       baseDistanceKm: baseDistanceKm,
       baseFee: baseFee,
       perKmRate: perKmRate,
-      maxDistanceKm: maxDistanceKm
+      maxDistanceKm: maxDistanceKm,
+      zones,
+      happyHours,
+      selectedRegion: deliveryAddress
     });
 
     setResult(calcResult);
@@ -108,6 +122,9 @@ export function RateTestingTool({ className = '', onFeeCalculated }: RateTesting
     baseFee,
     perKmRate,
     maxDistanceKm,
+    zones,
+    happyHours,
+    deliveryAddress,
     onFeeCalculated
   ]);
 
@@ -117,20 +134,20 @@ export function RateTestingTool({ className = '', onFeeCalculated }: RateTesting
     setCustomerLat(preset.lat);
     setCustomerLng(preset.lng);
     setDistanceKm(preset.distanceKm);
-    setGeoNotice(`Selected preset location: ${preset.name} (${preset.distanceKm} km from Hub)`);
+    setGeoNotice(`Selected preset: ${preset.name} (${preset.distanceKm} km from Hub)`);
   };
 
-  // Simulate calculating distance from map service
+  // Calculate distance from map service
   const handleCalculateMapDistance = async () => {
     setIsGeocoding(true);
-    setGeoNotice('Querying Google Maps Distance Matrix API...');
+    setGeoNotice('Querying OSRM road routing engine...');
     try {
       const res: DistanceResult = await getDrivingDistance(DEFAULT_STORE_LOCATION, {
         lat: customerLat,
         lng: customerLng
       });
       setDistanceKm(res.distanceKm);
-      setGeoNotice(`Driving route verified: ${res.distanceKm} km (~${res.durationMinutes} mins)`);
+      setGeoNotice(`Driving route verified: ${res.distanceKm} km (~${res.durationMinutes} mins) via ${res.source}`);
     } catch {
       setGeoNotice('Error calculating driving route distance. Using manual slider input.');
     } finally {
@@ -151,17 +168,48 @@ export function RateTestingTool({ className = '', onFeeCalculated }: RateTesting
               Rate Testing & Fee Simulation Engine
             </h3>
             <p className="text-xs text-gray-500 dark:text-gray-400 font-extralight">
-              Test multi-layered delivery matrix rules with address presets, custom cart subtotals, and time travel simulations.
+              Test multi-layered delivery matrix rules with address presets, custom cart subtotals, OpenStreetMap routing, and time travel simulations.
             </p>
           </div>
         </div>
 
         <div className="flex items-center gap-2">
-          <span className="px-2.5 py-1 rounded-full bg-indigo-50 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 text-[10px] font-mono font-bold uppercase">
-            v2.4 Engine Active
-          </span>
+          <button
+            type="button"
+            onClick={() => setShowInteractiveMap((prev) => !prev)}
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition-colors flex items-center gap-1.5 cursor-pointer ${
+              showInteractiveMap
+                ? 'bg-indigo-600 text-white border-indigo-600'
+                : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 border-gray-300 dark:border-gray-600'
+            }`}
+          >
+            <Globe className="h-3.5 w-3.5" />
+            {showInteractiveMap ? 'Hide Interactive Map' : 'Show Interactive Map'}
+          </button>
         </div>
       </div>
+
+      {/* Optional Embedded Interactive Map */}
+      {showInteractiveMap && (
+        <div className="mb-6">
+          <InteractiveDeliveryMap
+            storeLocation={DEFAULT_STORE_LOCATION}
+            initialCustomerLocation={{ lat: customerLat, lng: customerLng }}
+            zones={zones}
+            happyHours={happyHours}
+            orderSubtotal={cartSubtotal}
+            isExpress={isExpress}
+            freeThreshold={freeThreshold}
+            height="360px"
+            onLocationSelected={(loc) => {
+              setCustomerLat(loc.lat);
+              setCustomerLng(loc.lng);
+              setDeliveryAddress(loc.address);
+              setDistanceKm(loc.distanceResult.distanceKm);
+            }}
+          />
+        </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
         {/* LEFT COLUMN: INPUT CONTROLS & ADDRESS PARAMETERS (7 COLS) */}
@@ -290,11 +338,11 @@ export function RateTestingTool({ className = '', onFeeCalculated }: RateTesting
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 mb-1">
-                Cart Subtotal (KES)
+                Cart Subtotal (KSh)
               </label>
               <div className="relative">
                 <span className="absolute left-3 top-1/2 -translate-y-1/2 font-mono text-xs font-bold text-gray-400">
-                  KES
+                  KSh
                 </span>
                 <input
                   type="number"
@@ -306,7 +354,7 @@ export function RateTestingTool({ className = '', onFeeCalculated }: RateTesting
                 />
               </div>
               <p className="text-[10px] text-gray-400 mt-1">
-                Free threshold trigger set to KES {freeThreshold.toLocaleString('en-KE')}
+                Free threshold trigger set to KSh {freeThreshold.toLocaleString('en-KE')}
               </p>
             </div>
 
@@ -343,7 +391,7 @@ export function RateTestingTool({ className = '', onFeeCalculated }: RateTesting
                   <Zap className="h-3.5 w-3.5 text-amber-500" /> Express Rush Priority
                 </span>
                 <span className="text-[10px] text-gray-500 dark:text-gray-400 block">
-                  +KES 150 Surcharge & Faster SLA
+                  +KSh 150 Surcharge & Faster SLA
                 </span>
               </div>
             </label>
@@ -356,16 +404,16 @@ export function RateTestingTool({ className = '', onFeeCalculated }: RateTesting
                 <button
                   type="button"
                   onClick={() => setForceHappyHour('auto')}
-                  className={`flex-1 py-1 text-[10px] font-bold rounded ${
+                  className={`flex-1 py-1 text-[10px] font-bold rounded cursor-pointer ${
                     forceHappyHour === 'auto' ? 'bg-indigo-600 text-white' : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 border border-gray-200 dark:border-gray-700'
                   }`}
                 >
-                  Auto (Time)
+                  Auto
                 </button>
                 <button
                   type="button"
                   onClick={() => setForceHappyHour('force_on')}
-                  className={`flex-1 py-1 text-[10px] font-bold rounded ${
+                  className={`flex-1 py-1 text-[10px] font-bold rounded cursor-pointer ${
                     forceHappyHour === 'force_on' ? 'bg-amber-500 text-white' : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 border border-gray-200 dark:border-gray-700'
                   }`}
                 >
@@ -374,7 +422,7 @@ export function RateTestingTool({ className = '', onFeeCalculated }: RateTesting
                 <button
                   type="button"
                   onClick={() => setForceHappyHour('force_off')}
-                  className={`flex-1 py-1 text-[10px] font-bold rounded ${
+                  className={`flex-1 py-1 text-[10px] font-bold rounded cursor-pointer ${
                     forceHappyHour === 'force_off' ? 'bg-gray-700 text-white' : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 border border-gray-200 dark:border-gray-700'
                   }`}
                 >
@@ -410,7 +458,7 @@ export function RateTestingTool({ className = '', onFeeCalculated }: RateTesting
                     ? 'Free Threshold'
                     : result.reasonCode === 'happy_hour'
                     ? 'Happy Hour'
-                    : 'Standard Rate'}
+                    : result.matchedZone ? result.matchedZone.name : 'Standard Rate'}
                 </span>
               )}
             </div>
@@ -437,11 +485,11 @@ export function RateTestingTool({ className = '', onFeeCalculated }: RateTesting
                   </span>
                   <div className="flex items-baseline gap-2 mt-0.5">
                     <span className="font-mono text-3xl font-black text-white">
-                      KES {result.fee.toLocaleString('en-KE')}
+                      KSh {result.fee.toLocaleString('en-KE')}
                     </span>
                     {result.discount > 0 && (
                       <span className="font-mono text-xs text-slate-400 line-through">
-                        KES {result.originalFee.toLocaleString('en-KE')}
+                        KSh {result.originalFee.toLocaleString('en-KE')}
                       </span>
                     )}
                   </div>
@@ -449,79 +497,80 @@ export function RateTestingTool({ className = '', onFeeCalculated }: RateTesting
 
                 <div className="text-right">
                   <span className="text-[10px] font-mono uppercase text-slate-400 block">
-                    Est. Timeframe
+                    Estimated Timeframe
                   </span>
-                  <span className="font-mono text-xs font-bold text-indigo-300 mt-1 block">
-                    {result.estimatedTimeframe}
+                  <span className="font-bold text-xs text-emerald-400 flex items-center justify-end gap-1 mt-0.5">
+                    <Clock className="h-3 w-3" /> {result.estimatedTimeframe}
                   </span>
                 </div>
               </div>
             )}
 
-            {/* Explanation Box */}
+            {/* Breakdown Table */}
             {result && (
-              <div className="p-3 rounded-xl bg-slate-800/80 border border-slate-700/60 text-xs text-slate-200 space-y-1">
-                <span className="text-[9px] font-mono font-bold text-indigo-300 uppercase tracking-widest block">
-                  Rule Evaluation Logic
-                </span>
-                <p className="text-[11px] leading-relaxed font-light">
-                  {result.reason}
-                </p>
-              </div>
-            )}
+              <div className="bg-slate-950/70 rounded-xl p-3.5 space-y-2 border border-slate-800/80 text-xs font-mono">
+                <div className="flex justify-between text-slate-400 text-[11px]">
+                  <span>Base Fare ({result.matchedZone ? result.matchedZone.name : `Up to ${baseDistanceKm} km`}):</span>
+                  <span className="text-slate-200">KSh {result.breakdown.baseFee}</span>
+                </div>
 
-            {/* Detailed Breakdown */}
-            {result && result.reasonCode !== 'out_of_range' && (
-              <div className="space-y-2 pt-2 border-t border-slate-800 text-xs">
-                <span className="text-[9px] font-mono uppercase tracking-widest text-slate-400 block">
-                  Cost Component Breakdown
-                </span>
+                <div className="flex justify-between text-slate-400 text-[11px]">
+                  <span>Distance Charge:</span>
+                  <span className="text-slate-200">+KSh {result.breakdown.distanceFee}</span>
+                </div>
 
-                <div className="space-y-1.5 font-mono text-[11px]">
-                  <div className="flex justify-between text-slate-300">
-                    <span>Base Zone Fee ({baseDistanceKm} KM):</span>
-                    <span>KES {result.breakdown.baseFee}</span>
+                {isExpress && (
+                  <div className="flex justify-between text-amber-400 text-[11px]">
+                    <span>Express Priority Surcharge:</span>
+                    <span>+KSh {result.breakdown.expressSurcharge}</span>
                   </div>
+                )}
 
-                  <div className="flex justify-between text-slate-300">
-                    <span>Extra Distance ({Math.max(0, distanceKm - baseDistanceKm).toFixed(1)} km @ KES {perKmRate}/km):</span>
-                    <span>KES {result.breakdown.distanceFee}</span>
+                {result.discount > 0 && (
+                  <div className="flex justify-between text-emerald-400 text-[11px] font-bold border-t border-slate-800 pt-1.5">
+                    <span>
+                      {result.isFreeDelivery ? 'Free Delivery Discount:' : 'Happy Hour Discount:'}
+                    </span>
+                    <span>-KSh {result.discount.toLocaleString('en-KE')}</span>
                   </div>
+                )}
 
-                  {isExpress && (
-                    <div className="flex justify-between text-amber-300 font-semibold">
-                      <span>Express Rush Priority Surcharge:</span>
-                      <span>+ KES {result.breakdown.expressSurcharge}</span>
-                    </div>
-                  )}
-
-                  {result.discount > 0 && (
-                    <div className="flex justify-between text-emerald-400 font-semibold">
-                      <span>Applied Discounts & Exemptions:</span>
-                      <span>- KES {result.breakdown.discountAmount}</span>
-                    </div>
-                  )}
+                <div className="flex justify-between text-white font-bold border-t border-slate-700/80 pt-2 text-sm">
+                  <span>Payable Shipping Total:</span>
+                  <span className="text-indigo-400">KSh {result.fee.toLocaleString('en-KE')}</span>
                 </div>
               </div>
             )}
-          </div>
 
-          {/* Informational Parameter Footnote */}
-          <div className="bg-gray-50 dark:bg-gray-900/60 p-3.5 rounded-xl border border-gray-200 dark:border-gray-800 text-[11px] text-gray-500 dark:text-gray-400 space-y-1">
-            <div className="flex items-center gap-1.5 font-bold text-gray-700 dark:text-gray-300">
-              <Info className="h-3.5 w-3.5 text-indigo-500" />
-              <span>Active Engine System Rules</span>
-            </div>
-            <ul className="list-disc list-inside space-y-0.5 pl-1 font-light text-[10.5px]">
-              <li>Free Shipping Threshold: <strong>KES {freeThreshold.toLocaleString('en-KE')}</strong></li>
-              <li>Base Distance Zone: <strong>{baseDistanceKm} KM</strong> @ <strong>KES {baseFee}</strong></li>
-              <li>Per-KM Rate above Base: <strong>KES {perKmRate}/KM</strong></li>
-              <li>Happy Hour Window: <strong>14:00 - 16:00 (50% OFF)</strong></li>
-              <li>Maximum Radius Limit: <strong>{maxDistanceKm} KM</strong></li>
-            </ul>
+            {/* Reason Explanation */}
+            {result && (
+              <div className="text-[11px] text-slate-400 bg-slate-800/50 p-2.5 rounded-lg border border-slate-700/50 flex items-start gap-2">
+                <Info className="h-3.5 w-3.5 text-indigo-400 shrink-0 mt-0.5" />
+                <span>{result.reason}</span>
+              </div>
+            )}
+
+            {/* Free Shipping Progress Indicator */}
+            {result && result.amountRemainingForFreeShipping > 0 && (
+              <div className="bg-indigo-950/60 border border-indigo-800/60 p-3 rounded-xl space-y-1.5">
+                <div className="flex justify-between text-[10px] font-mono text-indigo-300">
+                  <span>Free Shipping Progress</span>
+                  <span>Add KSh {result.amountRemainingForFreeShipping.toLocaleString('en-KE')} more</span>
+                </div>
+                <div className="h-1.5 w-full bg-indigo-900 rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-emerald-500 rounded-full transition-all duration-300"
+                    style={{
+                      width: `${Math.min(100, Math.round((cartSubtotal / freeThreshold) * 100))}%`
+                    }}
+                  />
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </div>
     </div>
   );
 }
+export default RateTestingTool;

@@ -417,9 +417,9 @@ export const productService = {
 
 export const categoriesApi = {
   getCategories: async () => {
-    // 1. Try local server first
+    // 1. Try products categories endpoint
     try {
-      const res = await axios.get('/api/products/categories/', { validateStatus: () => true });
+      const res = await api.get('/products/categories/', { validateStatus: () => true });
       if (res.status === 200 && res.data) {
         const data = res.data;
         if (Array.isArray(data) && data.length > 0) return data;
@@ -429,24 +429,14 @@ export const categoriesApi = {
       }
     } catch {}
 
+    // 2. Try categories endpoint fallback
     try {
-      const res2 = await axios.get('/api/categories/', { validateStatus: () => true });
+      const res2 = await api.get('/categories/', { validateStatus: () => true });
       if (res2.status === 200 && res2.data) {
         const data = res2.data;
         if (Array.isArray(data) && data.length > 0) return data;
         if (Array.isArray(data.results) && data.results.length > 0) return data.results;
         if (Array.isArray(data.categories) && data.categories.length > 0) return data.categories;
-      }
-    } catch {}
-
-    // 2. Try Django backend
-    try {
-      const djangoRes = await axios.get('http://127.0.0.1:8000/api/products/categories/', { validateStatus: () => true });
-      if (djangoRes.status === 200 && djangoRes.data) {
-        const d = djangoRes.data;
-        if (Array.isArray(d) && d.length > 0) return d;
-        if (Array.isArray(d.results) && d.results.length > 0) return d.results;
-        if (Array.isArray(d.categories) && d.categories.length > 0) return d.categories;
       }
     } catch {}
 
@@ -470,16 +460,9 @@ export const categoriesApi = {
       previous_slugs: categoryData.previousSlugs || [],
     };
 
-    // Try local endpoint first
     try {
-      const res = await axios.post('/api/products/categories/', payload, { validateStatus: () => true });
+      const res = await api.post('/products/categories/', payload, { validateStatus: () => true });
       if (res.status === 200 || res.status === 201) return res.data;
-    } catch {}
-
-    // Try Django backend
-    try {
-      const djangoRes = await axios.post('http://127.0.0.1:8000/api/products/categories/', payload, { validateStatus: () => true });
-      if (djangoRes.status === 200 || djangoRes.status === 201) return djangoRes.data;
     } catch {}
 
     return { message: 'Category created locally', category: categoryData };
@@ -501,16 +484,9 @@ export const categoriesApi = {
       previous_slugs: categoryData.previousSlugs || [],
     };
 
-    // Try local endpoint first
     try {
-      const res = await axios.put(`/api/products/categories/${id}/`, payload, { validateStatus: () => true });
+      const res = await api.put(`/products/categories/${id}/`, payload, { validateStatus: () => true });
       if (res.status === 200) return res.data;
-    } catch {}
-
-    // Try Django backend
-    try {
-      const djangoRes = await axios.put(`http://127.0.0.1:8000/api/products/categories/${id}/`, payload, { validateStatus: () => true });
-      if (djangoRes.status === 200) return djangoRes.data;
     } catch {}
 
     return { message: 'Category updated locally', category: categoryData };
@@ -518,13 +494,8 @@ export const categoriesApi = {
 
   deleteCategory: async (id: string) => {
     try {
-      const res = await axios.delete(`/api/products/categories/${id}/`, { validateStatus: () => true });
+      const res = await api.delete(`/products/categories/${id}/`, { validateStatus: () => true });
       if (res.status === 200) return res.data;
-    } catch {}
-
-    try {
-      const djangoRes = await axios.delete(`http://127.0.0.1:8000/api/products/categories/${id}/`, { validateStatus: () => true });
-      if (djangoRes.status === 200) return djangoRes.data;
     } catch {}
 
     return { message: 'Category deleted' };
@@ -532,13 +503,8 @@ export const categoriesApi = {
 
   bulkSyncCategories: async (categories: any[]) => {
     try {
-      const res = await axios.post('/api/products/categories/bulk_sync/', categories, { validateStatus: () => true });
+      const res = await api.post('/products/categories/bulk_sync/', categories, { validateStatus: () => true });
       if (res.status === 200) return res.data;
-    } catch {}
-
-    try {
-      const djangoRes = await axios.post('http://127.0.0.1:8000/api/products/categories/bulk_sync/', categories, { validateStatus: () => true });
-      if (djangoRes.status === 200) return djangoRes.data;
     } catch {}
 
     return { message: 'Categories synced', categories };

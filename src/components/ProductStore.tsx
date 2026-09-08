@@ -6,7 +6,7 @@
 import React, { useState } from 'react';
 import { motion } from 'motion/react';
 import DOMPurify from 'dompurify';
-import { Search, Filter, Star, Plus, Check, ShoppingBag, X, FileText, Sparkles, User, Heart, ArrowLeft, Tag, Share2, Clock, ArrowRightLeft, Twitter, Linkedin, Bell, Mail, ArrowUpDown, Package, Layers, ChevronLeft, ChevronRight, ShoppingCart, FolderTree, Edit2, Edit3, Flame } from 'lucide-react';
+import { Search, Filter, Star, Plus, Check, ShoppingBag, X, FileText, Sparkles, User, Heart, ArrowLeft, Tag, Share2, Clock, ArrowRightLeft, Twitter, Linkedin, Bell, Mail, ArrowUpDown, Package, Layers, ChevronLeft, ChevronRight, ChevronDown, ShoppingCart, FolderTree, Edit2, Edit3, Flame } from 'lucide-react';
 import { Product, CartItem, Review } from '../types';
 import {
   isProductHiddenFromStorefront,
@@ -23,6 +23,7 @@ import { CurrencyType, formatPrice } from '../lib/currency';
 import BestSellersNewArrivalsCarousel from './BestSellersNewArrivalsCarousel';
 import ProductReviewsView from './ProductReviewsView';
 import LazyImage from './LazyImage';
+import { formatRichDescription, cleanDescriptionExcerpt } from '../utils/formatDescription';
 
 interface ProductStoreProps {
   products: Product[];
@@ -517,17 +518,70 @@ export default function ProductStore({
     return ['All', ...stored];
   }, [storedCategories]);
 
+  const [expandedCategories, setExpandedCategories] = useState<Record<string, boolean>>(() => {
+    if (initialCategory && initialCategory !== 'All') {
+      return { [initialCategory]: true };
+    }
+    return {};
+  });
+
+  React.useEffect(() => {
+    if (activeCategory && activeCategory !== 'All') {
+      setExpandedCategories((prev) => ({ ...prev, [activeCategory]: true }));
+    }
+  }, [activeCategory]);
+
+  const getSubcategoriesList = React.useCallback((catName: string): string[] => {
+    if (!catName || catName === 'All') return [];
+
+    // 1. From storedCategories child items
+    const catObj = storedCategories.find(
+      (c) =>
+        (c.name.trim().toLowerCase() === catName.trim().toLowerCase() ||
+         c.slug.trim().toLowerCase() === catName.trim().toLowerCase() ||
+         c.id === catName) &&
+        (!c.parentId || c.parentId === null)
+    );
+
+    if (catObj) {
+      const childSubs = storedCategories
+        .filter((c) => c.parentId === catObj.id && c.status === 'Active')
+        .map((c) => c.name);
+      if (childSubs.length > 0) {
+        return childSubs;
+      }
+    }
+
+    // 2. From default/configured subcategories
+    const fallback = getSubcategoriesForCategory(catName);
+    if (fallback && fallback.length > 0) {
+      return fallback;
+    }
+
+    // 3. From products matching this category that specify subcategoryId
+    const productSubs = Array.from(
+      new Set(
+        products
+          .filter((p) => matchesCategoryForProduct(p, catName) && p.subcategoryId)
+          .map((p) => p.subcategoryId as string)
+      )
+    );
+    return productSubs;
+  }, [storedCategories, products]);
+
+  const getSubcategoryProductCount = React.useCallback((catName: string, subName: string): number => {
+    return products.filter(
+      (p) => !isProductHiddenFromStorefront(p) && matchesCategoryForProduct(p, catName) && matchesSubcategoryForProduct(p, subName)
+    ).length;
+  }, [products, storedCategories]);
+
   const relevantSubcategories = React.useMemo(() => {
     if (activeCategory !== 'All') {
-      const activeCatObj = storedCategories.find((c) => c.name.toLowerCase() === activeCategory.toLowerCase());
-      const childFromStored = activeCatObj
-        ? storedCategories.filter((c) => c.parentId === activeCatObj.id && c.status === 'Active').map((c) => c.name)
-        : [];
-      return childFromStored.length > 0 ? ['All', ...childFromStored] : [];
+      return getSubcategoriesList(activeCategory);
     }
     const allStoredSubs = storedCategories.filter((c) => c.parentId && c.status === 'Active').map((c) => c.name);
-    return allStoredSubs.length > 0 ? ['All', ...allStoredSubs] : [];
-  }, [activeCategory, storedCategories]);
+    return allStoredSubs.length > 0 ? allStoredSubs : [];
+  }, [activeCategory, storedCategories, getSubcategoriesList]);
 
   // When opening a product, initialize variations to first options
   const handleProductSelect = (p: Product) => {
@@ -680,7 +734,7 @@ export default function ProductStore({
 
   if (selectedProduct) {
     return (
-      <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+      <div className="w-full max-w-[1440px] mx-auto px-4 py-8 sm:px-6 lg:px-8">
         {/* Back navigation & Title */}
         <div className="border-b border-gray-150 dark:border-gray-800 pb-5 mb-8 flex flex-col gap-2 relative">
           <button
@@ -912,9 +966,12 @@ export default function ProductStore({
                 })()}
               </div>
 
-              <div className="text-sm text-gray-600 dark:text-gray-300 leading-relaxed font-extralight py-2">
-                {selectedProduct.shortDescription || selectedProduct.description}
-              </div>              {/* Variant Matrix Selection (Size, Color, Weight/Capacity in kg/lt/ml, Length/Dimensions in cm/m/in, Custom) */}
+              <div 
+                className="text-sm text-gray-600 dark:text-gray-300 leading-relaxed font-normal py-2 space-y-2"
+                dangerouslySetInnerHTML={{
+                  __html: formatRichDescription(selectedProduct.shortDescription || selectedProduct.description)
+                }}
+              />              {/* Variant Matrix Selection (Size, Color, Weight/Capacity in kg/lt/ml, Length/Dimensions in cm/m/in, Custom) */}
               {selectedProduct.variantMatrix && selectedProduct.variantMatrix.length > 0 && (() => {
                 const attrKeys = Array.from(
                   new Set(selectedProduct.variantMatrix.flatMap((v) => Object.keys(v.attributes || {})))
@@ -1012,8 +1069,8 @@ export default function ProductStore({
               {selectedProduct.type === 'physical' && selectedProduct.stock !== null && (
                 <div className="border-t border-indigo-50/50 dark:border-gray-800/50 pt-5 text-xs font-mono">
                   {selectedProduct.stock === 0 ? (
-                    <span className="text-red-700 dark:text-red-400 font-bold bg-red-50 dark:bg-red-950/20 border border-red-100 dark:border-red-900/50 px-3 py-1.5 rounded-lg flex items-center gap-2 w-fit">
-                      ● Resupply order in progress. Catalog stock depleted.
+                    <span className="text-red-700 dark:text-red-400 font-medium bg-red-50 dark:bg-red-950/20 border border-red-100 dark:border-red-900/50 px-3 py-1.5 rounded-lg flex items-center gap-2 w-fit">
+                      ✕ Out of Stock
                     </span>
                   ) : selectedProduct.stock <= 5 ? (
                     <span className="text-amber-700 dark:text-amber-400 font-bold bg-amber-50 dark:bg-amber-950/20 rounded-lg px-3 py-1.5 flex items-center gap-2 w-fit border border-amber-150 dark:border-amber-900/50 animate-pulse">
@@ -1021,7 +1078,7 @@ export default function ProductStore({
                     </span>
                   ) : (
                     <span className="text-emerald-700 dark:text-emerald-450 font-medium bg-emerald-50 dark:bg-emerald-950/15 rounded-lg px-3 py-1.5 flex items-center gap-2 w-fit border border-emerald-100/50 dark:border-emerald-900/40">
-                      ✓ Validated: {selectedProduct.stock} bulk units standing ready for immediate shipment.
+                      ✓ In Stock
                     </span>
                   )}
                 </div>
@@ -1206,13 +1263,15 @@ export default function ProductStore({
                   {detailActiveTab === 'description' && (
                     <div className="flex flex-col gap-3">
                       <h4 className="font-display text-xs font-bold text-gray-900 dark:text-white uppercase tracking-wider">Detailed Description</h4>
-                      {selectedProduct.detailedDescription ? (
+                      {(selectedProduct.detailedDescription || selectedProduct.description) ? (
                         <div 
                           className="prose prose-sm max-w-none dark:prose-invert space-y-2 text-gray-650 dark:text-gray-300"
-                          dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(selectedProduct.detailedDescription) }} 
+                          dangerouslySetInnerHTML={{ 
+                            __html: formatRichDescription(selectedProduct.detailedDescription || selectedProduct.description) 
+                          }} 
                         />
                       ) : (
-                        <p className="font-extralight text-gray-500 italic">No detailed overview provided for this product. Check the short description above or specifications for more details.</p>
+                        <p className="font-extralight text-gray-500 italic">No detailed overview provided for this product.</p>
                       )}
                     </div>
                   )}
@@ -1852,7 +1911,7 @@ export default function ProductStore({
   }
 
   return (
-    <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+    <div className="w-full max-w-[1440px] mx-auto px-4 py-8 sm:px-6 lg:px-8">
       {/* Search and Filters Header */}
       <div className="border-b border-gray-100 dark:border-gray-800 pb-6 mb-6 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
         <div>
@@ -1881,154 +1940,6 @@ export default function ProductStore({
               <X className="h-4 w-4" />
             </button>
           )}
-        </div>
-      </div>
-
-      {/* Best Sellers & New Arrivals Carousel Component */}
-      <BestSellersNewArrivalsCarousel
-        products={products}
-        onSelectProduct={handleProductSelect}
-        onAddToCart={onAddToCart}
-        wishlist={wishlist}
-        onToggleWishlist={onToggleWishlist}
-        darkMode={darkMode}
-        className="mb-10"
-      />
-
-      {/* 'Recommended for You' Section */}
-      <div id="store-recommendations-section" className="mb-10 animate-in fade-in duration-300">
-        <div className="flex items-center justify-between mb-4 border-b border-indigo-50/40 dark:border-gray-800 pb-3">
-          <div className="flex flex-col gap-0.5">
-            <h2 className="font-display text-sm font-bold text-gray-900 dark:text-gray-100 flex items-center gap-2 uppercase tracking-wider">
-              <Sparkles className="h-4 w-4 text-indigo-500 animate-pulse" /> Recommended for You
-            </h2>
-            <p className="text-[11px] text-gray-550 dark:text-gray-400 font-extralight">
-              {wishlist.length > 0 
-                ? 'Tailored suggestions based on items in your bookmarked wishlist.' 
-                : 'High-end curations selected from our top-tier workspace catalog.'}
-            </p>
-          </div>
-          {wishlist.length > 0 ? (
-            <span className="text-[10px] font-mono font-bold bg-indigo-55/10 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 border border-indigo-100/50 dark:border-indigo-900/60 px-2.5 py-0.5 rounded-full">
-              {wishlist.length} Bookmark{wishlist.length === 1 ? '' : 's'} Active
-            </span>
-          ) : (
-            <span className="text-[10px] font-mono font-bold bg-gray-50 dark:bg-gray-950/45 text-gray-400 dark:text-gray-500 border border-gray-150 dark:border-gray-800/80 px-2.5 py-0.5 rounded-full">
-              Catalog Favorites
-            </span>
-          )}
-        </div>
-
-        {/* Horizontal Scrollable Container */}
-        <div className="relative">
-          <div className="flex gap-5 overflow-x-auto pb-4 pt-1 snap-x snap-mandatory scrollbar-thin scrollbar-thumb-gray-200 dark:scrollbar-thumb-gray-800 scroll-smooth">
-            {recommendedProducts.map((p, index) => {
-              const isSaved = wishlist.includes(p.id);
-              return (
-                <motion.div
-                  key={`rec-${p.id}`}
-                  initial={{ opacity: 0, scale: 0.96 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  transition={{ duration: 0.4, delay: Math.min(index * 0.05, 0.3), ease: "easeOut" }}
-                  onClick={() => handleProductSelect(p)}
-                  className="snap-start shrink-0 min-w-[260px] max-w-[260px] group flex flex-col justify-between rounded-xl border border-gray-100 dark:border-gray-800/60 bg-white dark:bg-gray-900 p-4.5 cursor-pointer transition-all hover:border-indigo-150 dark:hover:border-indigo-800 hover:shadow-[0_8px_30px_rgba(43,83,193,0.03)] dark:hover:shadow-[0_8px_30px_rgba(0,0,0,0.25)]"
-                >
-                  <div>
-                    {/* Image visual wrapper */}
-                    <div className="relative aspect-video w-full overflow-hidden rounded-lg bg-gray-50 dark:bg-gray-950">
-                      <LazyImage
-                        src={p.imageUrl}
-                        alt={p.name}
-                        className="h-full w-full object-cover object-center transition-transform duration-500 group-hover:scale-103"
-                      />
-                      
-                      {/* Interactive Heart Toggle */}
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onToggleWishlist(p.id);
-                        }}
-                        className="absolute top-2 right-2 flex h-8 w-8 items-center justify-center rounded-full bg-white/95 dark:bg-gray-950/95 backdrop-blur-xs shadow-3xs hover:bg-white dark:hover:bg-gray-850 text-gray-400 hover:text-rose-650 transition-all cursor-pointer border border-gray-100 dark:border-gray-800 z-10"
-                        title={isSaved ? "Remove from Wishlist" : "Add to Wishlist"}
-                      >
-                        <Heart
-                          className={`h-4 w-4 transition-all ${
-                            isSaved
-                              ? 'fill-current text-rose-500'
-                              : 'text-gray-400 dark:text-gray-500 hover:text-rose-500'
-                          }`}
-                        />
-                      </button>
-
-                      {/* On Sale Badge */}
-                      {(() => {
-                        const { hasDiscount, discountPercent } = getProductDiscountInfo(p);
-                        if (!hasDiscount) return null;
-                        return (
-                          <span className="absolute top-2 left-2 z-10 rounded bg-rose-600 text-white px-2 py-0.5 font-mono text-[8px] font-black uppercase tracking-wider shadow-xs flex items-center gap-1">
-                            <Sparkles className="w-2.5 h-2.5" />
-                            <span>ON SALE</span>
-                            <span>-{discountPercent}%</span>
-                          </span>
-                        );
-                      })()}
-
-                      {/* Item Type Badge */}
-                      <span className="absolute bottom-2 left-2 rounded bg-white/95 dark:bg-gray-950/95 backdrop-blur-xs px-2 py-0.5 font-mono text-[8px] font-bold text-indigo-900 dark:text-indigo-300 border border-indigo-50 dark:border-gray-800 uppercase">
-                        {p.type}
-                      </span>
-                    </div>
-
-                    {/* Meta info */}
-                    <div className="mt-3.5">
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-[9px] font-bold tracking-wider text-indigo-505 dark:text-indigo-455 uppercase font-mono">{p.category}</span>
-                        <span className="text-gray-350 dark:text-gray-700">•</span>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setReviewsViewProduct(p);
-                          }}
-                          className="flex items-center text-amber-500 hover:scale-105 transition-transform cursor-pointer"
-                          title="Click to view verified reviews"
-                        >
-                          <Star className="h-2.5 w-2.5 fill-current" />
-                          <span className="text-[9px] font-bold ml-0.5">{p.rating.toFixed(1)}</span>
-                          <span className="text-[8px] font-mono text-gray-400 ml-1 hover:underline">({p.reviewsCount || 0})</span>
-                        </button>
-                      </div>
-                      
-                      <h3 className="font-display font-semibold text-xs text-gray-900 dark:text-gray-100 mt-1.5 group-hover:text-indigo-650 dark:group-hover:text-indigo-455 transition-colors uppercase tracking-tight line-clamp-1">{p.name}</h3>
-                      <p className="mt-1 text-[11px] text-gray-500 dark:text-gray-400 line-clamp-2 leading-snug font-extralight">{p.description}</p>
-                    </div>
-                  </div>
-
-                  {/* Pricing and Action row */}
-                  <div className="mt-4 border-t border-indigo-50/50 dark:border-gray-800/60 pt-3 flex items-center justify-between">
-                    {(() => {
-                      const { hasDiscount, originalPrice: originalPriceVal } = getProductDiscountInfo(p);
-                      return (
-                        <div className="flex flex-col">
-                          {hasDiscount && originalPriceVal && (
-                            <span className="font-mono text-[10px] text-gray-400 dark:text-gray-500 line-through">
-                              KSh {originalPriceVal.toLocaleString('en-KE')}
-                            </span>
-                          )}
-                          <span className="font-mono font-bold text-xs text-indigo-950 dark:text-indigo-300">
-                            KSh {p.price.toLocaleString('en-KE')}
-                          </span>
-                        </div>
-                      );
-                    })()}
-                    <span className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-0.5 transition-all group-hover:translate-x-0.5">
-                      View Details &rarr;
-                    </span>
-                  </div>
-                </motion.div>
-              );
-            })}
-          </div>
         </div>
       </div>
 
@@ -2194,35 +2105,181 @@ export default function ProductStore({
                   {categories.length - 1} Categories
                 </span>
               </div>
-              <div className="flex flex-col gap-1">
+              <div className="flex flex-col gap-1.5">
                 {categories.map((cat) => {
-                  const categoryCount = cat === 'All' 
-                    ? products.filter(p => !isProductHiddenFromStorefront(p)).length 
-                    : products.filter(p => !isProductHiddenFromStorefront(p) && matchesCategoryForProduct(p, cat)).length;
+                  if (cat === 'All') {
+                    const totalCount = products.filter((p) => !isProductHiddenFromStorefront(p)).length;
+                    const isAllActive = activeCategory === 'All';
+                    return (
+                      <button
+                        key="cat-all"
+                        type="button"
+                        onClick={() => {
+                          setActiveCategory('All');
+                          setActiveSubcategory('All');
+                          setCurrentPage(1);
+                          if (onCategoryChange) {
+                            onCategoryChange('All', 'All');
+                          }
+                        }}
+                        className={`w-full flex items-center justify-between text-left rounded-lg px-3 py-2 text-xs transition-all cursor-pointer ${
+                          isAllActive
+                            ? 'bg-indigo-50 dark:bg-indigo-950/40 text-indigo-900 dark:text-indigo-200 border border-indigo-100/55 dark:border-indigo-900/45 font-semibold shadow-xs'
+                            : 'text-gray-650 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-850/45 hover:text-gray-900 dark:hover:text-white border border-transparent'
+                        }`}
+                      >
+                        <span className="truncate">All Categories</span>
+                        <span className={`text-[10px] font-mono font-semibold px-2 py-0.5 rounded-full ${
+                          isAllActive ? 'bg-indigo-200/50 dark:bg-indigo-900/50 text-indigo-900 dark:text-indigo-300 font-bold' : 'bg-gray-100 dark:bg-gray-800 text-gray-400 dark:text-gray-500'
+                        }`}>
+                          {totalCount}
+                        </span>
+                      </button>
+                    );
+                  }
+
+                  const subList = getSubcategoriesList(cat);
+                  const isExpanded = !!expandedCategories[cat];
+                  const isCatActive = activeCategory.toLowerCase() === cat.toLowerCase();
+                  const catProductCount = products.filter(
+                    (p) => !isProductHiddenFromStorefront(p) && matchesCategoryForProduct(p, cat)
+                  ).length;
+
                   return (
-                    <button
-                      key={cat}
-                      onClick={() => {
-                        setActiveCategory(cat);
-                        setActiveSubcategory('All');
-                        setCurrentPage(1);
-                        if (onCategoryChange) {
-                          onCategoryChange(cat, 'All');
-                        }
-                      }}
-                      className={`w-full flex items-center justify-between text-left rounded-lg px-3 py-2 text-xs transition-colors cursor-pointer ${
-                        activeCategory === cat
-                          ? 'bg-indigo-50 dark:bg-indigo-950/40 text-indigo-900 dark:text-indigo-200 border border-indigo-100/55 dark:border-indigo-900/45 font-semibold shadow-xs'
-                          : 'text-gray-650 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-850/45 hover:text-gray-900 dark:hover:text-white'
-                      }`}
-                    >
-                      <span className="truncate">{cat === 'All' ? 'All Categories' : cat}</span>
-                      <span className={`text-[10px] font-mono font-semibold px-2 py-0.5 rounded-full ${
-                        activeCategory === cat ? 'bg-indigo-200/50 dark:bg-indigo-900/50 text-indigo-900 dark:text-indigo-300 font-bold' : 'bg-gray-100 dark:bg-gray-800 text-gray-400 dark:text-gray-500'
-                      }`}>
-                        {categoryCount}
-                      </span>
-                    </button>
+                    <div key={`category-group-${cat}`} className="flex flex-col rounded-lg overflow-hidden">
+                      {/* Main Category Header / Dropdown Toggle Button */}
+                      <div
+                        className={`w-full flex items-center justify-between rounded-lg px-3 py-2 text-xs transition-all ${
+                          isCatActive
+                            ? 'bg-indigo-50 dark:bg-indigo-950/40 text-indigo-900 dark:text-indigo-200 border border-indigo-100/55 dark:border-indigo-900/45 font-semibold shadow-xs'
+                            : 'text-gray-650 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-850/45 hover:text-gray-900 dark:hover:text-white border border-transparent'
+                        }`}
+                      >
+                        <button
+                          type="button"
+                          className="flex-1 flex items-center gap-2 text-left min-w-0 cursor-pointer"
+                          onClick={() => {
+                            setActiveCategory(cat);
+                            setActiveSubcategory('All');
+                            setCurrentPage(1);
+                            setExpandedCategories((prev) => ({ ...prev, [cat]: true }));
+                            if (onCategoryChange) {
+                              onCategoryChange(cat, 'All');
+                            }
+                          }}
+                        >
+                          <span className="truncate font-medium">{cat}</span>
+                        </button>
+
+                        <div className="flex items-center gap-1 shrink-0 ml-1.5">
+                          <span
+                            className={`text-[10px] font-mono font-semibold px-2 py-0.5 rounded-full ${
+                              isCatActive
+                                ? 'bg-indigo-200/50 dark:bg-indigo-900/50 text-indigo-900 dark:text-indigo-300 font-bold'
+                                : 'bg-gray-100 dark:bg-gray-800 text-gray-400 dark:text-gray-500'
+                            }`}
+                          >
+                            {catProductCount}
+                          </span>
+
+                          {subList.length > 0 && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setExpandedCategories((prev) => ({
+                                  ...prev,
+                                  [cat]: !prev[cat],
+                                }));
+                              }}
+                              title={isExpanded ? `Collapse ${cat} subcategories` : `Reveal ${cat} subcategories`}
+                              aria-label={isExpanded ? `Collapse ${cat} subcategories` : `Reveal ${cat} subcategories`}
+                              className={`p-1 rounded-md transition-colors cursor-pointer ${
+                                isCatActive
+                                  ? 'text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100/70 dark:hover:bg-indigo-900/60'
+                                  : 'text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800'
+                              }`}
+                            >
+                              <ChevronDown
+                                className={`h-3.5 w-3.5 transition-transform duration-200 ${
+                                  isExpanded ? 'rotate-180' : ''
+                                }`}
+                              />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Subcategories Dropdown Accordion List */}
+                      {subList.length > 0 && isExpanded && (
+                        <div className="ml-3 pl-2.5 my-1 border-l-2 border-indigo-200 dark:border-indigo-900/60 flex flex-col gap-0.5 animate-in slide-in-from-top-1 duration-150">
+                          {/* 'All in Category' option */}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setActiveCategory(cat);
+                              setActiveSubcategory('All');
+                              setCurrentPage(1);
+                              if (onCategoryChange) {
+                                onCategoryChange(cat, 'All');
+                              }
+                            }}
+                            className={`w-full flex items-center justify-between text-left rounded-md px-2.5 py-1.5 text-[11px] transition-colors cursor-pointer ${
+                              isCatActive && activeSubcategory === 'All'
+                                ? 'bg-indigo-600 text-white font-bold shadow-3xs'
+                                : 'text-gray-500 dark:text-gray-400 hover:bg-indigo-50/50 dark:hover:bg-indigo-950/25 hover:text-indigo-600 dark:hover:text-indigo-300'
+                            }`}
+                          >
+                            <span className="truncate">All {cat}</span>
+                            <span
+                              className={`text-[9px] font-mono px-1.5 py-0.2 rounded-full ${
+                                isCatActive && activeSubcategory === 'All'
+                                  ? 'bg-white/20 text-white font-bold'
+                                  : 'bg-gray-100 dark:bg-gray-800 text-gray-400 dark:text-gray-500'
+                              }`}
+                            >
+                              {catProductCount}
+                            </span>
+                          </button>
+
+                          {/* Subcategory items */}
+                          {subList.map((sub) => {
+                            const isSubSelected = isCatActive && activeSubcategory.toLowerCase() === sub.toLowerCase();
+                            const subCount = getSubcategoryProductCount(cat, sub);
+                            return (
+                              <button
+                                key={`sub-item-${cat}-${sub}`}
+                                type="button"
+                                onClick={() => {
+                                  setActiveCategory(cat);
+                                  setActiveSubcategory(sub);
+                                  setCurrentPage(1);
+                                  if (onCategoryChange) {
+                                    onCategoryChange(cat, sub);
+                                  }
+                                }}
+                                className={`w-full flex items-center justify-between text-left rounded-md px-2.5 py-1.5 text-[11px] transition-colors cursor-pointer ${
+                                  isSubSelected
+                                    ? 'bg-indigo-600 text-white font-bold shadow-3xs'
+                                    : 'text-gray-500 dark:text-gray-400 hover:bg-indigo-50/50 dark:hover:bg-indigo-950/25 hover:text-indigo-600 dark:hover:text-indigo-300'
+                                }`}
+                              >
+                                <span className="truncate">{sub}</span>
+                                <span
+                                  className={`text-[9px] font-mono px-1.5 py-0.2 rounded-full ${
+                                    isSubSelected
+                                      ? 'bg-white/20 text-white font-bold'
+                                      : 'bg-gray-100 dark:bg-gray-800 text-gray-400 dark:text-gray-500'
+                                  }`}
+                                >
+                                  {subCount}
+                                </span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
                   );
                 })}
               </div>
@@ -2277,43 +2334,36 @@ export default function ProductStore({
 
         {/* Right Side: Product Catalog Grid */}
         <div className="lg:col-span-3">
-          {/* Subcategories Filter Pills */}
-          {relevantSubcategories.length > 1 && (
-            <div className="mb-6 p-2.5 rounded-2xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200/80 dark:border-slate-800 flex items-center gap-2 overflow-x-auto custom-tab-scroll animate-in fade-in duration-200">
-              <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 shrink-0 px-1">
-                Subcategories:
-              </span>
-              {relevantSubcategories.map((sub) => {
-                const isSubActive = activeSubcategory === sub;
-                return (
-                  <button
-                    key={`sub-pill-${sub}`}
-                    type="button"
-                    onClick={() => {
-                      setActiveSubcategory(sub);
-                      setCurrentPage(1);
-                      if (onCategoryChange) {
-                        onCategoryChange(activeCategory, sub);
-                      }
-                    }}
-                    className={`shrink-0 h-7 px-3 rounded-lg text-xs font-semibold transition-all cursor-pointer whitespace-nowrap ${
-                      isSubActive
-                        ? 'bg-indigo-600 text-white shadow-2xs font-bold'
-                        : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700/80 border border-slate-200/90 dark:border-slate-700/80'
-                    }`}
-                  >
-                    {sub === 'All' ? `All ${activeCategory === 'All' ? 'Subcategories' : activeCategory}` : sub}
-                  </button>
-                );
-              })}
-            </div>
-          )}
-
           {filteredProducts.length > 0 && (
             <div className="mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-b border-gray-100 pb-4 dark:border-gray-800">
-              <span className="text-xs font-mono font-bold text-gray-500">
-                {filteredProducts.length} {filteredProducts.length === 1 ? 'item' : 'items'} found in catalog
-              </span>
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-xs font-mono font-bold text-gray-500">
+                  {filteredProducts.length} {filteredProducts.length === 1 ? 'item' : 'items'} found in catalog
+                </span>
+                {activeCategory !== 'All' && (
+                  <span className="inline-flex items-center gap-1.5 bg-indigo-50 dark:bg-indigo-950/50 text-indigo-700 dark:text-indigo-300 border border-indigo-100 dark:border-indigo-900/50 px-2.5 py-0.5 rounded-md text-[11px] font-medium">
+                    <span>{activeCategory}</span>
+                    {activeSubcategory !== 'All' && (
+                      <>
+                        <span className="text-indigo-400 dark:text-indigo-500 font-bold">›</span>
+                        <span className="font-bold text-indigo-900 dark:text-indigo-200">{activeSubcategory}</span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setActiveSubcategory('All');
+                            setCurrentPage(1);
+                            if (onCategoryChange) onCategoryChange(activeCategory, 'All');
+                          }}
+                          className="text-indigo-400 hover:text-red-500 cursor-pointer ml-0.5 transition-colors"
+                          title="Reset to all in category"
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      </>
+                    )}
+                  </span>
+                )}
+              </div>
               <div className="flex items-center gap-3.5">
                 {/* Layout Switcher */}
                 <div className="hidden sm:flex items-center bg-gray-55 dark:bg-gray-950 border border-gray-150 dark:border-gray-850 rounded-lg p-0.5 shadow-5xs shrink-0">
@@ -2528,7 +2578,7 @@ export default function ProductStore({
                             </div>
                           </div>
                           <h3 className="font-display font-semibold text-xs sm:text-sm text-slate-900 dark:text-white mt-1 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors uppercase tracking-tight line-clamp-1">{product.name}</h3>
-                          <p className="mt-1 text-[11px] sm:text-xs text-slate-600 dark:text-slate-400 line-clamp-2 leading-relaxed font-normal">{product.description}</p>
+                          <p className="mt-1 text-[11px] sm:text-xs text-slate-600 dark:text-slate-400 line-clamp-2 leading-relaxed font-normal">{cleanDescriptionExcerpt(product.shortDescription || product.description, 140)}</p>
                         </div>
                       </div>
 
@@ -2810,6 +2860,143 @@ export default function ProductStore({
           </div>
         </div>
       )}
+
+      {/* 'Recommended for You' Section - Placed Just Above the Footer */}
+      <div id="store-recommendations-section" className="mt-16 pt-10 border-t border-gray-150 dark:border-gray-800 animate-in fade-in duration-300">
+        <div className="flex items-center justify-between mb-4 border-b border-indigo-50/40 dark:border-gray-800 pb-3">
+          <div className="flex flex-col gap-0.5">
+            <h2 className="font-display text-sm font-bold text-gray-900 dark:text-gray-100 flex items-center gap-2 uppercase tracking-wider">
+              <Sparkles className="h-4 w-4 text-indigo-500 animate-pulse" /> Recommended for You
+            </h2>
+            <p className="text-[11px] text-gray-550 dark:text-gray-400 font-extralight">
+              {wishlist.length > 0 
+                ? 'Tailored suggestions based on items in your bookmarked wishlist.' 
+                : 'High-end curations selected from our top-tier workspace catalog.'}
+            </p>
+          </div>
+          {wishlist.length > 0 ? (
+            <span className="text-[10px] font-mono font-bold bg-indigo-55/10 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 border border-indigo-100/50 dark:border-indigo-900/60 px-2.5 py-0.5 rounded-full">
+              {wishlist.length} Bookmark{wishlist.length === 1 ? '' : 's'} Active
+            </span>
+          ) : (
+            <span className="text-[10px] font-mono font-bold bg-gray-50 dark:bg-gray-950/45 text-gray-400 dark:text-gray-500 border border-gray-150 dark:border-gray-800/80 px-2.5 py-0.5 rounded-full">
+              Catalog Favorites
+            </span>
+          )}
+        </div>
+
+        {/* Horizontal Scrollable Container */}
+        <div className="relative">
+          <div className="flex gap-5 overflow-x-auto pb-4 pt-1 snap-x snap-mandatory scrollbar-thin scrollbar-thumb-gray-200 dark:scrollbar-thumb-gray-800 scroll-smooth">
+            {recommendedProducts.map((p, index) => {
+              const isSaved = wishlist.includes(p.id);
+              return (
+                <motion.div
+                  key={`rec-${p.id}`}
+                  initial={{ opacity: 0, scale: 0.96 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  transition={{ duration: 0.4, delay: Math.min(index * 0.05, 0.3), ease: "easeOut" }}
+                  onClick={() => handleProductSelect(p)}
+                  className="snap-start shrink-0 min-w-[260px] max-w-[260px] group flex flex-col justify-between rounded-xl border border-gray-100 dark:border-gray-800/60 bg-white dark:bg-gray-900 p-4.5 cursor-pointer transition-all hover:border-indigo-150 dark:hover:border-indigo-800 hover:shadow-[0_8px_30px_rgba(43,83,193,0.03)] dark:hover:shadow-[0_8px_30px_rgba(0,0,0,0.25)]"
+                >
+                  <div>
+                    {/* Image visual wrapper */}
+                    <div className="relative aspect-video w-full overflow-hidden rounded-lg bg-gray-50 dark:bg-gray-950">
+                      <LazyImage
+                        src={p.imageUrl}
+                        alt={p.name}
+                        className="h-full w-full object-cover object-center transition-transform duration-500 group-hover:scale-103"
+                      />
+                      
+                      {/* Interactive Heart Toggle */}
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onToggleWishlist(p.id);
+                        }}
+                        className="absolute top-2 right-2 flex h-8 w-8 items-center justify-center rounded-full bg-white/95 dark:bg-gray-950/95 backdrop-blur-xs shadow-3xs hover:bg-white dark:hover:bg-gray-850 text-gray-400 hover:text-rose-650 transition-all cursor-pointer border border-gray-100 dark:border-gray-800 z-10"
+                        title={isSaved ? "Remove from Wishlist" : "Add to Wishlist"}
+                      >
+                        <Heart
+                          className={`h-4 w-4 transition-all ${
+                            isSaved
+                              ? 'fill-current text-rose-500'
+                              : 'text-gray-400 dark:text-gray-500 hover:text-rose-500'
+                          }`}
+                        />
+                      </button>
+
+                      {/* On Sale Badge */}
+                      {(() => {
+                        const { hasDiscount, discountPercent } = getProductDiscountInfo(p);
+                        if (!hasDiscount) return null;
+                        return (
+                          <span className="absolute top-2 left-2 z-10 rounded bg-rose-600 text-white px-2 py-0.5 font-mono text-[8px] font-black uppercase tracking-wider shadow-xs flex items-center gap-1">
+                            <Sparkles className="w-2.5 h-2.5" />
+                            <span>ON SALE</span>
+                            <span>-{discountPercent}%</span>
+                          </span>
+                        );
+                      })()}
+
+                      {/* Item Type Badge */}
+                      <span className="absolute bottom-2 left-2 rounded bg-white/95 dark:bg-gray-950/95 backdrop-blur-xs px-2 py-0.5 font-mono text-[8px] font-bold text-indigo-900 dark:text-indigo-300 border border-indigo-50 dark:border-gray-800 uppercase">
+                        {p.type}
+                      </span>
+                    </div>
+
+                    {/* Meta info */}
+                    <div className="mt-3.5">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-[9px] font-bold tracking-wider text-indigo-505 dark:text-indigo-455 uppercase font-mono">{p.category}</span>
+                        <span className="text-gray-350 dark:text-gray-700">•</span>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setReviewsViewProduct(p);
+                          }}
+                          className="flex items-center text-amber-500 hover:scale-105 transition-transform cursor-pointer"
+                          title="Click to view verified reviews"
+                        >
+                          <Star className="h-2.5 w-2.5 fill-current" />
+                          <span className="text-[9px] font-bold ml-0.5">{p.rating.toFixed(1)}</span>
+                          <span className="text-[8px] font-mono text-gray-400 ml-1 hover:underline">({p.reviewsCount || 0})</span>
+                        </button>
+                      </div>
+                      
+                      <h3 className="font-display font-semibold text-xs text-gray-900 dark:text-gray-100 mt-1.5 group-hover:text-indigo-650 dark:group-hover:text-indigo-455 transition-colors uppercase tracking-tight line-clamp-1">{p.name}</h3>
+                      <p className="mt-1 text-[11px] text-gray-550 dark:text-gray-400 line-clamp-2 leading-snug font-extralight">{p.description}</p>
+                    </div>
+                  </div>
+
+                  {/* Pricing and Action row */}
+                  <div className="mt-4 border-t border-indigo-50/50 dark:border-gray-800/60 pt-3 flex items-center justify-between">
+                    {(() => {
+                      const { hasDiscount, originalPrice: originalPriceVal } = getProductDiscountInfo(p);
+                      return (
+                        <div className="flex flex-col">
+                          {hasDiscount && originalPriceVal && (
+                            <span className="font-mono text-[10px] text-gray-400 dark:text-gray-500 line-through">
+                              KSh {originalPriceVal.toLocaleString('en-KE')}
+                            </span>
+                          )}
+                          <span className="font-mono font-bold text-xs text-indigo-950 dark:text-indigo-300">
+                            KSh {p.price.toLocaleString('en-KE')}
+                          </span>
+                        </div>
+                      );
+                    })()}
+                    <span className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-0.5 transition-all group-hover:translate-x-0.5">
+                      View Details &rarr;
+                    </span>
+                  </div>
+                </motion.div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
 
       {isCompareOpen && (
         <ProductCompareModal

@@ -9,9 +9,10 @@ import Footer from '../components/Footer';
 import CookieConsent from '../components/CookieConsent';
 import SocialProofToast from '../components/SocialProofToast';
 import { ErrorBoundary } from '../components/ErrorBoundary';
-import { ArrowUp, Loader2 } from 'lucide-react';
+import { ArrowUp, Loader2, AlertTriangle, X } from 'lucide-react';
 import { CurrencyType } from '../lib/currency';
-import { Product, CartItem } from '../types';
+import { Product, CartItem, Order } from '../types';
+import { useSiteSettings } from '../context/SiteSettingsContext';
 
 interface StorefrontLayoutProps {
   currentTab: string;
@@ -19,6 +20,7 @@ interface StorefrontLayoutProps {
   cart: CartItem[];
   wishlist: string[];
   products: Product[];
+  orders?: Order[];
   onSelectProduct: (product: Product | null) => void;
   darkMode: boolean;
   onToggleDarkMode: () => void;
@@ -44,6 +46,7 @@ export default function StorefrontLayout({
   cart,
   wishlist,
   products,
+  orders,
   onSelectProduct,
   darkMode,
   onToggleDarkMode,
@@ -80,11 +83,32 @@ export default function StorefrontLayout({
     }
   };
 
+  const { settings } = useSiteSettings();
+  const [maintenanceDismissed, setMaintenanceDismissed] = useState(false);
+
   const totalCartCount = cart.reduce((sum, item) => sum + item.quantity, 0);
 
   return (
     <div className={`min-h-screen bg-[#F9FAFB] dark:bg-gray-950 text-[#111827] dark:text-gray-100 flex flex-col justify-between font-sans selection:bg-[#111827] dark:selection:bg-indigo-650 selection:text-white transition-colors duration-200 ${darkMode ? 'dark' : ''}`}>
       <div>
+        {/* Dynamic Maintenance Mode Notice */}
+        {settings.general.maintenance_mode && !maintenanceDismissed && (
+          <div className="bg-amber-500 text-amber-950 px-4 py-2 text-center text-xs font-bold font-sans flex items-center justify-center gap-2 shadow-sm relative no-print animate-in slide-in-from-top">
+            <AlertTriangle className="h-4 w-4 shrink-0 text-amber-900" />
+            <span>
+              <strong>Platform Notice:</strong> {settings.general.maintenance_message || 'Scheduled maintenance is currently in progress.'}
+            </span>
+            <button
+              type="button"
+              onClick={() => setMaintenanceDismissed(true)}
+              className="ml-4 p-1 rounded-md hover:bg-amber-600/30 transition-colors cursor-pointer"
+              title="Dismiss banner"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        )}
+
         {/* Customer Storefront Navigation Header */}
         <Header
           currentTab={currentTab}
@@ -176,6 +200,7 @@ export default function StorefrontLayout({
       {userRole === 'customer' && (
         <SocialProofToast
           products={products}
+          orders={orders}
           userRole={userRole}
           currentTab={currentTab}
           onSelectProduct={(p) => {

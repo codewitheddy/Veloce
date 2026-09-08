@@ -54,7 +54,15 @@ urlpatterns = [
     path('api/affiliates/', include('apps.affiliates.urls')),
     path('api/content/', include('apps.content.urls')),
     path('api/hero-banners/', include('apps.content.urls_herobanners')),
+    path('api/settings/', include('apps.site_settings.urls')),
+    path('api/suppliers/', include('apps.suppliers.urls')),
     path('api/', include('apps.customers.urls')),
+
+    # Next-Gen Modular APIs (v1)
+    path('api/v1/inventory/', include('apps.inventory.urls')),
+    path('api/v1/pricing/', include('apps.pricing.urls')),
+    path('api/v1/search/', include('apps.search.urls')),
+    path('api/v1/payments/', include('apps.payments.urls')),
 
     # Security, Payment & Logistics API Utilities
     path('api/payments/validate', ValidatePaymentView.as_view(), name='validate_payment'),

@@ -13,18 +13,18 @@ SECRET_KEY = os.getenv(
     'DJANGO_SECRET_KEY',
     's$7!9z*q#2m_p8v(w5x^k1y@3j&b6c+d4e-f0g)h~r%t=u[a{z}x<c>v?b!n@m#k$'
 )
-DEBUG = os.getenv('DJANGO_DEBUG', 'True').lower() in ('true', '1', 't')
+DEBUG = os.getenv('DJANGO_DEBUG', 'False').lower() in ('true', '1', 't')
 allowed_hosts_env = os.getenv('ALLOWED_HOSTS', 'localhost,127.0.0.1,0.0.0.0,veloce.co.ke,marid.co.ke')
 ALLOWED_HOSTS = [host.strip() for host in allowed_hosts_env.split(',') if host.strip()]
-if '*' not in ALLOWED_HOSTS:
+if DEBUG and '*' not in ALLOWED_HOSTS:
     ALLOWED_HOSTS.append('*')
 
 # ==============================================================================
 # Security Headers & Cookies (Hardened for Production)
 # ==============================================================================
-SECURE_SSL_REDIRECT = os.getenv('SECURE_SSL_REDIRECT', 'False').lower() in ('true', '1', 't')
-SESSION_COOKIE_SECURE = os.getenv('SESSION_COOKIE_SECURE', 'False').lower() in ('true', '1', 't')
-CSRF_COOKIE_SECURE = os.getenv('CSRF_COOKIE_SECURE', 'False').lower() in ('true', '1', 't')
+SECURE_SSL_REDIRECT = os.getenv('SECURE_SSL_REDIRECT', str(not DEBUG)).lower() in ('true', '1', 't')
+SESSION_COOKIE_SECURE = not DEBUG or os.getenv('SESSION_COOKIE_SECURE', 'False').lower() in ('true', '1', 't')
+CSRF_COOKIE_SECURE = not DEBUG or os.getenv('CSRF_COOKIE_SECURE', 'False').lower() in ('true', '1', 't')
 SESSION_COOKIE_HTTPONLY = True
 CSRF_COOKIE_HTTPONLY = False
 SESSION_COOKIE_SAMESITE = 'Lax'
@@ -60,6 +60,11 @@ INSTALLED_APPS = [
     # Project Domain Apps
     'core',
     'products',
+    'apps.core',
+    'apps.inventory',
+    'apps.pricing',
+    'apps.search',
+    'apps.payments',
     'apps.emails',
     'apps.users',
     'apps.customers',
@@ -67,6 +72,8 @@ INSTALLED_APPS = [
     'apps.shipping',
     'apps.affiliates',
     'apps.content',
+    'apps.site_settings',
+    'apps.suppliers',
 ]
 
 MIDDLEWARE = [
@@ -204,7 +211,7 @@ EMAIL_BACKEND = os.getenv('EMAIL_BACKEND', 'django.core.mail.backends.smtp.Email
 EMAIL_HOST = os.getenv('EMAIL_HOST', 'mail.marid.co.ke')
 EMAIL_PORT = int(os.getenv('EMAIL_PORT', '465'))
 EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER', 'noreply@marid.co.ke')
-EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD', 'Kitale254.@')
+EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD', '')
 EMAIL_USE_TLS = os.getenv('EMAIL_USE_TLS', 'False').lower() in ('true', '1', 't')
 EMAIL_USE_SSL = os.getenv('EMAIL_USE_SSL', 'True').lower() in ('true', '1', 't')
 DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL', 'Veloce Kenya <noreply@marid.co.ke>')
@@ -212,7 +219,7 @@ ADMIN_EMAIL = os.getenv('ADMIN_EMAIL', 'ropenixkenya@gmail.com')
 SERVER_EMAIL = os.getenv('SERVER_EMAIL', 'ropenixkenya@gmail.com')
 
 # CORS Headers & SPA Policy Setup for React / Vite
-CORS_ALLOW_ALL_ORIGINS = True
+CORS_ALLOW_ALL_ORIGINS = DEBUG and os.getenv('CORS_ALLOW_ALL_ORIGINS', 'False').lower() in ('true', '1')
 cors_whitelist_env = os.getenv(
     'CORS_ALLOWED_ORIGINS',
     'http://localhost:3000,http://127.0.0.1:3000,http://localhost:5173,http://127.0.0.1:5173,https://veloce.co.ke,https://marid.co.ke'
@@ -332,4 +339,11 @@ LOGGING = {
         },
     },
 }
+
+# ==========================================
+# Redis & Meilisearch Infrastructure
+# ==========================================
+REDIS_URL = os.getenv('REDIS_URL', os.getenv('CELERY_BROKER_URL', 'redis://localhost:6379/0'))
+MEILISEARCH_URL = os.getenv('MEILISEARCH_URL', 'http://localhost:7700')
+MEILISEARCH_MASTER_KEY = os.getenv('MEILISEARCH_MASTER_KEY', 'meili_master_key_veloce_2026_secure')
 

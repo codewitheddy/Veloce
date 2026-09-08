@@ -28,6 +28,7 @@ import ProductImageUpload from './ProductImageUpload';
 import { ProductFormEditor, generateSlug } from './ProductFormEditor';
 import { getSubcategoriesForCategory } from '../utils/productUtils';
 import { ShippingSettingsPanel } from './ShippingSettingsPanel';
+import { SiteSettingsPanel } from './SiteSettingsPanel';
 import AdminHeroSliderManager from './AdminHeroSliderManager';
 import { CategoryManagementPanel } from './CategoryManagementPanel';
 import { DEFAULT_TAX_CLASSES, getTaxClassConfig, getProductTaxInfo } from '../utils/taxUtils';
@@ -53,6 +54,7 @@ const ReturnsCenterDashboard = lazy(() => import('./ReturnsCenterDashboard'));
 const BulkProductUploadModal = lazy(() => import('./BulkProductUploadModal'));
 const OrderReceiptModal = lazy(() => import('./OrderReceiptModal'));
 const ReviewFunnelAnalytics = lazy(() => import('./ReviewFunnelAnalytics'));
+const SupplierManagementPanel = lazy(() => import('./SupplierManagementPanel'));
 
 const ChartLoaderFallback = () => (
   <div className="p-8 my-4 rounded-xl border border-gray-150 dark:border-gray-850 bg-white dark:bg-gray-950 flex flex-col items-center justify-center gap-2 text-center">
@@ -159,11 +161,100 @@ export default function DashboardAnalytics({
   const isBackupOverdue = !lastBackupTime || (Date.now() - lastBackupTime) >= 7 * 24 * 60 * 60 * 1000;
 
   // Tabs within Admin Panel
-  const [adminSubTab, setAdminSubTab] = useState<'analytics' | 'products' | 'orders' | 'customers' | 'custom-clothing' | 'email' | 'promotions' | 'inventory-logs' | 'inventory-alerts' | 'backup' | 'order-lookup' | 'categories' | 'bulk-price' | 'returns' | 'shipping' | 'hero-slider' | 'edit-product'>((initialAdminSubTab as any) || (initialEditingProduct ? 'edit-product' : 'analytics'));
+  const [adminSubTab, setAdminSubTab] = useState<'analytics' | 'products' | 'orders' | 'customers' | 'custom-clothing' | 'email' | 'promotions' | 'inventory-logs' | 'inventory-alerts' | 'backup' | 'order-lookup' | 'categories' | 'bulk-price' | 'returns' | 'shipping' | 'hero-slider' | 'edit-product' | 'site-settings' | 'suppliers'>((initialAdminSubTab as any) || (initialEditingProduct ? 'edit-product' : 'analytics'));
   
   const [isMobileAdminNavOpen, setIsMobileAdminNavOpen] = useState<boolean>(false);
   const [adminMenuFilter, setAdminMenuFilter] = useState<string>('');
   const adminNavTabsRef = React.useRef<HTMLDivElement>(null);
+
+  // Admin Global Search State & Keyboard Navigation
+  const [adminGlobalSearch, setAdminGlobalSearch] = useState<string>('');
+  const [isAdminSearchOpen, setIsAdminSearchOpen] = useState<boolean>(false);
+  const adminSearchInputRef = React.useRef<HTMLInputElement>(null);
+  const adminSearchContainerRef = React.useRef<HTMLDivElement>(null);
+
+  React.useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (adminSearchContainerRef.current && !adminSearchContainerRef.current.contains(e.target as Node)) {
+        setIsAdminSearchOpen(false);
+      }
+    };
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.key === '/' || ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k')) &&
+          document.activeElement?.tagName !== 'INPUT' &&
+          document.activeElement?.tagName !== 'TEXTAREA' &&
+          document.activeElement?.tagName !== 'SELECT') {
+        e.preventDefault();
+        adminSearchInputRef.current?.focus();
+        setIsAdminSearchOpen(true);
+      }
+      if (e.key === 'Escape') {
+        setIsAdminSearchOpen(false);
+        adminSearchInputRef.current?.blur();
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, []);
+
+  const adminFeaturesList = React.useMemo(() => [
+    { id: 'analytics' as const, label: 'Executive Analytics & Intelligence', category: 'Overview', icon: BarChart3, keywords: 'charts revenue orders metrics d3 summary' },
+    { id: 'products' as const, label: 'Product Inventory & Stock Grid', category: 'Catalog', icon: Package, keywords: 'items catalog inventory stock sku price' },
+    { id: 'edit-product' as const, label: 'Product Edit Hub & Duplicator', category: 'Catalog', icon: Edit3, keywords: 'create new product duplicate clone slug edit' },
+    { id: 'categories' as const, label: 'Category & Subcategory Hierarchy', category: 'Catalog', icon: FolderTree, keywords: 'taxonomy subcategories departments groups' },
+    { id: 'bulk-price' as const, label: 'Bulk Pricing & Margin Multipliers', category: 'Pricing', icon: Tag, keywords: 'discount bulk pricing percentage increase margin' },
+    { id: 'orders' as const, label: 'Orders Pipeline & Fulfillment', category: 'Sales', icon: ShoppingBag, keywords: 'orders status fulfillment tracking receipts invoice' },
+    { id: 'order-lookup' as const, label: 'Order Deep Lookup & Audit', category: 'Sales', icon: Search, keywords: 'find search trace order barcode tracking customer' },
+    { id: 'returns' as const, label: 'Returns & RMA Management', category: 'Sales', icon: RefreshCw, keywords: 'refunds returns rma exchange replacement warranty' },
+    { id: 'customers' as const, label: 'Customer Directory & VIPs', category: 'Audience', icon: Users, keywords: 'users clients shoppers buyers emails addresses' },
+    { id: 'custom-clothing' as const, label: 'Custom Tailoring & Measurements', category: 'Services', icon: Scissors, keywords: 'bespoke suits fabrics sizing tailoring measurements' },
+    { id: 'promotions' as const, label: 'Coupons & Discount Campaigns', category: 'Marketing', icon: Percent, keywords: 'promos vouchers discount codes sales coupons' },
+    { id: 'hero-slider' as const, label: 'Hero Banner Builder & Sliders', category: 'Marketing', icon: Sparkles, keywords: 'banner slides promotions carousel storefront hero' },
+    { id: 'email' as const, label: 'Email Marketing & Templates', category: 'Marketing', icon: Mail, keywords: 'broadcast newsletter smtp notification triggers email' },
+    { id: 'shipping' as const, label: 'Shipping & Delivery Zones', category: 'Operations', icon: Truck, keywords: 'delivery fee matrix courier distance zones shipping' },
+    { id: 'inventory-alerts' as const, label: 'Low Stock & Restock Alerts', category: 'Inventory', icon: AlertTriangle, keywords: 'threshold replenishment warning out of stock alerts' },
+    { id: 'inventory-logs' as const, label: 'Inventory Audit Trail Logs', category: 'Inventory', icon: History, keywords: 'audit changes adjustments ledger stock logs' },
+    { id: 'backup' as const, label: 'Database Backup & Restore', category: 'System', icon: Database, keywords: 'snapshots download database recovery export json backup' },
+    { id: 'site-settings' as const, label: 'Site Settings & KRA eTIMS Platform Config', category: 'System', icon: Settings, keywords: 'etims tax vat pin appearance branding theme backup smtp general font scale' },
+  ], []);
+
+  const adminSearchResults = React.useMemo(() => {
+    const q = adminGlobalSearch.trim().toLowerCase();
+    if (!q) return { products: [], orders: [], features: [], totalCount: 0 };
+
+    const matchedProducts = (products || []).filter((p) =>
+      p.name.toLowerCase().includes(q) ||
+      (p.sku && p.sku.toLowerCase().includes(q)) ||
+      (p.category && p.category.toLowerCase().includes(q))
+    ).slice(0, 5);
+
+    const matchedOrders = (orders || []).filter((o) =>
+      o.id.toLowerCase().includes(q) ||
+      (o.customerName && o.customerName.toLowerCase().includes(q)) ||
+      (o.customerEmail && o.customerEmail.toLowerCase().includes(q)) ||
+      (o.phone && o.phone.toLowerCase().includes(q)) ||
+      (o.trackingNumber && o.trackingNumber.toLowerCase().includes(q)) ||
+      (o.status && o.status.toLowerCase().includes(q))
+    ).slice(0, 5);
+
+    const matchedFeatures = adminFeaturesList.filter((f) =>
+      f.label.toLowerCase().includes(q) ||
+      f.category.toLowerCase().includes(q) ||
+      f.id.toLowerCase().includes(q) ||
+      f.keywords.toLowerCase().includes(q)
+    ).slice(0, 5);
+
+    return {
+      products: matchedProducts,
+      orders: matchedOrders,
+      features: matchedFeatures,
+      totalCount: matchedProducts.length + matchedOrders.length + matchedFeatures.length
+    };
+  }, [adminGlobalSearch, products, orders, adminFeaturesList]);
 
   React.useEffect(() => {
     const handleSelectAdminOrder = (e: any) => {
@@ -4776,65 +4867,167 @@ admin@veloce.co.ke`;
           </div>
         </div>
 
-        {/* Action controllers */}
-        <div className="flex flex-wrap items-center gap-2 font-sans shrink-0">
-          {onNavigateToSite && (
-            <button
-              onClick={() => onNavigateToSite('home')}
-              className="inline-flex h-9 items-center gap-1.5 rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3.5 text-xs font-semibold text-slate-750 dark:text-slate-200 shadow-2xs hover:bg-indigo-50 dark:hover:bg-indigo-950/40 hover:text-indigo-600 dark:hover:text-indigo-400 hover:border-indigo-300 dark:hover:border-indigo-700 transition-all cursor-pointer group"
-              id="btn-admin-top-back-to-site"
-              title="Return to the public storefront website"
-            >
-              <ArrowLeft className="h-3.5 w-3.5 text-slate-500 dark:text-slate-400 group-hover:-translate-x-0.5 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-all" />
-              <span>Back to Store</span>
-            </button>
-          )}
-          {csvSuccessMsg && (
-            <span className="text-[11px] font-semibold text-emerald-700 animate-pulse bg-emerald-50 border border-emerald-150 rounded-md px-2.5 py-1.5 flex items-center gap-1 leading-none">
-              <Check className="h-3 w-3 text-emerald-600" /> {csvSuccessMsg}
-            </span>
-          )}
-          {/* Font Size Selector Dropdown */}
-          <div className="inline-flex h-9 items-center gap-1.5 rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 text-xs font-semibold text-gray-700 dark:text-gray-200 shadow-xs hover:border-indigo-300 dark:hover:border-indigo-650 transition-colors" title="Adjust dashboard text scale for better readability">
-            <Type className="h-3.5 w-3.5 text-indigo-600 dark:text-indigo-400 shrink-0" />
-            <span className="text-gray-500 dark:text-gray-400 text-[11px] font-medium hidden sm:inline">Text Size:</span>
-            <select
-              value={fontSize}
-              onChange={(e) => onChangeFontSize?.(e.target.value)}
-              className="bg-transparent text-xs font-bold text-gray-800 dark:text-gray-200 focus:outline-none cursor-pointer pr-1"
-              id="select-admin-header-font-size"
-              aria-label="Adjust dashboard font scale"
-            >
-              <option value="small" className="text-gray-900 bg-white dark:bg-gray-900 dark:text-white">Small (92%)</option>
-              <option value="normal" className="text-gray-900 bg-white dark:bg-gray-900 dark:text-white">Default (100%)</option>
-              <option value="medium" className="text-gray-900 bg-white dark:bg-gray-900 dark:text-white">Medium (108%)</option>
-              <option value="large" className="text-gray-900 bg-white dark:bg-gray-900 dark:text-white">Large (116%)</option>
-              <option value="extra-large" className="text-gray-900 bg-white dark:bg-gray-900 dark:text-white">Extra Large (125%)</option>
-            </select>
+        {/* Admin Global Search Input with Command Palette */}
+        <div ref={adminSearchContainerRef} className="relative flex-1 max-w-md w-full">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 dark:text-slate-500 pointer-events-none" />
+            <input
+              ref={adminSearchInputRef}
+              type="text"
+              value={adminGlobalSearch}
+              onFocus={() => setIsAdminSearchOpen(true)}
+              onChange={(e) => {
+                setAdminGlobalSearch(e.target.value);
+                setIsAdminSearchOpen(true);
+              }}
+              placeholder="Search products, orders, customers, or features..."
+              className="w-full h-9.5 pl-9.5 pr-14 rounded-xl border border-slate-250 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-800/80 text-xs text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500 dark:focus:border-indigo-400 focus:bg-white dark:focus:bg-slate-800 transition-all font-sans shadow-2xs"
+              id="input-admin-global-search"
+            />
+            <div className="absolute right-2.5 top-1/2 -translate-y-1/2 flex items-center gap-1">
+              {adminGlobalSearch ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAdminGlobalSearch('');
+                    adminSearchInputRef.current?.focus();
+                  }}
+                  className="p-1 rounded-md text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors cursor-pointer"
+                  title="Clear search"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              ) : (
+                <kbd className="hidden sm:inline-flex items-center gap-0.5 px-1.5 py-0.5 text-[10px] font-mono font-semibold text-slate-400 dark:text-slate-500 bg-slate-200/60 dark:bg-slate-700/60 border border-slate-300/60 dark:border-slate-600/60 rounded">
+                  /
+                </kbd>
+              )}
+            </div>
           </div>
-          <button
-            onClick={handleDownloadRawBackup}
-            className="inline-flex h-9 items-center gap-1.5 rounded-md bg-amber-600 text-white px-3.5 text-xs font-semibold transition-colors hover:bg-amber-700 cursor-pointer shadow-xs"
-            id="btn-backup-database-top"
-          >
-            <Database className="h-3.5 w-3.5" /> Backup Database
-          </button>
-          <button
-            onClick={handleExportCSVReports}
-            className="inline-flex h-9 items-center gap-1.5 rounded-md bg-emerald-600 text-white px-3.5 text-xs font-semibold transition-colors hover:bg-emerald-700 cursor-pointer shadow-xs"
-          >
-            <Download className="h-3.5 w-3.5" /> Export CSV Reports
-          </button>
-          <button
-            onClick={() => {
-              setSkuError('');
-              setShowAddProdPage(true);
-            }}
-            className="inline-flex h-9 items-center gap-1.5 rounded-md bg-indigo-600 text-white px-3.5 text-xs font-semibold transition-colors hover:bg-indigo-750 cursor-pointer"
-          >
-            <Plus className="h-4 w-4" /> Add Product
-          </button>
 
+          {/* Live Search Results Dropdown Palette */}
+          {isAdminSearchOpen && adminGlobalSearch.trim() && (
+            <div className="absolute left-0 right-0 top-full mt-1.5 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-750 shadow-2xl overflow-hidden z-50 animate-in fade-in slide-in-from-top-1 duration-150 max-h-96 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800">
+              {adminSearchResults.totalCount === 0 ? (
+                <div className="p-6 text-center text-xs text-slate-400 font-sans">
+                  <Search className="h-6 w-6 mx-auto mb-2 text-slate-300 dark:text-slate-600" />
+                  <p>No matching products, orders, or features found for "{adminGlobalSearch}".</p>
+                </div>
+              ) : (
+                <>
+                  {/* Features / Tabs Section */}
+                  {adminSearchResults.features.length > 0 && (
+                    <div className="p-2">
+                      <div className="px-2.5 py-1 text-[10px] font-mono font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
+                        Admin Features &amp; Tabs
+                      </div>
+                      {adminSearchResults.features.map((feat) => {
+                        const Icon = feat.icon;
+                        return (
+                          <button
+                            key={feat.id}
+                            type="button"
+                            onClick={() => {
+                              setAdminSubTab(feat.id);
+                              setIsAdminSearchOpen(false);
+                              setAdminGlobalSearch('');
+                            }}
+                            className="w-full flex items-center justify-between p-2 rounded-xl text-xs hover:bg-indigo-50 dark:hover:bg-indigo-950/50 text-slate-800 dark:text-slate-200 transition-colors text-left group cursor-pointer"
+                          >
+                            <div className="flex items-center gap-2.5 min-w-0">
+                              <div className="h-7 w-7 rounded-lg bg-indigo-100 dark:bg-indigo-900/60 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0">
+                                <Icon className="h-3.5 w-3.5" />
+                              </div>
+                              <span className="font-semibold truncate">{feat.label}</span>
+                            </div>
+                            <span className="text-[10px] font-mono text-slate-400 px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 shrink-0">
+                              {feat.category}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {/* Products Section */}
+                  {adminSearchResults.products.length > 0 && (
+                    <div className="p-2">
+                      <div className="px-2.5 py-1 text-[10px] font-mono font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
+                        Products ({adminSearchResults.products.length})
+                      </div>
+                      {adminSearchResults.products.map((prod) => (
+                        <button
+                          key={prod.id}
+                          type="button"
+                          onClick={() => {
+                            setEditingProduct(prod);
+                            setShowAddProdPage(false);
+                            setAdminSubTab('edit-product');
+                            setIsAdminSearchOpen(false);
+                            setAdminGlobalSearch('');
+                          }}
+                          className="w-full flex items-center justify-between p-2 rounded-xl text-xs hover:bg-slate-100 dark:hover:bg-slate-800/70 text-slate-800 dark:text-slate-200 transition-colors text-left group cursor-pointer"
+                        >
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            {prod.imageUrl ? (
+                              <img src={prod.imageUrl} alt={prod.name} className="h-7 w-7 rounded-lg object-cover bg-slate-100 shrink-0" />
+                            ) : (
+                              <div className="h-7 w-7 rounded-lg bg-slate-100 dark:bg-slate-800 flex items-center justify-center shrink-0 text-slate-400">
+                                <Package className="h-3.5 w-3.5" />
+                              </div>
+                            )}
+                            <div className="min-w-0">
+                              <p className="font-semibold text-slate-900 dark:text-white truncate">{prod.name}</p>
+                              <p className="text-[10px] text-slate-400 font-mono truncate">{prod.sku || prod.category || 'Product'}</p>
+                            </div>
+                          </div>
+                          <span className="font-mono text-xs font-bold text-indigo-600 dark:text-indigo-400 shrink-0 pl-2">
+                            {formatPrice(convertPrice(prod.price, currency), currency)}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Orders Section */}
+                  {adminSearchResults.orders.length > 0 && (
+                    <div className="p-2">
+                      <div className="px-2.5 py-1 text-[10px] font-mono font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
+                        Orders ({adminSearchResults.orders.length})
+                      </div>
+                      {adminSearchResults.orders.map((ord) => (
+                        <button
+                          key={ord.id}
+                          type="button"
+                          onClick={() => {
+                            setSelectedAdminDetailOrder(ord);
+                            setIsAdminSearchOpen(false);
+                            setAdminGlobalSearch('');
+                          }}
+                          className="w-full flex items-center justify-between p-2 rounded-xl text-xs hover:bg-slate-100 dark:hover:bg-slate-800/70 text-slate-800 dark:text-slate-200 transition-colors text-left group cursor-pointer"
+                        >
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <div className="h-7 w-7 rounded-lg bg-emerald-100 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0 font-mono text-[10px] font-bold">
+                              #
+                            </div>
+                            <div className="min-w-0">
+                              <p className="font-semibold text-slate-900 dark:text-white truncate">
+                                {ord.id} <span className="text-slate-400 font-normal">({ord.customerName})</span>
+                              </p>
+                              <p className="text-[10px] text-slate-400 font-mono truncate">{ord.customerEmail || ord.status}</p>
+                            </div>
+                          </div>
+                          <span className="font-mono text-xs font-bold text-emerald-600 dark:text-emerald-400 shrink-0 pl-2">
+                            {formatPrice(convertPrice(ord.total, currency), currency)}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          )}
         </div>
       </div>
 
@@ -4939,6 +5132,15 @@ admin@veloce.co.ke`;
                 badge: `${products.length}`,
                 badgeType: 'count',
                 iconColor: 'text-indigo-500',
+              },
+              {
+                id: 'suppliers' as const,
+                buttonId: 'btn-tab-suppliers',
+                label: 'Suppliers & Consignments',
+                icon: Truck,
+                badge: 'SUPPLY',
+                badgeType: 'tag-emerald',
+                iconColor: 'text-emerald-500',
               },
               {
                 id: 'edit-product' as const,
@@ -5079,6 +5281,15 @@ admin@veloce.co.ke`;
                 badgeType: 'tag-indigo',
                 iconColor: 'text-amber-500',
               },
+              {
+                id: 'site-settings' as const,
+                buttonId: 'btn-tab-site-settings',
+                label: 'Site Settings',
+                icon: Settings,
+                badge: 'CONFIG',
+                badgeType: 'tag-indigo',
+                iconColor: 'text-indigo-500',
+              },
             ]
               .filter((item) => {
                 if (!adminMenuFilter.trim()) return true;
@@ -5155,7 +5366,7 @@ admin@veloce.co.ke`;
               'analytics', 'products', 'categories', 'bulk-price', 'orders', 
               'custom-clothing', 'email', 'campaigns', 'promotions', 'payouts', 
               'affiliates', 'inventory-logs', 'inventory-alerts', 
-              'backup', 'order-lookup', 'returns', 'shipping', 'hero-slider'
+              'backup', 'order-lookup', 'returns', 'shipping', 'hero-slider', 'site-settings'
             ].every((id) => !id.includes(adminMenuFilter.toLowerCase())) && (
               <div className="py-6 text-center text-xs text-slate-400">
                 No matching admin features.
@@ -5303,47 +5514,6 @@ admin@veloce.co.ke`;
       {/* Dashboard Sub-content */}
       {adminSubTab === 'analytics' && (
         <div className="mt-8 flex flex-col gap-8">
-          {/* Quick System Action Toolbar */}
-          <div className="flex flex-wrap items-center justify-between gap-3 p-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-xs font-sans">
-            <div className="flex items-center gap-2">
-              <span className="font-bold text-slate-700 dark:text-slate-200">Database Engine:</span>
-              <span className="font-mono text-emerald-900 dark:text-emerald-300 font-bold bg-emerald-100 dark:bg-emerald-950/60 px-2 py-0.5 rounded border border-emerald-200 dark:border-emerald-800 text-[11px]">
-                {dbSourceInfo.dbEngine}
-              </span>
-              <span className="text-slate-500 text-[11px] hidden md:inline">
-                • {effectiveOrders.length} Orders | {effectiveProducts.length} Items
-              </span>
-            </div>
-            <div className="flex items-center gap-2 flex-wrap">
-              <button
-                onClick={handleSeedProductsToSqliteDatabase}
-                disabled={isLiveDbFetching}
-                className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 disabled:opacity-50 transition-colors text-white py-1.5 px-3 text-xs font-bold shadow-xs cursor-pointer"
-                title="Seed products catalog directly into SQLite database (veloce.sqlite)"
-              >
-                <Database className="h-3.5 w-3.5" />
-                Seed SQLite
-              </button>
-              <button
-                onClick={handleQuickSystemCleanup}
-                disabled={isLiveDbFetching}
-                className="inline-flex items-center gap-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 disabled:opacity-50 transition-colors text-white py-1.5 px-3 text-xs font-bold shadow-xs cursor-pointer"
-                title="Wipe all simulation data across all categories in one action"
-              >
-                <Scissors className="h-3.5 w-3.5" />
-                Quick Cleanup
-              </button>
-              <button
-                onClick={handlePurgeAllDatabaseData}
-                disabled={isLiveDbFetching}
-                className="inline-flex items-center gap-1.5 rounded-lg bg-rose-700 hover:bg-rose-800 disabled:opacity-50 transition-colors text-white py-1.5 px-3 text-xs font-bold shadow-xs cursor-pointer"
-                title="Wipe all sample products/orders to start fresh"
-              >
-                <Trash2 className="h-3.5 w-3.5" />
-                Purge Data
-              </button>
-            </div>
-          </div>
           {/* Low Stock Alerts Banner */}
           {lowStockProducts.length > 0 && (
             <div className="rounded-xl border border-red-100 bg-red-50/70 p-4 shadow-3xs animate-in fade-in duration-200">
@@ -9186,7 +9356,7 @@ admin@veloce.co.ke`;
 
       {adminSubTab === 'bulk-price' && (
         <Suspense fallback={<ChartLoaderFallback />}>
-          <div className="mt-8 font-sans">
+          <div className="-mt-6 -mx-4 sm:-mx-6 lg:-mx-8 xl:-mx-10 font-sans">
             <BulkCatalogPriceAdjustmentPage
               products={products}
               availableCategories={availableCategories}
@@ -9252,6 +9422,20 @@ admin@veloce.co.ke`;
       {adminSubTab === 'hero-slider' && (
         <div className="mt-6">
           <AdminHeroSliderManager />
+        </div>
+      )}
+
+      {adminSubTab === 'site-settings' && (
+        <div className="mt-6">
+          <SiteSettingsPanel />
+        </div>
+      )}
+
+      {adminSubTab === 'suppliers' && (
+        <div className="mt-6">
+          <Suspense fallback={<ChartLoaderFallback />}>
+            <SupplierManagementPanel darkMode={darkMode} currency={currency} />
+          </Suspense>
         </div>
       )}
 

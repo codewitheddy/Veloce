@@ -17,6 +17,16 @@ dotenv.config();
 const app = express();
 const PORT = Number(process.env.PORT) || 3000;
 
+// Security & Production Hardening Headers
+app.disable("x-powered-by");
+app.use((_req, res, next) => {
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("X-Frame-Options", "SAMEORIGIN");
+  res.setHeader("X-XSS-Protection", "1; mode=block");
+  res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
+  next();
+});
+
 // Middleware for body parsing with increased size limit for database sync, backups, and media
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ limit: "50mb", extended: true }));
@@ -28,10 +38,12 @@ app.get("/api/health", (req, res) => {
   res.json({ status: "healthy", timestamp: new Date().toISOString() });
 });
 
-// Proxy CRM and Django routes to Django backend (http://127.0.0.1:8000)
-app.use(['/api/customers', '/api/deals', '/api/invoices', '/api/customer-orders'], async (req, res) => {
+const DJANGO_BACKEND_URL = process.env.DJANGO_BACKEND_URL || "http://127.0.0.1:8000";
+
+// Proxy CRM, Django settings, and other Django routes to Django backend
+app.use(['/api/customers', '/api/deals', '/api/invoices', '/api/customer-orders', '/api/settings'], async (req, res) => {
   try {
-    const djangoUrl = `http://127.0.0.1:8000${req.originalUrl}`;
+    const djangoUrl = `${DJANGO_BACKEND_URL}${req.originalUrl}`;
     const headers: Record<string, string> = {};
     if (req.headers['content-type']) headers['content-type'] = req.headers['content-type'] as string;
     if (req.headers['authorization']) headers['authorization'] = req.headers['authorization'] as string;
@@ -88,7 +100,7 @@ const mailTransporter = nodemailer.createTransport({
   secure: process.env.EMAIL_USE_SSL !== 'false',
   auth: {
     user: process.env.EMAIL_HOST_USER || "noreply@marid.co.ke",
-    pass: process.env.EMAIL_HOST_PASSWORD || "Kitale254.@",
+    pass: process.env.EMAIL_HOST_PASSWORD || "",
   },
   tls: {
     rejectUnauthorized: false
@@ -1784,7 +1796,7 @@ app.post(['/api/auth/superuser-login', '/api/auth/superuser-login/'], async (req
 
   // Attempt forward to Django backend authentication first
   try {
-    const djangoRes = await fetch('http://127.0.0.1:8000/api/auth/superuser-login/', {
+    const djangoRes = await fetch(`${DJANGO_BACKEND_URL}/api/auth/superuser-login/`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ username, password })
@@ -3025,7 +3037,7 @@ app.get("/api/email/unsubscribed-list", (req, res) => {
 });
 
 app.get("/api/email/config", (req, res) => {
-  const pass = process.env.EMAIL_HOST_PASSWORD || "Kitale254.@";
+  const pass = process.env.EMAIL_HOST_PASSWORD || "";
   res.json({
     configured: Boolean(pass),
     host: process.env.EMAIL_HOST || "mail.marid.co.ke",
@@ -3063,7 +3075,7 @@ app.post("/api/email/send", async (req, res) => {
       return;
     }
 
-    const pass = process.env.EMAIL_HOST_PASSWORD || "Kitale254.@";
+    const pass = process.env.EMAIL_HOST_PASSWORD || "";
 
     // Auto-append Unsubscribe Footer if HTML format and doesn't contain unsubscribe link
     let finalHtml = html || text;
@@ -3154,7 +3166,7 @@ app.post("/api/auth/password-reset", async (req, res) => {
     `;
 
     // Attempt SMTP dispatch
-    const pass = process.env.EMAIL_HOST_PASSWORD || "Kitale254.@";
+    const pass = process.env.EMAIL_HOST_PASSWORD || "";
     if (pass) {
       const transporter = getSmtpTransporter();
       const from = process.env.DEFAULT_FROM_EMAIL || "Veloce Kenya <noreply@marid.co.ke>";
@@ -3491,7 +3503,7 @@ const validateSmtpHandler = async (req: express.Request, res: express.Response) 
   if (!user.includes("@")) {
     user = `noreply@${user}`;
   }
-  const pass = process.env.EMAIL_HOST_PASSWORD || "Kitale254.@";
+  const pass = process.env.EMAIL_HOST_PASSWORD || "";
   const useSsl = process.env.EMAIL_USE_SSL !== "false" && (process.env.EMAIL_USE_SSL === "true" || port === 465);
   const defaultFrom = process.env.DEFAULT_FROM_EMAIL || "Veloce Kenya <noreply@marid.co.ke>";
   const backend = process.env.EMAIL_BACKEND || "django.core.mail.backends.smtp.EmailBackend";
@@ -3581,7 +3593,7 @@ app.post("/api/email/update-config", async (req, res) => {
     const activeHost = process.env.EMAIL_HOST || "mail.marid.co.ke";
     const activePort = Number(process.env.EMAIL_PORT) || 465;
     const activeUser = process.env.EMAIL_HOST_USER || "noreply@marid.co.ke";
-    const activePass = process.env.EMAIL_HOST_PASSWORD || "Kitale254.@";
+    const activePass = process.env.EMAIL_HOST_PASSWORD || "";
     const activeSsl = process.env.EMAIL_USE_SSL !== "false" && (process.env.EMAIL_USE_SSL === "true" || activePort === 465);
     const activeFrom = process.env.DEFAULT_FROM_EMAIL || "Veloce Kenya <noreply@marid.co.ke>";
 
@@ -3666,7 +3678,7 @@ app.post("/api/email/diagnose-smtp", async (req, res) => {
   if (!user.includes("@")) {
     user = `noreply@${user}`;
   }
-  const pass = process.env.EMAIL_HOST_PASSWORD || "Kitale254.@";
+  const pass = process.env.EMAIL_HOST_PASSWORD || "";
   const useSsl = process.env.EMAIL_USE_SSL !== "false" && (process.env.EMAIL_USE_SSL === "true" || port === 465);
   const defaultFrom = process.env.DEFAULT_FROM_EMAIL || "Veloce Kenya <noreply@marid.co.ke>";
 
@@ -4416,16 +4428,55 @@ async function startServer() {
     // Use Vite middlewares
     app.use(vite.middlewares);
   } else {
-    // Serve production static assets from dist
+    // Serve production static assets from dist with caching policies
     const distPath = path.join(process.cwd(), "dist");
-    app.use(express.static(distPath));
+    app.use(
+      "/assets",
+      express.static(path.join(distPath, "assets"), {
+        maxAge: "1y",
+        immutable: true,
+      })
+    );
+    app.use(express.static(distPath, { maxAge: "1h" }));
     app.get("*", (req, res) => {
+      res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
       res.sendFile(path.join(distPath, "index.html"));
     });
   }
 
-  app.listen(PORT, "0.0.0.0", () => {
+  // Global error handler middleware
+  app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
+    console.error(`[Unhandled Server Error] ${req.method} ${req.originalUrl}:`, err);
+    if (res.headersSent) {
+      return next(err);
+    }
+    res.status(500).json({
+      error: "An unexpected server error occurred.",
+      status: 500,
+      timestamp: new Date().toISOString(),
+    });
+  });
+
+  const server = app.listen(PORT, "0.0.0.0", () => {
     console.log(`[Veloce Server] Running on http://localhost:${PORT}`);
+  });
+
+  const gracefulShutdown = (signal: string) => {
+    console.log(`[Veloce Server] Received ${signal}. Shutting down gracefully...`);
+    server.close(() => {
+      console.log("[Veloce Server] Closed out remaining connections. Process terminated.");
+      process.exit(0);
+    });
+    setTimeout(() => {
+      console.error("[Veloce Server] Forcefully shutting down after timeout.");
+      process.exit(1);
+    }, 10000);
+  };
+
+  process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
+  process.on("SIGINT", () => gracefulShutdown("SIGINT"));
+  process.on("unhandledRejection", (reason) => {
+    console.error("[Veloce Server] Unhandled Promise Rejection:", reason);
   });
 }
 

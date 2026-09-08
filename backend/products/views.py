@@ -298,3 +298,38 @@ class ProductViewSet(viewsets.ModelViewSet):
             }, status=status.HTTP_200_OK)
 
         return Response({'error': 'Unsupported bulk action.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    @action(detail=False, methods=['post'], url_path='bulk_price_adjustment')
+    def bulk_price_adjustment(self, request):
+        """
+        Atomically updates prices for multiple products with optional original_price (strikethrough) tracking.
+        Payload: { "items": [ { "id": "...", "price": 1200, "original_price": 1500 }, ... ] }
+        """
+        from decimal import Decimal
+        from django.db import transaction
+
+        items = request.data.get('items', [])
+        if not isinstance(items, list):
+            return Response({'error': 'Expected an "items" list of product updates.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        updated_count = 0
+        with transaction.atomic():
+            for item in items:
+                prod_id = item.get('id')
+                new_price = item.get('price')
+                original_price = item.get('original_price')
+                if not prod_id or new_price is None:
+                    continue
+
+                update_dict = {'price': Decimal(str(new_price))}
+                if 'original_price' in item:
+                    update_dict['original_price'] = Decimal(str(original_price)) if original_price is not None else None
+
+                updated = Product.objects.filter(id=prod_id).update(**update_dict)
+                if updated:
+                    updated_count += 1
+
+        return Response({
+            'message': f'Successfully updated prices for {updated_count} product(s).',
+            'affected_count': updated_count
+        }, status=status.HTTP_200_OK)

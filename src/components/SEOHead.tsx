@@ -6,6 +6,7 @@
 import React, { useMemo } from 'react';
 import { useSEO, SEOConfig } from '../hooks/useSEO';
 import { Product, BlogPost } from '../types';
+import { useSiteSettings } from '../context/SiteSettingsContext';
 
 interface SEOHeadProps {
   currentTab: string;
@@ -17,8 +18,6 @@ interface SEOHeadProps {
   blogs?: BlogPost[];
 }
 
-const BASE_URL = 'https://veloce.co.ke';
-
 export const SEOHead: React.FC<SEOHeadProps> = ({
   currentTab,
   selectedProduct,
@@ -28,11 +27,15 @@ export const SEOHead: React.FC<SEOHeadProps> = ({
   products = [],
   blogs = [],
 }) => {
+  const { settings } = useSiteSettings();
+  const BASE_URL = settings.seo.canonical_base_url || 'https://veloce.co.ke';
+  const siteName = settings.general.site_name || 'Veloce Marketplace';
+
   const seoConfig = useMemo<SEOConfig>(() => {
     // 1. If viewing an individual product detail
     if (selectedProduct) {
       const productName = selectedProduct.name || (selectedProduct as any).title || 'Product Detail';
-      const productImage = selectedProduct.imageUrl || (selectedProduct as any).image || 'https://veloce.co.ke/og-image.svg';
+      const productImage = selectedProduct.imageUrl || (selectedProduct as any).image || settings.seo.og_image_url || 'https://veloce.co.ke/og-image.svg';
       const gallery = selectedProduct.images || selectedProduct.gallery_images || [];
 
       const cleanDesc = (selectedProduct.description || selectedProduct.shortDescription || '')
@@ -45,11 +48,11 @@ export const SEOHead: React.FC<SEOHeadProps> = ({
         '@type': 'Product',
         name: productName,
         image: [productImage, ...gallery].filter(Boolean),
-        description: cleanDesc || `Buy ${productName} at Veloce. Premium craftsmanship and guaranteed quality.`,
+        description: cleanDesc || `Buy ${productName} at ${siteName}. Premium craftsmanship and guaranteed quality.`,
         sku: selectedProduct.sku || `VEL-${selectedProduct.id}`,
         brand: {
           '@type': 'Brand',
-          name: selectedProduct.brand || 'Veloce',
+          name: selectedProduct.brand || siteName,
         },
         offers: {
           '@type': 'Offer',
@@ -64,7 +67,7 @@ export const SEOHead: React.FC<SEOHeadProps> = ({
               : 'https://schema.org/OutOfStock',
           seller: {
             '@type': 'Organization',
-            name: 'Veloce Marketplace',
+            name: siteName,
           },
         },
       };
@@ -98,12 +101,6 @@ export const SEOHead: React.FC<SEOHeadProps> = ({
           {
             '@type': 'ListItem',
             position: 3,
-            name: selectedProduct.category || 'Products',
-            item: `${BASE_URL}/store?category=${encodeURIComponent(selectedProduct.category || '')}`,
-          },
-          {
-            '@type': 'ListItem',
-            position: 4,
             name: productName,
             item: `${BASE_URL}/store?product=${selectedProduct.id}`,
           },
@@ -111,22 +108,23 @@ export const SEOHead: React.FC<SEOHeadProps> = ({
       };
 
       return {
-        title: `${productName} | Buy Online`,
-        description: cleanDesc || `Order ${productName} online with safe checkout and swift delivery across Kenya.`,
-        keywords: `${productName}, ${selectedProduct.category || ''}, buy ${productName} online, Veloce store, Kenya eCommerce`,
+        title: `${productName} | ${siteName}`,
+        description: cleanDesc || `Buy ${productName} on ${siteName}. Guaranteed delivery with secure payment processing.`,
+        keywords: `${productName}, buy ${productName}, ${selectedProduct.category}, online store Kenya, ${siteName}`,
         canonicalUrl: `${BASE_URL}/store?product=${selectedProduct.id}`,
         ogType: 'product',
         ogImage: productImage,
-        ogImageAlt: productName,
         jsonLd: [productSchema, breadcrumbsSchema],
       };
     }
 
-    // 2. Tab-specific routing SEO
+    // 2. Tab-specific SEO metadata
     switch (currentTab) {
       case 'store': {
-        const catTitle = selectedCategory ? `${selectedCategory} Collection` : 'Proprietary Store & Marketplace';
-        const pageTitle = searchQuery ? `Search Results for "${searchQuery}"` : catTitle;
+        const pageTitle = selectedCategory
+          ? `${selectedCategory} Collection | ${siteName}`
+          : `Catalog & Products | ${siteName}`;
+
         const pageDesc = selectedCategory
           ? `Discover our exclusive ${selectedCategory} collection. Handcrafted physical goods, digital assets, and custom apparel with verified delivery.`
           : 'Browse our complete catalog of physical workspace accessories, bespoke clothing, digital downloads, and professional services.';
@@ -172,7 +170,7 @@ export const SEOHead: React.FC<SEOHeadProps> = ({
         return {
           title: pageTitle,
           description: pageDesc,
-          keywords: `eCommerce store, online shopping, buy hardware, digital assets, custom apparel, Veloce catalog, ${selectedCategory || ''}`,
+          keywords: `eCommerce store, online shopping, buy hardware, digital assets, custom apparel, ${siteName} catalog, ${selectedCategory || ''}`,
           canonicalUrl: `${BASE_URL}/store`,
           ogType: 'website',
           jsonLd: [itemListSchema, breadcrumbsSchema],
@@ -186,7 +184,7 @@ export const SEOHead: React.FC<SEOHeadProps> = ({
           serviceType: 'Bespoke Custom Tailoring & Fashion Design',
           provider: {
             '@type': 'Organization',
-            name: 'Veloce',
+            name: siteName,
             url: BASE_URL,
           },
           areaServed: ['Kenya', 'East Africa', 'Worldwide'],
@@ -209,10 +207,10 @@ export const SEOHead: React.FC<SEOHeadProps> = ({
         };
 
         return {
-          title: 'Bespoke Tailoring & Custom Garment Consultations',
+          title: `Bespoke Tailoring & Custom Garment Consultations | ${siteName}`,
           description:
-            'Order custom tailored clothing, upload design files, submit body measurements, and consult with master artisans on Veloce.',
-          keywords: 'custom tailoring, bespoke suits, evening gowns, made to measure clothing, fashion consultation Kenya, Veloce services',
+            'Order custom tailored clothing, upload design files, submit body measurements, and consult with master artisans.',
+          keywords: `custom tailoring, bespoke suits, evening gowns, made to measure clothing, fashion consultation Kenya, ${siteName} services`,
           canonicalUrl: `${BASE_URL}/services`,
           ogType: 'website',
           jsonLd: [servicesSchema, breadcrumbsSchema],
@@ -220,39 +218,13 @@ export const SEOHead: React.FC<SEOHeadProps> = ({
       }
 
       case 'blog': {
-        const blogListingSchema = {
-          '@context': 'https://schema.org',
-          '@type': 'Blog',
-          name: 'Veloce Insights & Blueprints',
-          description:
-            'Curated perspectives on modern workspace machinery, affiliate growth strategies, luxury craftsmanship, and digital lifestyle.',
-          url: `${BASE_URL}/blog`,
-          blogPost: blogs.slice(0, 10).map((b) => ({
-            '@type': 'BlogPosting',
-            headline: b.title,
-            datePublished: b.date,
-            author: { '@type': 'Person', name: b.author },
-            image: b.imageUrl,
-          })),
-        };
-
-        const breadcrumbsSchema = {
-          '@context': 'https://schema.org',
-          '@type': 'BreadcrumbList',
-          itemListElement: [
-            { '@type': 'ListItem', position: 1, name: 'Home', item: BASE_URL },
-            { '@type': 'ListItem', position: 2, name: 'Blog', item: `${BASE_URL}/blog` },
-          ],
-        };
-
         return {
-          title: 'Veloce Insights | Workspace Blueprints & Market Guides',
+          title: `Insights & Industry Articles | ${siteName}`,
           description:
-            'Explore expert guides on workspace setup, tailoring aesthetics, eCommerce architecture, and affiliate marketing insights.',
-          keywords: 'eCommerce blog, workspace blueprints, affiliate marketing guides, bespoke fashion tips, Veloce insights',
+            'Read the latest guides on artisan craftsmanship, modern workspace engineering, and style trends.',
+          keywords: `eCommerce blog, tailoring guides, ergonomics tips, ${siteName} insights`,
           canonicalUrl: `${BASE_URL}/blog`,
-          ogType: 'website',
-          jsonLd: [blogListingSchema, breadcrumbsSchema],
+          ogType: 'article',
         };
       }
 
@@ -260,8 +232,7 @@ export const SEOHead: React.FC<SEOHeadProps> = ({
         const contactPageSchema = {
           '@context': 'https://schema.org',
           '@type': 'ContactPage',
-          name: 'Contact Veloce Support & Help Center',
-          description: 'Get in touch with customer support, submit custom service inquiries, or read shipping & returns FAQs.',
+          name: `Contact Support | ${siteName}`,
           url: `${BASE_URL}/contact`,
         };
 
@@ -271,26 +242,18 @@ export const SEOHead: React.FC<SEOHeadProps> = ({
           mainEntity: [
             {
               '@type': 'Question',
-              name: 'How long does shipping take within Kenya & internationally?',
+              name: 'How do I track my order?',
               acceptedAnswer: {
                 '@type': 'Answer',
-                text: 'Nairobi metro and regional Kenya deliveries arrive within 24 to 48 hours via local courier dispatch. International shipments are dispatched through DHL Express and arrive within 3 to 7 business days.',
+                text: 'You can track your order using the Live Courier Tracker in the footer navigation or by entering your order ID.',
               },
             },
             {
               '@type': 'Question',
-              name: 'How can I track my physical order status?',
+              name: 'What payment methods are supported?',
               acceptedAnswer: {
                 '@type': 'Answer',
-                text: 'Once your order is processed, a unique courier tracking code is generated and saved directly in your User Account orders statement, alongside live SMS and email updates.',
-              },
-            },
-            {
-              '@type': 'Question',
-              name: 'Are delivery fees refundable if an item is returned?',
-              acceptedAnswer: {
-                '@type': 'Answer',
-                text: 'Standard courier delivery fees are fully covered by Veloce if the return is due to transit damage or manufacturing defect.',
+                text: 'We support M-PESA Express STK push, M-PESA Paybill, Visa/Mastercard credit/debit cards, and Cash on Delivery.',
               },
             },
           ],
@@ -306,10 +269,10 @@ export const SEOHead: React.FC<SEOHeadProps> = ({
         };
 
         return {
-          title: 'Contact Support, Inquiries & FAQs',
+          title: `Contact Support, Inquiries & FAQs | ${siteName}`,
           description:
-            'Have questions about your order, shipping, or returns? Contact Veloce customer support or browse our comprehensive FAQs.',
-          keywords: 'contact veloce, customer support, ecommerce help desk, order tracking help, shipping FAQ Kenya',
+            `Have questions about your order, shipping, or returns? Contact ${siteName} customer support or browse our comprehensive FAQs.`,
+          keywords: `contact ${siteName.toLowerCase()}, customer support, ecommerce help desk, order tracking help, shipping FAQ Kenya`,
           canonicalUrl: `${BASE_URL}/contact`,
           ogType: 'website',
           jsonLd: [contactPageSchema, faqSchema, breadcrumbsSchema],
@@ -318,10 +281,10 @@ export const SEOHead: React.FC<SEOHeadProps> = ({
 
       case 'privacy': {
         return {
-          title: 'Privacy Policy & Terms of Service',
+          title: `Privacy Policy & Terms of Service | ${siteName}`,
           description:
             'Read our comprehensive privacy policy detailing our SSL encryption standards, cookie policies, and data protection guarantees.',
-          keywords: 'privacy policy, terms of service, data protection, secure shopping, Veloce policy',
+          keywords: 'privacy policy, terms of service, data protection, secure shopping, policy',
           canonicalUrl: `${BASE_URL}/privacy`,
           ogType: 'website',
         };
@@ -332,7 +295,7 @@ export const SEOHead: React.FC<SEOHeadProps> = ({
       case 'user':
       case 'unsubscribe':
         return {
-          title: currentTab === 'admin' ? 'Django Admin Suite' : 'Account & Secure Gateway',
+          title: currentTab === 'admin' ? 'Django Admin Suite' : `Account & Gateway | ${siteName}`,
           robots: 'noindex, nofollow',
           canonicalUrl: `${BASE_URL}/${currentTab}`,
         };
@@ -342,7 +305,7 @@ export const SEOHead: React.FC<SEOHeadProps> = ({
         const homeSchema = {
           '@context': 'https://schema.org',
           '@type': 'WebSite',
-          name: 'Veloce Marketplace',
+          name: siteName,
           url: BASE_URL,
           potentialAction: {
             '@type': 'SearchAction',
@@ -355,17 +318,19 @@ export const SEOHead: React.FC<SEOHeadProps> = ({
         };
 
         return {
-          title: 'Premium eCommerce & Affiliate Marketplace',
+          title: settings.seo.meta_title || `${siteName} | Luxury eCommerce & Affiliate Marketplace`,
           description:
-            'Explore Veloce, the unified luxury eCommerce and affiliate marketplace featuring bespoke tailoring, curated physical products, high-utility digital assets, and verified merchant tracking.',
-          keywords: 'eCommerce marketplace, bespoke tailoring, workspace accessories, digital downloads, affiliate platform, online store Kenya, Veloce',
+            settings.seo.meta_description ||
+            `Explore ${siteName}, the unified luxury eCommerce and affiliate marketplace featuring bespoke tailoring, curated physical products, and verified merchant tracking.`,
+          keywords: settings.seo.meta_keywords || `eCommerce marketplace, bespoke tailoring, workspace accessories, digital downloads, affiliate platform, online store Kenya, ${siteName}`,
           canonicalUrl: `${BASE_URL}/`,
           ogType: 'website',
+          ogImage: settings.seo.og_image_url || undefined,
           jsonLd: homeSchema,
         };
       }
     }
-  }, [currentTab, selectedProduct, selectedCategory, selectedSubcategory, searchQuery, products, blogs]);
+  }, [currentTab, selectedProduct, selectedCategory, selectedSubcategory, searchQuery, products, blogs, settings, BASE_URL, siteName]);
 
   // Hook handles DOM injection and sync
   useSEO(seoConfig);

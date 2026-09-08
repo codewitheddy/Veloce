@@ -3,13 +3,17 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect } from 'react';
-import { ShoppingBag, Trash2, Tag, CreditCard, Clock, FileText, ArrowRight, CheckCircle, Download, Check, Sparkles, Award, Gift, Heart, Mail, Printer, Send, Inbox, ExternalLink, RefreshCw, Plus, Minus, AlertCircle, CheckCircle2, XCircle, Warehouse, Truck, MapPin, Building2, UserCheck, Navigation, Phone, Calendar, Info, X, Percent, Flame, Smartphone, Copy } from 'lucide-react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { ShoppingBag, Trash2, Tag, CreditCard, Clock, FileText, ArrowRight, CheckCircle, Download, Check, Sparkles, Award, Gift, Heart, Mail, Printer, Send, Inbox, ExternalLink, RefreshCw, Plus, Minus, AlertCircle, CheckCircle2, XCircle, Warehouse, Truck, MapPin, Building2, UserCheck, Navigation, Phone, Calendar, Info, X, Percent, Flame, Smartphone, Copy, Zap, Globe, MessageCircle } from 'lucide-react';
 import { CartItem, Product, Order, CouponItem } from '../types';
 import { CurrencyType, formatPrice } from '../lib/currency';
 import { emailService } from '../services/api';
 import HappyHourBanner from './HappyHourBanner';
 import AddressAutocomplete, { AddressDetails } from './AddressAutocomplete';
+import InteractiveDeliveryMap from './InteractiveDeliveryMap';
+import { calculate_delivery_fee } from '../services/deliveryEngine';
+import { ShippingZone, HappyHourWindow } from '../types/shipping';
+import { DEFAULT_STORE_LOCATION } from '../services/maps';
 import {
   isCouponExpired,
   isCouponActive,
@@ -24,6 +28,7 @@ import {
   runMixedCartTaxValidationTest,
 } from '../utils/taxUtils';
 import { getProductDiscountInfo } from '../utils/productUtils';
+import { useSiteSettings } from '../context/SiteSettingsContext';
 
 export interface WarehouseHub {
   id: string;
@@ -410,6 +415,60 @@ export default function CheckoutFlow({
   setCurrentTab,
   onSwitchTab,
 }: CheckoutFlowProps) {
+  const { settings } = useSiteSettings();
+  const mpesaPaybill = settings.payments.mpesa_paybill || '303030';
+  const mpesaAccountNumber = settings.payments.mpesa_account_number || '2047728455';
+  const mpesaAccountName = settings.payments.mpesa_account_name || 'ROPENIX INVESTMENTS LTD';
+  const whatsappNumber = settings.payments.whatsapp_number || '0717147007';
+  const cleanWhatsAppNumber = whatsappNumber.replace(/\D/g, '').replace(/^0/, '254').replace(/^254254/, '254');
+
+  const buildWhatsAppOrderUrl = (order: Order) => {
+    const itemsList = order.items
+      .map((item, idx) => {
+        const variationText =
+          Object.keys(item.selectedVariations || {}).length > 0
+            ? ` (${Object.entries(item.selectedVariations)
+                .map(([k, v]) => `${k}: ${v}`)
+                .join(', ')})`
+            : '';
+        return `${idx + 1}. *${item.name}*${variationText}\n   Qty: ${item.quantity} × KSh ${item.price.toLocaleString('en-KE')} = *KSh ${(item.price * item.quantity).toLocaleString('en-KE')}*`;
+      })
+      .join('\n');
+
+    const deliveryText =
+      order.fulfillmentType === 'pickup'
+        ? `🏬 *Fulfillment:* Self-Pickup (${order.pickupLocation || 'Warehouse Hub'})`
+        : `🚚 *Delivery Address:* ${order.shippingAddress || 'Nairobi'} (${shippingCity}, Postal Code: ${shippingZip})`;
+
+    const discountsText =
+      order.discountAmount && order.discountAmount > 0
+        ? `\n🏷️ *Discount Savings:* -KSh ${order.discountAmount.toLocaleString('en-KE')}`
+        : '';
+
+    const couponText = order.couponCode ? ` (Promo: ${order.couponCode})` : '';
+
+    const message = `🛍️ *NEW ORDER - VELOCE KENYA*
+----------------------------------------
+📋 *Order Ref:* #${order.id.toUpperCase()}
+👤 *Customer Name:* ${order.customerName}
+📞 *Phone Number:* ${order.phone || 'N/A'}
+📧 *Email:* ${order.customerEmail}
+${deliveryText}
+
+📦 *Order Items:*
+${itemsList}
+----------------------------------------
+💰 *Subtotal:* KSh ${(order.subtotal || order.total).toLocaleString('en-KE')}
+🚚 *Delivery:* ${order.shippingFee === 0 ? 'FREE' : `KSh ${(order.shippingFee || 0).toLocaleString('en-KE')}`}${discountsText}${couponText}
+💵 *ORDER TOTAL:* *KSh ${order.total.toLocaleString('en-KE')}*
+
+💳 *Payment Option:* WhatsApp Order (M-Pesa / Cash on Confirmation)
+----------------------------------------
+_Hello Veloce Team, I would like to place and confirm this order!_`;
+
+    return `https://wa.me/${cleanWhatsAppNumber}?text=${encodeURIComponent(message)}`;
+  };
+
   // Coupon management
   const [couponInput, setCouponInput] = useState('');
   const [appliedCoupon, setAppliedCoupon] = useState('');
@@ -472,11 +531,61 @@ export default function CheckoutFlow({
   const [cardExpiry, setCardExpiry] = useState('');
   const [cardCvv, setCardCvv] = useState('');
 
-  // M-Pesa and COD Kenya state variables
-  const [paymentMethod, setPaymentMethod] = useState<'mpesa' | 'cod'>('mpesa');
+  // M-Pesa, COD, and WhatsApp state variables
+  const [paymentMethod, setPaymentMethod] = useState<'mpesa' | 'cod' | 'whatsapp'>('mpesa');
   const [mpesaPhone, setMpesaPhone] = useState(getInitialCustomerPhone);
   const [mpesaTransactionCode, setMpesaTransactionCode] = useState('');
   const [copiedField, setCopiedField] = useState<'paybill' | 'account' | null>(null);
+
+  // Dynamic Delivery & Shipping Matrix Settings
+  const [storeZones, setStoreZones] = useState<ShippingZone[]>(() => {
+    try {
+      const saved = localStorage.getItem('veloce_shipping_zones');
+      if (saved) return JSON.parse(saved);
+    } catch {}
+    return [];
+  });
+
+  const [storeHappyHours, setStoreHappyHours] = useState<HappyHourWindow[]>(() => {
+    try {
+      const saved = localStorage.getItem('veloce_happy_hour_windows');
+      if (saved) return JSON.parse(saved);
+    } catch {}
+    return [];
+  });
+
+  const [storeFreeThreshold, setStoreFreeThreshold] = useState<number>(() => {
+    try {
+      const saved = localStorage.getItem('veloce_free_delivery_threshold');
+      if (saved) return Number(saved);
+    } catch {}
+    return 5000;
+  });
+
+  const [isExpressDelivery, setIsExpressDelivery] = useState<boolean>(false);
+  const [customDistanceKm, setCustomDistanceKm] = useState<number | null>(null);
+  const [showMapPinModal, setShowMapPinModal] = useState<boolean>(false);
+
+  // Sync shipping matrix configurations whenever updated in admin
+  useEffect(() => {
+    const handleSettingsUpdate = () => {
+      try {
+        const savedZones = localStorage.getItem('veloce_shipping_zones');
+        if (savedZones) setStoreZones(JSON.parse(savedZones));
+        const savedHH = localStorage.getItem('veloce_happy_hour_windows');
+        if (savedHH) setStoreHappyHours(JSON.parse(savedHH));
+        const savedThresh = localStorage.getItem('veloce_free_delivery_threshold');
+        if (savedThresh) setStoreFreeThreshold(Number(savedThresh));
+      } catch {}
+    };
+
+    window.addEventListener('veloce_shipping_settings_updated', handleSettingsUpdate);
+    window.addEventListener('storage', handleSettingsUpdate);
+    return () => {
+      window.removeEventListener('veloce_shipping_settings_updated', handleSettingsUpdate);
+      window.removeEventListener('storage', handleSettingsUpdate);
+    };
+  }, []);
 
   const handleCopyText = (text: string, field: 'paybill' | 'account') => {
     navigator.clipboard.writeText(text);
@@ -651,7 +760,47 @@ export default function CheckoutFlow({
   const discountedSubtotal = Math.max(0, originalSubtotal - totalDiscountSavings);
   const subtotalAfterCouponOnly = Math.max(0, originalSubtotal - percentageDiscountAmount);
   const hasPhysicalItems = cart.some(item => item.product.type === 'physical');
-  const shippingFee = (fulfillmentMethod === 'pickup' || !hasPhysicalItems) ? 0.00 : 15.00;
+
+  // Dynamic Multi-layered Delivery Fee Calculation Engine
+  const deliveryFeeCalculation = useMemo(() => {
+    if (fulfillmentMethod === 'pickup' || !hasPhysicalItems) {
+      return {
+        fee: 0,
+        originalFee: 0,
+        discount: 0,
+        reason: fulfillmentMethod === 'pickup' ? 'Self-Pickup (FREE)' : 'Digital Fulfillment (FREE)',
+        reasonCode: 'free_threshold' as const,
+        isFreeDelivery: true,
+        isHappyHourApplied: false,
+        amountRemainingForFreeShipping: 0,
+        estimatedTimeframe: 'Ready in 2–4 Business Hours',
+        breakdown: { baseFee: 0, distanceFee: 0, expressSurcharge: 0, discountAmount: 0 }
+      };
+    }
+
+    return calculate_delivery_fee({
+      orderSubtotal: discountedSubtotal,
+      distanceKm: customDistanceKm !== null ? customDistanceKm : 5.5,
+      isExpress: isExpressDelivery,
+      freeDeliveryThreshold: storeFreeThreshold,
+      zones: storeZones,
+      happyHours: storeHappyHours,
+      selectedRegion: `${shippingAddress} ${shippingCity}`
+    });
+  }, [
+    fulfillmentMethod,
+    hasPhysicalItems,
+    discountedSubtotal,
+    customDistanceKm,
+    isExpressDelivery,
+    storeFreeThreshold,
+    storeZones,
+    storeHappyHours,
+    shippingAddress,
+    shippingCity
+  ]);
+
+  const shippingFee = deliveryFeeCalculation.fee;
 
   // Calculate line-item tax for mixed-tax carts (Requirement 6.2)
   const mixedTaxSummary = calculateMixedCartTax(
@@ -800,7 +949,7 @@ export default function CheckoutFlow({
         shippingFee: mixedTaxSummary.shippingFee,
         shippingTaxAmount: mixedTaxSummary.shippingTax,
         discountAmount,
-        status: paymentMethod === 'cod' ? 'pending' : 'processing',
+        status: (paymentMethod === 'cod' || paymentMethod === 'whatsapp') ? 'pending' : 'processing',
         date: new Date().toISOString().replace('T', ' ').slice(0, 16),
         couponCode: combinedCoupons,
         shippingAddress: effectiveShippingAddress,
@@ -810,8 +959,8 @@ export default function CheckoutFlow({
         pickupEstimatedTime: fulfillmentMethod === 'pickup' ? selectedWarehouse.readyTime : undefined,
         isGuest,
         paymentMethod: paymentMethod,
-        paymentStatus: paymentMethod === 'cod' ? 'unpaid' : (mpesaTransactionCode.trim() ? 'paid' : 'pending'),
-        paymentReference: mpesaTransactionCode.trim() || undefined,
+        paymentStatus: (paymentMethod === 'cod' || paymentMethod === 'whatsapp') ? 'unpaid' : (mpesaTransactionCode.trim() ? 'paid' : 'pending'),
+        paymentReference: paymentMethod === 'whatsapp' ? `WHATSAPP-${cleanWhatsAppNumber}` : (mpesaTransactionCode.trim() || undefined),
         mpesaPhone: mpesaPhone.trim() || trimmedPhone || undefined,
         paidAt: (paymentMethod === 'mpesa' && mpesaTransactionCode.trim()) ? new Date().toISOString().replace('T', ' ').slice(0, 16) : undefined,
       };
@@ -819,11 +968,21 @@ export default function CheckoutFlow({
       // Register order on overall state
       onPlaceOrder(newOrder);
 
+      // If WhatsApp order, launch WhatsApp chat with pre-formatted cart
+      if (paymentMethod === 'whatsapp') {
+        const waUrl = buildWhatsAppOrderUrl(newOrder);
+        try {
+          window.open(waUrl, '_blank');
+        } catch {
+          window.location.href = waUrl;
+        }
+      }
+
       // Save to checkout display and reset cart
       setCheckedOutOrder(newOrder);
       setIsProcessing(false);
 
-      // Mark order receipt as dispatched (handled by Django backend signal on order save)
+      // Mark order receipt as dispatched
       setEmailStatus('sent');
 
       onClearCart();
@@ -980,38 +1139,60 @@ export default function CheckoutFlow({
                 </div>
               </div>
 
-              {/* M-Pesa Paybill Payment Pass for Pending M-Pesa Orders */}
+              {/* M-Pesa Instruction Voucher */}
               {checkedOutOrder.paymentMethod === 'mpesa' && (
-                <div className="mt-4 rounded-xl border border-emerald-300 dark:border-emerald-800 bg-emerald-50/60 dark:bg-emerald-950/40 p-4 text-left font-sans shadow-3xs">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-[10px] font-bold font-mono text-emerald-900 dark:text-emerald-300 uppercase tracking-wider flex items-center gap-1.5">
-                      <Smartphone className="h-4 w-4 text-emerald-600" /> M-PESA Paybill Settlement
-                    </span>
-                    <span className="px-2 py-0.5 rounded bg-emerald-600 text-white font-mono text-[9px] font-bold">
-                      Paybill: 303030
-                    </span>
+                <div className="mt-4 rounded-xl border border-emerald-200 dark:border-emerald-800 bg-emerald-50/40 dark:bg-emerald-950/20 p-4 text-left font-sans">
+                  <div className="flex items-center gap-1.5 text-[10px] font-bold font-mono text-emerald-900 dark:text-emerald-300 uppercase tracking-wider mb-1.5">
+                    <Smartphone className="h-4 w-4 text-emerald-600 dark:text-emerald-400" /> M-Pesa Settlement Voucher
                   </div>
-                  <p className="text-[11px] text-gray-700 dark:text-gray-300 leading-relaxed font-light mb-3">
-                    If not yet settled, please complete payment of <strong>KSh {checkedOutOrder.total.toLocaleString('en-KE')}</strong> via M-PESA Paybill:
+                  <p className="text-[11px] text-gray-700 dark:text-gray-300 leading-relaxed font-light mb-2.5">
+                    If payment has not been completed, please use the Paybill details below:
                   </p>
-                  <div className="space-y-1.5 text-[10.5px] bg-white dark:bg-gray-900 p-3 rounded-lg border border-emerald-200 dark:border-emerald-800 font-mono text-gray-800 dark:text-gray-200">
+                  <div className="space-y-1.5 text-[10.5px] bg-white dark:bg-gray-900 p-2.5 rounded-lg border border-emerald-150 dark:border-emerald-900/40 font-mono text-gray-800 dark:text-gray-200">
                     <div className="flex justify-between">
-                      <span className="text-gray-400">Business / Paybill:</span>
-                      <span className="font-bold text-emerald-700 dark:text-emerald-400">303030</span>
+                      <span className="text-gray-400">Paybill Number:</span>
+                      <span className="font-bold text-emerald-700 dark:text-emerald-400">{mpesaPaybill}</span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-gray-400">Account Number:</span>
-                      <span className="font-bold text-emerald-700 dark:text-emerald-400">2047728455</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-gray-400">Account Name:</span>
-                      <span className="font-bold text-gray-900 dark:text-white">ROPENIX INVESTMENTS LTD</span>
-                    </div>
-                    <div className="flex justify-between border-t border-gray-100 dark:border-gray-800 pt-1.5">
-                      <span className="text-gray-400">Amount to Pay:</span>
-                      <span className="font-black text-gray-950 dark:text-white">KSh {checkedOutOrder.total.toLocaleString('en-KE')}</span>
+                      <span className="font-bold text-emerald-700 dark:text-emerald-400">{mpesaAccountNumber}</span>
                     </div>
                   </div>
+                </div>
+              )}
+
+              {/* WhatsApp Order Confirmation Banner */}
+              {checkedOutOrder.paymentMethod === 'whatsapp' && (
+                <div className="mt-4 rounded-2xl border border-emerald-200 dark:border-emerald-850 bg-emerald-50/60 dark:bg-emerald-950/30 p-4 text-left font-sans shadow-3xs">
+                  <div className="flex items-center gap-2.5 mb-2.5">
+                    <div className="p-2 rounded-xl bg-[#25D366] text-white shrink-0 shadow-2xs">
+                      <MessageCircle className="h-4 w-4 text-white" />
+                    </div>
+                    <div className="min-w-0">
+                      <h4 className="text-xs font-bold text-gray-950 dark:text-white leading-tight">
+                        Order Synced with WhatsApp!
+                      </h4>
+                      <span className="text-[10px] font-mono text-emerald-700 dark:text-emerald-400 font-medium">
+                        Concierge Line: {whatsappNumber}
+                      </span>
+                    </div>
+                  </div>
+
+                  <p className="text-[11px] text-gray-600 dark:text-gray-300 font-light leading-relaxed">
+                    Your order was forwarded to our WhatsApp business line (<strong>{whatsappNumber}</strong>). Our sales team will confirm your dispatch details.
+                  </p>
+
+                  <a
+                    href={buildWhatsAppOrderUrl(checkedOutOrder)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{ backgroundColor: '#25D366', color: '#ffffff' }}
+                    className="w-full mt-3 py-2.5 px-3 rounded-xl text-white font-bold text-xs flex items-center justify-center gap-2 shadow-sm hover:opacity-95 transition-all cursor-pointer"
+                    title="Re-open WhatsApp chat with your order summary"
+                  >
+                    <MessageCircle className="h-4 w-4 text-white" />
+                    <span className="text-white font-bold">Re-Open WhatsApp</span>
+                  </a>
                 </div>
               )}
 
@@ -1179,15 +1360,15 @@ export default function CheckoutFlow({
                 <div className="flex items-start justify-between pb-4 border-b border-gray-100/80 mb-6">
                   <div>
                     <span className="font-display font-bold text-sm tracking-tight text-gray-950 block">
-                      VE&rsquo;LOCKED ATELIER
+                      {settings.general.site_name || 'VELOCE KENYA'}
                     </span>
                     <span className="font-mono text-[8.5px] font-bold text-indigo-600 uppercase tracking-widest block mt-0.5">
-                      Secure Ledger Document Node
+                      {settings.receipts.receipt_header_text || 'Official Order Confirmation & Receipt'}
                     </span>
                   </div>
                   <div className="text-right">
                     <span className="inline-flex rounded bg-emerald-50 border border-emerald-150 px-2 py-0.5 text-[8px] font-bold text-emerald-800 uppercase font-mono tracking-wider">
-                      Invoice Settled
+                      {checkedOutOrder.paymentStatus === 'paid' ? 'Invoice Settled' : 'Order Received'}
                     </span>
                     <span className="block font-mono text-[9px] text-gray-450 mt-1.5 font-bold">
                       #{checkedOutOrder.id.toUpperCase()}
@@ -1199,13 +1380,13 @@ export default function CheckoutFlow({
                   Hi <strong>{checkedOutOrder.customerName}</strong>,
                 </p>
                 <p className="text-xs text-gray-600 leading-relaxed font-light mt-2.5">
-                  Your payment verification has cleared our merchant escrow. Your specified non-volatile custom creations are now scheduled for direct fulfillment routing. Below, you will find a summary record of your micro-ledger transaction details.
+                  Thank you for your order with <strong>{settings.general.site_name || 'Veloce Kenya'}</strong>. Your order has been registered and is being prepared for fulfillment. Below is your official receipt summary.
                 </p>
 
                 {/* Email Table breakdown */}
                 <div className="mt-6 border border-gray-100/60 rounded-lg overflow-hidden bg-gray-50/50 p-4">
                   <span className="block font-mono text-[8.5px] font-extrabold text-gray-400 uppercase tracking-widest mb-3">
-                    Acquisition Summary Ledger
+                    Order Summary
                   </span>
 
                   <div className="space-y-4">
@@ -1216,7 +1397,7 @@ export default function CheckoutFlow({
                           <div className="flex items-center gap-2 text-[9.5px] text-gray-400 font-mono">
                             <span>x{item.quantity}</span>
                             <span>•</span>
-                            <span>Unit: ${item.price.toFixed(2)}</span>
+                            <span>Unit: {formatPrice(item.price, currency)}</span>
                             <span>•</span>
                             <span className="uppercase text-[8px] px-1 border border-gray-100 rounded bg-white font-bold">{item.type}</span>
                           </div>
@@ -1227,7 +1408,7 @@ export default function CheckoutFlow({
                           )}
                         </div>
                         <span className="font-mono text-gray-950 font-semibold text-right shrink-0">
-                          ${(item.price * item.quantity).toFixed(2)}
+                          {formatPrice(item.price * item.quantity, currency)}
                         </span>
                       </div>
                     ))}
@@ -1237,21 +1418,27 @@ export default function CheckoutFlow({
                   <div className="mt-4 pt-4 border-t border-gray-100 flex flex-col gap-1.5 text-[11px] text-gray-600 font-light items-end">
                     <div className="flex justify-between w-full sm:w-48">
                       <span>Subtotal (Excl. Tax):</span>
-                      <strong className="font-mono text-gray-800">${orderSubtotalExclTax.toFixed(2)}</strong>
+                      <strong className="font-mono text-gray-800">{formatPrice(orderSubtotalExclTax, currency)}</strong>
                     </div>
                     <div className="flex justify-between w-full sm:w-48">
                       <span>VAT Tax (Included):</span>
-                      <strong className="font-mono text-gray-800">${orderTax.toFixed(2)}</strong>
+                      <strong className="font-mono text-gray-800">{formatPrice(orderTax, currency)}</strong>
                     </div>
                     {orderDiscount > 0 && (
                       <div className="flex justify-between w-full sm:w-48 text-emerald-600 font-semibold">
                         <span>Discounts Applied:</span>
-                        <strong className="font-mono">-${orderDiscount.toFixed(2)}</strong>
+                        <strong className="font-mono">-{formatPrice(orderDiscount, currency)}</strong>
+                      </div>
+                    )}
+                    {checkedOutOrder.shippingFee !== undefined && (
+                      <div className="flex justify-between w-full sm:w-48 text-gray-600">
+                        <span>Delivery Fee:</span>
+                        <strong className="font-mono">{checkedOutOrder.shippingFee === 0 ? 'FREE' : formatPrice(checkedOutOrder.shippingFee, currency)}</strong>
                       </div>
                     )}
                     <div className="flex justify-between w-full sm:w-48 border-t border-indigo-100 pt-2 text-xs text-gray-900 font-bold">
-                      <span className="font-display">Settled Balance:</span>
-                      <span className="font-mono text-indigo-750">${checkedOutOrder.total.toFixed(2)}</span>
+                      <span className="font-display">Total Amount:</span>
+                      <span className="font-mono text-indigo-750">{formatPrice(checkedOutOrder.total, currency)}</span>
                     </div>
                   </div>
                 </div>
@@ -1259,8 +1446,8 @@ export default function CheckoutFlow({
                 {/* Direct Action Link in Email */}
                 <div className="mt-8 text-center bg-[#F9FAFB] rounded-lg border border-dashed border-gray-200 p-5 flex flex-col items-center justify-center gap-2.5">
                   <div>
-                    <h4 className="text-xs font-semibold text-gray-900">Physical & Digital PDF Statement Required?</h4>
-                    <p className="text-[10px] text-gray-400 mt-1">Download your legal receipt to store local archive copies.</p>
+                    <h4 className="text-xs font-semibold text-gray-900">Official Invoice / PDF Copy</h4>
+                    <p className="text-[10px] text-gray-400 mt-1">Download your official receipt for your records.</p>
                   </div>
                   <button
                     onClick={handleDownloadPDFReceipt}
@@ -1273,9 +1460,9 @@ export default function CheckoutFlow({
                 {/* Receipt Sign-off */}
                 <div className="mt-8 border-t border-gray-100 pt-4 text-[11px] text-gray-500 leading-relaxed">
                   <p className="margin: 0 0 4px 0;">Thank you for shopping with us,</p>
-                  <strong className="text-gray-800 block mt-0.5 font-semibold">Veloce Kenya Team</strong>
+                  <strong className="text-gray-800 block mt-0.5 font-semibold">{settings.general.site_name || 'Veloce Kenya Team'}</strong>
                   <p className="text-[10px] text-gray-400 mt-3 leading-normal">
-                    Need help with your order? Reach our support desk at <a href="mailto:support@marid.co.ke" className="text-indigo-600 underline">support@marid.co.ke</a> or call our customer hotline.
+                    Need help with your order? Reach our support desk at <a href={`mailto:${settings.general.business_email || 'support@veloce.co.ke'}`} className="text-indigo-600 underline">{settings.general.business_email || 'support@veloce.co.ke'}</a> or call {settings.general.support_phone || '+254 717 147 007'}.
                   </p>
                 </div>
               </div>
@@ -1289,15 +1476,15 @@ export default function CheckoutFlow({
             <div className="flex justify-between items-start border-b-2 border-indigo-100 pb-5">
               <div>
                 <span className="font-display text-xl font-bold tracking-tight text-gray-950 block">
-                  ROPENIX INVESTMENTS LTD
+                  {settings.receipts.legal_business_name || settings.general.site_name || 'VELOCE KENYA LTD'}
                 </span>
                 <span className="font-mono text-[9px] font-bold text-gray-400 uppercase tracking-widest block mt-0.5">
-                  Veloce Commerce & Logistics Operations
+                  {settings.receipts.receipt_header_text || 'Official Order Confirmation & Receipt'}
                 </span>
                 <p className="text-[10px] text-gray-550 font-extralight mt-2 max-w-xs leading-relaxed">
-                  Nairobi CBD, Nairobi, Kenya<br />
-                  Paybill: 303030 | Account: 2047728455<br />
-                  support@veloce.co.ke
+                  {settings.receipts.physical_address || settings.general.physical_address || 'Nairobi CBD, Nairobi, Kenya'}<br />
+                  Paybill: {settings.payments.mpesa_paybill || '303030'} | Account: {settings.payments.mpesa_account_number || '2047728455'}<br />
+                  {settings.receipts.contact_email || settings.general.business_email || 'support@veloce.co.ke'}
                 </p>
               </div>
               <div className="text-right flex flex-col items-end">
@@ -1328,7 +1515,7 @@ export default function CheckoutFlow({
                 <div className="flex flex-col gap-0.5 text-gray-600 font-light font-mono text-[10px]">
                   <div className="flex justify-between">
                     <span>Gate:</span>
-                    <span className="font-bold text-gray-900">Veloce Merchant API</span>
+                    <span className="font-bold text-gray-900">{settings.general.site_name || 'Veloce'} Merchant API</span>
                   </div>
                   <div className="flex justify-between">
                     <span>Status:</span>
@@ -1355,7 +1542,7 @@ export default function CheckoutFlow({
                     <div>
                       <div className="font-bold text-gray-900">{item.name}</div>
                       <div className="text-[10px] text-gray-400 font-mono">
-                        Unit: ${item.price.toFixed(2)} | Qty: x{item.quantity} | Type: {item.type}
+                        Unit: {formatPrice(item.price, currency)} | Qty: x{item.quantity} | Type: {item.type}
                       </div>
                       {Object.keys(item.selectedVariations || {}).length > 0 && (
                         <div className="text-[9px] text-gray-400 font-light">
@@ -1364,7 +1551,7 @@ export default function CheckoutFlow({
                       )}
                     </div>
                     <span className="font-mono text-gray-900 font-bold">
-                      ${(item.price * item.quantity).toFixed(2)}
+                      {formatPrice(item.price * item.quantity, currency)}
                     </span>
                   </div>
                 ))}
@@ -1375,28 +1562,28 @@ export default function CheckoutFlow({
               <div className="w-64 space-y-2 text-xs">
                 <div className="flex justify-between text-gray-500 font-light">
                   <span>Subtotal (Excl. Tax):</span>
-                  <span className="font-mono">${orderSubtotalExclTax.toFixed(2)}</span>
+                  <span className="font-mono">{formatPrice(orderSubtotalExclTax, currency)}</span>
                 </div>
                 <div className="flex justify-between text-gray-500 font-light">
                   <span>VAT Tax (Included):</span>
-                  <span className="font-mono">${orderTax.toFixed(2)}</span>
+                  <span className="font-mono">{formatPrice(orderTax, currency)}</span>
                 </div>
                 {orderDiscount > 0 && (
                   <div className="flex justify-between text-emerald-600 font-medium font-mono">
                     <span>Coupons Safe:</span>
-                    <span>-${orderDiscount.toFixed(2)}</span>
+                    <span>-{formatPrice(orderDiscount, currency)}</span>
                   </div>
                 )}
                 <div className="border-t border-indigo-100 pt-2.5 flex justify-between font-bold text-gray-900">
                   <span className="font-display">GRAND TOTAL:</span>
-                  <span className="font-mono text-sm">${checkedOutOrder.total.toFixed(2)}</span>
+                  <span className="font-mono text-sm text-indigo-700">{formatPrice(checkedOutOrder.total, currency)}</span>
                 </div>
               </div>
             </div>
 
             <div className="mt-12 border-t border-dashed border-gray-200 pt-6 text-[9px] font-mono text-gray-405 text-center leading-relaxed">
-              <p>All Veloce Atelier acquisitions carry dynamic license certifications.</p>
-              <p className="mt-2 text-gray-300 font-extrabold tracking-wider">◆ VELOCE SYSTEMS TERMINAL SECURED ◆</p>
+              <p>{settings.receipts.receipt_footer_text || `Thank you for choosing ${settings.general.site_name || 'Veloce Kenya'}.`}</p>
+              <p className="mt-2 text-gray-300 font-extrabold tracking-wider">◆ {settings.general.site_name?.toUpperCase() || 'VELOCE'} SYSTEMS TERMINAL SECURED ◆</p>
             </div>
           </div>
         </div>
@@ -1437,7 +1624,7 @@ export default function CheckoutFlow({
   }
 
   return (
-    <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+    <div className="w-full max-w-[1440px] mx-auto px-4 py-8 sm:px-6 lg:px-8">
       {/* Real-time Happy Hour Promotion Banner */}
       <HappyHourBanner className="mb-6" actionText="Checkout Deals" />
 
@@ -2277,9 +2464,27 @@ export default function CheckoutFlow({
                       required
                     />
 
+                    {/* OpenStreetMap Pin Drop Trigger */}
+                    <div className="flex items-center justify-between">
+                      <button
+                        type="button"
+                        onClick={() => setShowMapPinModal(true)}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 text-[11px] font-semibold hover:bg-indigo-100 transition-colors cursor-pointer"
+                      >
+                        <Globe className="h-3.5 w-3.5 text-indigo-600" />
+                        <span>Drop Pin on Live OpenStreetMap</span>
+                      </button>
+
+                      {customDistanceKm !== null && (
+                        <span className="text-[10px] font-mono text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 px-2 py-0.5 rounded border border-emerald-200 font-bold">
+                          ✓ Distance: {customDistanceKm} km
+                        </span>
+                      )}
+                    </div>
+
                     <div className="grid grid-cols-2 gap-3">
                       <div>
-                        <label className="block text-[9px] font-bold text-gray-400 uppercase mb-0.5">City</label>
+                        <label className="block text-[9px] font-bold text-gray-400 uppercase mb-0.5">City / County</label>
                         <input
                           type="text"
                           required
@@ -2289,7 +2494,7 @@ export default function CheckoutFlow({
                         />
                       </div>
                       <div>
-                        <label className="block text-[9px] font-bold text-gray-400 uppercase mb-0.5">ZIP Code</label>
+                        <label className="block text-[9px] font-bold text-gray-400 uppercase mb-0.5">ZIP / Postal Code</label>
                         <input
                           type="text"
                           required
@@ -2297,6 +2502,56 @@ export default function CheckoutFlow({
                           onChange={(e) => setShippingZip(e.target.value)}
                           className="h-8 w-full rounded border border-gray-200 bg-white px-2.5 text-xs font-mono"
                         />
+                      </div>
+                    </div>
+
+                    {/* Express Priority Rush Option */}
+                    <label className={`flex items-center justify-between p-2.5 rounded-xl border cursor-pointer transition-colors ${
+                      isExpressDelivery ? 'bg-amber-50/60 dark:bg-amber-950/40 border-amber-300' : 'bg-gray-50 border-gray-200'
+                    }`}>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="checkbox"
+                          checked={isExpressDelivery}
+                          onChange={(e) => setIsExpressDelivery(e.target.checked)}
+                          className="rounded border-gray-300 text-amber-600 focus:ring-amber-500 cursor-pointer"
+                        />
+                        <div>
+                          <span className="text-xs font-bold text-gray-900 dark:text-white flex items-center gap-1">
+                            <Zap className="h-3.5 w-3.5 text-amber-500" /> Express Rush Priority (+KSh 150)
+                          </span>
+                          <span className="text-[10px] text-gray-500 font-light block">
+                            Dispatched via priority motorcycle courier within 30-45 mins
+                          </span>
+                        </div>
+                      </div>
+                      <span className="text-[10px] font-mono font-bold text-amber-800 bg-amber-100 px-1.5 py-0.5 rounded">
+                        Priority
+                      </span>
+                    </label>
+
+                    {/* Live Delivery Cost & SLA Card */}
+                    <div className="p-3 rounded-xl bg-indigo-50/60 dark:bg-indigo-950/30 border border-indigo-100 dark:border-indigo-900/60 flex items-center justify-between text-xs">
+                      <div>
+                        <div className="flex items-center gap-1 font-bold text-indigo-950 dark:text-indigo-200 text-[11px]">
+                          <Truck className="h-3.5 w-3.5 text-indigo-600" />
+                          <span>{deliveryFeeCalculation.reason}</span>
+                        </div>
+                        <div className="text-[10px] text-gray-500 dark:text-gray-400 font-mono mt-0.5 flex items-center gap-1.5">
+                          <Clock className="h-3 w-3 text-indigo-500" />
+                          <span>Estimated Timeframe: {deliveryFeeCalculation.estimatedTimeframe}</span>
+                        </div>
+                      </div>
+
+                      <div className="text-right">
+                        <span className="block text-[9px] font-mono uppercase text-gray-400 font-bold">Courier Fee</span>
+                        <span className="font-mono font-bold text-sm text-gray-950 dark:text-white">
+                          {deliveryFeeCalculation.isFreeDelivery ? (
+                            <span className="text-emerald-700 font-extrabold">FREE (KSh 0)</span>
+                          ) : (
+                            `KSh ${deliveryFeeCalculation.fee.toLocaleString('en-KE')}`
+                          )}
+                        </span>
                       </div>
                     </div>
                   </div>
@@ -2424,8 +2679,42 @@ export default function CheckoutFlow({
                   </div>
                 ) : (
                   <div className="text-left">
-                    <label className="block text-[9px] font-bold text-gray-400 uppercase mb-2">Kenya Payment Method</label>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <div className="flex items-center justify-between mb-2">
+                      <label className="block text-[9px] font-bold text-gray-400 uppercase">Payment & Order Placement Method</label>
+                      <span className="text-[9.5px] font-mono font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
+                        <Zap className="h-3 w-3" /> WhatsApp Checkout Available
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                      {/* WhatsApp Order Option */}
+                      <button
+                        type="button"
+                        onClick={() => setPaymentMethod('whatsapp')}
+                        className={`p-3 rounded-xl border flex flex-col items-start gap-1 transition-all text-left relative cursor-pointer ${
+                          paymentMethod === 'whatsapp'
+                            ? 'border-[#25D366] bg-[#25D366]/10 dark:bg-[#25D366]/15 ring-1.5 ring-[#25D366] shadow-3xs'
+                            : 'border-gray-200 bg-white hover:bg-gray-55/30 dark:bg-gray-900 dark:border-gray-800'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between w-full">
+                          <span className="text-xs font-black font-sans tracking-tight text-gray-950 dark:text-white flex items-center gap-1.5">
+                            <MessageCircle className="h-3.5 w-3.5 text-[#25D366]" /> WhatsApp Order
+                          </span>
+                          <span className={`h-3.5 w-3.5 rounded-full border flex items-center justify-center ${
+                            paymentMethod === 'whatsapp' ? 'border-[#25D366]' : 'border-gray-300 dark:border-gray-700'
+                          }`}>
+                            {paymentMethod === 'whatsapp' && <span className="h-2 w-2 rounded-full bg-[#25D366]" />}
+                          </span>
+                        </div>
+                        <span className="text-[9.5px] text-gray-500 dark:text-gray-400 leading-normal">
+                          Chat directly with our sales team on <strong>{whatsappNumber}</strong> to finalize dispatch.
+                        </span>
+                        <span className="absolute -top-1.5 right-4 px-1.5 py-0.2 rounded bg-emerald-500 text-white text-[8px] font-black uppercase font-mono shadow-3xs">
+                          ⚡ Instant Chat
+                        </span>
+                      </button>
+
                       {/* M-Pesa Toggle Option */}
                       <button
                         type="button"
@@ -2433,21 +2722,25 @@ export default function CheckoutFlow({
                         onClick={() => setPaymentMethod('mpesa')}
                         className={`p-3 rounded-xl border flex flex-col items-start gap-1 transition-all text-left relative cursor-pointer ${
                           paymentMethod === 'mpesa'
-                            ? 'border-indigo-600 bg-indigo-50/5 ring-1 ring-indigo-500'
-                            : 'border-gray-200 bg-white hover:bg-gray-55/30'
+                            ? 'border-indigo-600 bg-indigo-50/10 ring-1.5 ring-indigo-500 shadow-3xs'
+                            : 'border-gray-200 bg-white hover:bg-gray-55/30 dark:bg-gray-900 dark:border-gray-800'
                         } ${hasCod ? 'opacity-40 cursor-not-allowed' : ''}`}
                       >
                         <div className="flex items-center justify-between w-full">
-                          <span className="text-xs font-black font-sans tracking-tight text-gray-950">M-Pesa / Mobile Money</span>
+                          <span className="text-xs font-black font-sans tracking-tight text-gray-950 dark:text-white flex items-center gap-1.5">
+                            <Smartphone className="h-3.5 w-3.5 text-indigo-600" /> M-Pesa Paybill
+                          </span>
                           <span className={`h-3.5 w-3.5 rounded-full border flex items-center justify-center ${
-                            paymentMethod === 'mpesa' ? 'border-indigo-600' : 'border-gray-300'
+                            paymentMethod === 'mpesa' ? 'border-indigo-600' : 'border-gray-300 dark:border-gray-700'
                           }`}>
                             {paymentMethod === 'mpesa' && <span className="h-2 w-2 rounded-full bg-indigo-600" />}
                           </span>
                         </div>
-                        <span className="text-[9.5px] text-gray-500 leading-normal">Pay via M-Pesa (Send Money, Till, or Paybill upon dispatch/delivery).</span>
+                        <span className="text-[9.5px] text-gray-500 dark:text-gray-400 leading-normal">
+                          Pay via Lipa na M-Pesa Paybill {mpesaPaybill} / Till.
+                        </span>
                         {hasPrepaid && (
-                          <span className="absolute -top-1.5 right-6 px-1.5 py-0.2 rounded bg-emerald-100 border border-emerald-300 text-[8px] font-extrabold text-emerald-800 uppercase font-mono shadow-3xs">
+                          <span className="absolute -top-1.5 right-4 px-1.5 py-0.2 rounded bg-emerald-100 border border-emerald-300 text-[8px] font-extrabold text-emerald-800 uppercase font-mono shadow-3xs">
                             Required
                           </span>
                         )}
@@ -2460,26 +2753,75 @@ export default function CheckoutFlow({
                         onClick={() => setPaymentMethod('cod')}
                         className={`p-3 rounded-xl border flex flex-col items-start gap-1 transition-all text-left relative cursor-pointer ${
                           paymentMethod === 'cod'
-                            ? 'border-indigo-600 bg-indigo-50/5 ring-1 ring-indigo-500'
-                            : 'border-gray-200 bg-white hover:bg-gray-55/30'
+                            ? 'border-indigo-600 bg-indigo-50/10 ring-1.5 ring-indigo-500 shadow-3xs'
+                            : 'border-gray-200 bg-white hover:bg-gray-55/30 dark:bg-gray-900 dark:border-gray-800'
                         } ${hasPrepaid ? 'opacity-40 cursor-not-allowed' : ''}`}
                       >
                         <div className="flex items-center justify-between w-full">
-                          <span className="text-xs font-black font-sans tracking-tight text-gray-950">Cash on Delivery</span>
+                          <span className="text-xs font-black font-sans tracking-tight text-gray-950 dark:text-white flex items-center gap-1.5">
+                            <Truck className="h-3.5 w-3.5 text-amber-600" /> Cash on Delivery
+                          </span>
                           <span className={`h-3.5 w-3.5 rounded-full border flex items-center justify-center ${
-                            paymentMethod === 'cod' ? 'border-indigo-600' : 'border-gray-300'
+                            paymentMethod === 'cod' ? 'border-indigo-600' : 'border-gray-300 dark:border-gray-700'
                           }`}>
                             {paymentMethod === 'cod' && <span className="h-2 w-2 rounded-full bg-indigo-600" />}
                           </span>
                         </div>
-                        <span className="text-[9.5px] text-gray-500 leading-normal">Settle order offline in cash or mobile money upon physical delivery.</span>
+                        <span className="text-[9.5px] text-gray-500 dark:text-gray-400 leading-normal">
+                          Settle in cash or mobile money upon physical package receipt.
+                        </span>
                         {hasCod && (
-                          <span className="absolute -top-1.5 right-6 px-1.5 py-0.2 rounded bg-amber-100 border border-amber-300 text-[8px] font-extrabold text-amber-800 uppercase font-mono shadow-3xs">
+                          <span className="absolute -top-1.5 right-4 px-1.5 py-0.2 rounded bg-amber-100 border border-amber-300 text-[8px] font-extrabold text-amber-800 uppercase font-mono shadow-3xs">
                             Required
                           </span>
                         )}
                       </button>
                     </div>
+
+                    {/* WhatsApp Checkout Highlight Card */}
+                    {paymentMethod === 'whatsapp' && (
+                      <div className="mt-3.5 rounded-2xl border border-[#25D366]/40 bg-[#25D366]/10 dark:bg-[#25D366]/15 p-4 animate-in fade-in duration-200 text-left">
+                        <div className="flex items-start gap-3">
+                          <div className="p-2.5 rounded-xl bg-[#25D366] text-white shadow-2xs shrink-0 mt-0.5">
+                            <MessageCircle className="h-5 w-5" />
+                          </div>
+                          <div className="flex-1 min-w-0 space-y-2">
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <div>
+                                <h5 className="text-xs font-bold text-gray-950 dark:text-white flex items-center gap-1.5">
+                                  Official WhatsApp Concierge Desk
+                                </h5>
+                                <span className="text-[11px] font-mono font-bold text-[#1ea952] dark:text-[#25D366]">
+                                  WhatsApp Line: +254 717 147 007 ({whatsappNumber})
+                                </span>
+                              </div>
+                              <span className="px-2 py-0.5 rounded-md bg-emerald-100 dark:bg-emerald-900 text-emerald-800 dark:text-emerald-300 font-mono text-[9.5px] font-bold">
+                                🟢 ACTIVE CONCIERGE
+                              </span>
+                            </div>
+
+                            <p className="text-[11px] text-gray-700 dark:text-gray-300 font-light leading-relaxed">
+                              When you click <strong>Confirm &amp; Place Order on WhatsApp</strong>, our system will record your order reference and immediately launch WhatsApp with your pre-formatted cart summary. Simply tap <strong>Send</strong> to chat directly with our dispatch team!
+                            </p>
+
+                            <div className="pt-2 border-t border-[#25D366]/30 grid grid-cols-1 sm:grid-cols-3 gap-2 text-[10px] text-gray-600 dark:text-gray-400 font-mono">
+                              <div className="flex items-center gap-1">
+                                <CheckCircle2 className="h-3 w-3 text-emerald-600" />
+                                <span>No upfront payment required</span>
+                              </div>
+                              <div className="flex items-center gap-1">
+                                <CheckCircle2 className="h-3 w-3 text-emerald-600" />
+                                <span>Fast delivery dispatch</span>
+                              </div>
+                              <div className="flex items-center gap-1">
+                                <CheckCircle2 className="h-3 w-3 text-emerald-600" />
+                                <span>Custom sizing support</span>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
 
                     {/* Explanatory notes under selected option */}
                     <div className="mt-2.5">
@@ -2520,11 +2862,11 @@ export default function CheckoutFlow({
                               <div className="flex items-center justify-between p-2 rounded-lg bg-emerald-50/50 dark:bg-emerald-950/40 border border-emerald-100/60 dark:border-emerald-900/30">
                                 <div>
                                   <span className="text-[9px] font-bold text-gray-400 dark:text-gray-500 uppercase font-mono block">Business / Paybill No.</span>
-                                  <span className="text-sm font-black font-mono text-emerald-700 dark:text-emerald-400">303030</span>
+                                  <span className="text-sm font-black font-mono text-emerald-700 dark:text-emerald-400">{mpesaPaybill}</span>
                                 </div>
                                 <button
                                   type="button"
-                                  onClick={() => handleCopyText('303030', 'paybill')}
+                                  onClick={() => handleCopyText(mpesaPaybill, 'paybill')}
                                   className="px-2 py-1 rounded bg-white dark:bg-gray-800 text-[10px] font-bold text-gray-700 dark:text-gray-300 border border-gray-200 dark:border-gray-700 hover:bg-emerald-50 dark:hover:bg-emerald-950/50 transition-colors flex items-center gap-1 cursor-pointer"
                                   title="Copy Paybill Number"
                                 >
@@ -2536,11 +2878,11 @@ export default function CheckoutFlow({
                               <div className="flex items-center justify-between p-2 rounded-lg bg-emerald-50/50 dark:bg-emerald-950/40 border border-emerald-100/60 dark:border-emerald-900/30">
                                 <div>
                                   <span className="text-[9px] font-bold text-gray-400 dark:text-gray-500 uppercase font-mono block">Account No.</span>
-                                  <span className="text-sm font-black font-mono text-emerald-700 dark:text-emerald-400">2047728455</span>
+                                  <span className="text-sm font-black font-mono text-emerald-700 dark:text-emerald-400">{mpesaAccountNumber}</span>
                                 </div>
                                 <button
                                   type="button"
-                                  onClick={() => handleCopyText('2047728455', 'account')}
+                                  onClick={() => handleCopyText(mpesaAccountNumber, 'account')}
                                   className="px-2 py-1 rounded bg-white dark:bg-gray-800 text-[10px] font-bold text-gray-700 dark:text-gray-300 border border-gray-200 dark:border-gray-700 hover:bg-emerald-50 dark:hover:bg-emerald-950/50 transition-colors flex items-center gap-1 cursor-pointer"
                                   title="Copy Account Number"
                                 >
@@ -2552,16 +2894,16 @@ export default function CheckoutFlow({
 
                             <div className="mt-2 text-[10px] text-gray-600 dark:text-gray-400 flex items-center gap-1 font-medium">
                               <span className="text-gray-400">Account Name:</span>
-                              <strong className="text-gray-900 dark:text-white font-mono uppercase font-bold">ROPENIX INVESTMENTS LTD</strong>
+                              <strong className="text-gray-900 dark:text-white font-mono uppercase font-bold">{mpesaAccountName}</strong>
                             </div>
 
                             {/* Step by step checklist */}
                             <div className="mt-2.5 pt-2.5 border-t border-emerald-100/80 dark:border-emerald-900/40 text-[10.5px] text-gray-600 dark:text-gray-400 space-y-1 font-light leading-relaxed">
                               <div>1. Go to <strong>M-PESA</strong> on your phone &rarr; Select <strong>Lipa na M-PESA</strong> &rarr; <strong>Paybill</strong></div>
-                              <div>2. Enter Business Number: <strong className="font-mono text-gray-900 dark:text-white">303030</strong></div>
-                              <div>3. Enter Account Number: <strong className="font-mono text-gray-900 dark:text-white">2047728455</strong></div>
+                              <div>2. Enter Business Number: <strong className="font-mono text-gray-900 dark:text-white">{mpesaPaybill}</strong></div>
+                              <div>3. Enter Account Number: <strong className="font-mono text-gray-900 dark:text-white">{mpesaAccountNumber}</strong></div>
                               <div>4. Enter Amount: <strong className="font-mono text-emerald-700 dark:text-emerald-400">KSh {total.toLocaleString('en-KE')}</strong></div>
-                              <div>5. Enter your <strong>M-PESA PIN</strong> and verify recipient as <strong>ROPENIX INVESTMENTS LTD</strong></div>
+                              <div>5. Enter your <strong>M-PESA PIN</strong> and verify recipient as <strong>{mpesaAccountName}</strong></div>
                             </div>
 
                             {/* Optional M-Pesa Transaction Ref / Contact Phone */}
@@ -2616,12 +2958,26 @@ export default function CheckoutFlow({
               <button
                 type="submit"
                 disabled={isProcessing || hasConflict}
-                className="w-full h-11 rounded-md bg-indigo-600 font-display text-xs font-semibold text-white transition-colors hover:bg-indigo-700 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                style={
+                  paymentMethod === 'whatsapp'
+                    ? { backgroundColor: '#25D366', color: '#ffffff' }
+                    : undefined
+                }
+                className={`w-full h-11 rounded-xl font-display text-xs font-bold transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed shadow-md flex items-center justify-center gap-2 ${
+                  paymentMethod === 'whatsapp'
+                    ? 'hover:opacity-95 text-white shadow-[#25D366]/30'
+                    : 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-indigo-500/20 hover:shadow-indigo-500/30'
+                }`}
               >
                 {isProcessing ? (
                   <span className="flex items-center justify-center gap-1.5 font-mono">
                     <Clock className="h-4 w-4 animate-spin text-white" /> PROCESSING ORDER...
                   </span>
+                ) : paymentMethod === 'whatsapp' ? (
+                  <>
+                    <MessageCircle className="h-4 w-4 text-white" />
+                    <span className="text-white font-black">Confirm &amp; Send Order on WhatsApp (KSh {total.toLocaleString('en-KE')})</span>
+                  </>
                 ) : paymentMethod === 'cod' ? (
                   `Place Cash on Delivery Order (KSh ${total.toLocaleString('en-KE')})`
                 ) : (
@@ -2635,6 +2991,59 @@ export default function CheckoutFlow({
           </form>
         </div>
       </div>
+
+      {/* OpenStreetMap Interactive Pin Drop Modal */}
+      {showMapPinModal && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-gray-900 rounded-2xl max-w-2xl w-full p-5 shadow-2xl border border-gray-200 dark:border-gray-800 space-y-3.5 animate-in fade-in zoom-in duration-200">
+            <div className="flex items-center justify-between border-b border-gray-150 dark:border-gray-800 pb-3">
+              <div>
+                <h3 className="font-display text-sm font-bold text-gray-950 dark:text-white flex items-center gap-1.5">
+                  <Globe className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />
+                  Select Delivery Destination on OpenStreetMap
+                </h3>
+                <p className="text-[11px] text-gray-500 dark:text-gray-400 font-light">
+                  Search your estate or drag the pin to calculate exact driving distance and delivery fee.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowMapPinModal(false)}
+                className="p-1 rounded-lg text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 cursor-pointer"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <InteractiveDeliveryMap
+              storeLocation={DEFAULT_STORE_LOCATION}
+              zones={storeZones}
+              happyHours={storeHappyHours}
+              orderSubtotal={discountedSubtotal}
+              isExpress={isExpressDelivery}
+              freeThreshold={storeFreeThreshold}
+              height="380px"
+              onLocationSelected={(loc) => {
+                setShippingAddress(loc.address);
+                setCustomDistanceKm(loc.distanceResult.distanceKm);
+              }}
+            />
+
+            <div className="flex items-center justify-between pt-2 border-t border-gray-150 dark:border-gray-800">
+              <span className="text-[11px] text-gray-500 font-mono">
+                {customDistanceKm !== null ? `✓ Selected: ${customDistanceKm} km from Central Hub` : 'Drop pin on map'}
+              </span>
+              <button
+                type="button"
+                onClick={() => setShowMapPinModal(false)}
+                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition-colors cursor-pointer"
+              >
+                Confirm Location Pin
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

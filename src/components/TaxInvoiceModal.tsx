@@ -8,6 +8,7 @@ import { motion } from 'motion/react';
 import { Printer, X, CheckCircle, Receipt, Download, FileText, Globe, Building2, User } from 'lucide-react';
 import { Order, Product } from '../types';
 import { getProductTaxInfo } from '../utils/taxUtils';
+import { useSiteSettings } from '../context/SiteSettingsContext';
 
 interface TaxInvoiceModalProps {
   order: Order;
@@ -17,6 +18,7 @@ interface TaxInvoiceModalProps {
 }
 
 export default function TaxInvoiceModal({ order, products, onClose, autoPrint = false }: TaxInvoiceModalProps) {
+  const { settings } = useSiteSettings();
   const invoiceRef = useRef<HTMLDivElement>(null);
 
   const handlePrint = () => {
@@ -176,20 +178,19 @@ export default function TaxInvoiceModal({ order, products, onClose, autoPrint = 
               <div>
                 <div className="flex items-center gap-1.5">
                   <div className="h-7 w-7 bg-indigo-600 text-white font-display font-black text-xs rounded-lg flex items-center justify-center shadow-3xs">
-                    V
+                    {(settings.receipts.legal_business_name || settings.general.site_name || 'V')[0].toUpperCase()}
                   </div>
                   <span className="font-display text-base font-black tracking-tight text-gray-950 block uppercase">
-                    VE'LOCKED ATELIER LTD
+                    {settings.receipts.legal_business_name || settings.general.site_name || "VELOCE KENYA LTD"}
                   </span>
                 </div>
                 <span className="font-mono text-[8px] font-extrabold text-gray-400 tracking-wider block mt-1 uppercase">
-                  Workspace Logistics & Premium Engineering
+                  {settings.general.tagline || 'Workspace Logistics & Premium Engineering'}
                 </span>
                 <p className="text-[10px] text-gray-500 font-medium mt-2 leading-relaxed font-sans">
-                  L.R. No. 209/10245, Tech Park Plaza, Nairobi, Kenya<br />
-                  P.O. Box 40404 - 00100 GPO, Nairobi<br />
-                  <span className="font-bold text-gray-700">KRA PIN:</span> P051234567A | <span className="font-bold text-gray-700">ETR No:</span> MPR18002345<br />
-                  <span className="font-bold text-gray-700">Email:</span> accounting@veloce.co.ke
+                  {settings.receipts.physical_address || settings.general.physical_address || 'L.R. No. 209/10245, Tech Park Plaza, Nairobi, Kenya'}<br />
+                  <span className="font-bold text-gray-700">KRA PIN:</span> {settings.tax.kra_pin || 'P051234567A'} | <span className="font-bold text-gray-700">ETR No:</span> MPR18002345<br />
+                  <span className="font-bold text-gray-700">Email:</span> {settings.receipts.contact_email || settings.general.business_email || 'accounting@veloce.co.ke'}
                 </p>
               </div>
 
@@ -223,10 +224,10 @@ export default function TaxInvoiceModal({ order, products, onClose, autoPrint = 
               <div className="md:text-right flex flex-col md:items-end">
                 <span className="block text-[9px] font-bold text-gray-400 font-mono uppercase tracking-wider mb-1.5">PAYMENT INFORMATION</span>
                 <p className="font-medium text-gray-800">
-                  <span className="font-bold">Method:</span> M-PESA Paybill <span className="font-mono font-bold text-emerald-700">303030</span>
+                  <span className="font-bold">Method:</span> M-PESA Paybill <span className="font-mono font-bold text-emerald-700">{settings.payments.mpesa_paybill || '303030'}</span>
                 </p>
                 <p className="text-[10px] text-gray-700 font-mono mt-0.5">
-                  <span className="text-gray-400">Account No:</span> <strong className="text-emerald-700 font-bold">2047728455</strong> (ROPENIX INVESTMENTS LTD)
+                  <span className="text-gray-400">Account No:</span> <strong className="text-emerald-700 font-bold">{settings.payments.mpesa_account_number || '2047728455'}</strong> ({settings.payments.mpesa_account_name || 'ROPENIX INVESTMENTS LTD'})
                 </p>
                 <p className="text-indigo-700 font-bold font-mono text-[11px] mt-0.5">
                   <span className="text-gray-400 font-normal">M-Pesa Txn Ref:</span> {order.paymentReference || mpesaCode}
@@ -380,7 +381,7 @@ export default function TaxInvoiceModal({ order, products, onClose, autoPrint = 
             {/* Bottom Disclaimer */}
             <div className="border-t border-slate-150 mt-6 pt-4 text-center text-[9.5px] text-gray-400 font-medium font-sans leading-relaxed">
               This tax invoice is issued electronically. All transactions are securely recorded on our centralized ledger.<br />
-              Thank you for choosing <span className="font-bold text-gray-600">Ve'Locked Atelier Ltd</span>. Support & assistance: customercare@veloce.co.ke
+              Thank you for choosing <span className="font-bold text-gray-600">{settings.receipts.legal_business_name || settings.general.site_name || "Veloce Kenya Ltd"}</span>. Support & assistance: {settings.receipts.contact_email || settings.general.business_email || "customercare@veloce.co.ke"}
             </div>
 
           </div>

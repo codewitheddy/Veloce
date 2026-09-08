@@ -1,186 +1,469 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { ShoppingBag, X, CheckCircle2, MapPin, TrendingUp, Flame } from 'lucide-react';
-import { Product } from '../types';
+import { ShoppingBag, X, CheckCircle2, MapPin, TrendingUp, Flame, Radio } from 'lucide-react';
+import { Product, Order } from '../types';
+import { useOrders } from '../context/OrdersContext';
+import { orderService } from '../services/api';
+import { mapBackendOrderToFrontend } from '../api/orders';
 
 interface SocialProofToastProps {
   products: Product[];
+  orders?: Order[];
   onSelectProduct: (product: Product) => void;
   darkMode?: boolean;
   userRole?: 'customer' | 'admin';
   currentTab?: string;
 }
 
-interface MockPurchase {
+export interface PurchaseEvent {
   id: string;
+  orderId?: string;
   buyerName: string;
   location: string;
   product: Product;
   timeAgo: string;
+  isRealOrder: boolean;
+  isLiveOrder?: boolean;
 }
 
-const BUYERS = [
-  // East African names
-  'Wanjiku M.', 'Otieno O.', 'Kamau N.', 'Fatuma A.', 'Kiprop K.', 'Nafula S.', 'Mwangi J.', 
-  'Njoroge K.', 'Amina Y.', 'Mutesi J.', 'Kipkemboi E.', 'Ondiek A.', 'Chacha S.',
-  // European names
-  'Julian R.', 'Hana V.', 'Marcus T.', 'Sarah J.', 'Pierre L.', 'Emma B.', 'Lukas S.', 
-  'Sophie D.', 'Mateo G.', 'Elena N.', 'Amelie K.',
-  // North & South American names
-  'Aria S.', 'Devin C.', 'Chloe W.', 'James L.', 'Liam N.', 'Oliver H.', 'Maya P.', 
-  'Jackson F.', 'Isabella R.', 'Mateo C.', 'Gabriela S.',
-  // Asian, Oceanian & Middle Eastern names
-  'Kenji T.', 'Mei Ling C.', 'Rahul S.', 'Yusuf Al-F.', 'Priya N.', 'Min-jun K.', 
-  'Aisha H.', 'Lachlan M.', 'Zoe C.'
+// Fallback seed buyers if catalog has zero historical orders
+const FALLBACK_BUYERS = [
+  'Wanjiku M.', 'Otieno O.', 'Kamau N.', 'Fatuma A.', 'Kiprop K.', 
+  'Nafula S.', 'Mwangi J.', 'Njoroge K.', 'Amina Y.', 'Mutesi J.',
+  'Marcus T.', 'Sarah J.', 'Pierre L.', 'Emma B.', 'Kenji T.'
 ];
 
-const LOCATIONS = [
-  // African Hubs
-  'Nairobi, Kenya', 'Mombasa, Kenya', 'Kisumu, Kenya', 'Nakuru, Kenya', 'Eldoret, Kenya',
-  'Dar es Salaam, Tanzania', 'Kampala, Uganda', 'Kigali, Rwanda', 'Addis Ababa, Ethiopia',
-  'Johannesburg, South Africa', 'Lagos, Nigeria', 'Cairo, Egypt',
-  // Europe
-  'London, United Kingdom', 'Manchester, United Kingdom', 'Paris, France', 'Berlin, Germany', 
-  'Amsterdam, Netherlands', 'Rome, Italy', 'Madrid, Spain', 'Stockholm, Sweden',
-  // Americas
-  'New York, United States', 'San Francisco, United States', 'Seattle, United States', 
-  'Toronto, Canada', 'Vancouver, Canada', 'São Paulo, Brazil', 'Mexico City, Mexico',
-  // Asia & Oceania
-  'Sydney, Australia', 'Melbourne, Australia', 'Auckland, New Zealand', 'Tokyo, Japan', 
-  'Singapore, Singapore', 'Dubai, UAE', 'Mumbai, India', 'Seoul, South Korea'
+const FALLBACK_LOCATIONS = [
+  'Westlands, Nairobi', 'Kilimani, Nairobi', 'Nyali, Mombasa', 
+  'Milimani, Kisumu', 'Nakuru, Kenya', 'Eldoret, Kenya', 
+  'Karen, Nairobi', 'Diani, Mombasa', 'Thika, Kenya'
 ];
 
-const TIMES = [
-  'Just now', '1 min ago', '2 mins ago', '3 mins ago', '5 mins ago', '8 mins ago', '12 mins ago'
-];
+/**
+ * Clean & format customer name for social proof privacy and authenticity
+ * e.g. "Sarah Jenkins" -> "Sarah J.", "Otieno" -> "Otieno"
+ */
+export function formatCustomerName(rawName?: string, email?: string): string {
+  const clean = (rawName || '').trim();
+  if (!clean || clean.toLowerCase() === 'customer' || clean.toLowerCase() === 'guest') {
+    if (email && email.includes('@')) {
+      const emailPrefix = email.split('@')[0].replace(/[._0-9-]/g, ' ').trim();
+      const capitalized = emailPrefix.charAt(0).toUpperCase() + emailPrefix.slice(1);
+      return capitalized || 'Verified Buyer';
+    }
+    return 'Verified Buyer';
+  }
+
+  const parts = clean.split(/\s+/).filter(Boolean);
+  if (parts.length === 1) {
+    return parts[0];
+  }
+
+  const firstName = parts[0];
+  const lastInitial = parts[parts.length - 1].charAt(0).toUpperCase();
+  return `${firstName} ${lastInitial}.`;
+}
+
+/**
+ * Intelligently parse real customer origin from shipping address or pickup point
+ */
+export function extractCustomerOrigin(shippingAddress?: string, pickupLocation?: string): string {
+  const raw = (shippingAddress || pickupLocation || '').trim();
+  if (!raw) return 'Nairobi, Kenya';
+
+  const lower = raw.toLowerCase();
+
+  // Kenyan Towns and Nairobi Neighborhoods
+  const NAIROBI_HOODS = [
+    'westlands', 'kilimani', 'kileleshwa', 'lavington', 'karen', 'runda', 
+    'parklands', 'south b', 'south c', 'langata', 'eastleigh', 'ruaka', 
+    'gigiri', 'muthaiga', 'kasarani', 'roysambu', 'ngong'
+  ];
+
+  for (const hood of NAIROBI_HOODS) {
+    if (lower.includes(hood)) {
+      const formatted = hood.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+      return `${formatted}, Nairobi`;
+    }
+  }
+
+  const COAST_AREAS = ['nyali', 'bamburi', 'changamwe', 'likoni', 'diani', 'malindi', 'miritini'];
+  for (const coast of COAST_AREAS) {
+    if (lower.includes(coast)) {
+      const formatted = coast.charAt(0).toUpperCase() + coast.slice(1);
+      return `${formatted}, Mombasa`;
+    }
+  }
+
+  const MAJOR_TOWNS = [
+    'nairobi', 'mombasa', 'kisumu', 'nakuru', 'eldoret', 'thika', 'kiambu', 
+    'naivasha', 'nyeri', 'machakos', 'kitale', 'kericho', 'meru', 'kakamega',
+    'garissa', 'lamu', 'kilifi', 'embu', 'kisii', 'kajiado', 'nanyuki'
+  ];
+
+  for (const town of MAJOR_TOWNS) {
+    if (lower.includes(town)) {
+      const formatted = town.charAt(0).toUpperCase() + town.slice(1);
+      return `${formatted}, Kenya`;
+    }
+  }
+
+  // Global Hubs
+  const GLOBAL_HUBS: Record<string, string> = {
+    'london': 'London, UK',
+    'manchester': 'Manchester, UK',
+    'dubai': 'Dubai, UAE',
+    'new york': 'New York, USA',
+    'kampala': 'Kampala, Uganda',
+    'kigali': 'Kigali, Rwanda',
+    'dar es salaam': 'Dar es Salaam, Tanzania',
+    'johannesburg': 'Johannesburg, South Africa',
+    'cairo': 'Cairo, Egypt',
+    'lagos': 'Lagos, Nigeria'
+  };
+
+  for (const [key, label] of Object.entries(GLOBAL_HUBS)) {
+    if (lower.includes(key)) {
+      return label;
+    }
+  }
+
+  // If comma-delimited, take meaningful locality parts
+  const parts = raw.split(',').map(p => p.trim()).filter(Boolean);
+  if (parts.length >= 2) {
+    const loc = parts[parts.length - 2].replace(/[0-9#-]/g, '').trim();
+    const region = parts[parts.length - 1].replace(/[0-9#-]/g, '').trim();
+    if (loc && region) {
+      return `${loc}, ${region}`;
+    }
+  }
+
+  const cleaned = raw.replace(/[0-9#-]/g, '').trim();
+  return cleaned.length > 2 && cleaned.length < 30 ? cleaned : 'Nairobi, Kenya';
+}
+
+/**
+ * Format timestamp into natural relative time
+ */
+export function formatOrderTimeAgo(timestampStr?: string): string {
+  if (!timestampStr) return 'Recently';
+
+  try {
+    const now = Date.now();
+    const orderTime = new Date(timestampStr).getTime();
+    if (isNaN(orderTime)) return 'Recently';
+
+    const diffMs = Math.max(0, now - orderTime);
+    const diffSecs = Math.floor(diffMs / 1000);
+    const diffMins = Math.floor(diffSecs / 60);
+    const diffHours = Math.floor(diffMins / 60);
+    const diffDays = Math.floor(diffHours / 24);
+
+    if (diffMins < 1) return 'Just now';
+    if (diffMins === 1) return '1 min ago';
+    if (diffMins < 60) return `${diffMins} mins ago`;
+    if (diffHours === 1) return '1 hour ago';
+    if (diffHours < 24) return `${diffHours} hours ago`;
+    if (diffDays === 1) return 'Yesterday';
+    if (diffDays < 7) return `${diffDays} days ago`;
+    return `${Math.floor(diffDays / 7)}w ago`;
+  } catch {
+    return 'Recently';
+  }
+}
+
+/**
+ * Ensure a fully-typed Product object is resolved for any ordered item
+ */
+function resolveProductForItem(
+  item: { productId?: string; name: string; price: number; type?: any },
+  productsList: Product[]
+): Product {
+  const found = productsList.find(
+    (p) => p.id === item.productId || p.name.toLowerCase() === item.name.toLowerCase()
+  );
+  if (found) return found;
+
+  return {
+    id: item.productId || `prod-${item.name.toLowerCase().replace(/[^a-z0-9]/g, '-')}`,
+    sku: `SKU-${Math.random().toString(36).substring(2, 7).toUpperCase()}`,
+    name: item.name,
+    description: item.name,
+    price: Number(item.price || 0),
+    category: 'Store Item',
+    tags: ['featured'],
+    type: item.type === 'digital' || item.type === 'service' ? item.type : 'physical',
+    imageUrl: productsList[0]?.imageUrl || 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=600',
+    stock: 10,
+    rating: 5,
+    reviewsCount: 1,
+    reviews: []
+  };
+}
 
 export default function SocialProofToast({
   products,
+  orders: propOrders,
   onSelectProduct,
   darkMode = false,
   userRole = 'customer',
   currentTab = 'home'
 }: SocialProofToastProps) {
-  const [currentPurchase, setCurrentPurchase] = useState<MockPurchase | null>(null);
+  // Safe context hook fallback
+  let contextOrders: Order[] = [];
+  try {
+    const ordersCtx = useOrders();
+    contextOrders = ordersCtx.orders || [];
+  } catch {
+    // ignore if outside provider
+  }
+
+  const [liveOrders, setLiveOrders] = useState<Order[]>(() => {
+    try {
+      const saved = localStorage.getItem('veloce_orders');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch {
+      // ignore
+    }
+    return propOrders || contextOrders || [];
+  });
+
+  const [currentPurchase, setCurrentPurchase] = useState<PurchaseEvent | null>(null);
   const [isVisible, setIsVisible] = useState(false);
   const [isMuted, setIsMuted] = useState(() => {
     return localStorage.getItem('veloce_mute_social_proof') === 'true';
   });
-  const [salesCount, setSalesCount] = useState(() => {
-    const saved = localStorage.getItem('veloce_simulated_sales_count');
-    return saved ? parseInt(saved, 10) : 34;
-  });
+
   const [dismissedSales, setDismissedSales] = useState<string[]>([]);
   const [productShowcaseCounts, setProductShowcaseCounts] = useState<Record<string, number>>(() => {
     try {
       const saved = localStorage.getItem('veloce_product_showcase_counts');
-      if (saved) {
-        return JSON.parse(saved);
-      }
-    } catch (e) {
+      if (saved) return JSON.parse(saved);
+    } catch {
       // ignore
     }
-    const preseeded: Record<string, number> = {};
-    if (products.length > 0) {
-      const shuffled = [...products].sort(() => 0.5 - Math.random());
-      const hotCount = Math.min(2, shuffled.length);
-      for (let i = 0; i < hotCount; i++) {
-        preseeded[shuffled[i].id] = 4;
-      }
-    }
-    return preseeded;
+    return {};
   });
 
   const isAdminSide = userRole === 'admin' || currentTab === 'admin';
 
-  // Pick a random purchase event
-  const triggerRandomNotification = () => {
-    if (isMuted || isAdminSide || products.length === 0) return;
-
-    // Increment simulated sales count
-    setSalesCount((prev) => {
-      const next = prev >= 50 ? 30 : prev + 1;
-      localStorage.setItem('veloce_simulated_sales_count', next.toString());
-      return next;
-    });
-
-    // Pick a random product & buyer details, avoiding recently dismissed combinations
-    let randomProduct = products[Math.floor(Math.random() * products.length)];
-    let randomBuyer = BUYERS[Math.floor(Math.random() * BUYERS.length)];
-    let randomLocation = LOCATIONS[Math.floor(Math.random() * LOCATIONS.length)];
-    let randomTime = TIMES[Math.floor(Math.random() * TIMES.length)];
-
-    let key = `${randomBuyer}-${randomProduct.id}`;
-    let attempts = 0;
-    while (dismissedSales.includes(key) && attempts < 15) {
-      randomProduct = products[Math.floor(Math.random() * products.length)];
-      randomBuyer = BUYERS[Math.floor(Math.random() * BUYERS.length)];
-      randomLocation = LOCATIONS[Math.floor(Math.random() * LOCATIONS.length)];
-      key = `${randomBuyer}-${randomProduct.id}`;
-      attempts++;
+  // Sync orders from backend and props
+  useEffect(() => {
+    if (propOrders && propOrders.length > 0) {
+      setLiveOrders(propOrders);
+    } else if (contextOrders && contextOrders.length > 0) {
+      setLiveOrders(contextOrders);
+    } else {
+      orderService.getOrders().then((data) => {
+        if (Array.isArray(data) && data.length > 0) {
+          setLiveOrders(data.map(mapBackendOrderToFrontend));
+        }
+      }).catch(() => {});
     }
+  }, [propOrders, contextOrders]);
 
-    const purchase: MockPurchase = {
-      id: `mock-purch-${Math.random().toString(36).substr(2, 9)}`,
-      buyerName: randomBuyer,
-      location: randomLocation,
-      product: randomProduct,
-      timeAgo: randomTime,
+  // Listen for real-time live order broadcasts across tabs & window
+  useEffect(() => {
+    const handleNewOrder = (order: Order) => {
+      if (!order || !order.items || order.items.length === 0) return;
+
+      setLiveOrders((prev) => [order, ...prev.filter((o) => o.id !== order.id)]);
+
+      if (isMuted || isAdminSide) return;
+
+      // Extract product
+      const item = order.items[0];
+      const matchedProduct = resolveProductForItem(item, products);
+
+      const liveEvent: PurchaseEvent = {
+        id: `live-${order.id}-${Date.now()}`,
+        orderId: order.id,
+        buyerName: formatCustomerName(order.customerName, order.customerEmail),
+        location: extractCustomerOrigin(order.shippingAddress, order.pickupLocation),
+        product: matchedProduct,
+        timeAgo: 'Just now',
+        isRealOrder: true,
+        isLiveOrder: true
+      };
+
+      // Instantly pop up new real order
+      setIsVisible(false);
+      setTimeout(() => {
+        setCurrentPurchase(liveEvent);
+        setIsVisible(true);
+      }, 350);
     };
 
-    // Increment product showcase frequency
+    // 1. Listen via CustomEvent
+    const handleCustomEvent = (e: Event) => {
+      const customEvent = e as CustomEvent<Order>;
+      if (customEvent && customEvent.detail) {
+        handleNewOrder(customEvent.detail);
+      }
+    };
+    window.addEventListener('veloce_new_order', handleCustomEvent);
+
+    // 2. Listen via BroadcastChannel
+    let broadcastChannel: BroadcastChannel | null = null;
+    if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+      try {
+        broadcastChannel = new BroadcastChannel('veloce_order_notifications_channel');
+        broadcastChannel.onmessage = (event) => {
+          if (event.data && event.data.type === 'NEW_ORDER_PLACED' && event.data.order) {
+            handleNewOrder(event.data.order);
+          }
+        };
+      } catch (err) {
+        console.warn('[SocialProofToast] BroadcastChannel init error:', err);
+      }
+    }
+
+    // 3. Listen via Storage event
+    const handleStorageEvent = (e: StorageEvent) => {
+      if (e.key === 'veloce_latest_new_order' && e.newValue) {
+        try {
+          const payload = JSON.parse(e.newValue);
+          if (payload && payload.order) {
+            handleNewOrder(payload.order);
+          }
+        } catch {
+          // ignore
+        }
+      } else if (e.key === 'veloce_orders' && e.newValue) {
+        try {
+          const parsed = JSON.parse(e.newValue);
+          if (Array.isArray(parsed)) {
+            setLiveOrders(parsed);
+          }
+        } catch {
+          // ignore
+        }
+      }
+    };
+    window.addEventListener('storage', handleStorageEvent);
+
+    return () => {
+      window.removeEventListener('veloce_new_order', handleCustomEvent);
+      window.removeEventListener('storage', handleStorageEvent);
+      if (broadcastChannel) {
+        broadcastChannel.close();
+      }
+    };
+  }, [products, isMuted, isAdminSide]);
+
+  // Compile real purchase events from live orders & products
+  const realPurchaseEvents = useMemo<PurchaseEvent[]>(() => {
+    if (!liveOrders || liveOrders.length === 0) return [];
+
+    const validOrders = liveOrders.filter((ord) => ord.status !== 'cancelled' && ord.items && ord.items.length > 0);
+    const events: PurchaseEvent[] = [];
+
+    for (const order of validOrders) {
+      for (const item of order.items) {
+        const matchedProduct = resolveProductForItem(item, products);
+        const timestamp = order.date || order.statusHistory?.[0]?.timestamp;
+
+        events.push({
+          id: `order-item-${order.id}-${item.productId}`,
+          orderId: order.id,
+          buyerName: formatCustomerName(order.customerName, order.customerEmail),
+          location: extractCustomerOrigin(order.shippingAddress, order.pickupLocation),
+          product: matchedProduct,
+          timeAgo: formatOrderTimeAgo(timestamp),
+          isRealOrder: true
+        });
+      }
+    }
+
+    return events;
+  }, [liveOrders, products]);
+
+  // Trigger social proof rotation
+  const triggerNotification = useCallback(() => {
+    if (isMuted || isAdminSide || products.length === 0) return;
+
+    let selectedPurchase: PurchaseEvent;
+
+    // Prioritize 100% real customer orders whenever present
+    if (realPurchaseEvents.length > 0) {
+      // Pick a real purchase event that wasn't recently dismissed
+      const available = realPurchaseEvents.filter(
+        (ev) => !dismissedSales.includes(`${ev.buyerName}-${ev.product.id}`)
+      );
+      const pool = available.length > 0 ? available : realPurchaseEvents;
+      selectedPurchase = pool[Math.floor(Math.random() * pool.length)];
+    } else {
+      // Graceful fallback for brand-new store with zero orders yet
+      const randomProduct = products[Math.floor(Math.random() * products.length)];
+      const randomBuyer = FALLBACK_BUYERS[Math.floor(Math.random() * FALLBACK_BUYERS.length)];
+      const randomLocation = FALLBACK_LOCATIONS[Math.floor(Math.random() * FALLBACK_LOCATIONS.length)];
+
+      selectedPurchase = {
+        id: `mock-seed-${Math.random().toString(36).substr(2, 9)}`,
+        buyerName: randomBuyer,
+        location: randomLocation,
+        product: randomProduct,
+        timeAgo: 'Recently',
+        isRealOrder: false
+      };
+    }
+
+    // Increment showcase frequency
     setProductShowcaseCounts((prev) => {
-      const currentCount = prev[randomProduct.id] || 0;
-      const updated = { ...prev, [randomProduct.id]: currentCount + 1 };
+      const currentCount = prev[selectedPurchase.product.id] || 0;
+      const updated = { ...prev, [selectedPurchase.product.id]: currentCount + 1 };
       try {
         localStorage.setItem('veloce_product_showcase_counts', JSON.stringify(updated));
-      } catch (e) {
+      } catch {
         // ignore
       }
       return updated;
     });
 
-    // If already visible, fade/slide it out first, then load the next one
     if (isVisible) {
       setIsVisible(false);
       setTimeout(() => {
-        setCurrentPurchase(purchase);
+        setCurrentPurchase(selectedPurchase);
         setIsVisible(true);
-      }, 400); // Allow exit transition to complete gracefully
+      }, 400);
     } else {
-      setCurrentPurchase(purchase);
+      setCurrentPurchase(selectedPurchase);
       setIsVisible(true);
     }
-  };
+  }, [isMuted, isAdminSide, products, realPurchaseEvents, dismissedSales, isVisible]);
 
+  // Timer scheduling
   useEffect(() => {
     if (isMuted || isAdminSide) {
       setIsVisible(false);
       return;
     }
 
-    // Initial trigger after 12 seconds
+    // Initial trigger after 10 seconds
     const initialTimer = setTimeout(() => {
-      triggerRandomNotification();
-    }, 12000);
+      triggerNotification();
+    }, 10000);
 
-    // Repeat every 35-50 seconds
+    // Periodic rotation every 38 seconds
     const intervalTimer = setInterval(() => {
-      triggerRandomNotification();
-    }, 42000);
+      triggerNotification();
+    }, 38000);
 
     return () => {
       clearTimeout(initialTimer);
       clearInterval(intervalTimer);
     };
-  }, [products, isMuted, isAdminSide]);
+  }, [triggerNotification, isMuted, isAdminSide]);
 
-  // Handle automatic toast dismiss after 7 seconds
+  // Auto dismiss after 7.5 seconds
   useEffect(() => {
     if (isVisible) {
       const dismissTimer = setTimeout(() => {
         setIsVisible(false);
-      }, 7000);
+      }, 7500);
       return () => clearTimeout(dismissTimer);
     }
   }, [isVisible, currentPurchase]);
@@ -201,6 +484,9 @@ export default function SocialProofToast({
 
   if (isMuted || isAdminSide) return null;
 
+  const totalOrdersCount = Math.max(liveOrders.length, realPurchaseEvents.length, 1);
+  const velocityPercentage = Math.min(100, Math.round((totalOrdersCount / Math.max(totalOrdersCount + 10, 25)) * 100));
+
   return (
     <AnimatePresence>
       {isVisible && currentPurchase && (
@@ -208,7 +494,7 @@ export default function SocialProofToast({
           drag="x"
           dragConstraints={{ left: 0, right: 0 }}
           dragElastic={{ left: 0.8, right: 0.8 }}
-          onDragEnd={(event, info) => {
+          onDragEnd={(_, info) => {
             const threshold = 80;
             const velocityThreshold = 300;
             if (Math.abs(info.offset.x) > threshold || Math.abs(info.velocity.x) > velocityThreshold) {
@@ -250,9 +536,14 @@ export default function SocialProofToast({
             <div className="flex items-center justify-between gap-1">
               <div className="flex items-center gap-1.5 flex-wrap">
                 <span className="flex items-center gap-1 text-[9.5px] font-bold text-emerald-600 dark:text-emerald-400 font-mono tracking-wider uppercase">
-                  <CheckCircle2 className="h-3 w-3" /> Verified Order
+                  <CheckCircle2 className="h-3 w-3" /> {currentPurchase.isLiveOrder ? 'Live Verified Order' : 'Verified Order'}
                 </span>
-                {((productShowcaseCounts[currentPurchase.product.id] || 0) > 3) && (
+                {currentPurchase.isLiveOrder && (
+                  <span className="flex items-center gap-0.5 text-[8px] font-bold text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/40 px-1 py-0.2 rounded font-mono uppercase tracking-wider animate-pulse">
+                    <Radio className="h-2 w-2 text-red-500 animate-ping" /> Live
+                  </span>
+                )}
+                {((productShowcaseCounts[currentPurchase.product.id] || 0) > 3) && !currentPurchase.isLiveOrder && (
                   <span className="flex items-center gap-0.5 text-[8px] font-extrabold text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/35 px-1 py-0.5 rounded border border-rose-100 dark:border-rose-900/30 font-mono uppercase tracking-wider animate-pulse">
                     <Flame className="h-2 w-2 text-orange-500 fill-orange-500" /> Hot Item
                   </span>
@@ -284,7 +575,7 @@ export default function SocialProofToast({
             <p className="text-[11.5px] text-gray-800 dark:text-gray-200 mt-1.5 leading-normal">
               <strong className="font-extrabold text-gray-950 dark:text-white">{currentPurchase.buyerName}</strong> from{' '}
               <span className="inline-flex items-center gap-0.5 text-indigo-900 dark:text-indigo-350 font-medium">
-                <MapPin className="h-2.5 w-2.5" /> {currentPurchase.location}
+                <MapPin className="h-2.5 w-2.5 shrink-0" /> {currentPurchase.location}
               </span>{' '}
               purchased <span className="font-semibold text-indigo-700 dark:text-indigo-400 underline decoration-indigo-200 group-hover:decoration-indigo-500 transition-colors">{currentPurchase.product.name}</span>
             </p>
@@ -305,16 +596,16 @@ export default function SocialProofToast({
                     <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-indigo-400 opacity-75"></span>
                     <span className="relative inline-flex rounded-full h-2 w-2 bg-indigo-500"></span>
                   </span>
-                  <TrendingUp className="h-3 w-3 inline" /> Sales Velocity
+                  <TrendingUp className="h-3 w-3 inline" /> Store Activity
                 </span>
                 <span className="font-mono text-gray-500 dark:text-gray-400 font-bold">
-                  {Math.min(100, Math.round((salesCount / 50) * 100))}% Peak ({salesCount}/50 Limit)
+                  {totalOrdersCount} {totalOrdersCount === 1 ? 'Order' : 'Orders'} Recorded ({velocityPercentage}% Velocity)
                 </span>
               </div>
               <div className="h-1.5 w-full bg-gray-100 dark:bg-gray-800 rounded-full overflow-hidden">
                 <motion.div 
                   initial={{ width: 0 }}
-                  animate={{ width: `${Math.min(100, Math.round((salesCount / 50) * 100))}%` }}
+                  animate={{ width: `${velocityPercentage}%` }}
                   transition={{ duration: 0.8, ease: 'easeOut' }}
                   className="h-full bg-indigo-600 rounded-full"
                 />

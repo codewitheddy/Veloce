@@ -940,7 +940,7 @@ export default function UserAccount({
 
   // Active user portal
   return (
-    <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8 font-sans">
+    <div className="w-full max-w-[1440px] mx-auto px-4 py-8 sm:px-6 lg:px-8 font-sans">
       {/* Title */}
       <div className="flex flex-col md:flex-row md:items-center md:justify-between border-b border-gray-100 dark:border-gray-800 pb-5 gap-4">
         <div className="flex-1">

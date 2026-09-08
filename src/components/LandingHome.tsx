@@ -7,6 +7,7 @@ import React from 'react';
 import { Product, Order } from '../types';
 import { HeroBannerSlider } from './HeroBannerSlider';
 import DailyOffersSection from './DailyOffersSection';
+import BestSellersNewArrivalsCarousel from './BestSellersNewArrivalsCarousel';
 import BestSellingByCategory from './BestSellingByCategory';
 import SaleProducts from './SaleProducts';
 
@@ -19,6 +20,10 @@ interface LandingHomeProps {
   onSelectSale?: () => void;
   onTriggerEmailToast?: (mockOrder: Order, status: string) => void;
   onTriggerCustomEmail?: (subject: string, body: string, status?: string) => void;
+  onAddToCart?: (product: Product, quantity: number, vars: Record<string, string>) => void;
+  wishlist?: string[];
+  onToggleWishlist?: (productId: string) => void;
+  darkMode?: boolean;
 }
 
 export default function LandingHome({
@@ -30,6 +35,10 @@ export default function LandingHome({
   onSelectSale,
   onTriggerEmailToast,
   onTriggerCustomEmail,
+  onAddToCart,
+  wishlist = [],
+  onToggleWishlist = () => {},
+  darkMode = false,
 }: LandingHomeProps) {
 
   return (
@@ -55,7 +64,20 @@ export default function LandingHome({
         onSelectSale={onSelectSale}
       />
 
-      {/* Best Sellers by Category */}
+      {/* Curated Showcase: Best Selling Products & New Arrivals */}
+      <div className="w-full max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8 pt-8 pb-4">
+        <BestSellersNewArrivalsCarousel
+          products={featuredProducts}
+          onSelectProduct={onProductClick}
+          onAddToCart={onAddToCart}
+          wishlist={wishlist}
+          onToggleWishlist={onToggleWishlist}
+          darkMode={darkMode}
+          className="shadow-xs"
+        />
+      </div>
+
+      {/* Best Sellers by Category (CATEGORY LEADERS) */}
       <BestSellingByCategory
         products={featuredProducts}
         orders={orders}
