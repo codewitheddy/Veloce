@@ -20,10 +20,10 @@ export default function Footer({ setCurrentTab }: FooterProps) {
   };
 
   const currentYear = new Date().getFullYear();
-  const siteName = settings.general.site_name || 'Veloce Collective';
-  const tagline = settings.general.tagline || 'Premium master accessories engineered with solid Oak and carbon steel. Curators of professional workspace machinery and high-output digital assets.';
-  const businessEmail = settings.general.business_email || 'concierge@veloce.co.ke';
-  const supportPhone = settings.general.support_phone || '+254 700 000 000';
+  const siteName = settings.general.site_name || 'Ropenix Collections';
+  const tagline = settings.general.tagline || 'Curated fashion, bespoke tailoring, premium workspace machinery, and verified commerce assets.';
+  const businessEmail = settings.general.business_email || 'concierge@ropenix.co.ke';
+  const supportPhone = settings.general.support_phone || '+254 182 180 965';
   const physicalAddress = settings.general.physical_address || 'Enterprise Road, Industrial Area, Nairobi, Kenya';
 
   return (
@@ -51,9 +51,9 @@ export default function Footer({ setCurrentTab }: FooterProps) {
               </div>
             </div>
             <div className="mt-6 flex items-center gap-4 text-gray-400">
-              <a href="https://twitter.com/veloce_ke" target="_blank" rel="noopener noreferrer" aria-label="Visit Veloce Twitter / X profile" title="Twitter / X" className="hover:text-white transition-colors"><Twitter className="h-4 w-4" /></a>
-              <a href="https://instagram.com/veloce_ke" target="_blank" rel="noopener noreferrer" aria-label="Visit Veloce Instagram profile" title="Instagram" className="hover:text-white transition-colors"><Instagram className="h-4 w-4" /></a>
-              <a href="https://facebook.com/veloce_ke" target="_blank" rel="noopener noreferrer" aria-label="Visit Veloce Facebook page" title="Facebook" className="hover:text-white transition-colors"><Facebook className="h-4 w-4" /></a>
+              <a href="https://twitter.com/ropenix_ke" target="_blank" rel="noopener noreferrer" aria-label="Visit Ropenix Twitter / X profile" title="Twitter / X" className="hover:text-white transition-colors"><Twitter className="h-4 w-4" /></a>
+              <a href="https://instagram.com/ropenix_ke" target="_blank" rel="noopener noreferrer" aria-label="Visit Ropenix Instagram profile" title="Instagram" className="hover:text-white transition-colors"><Instagram className="h-4 w-4" /></a>
+              <a href="https://facebook.com/ropenix_ke" target="_blank" rel="noopener noreferrer" aria-label="Visit Ropenix Facebook page" title="Facebook" className="hover:text-white transition-colors"><Facebook className="h-4 w-4" /></a>
             </div>
           </div>
 
@@ -64,7 +64,7 @@ export default function Footer({ setCurrentTab }: FooterProps) {
               <ul className="mt-4 flex flex-col gap-2.5 text-xs text-gray-400 font-extralight">
                 <li><button onClick={() => setCurrentTab('store')} className="hover:text-white bg-transparent">Proprietary Store</button></li>
                 <li><button onClick={() => setCurrentTab('services')} className="hover:text-white bg-transparent">Consultation Booking</button></li>
-                <li><button onClick={() => setCurrentTab('blog')} className="hover:text-white bg-transparent">Veloce Insights</button></li>
+                <li><button onClick={() => setCurrentTab('blog')} className="hover:text-white bg-transparent">Ropenix Insights</button></li>
               </ul>
             </div>
 
@@ -74,15 +74,15 @@ export default function Footer({ setCurrentTab }: FooterProps) {
                 <li><button onClick={() => setCurrentTab('home')} className="hover:text-white bg-transparent text-left cursor-pointer">Overview</button></li>
                 <li><button onClick={() => { setCurrentTab('home'); setTimeout(() => { window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' }); }, 100); }} className="hover:text-white bg-transparent text-left cursor-pointer">Mission story</button></li>
                 <li><button onClick={() => setCurrentTab('privacy')} className="hover:text-white bg-transparent text-left cursor-pointer">Privacy Policy</button></li>
-                <li><button onClick={() => setCurrentTab('unsubscribe')} className="hover:text-rose-400 bg-transparent text-left cursor-pointer">Email Preferences & Unsubscribe</button></li>
-                <li><button onClick={() => window.dispatchEvent(new CustomEvent('veloce_open_cookie_settings'))} className="hover:text-white bg-transparent text-left cursor-pointer">Cookie Settings</button></li>
+                <li><button onClick={() => setCurrentTab('unsubscribe')} className="hover:text-rose-400 bg-transparent text-left cursor-pointer">Email Preferences &amp; Unsubscribe</button></li>
+                <li><button onClick={() => window.dispatchEvent(new CustomEvent('ropenix_open_cookie_settings'))} className="hover:text-white bg-transparent text-left cursor-pointer">Cookie Settings</button></li>
               </ul>
             </div>
 
             <div>
               <h4 className="font-display text-xs font-bold uppercase tracking-wider text-gray-400 font-mono">Newsletter</h4>
               <p className="mt-2 text-[11px] text-gray-400 leading-relaxed">
-                Receive workspace blueprints & exclusive 10% welcome voucher.
+                Receive catalog highlights &amp; exclusive 10% welcome voucher.
               </p>
               <div className="mt-3">
                 <NewsletterSubscription variant="compact" source="Footer Widget" />
@@ -97,7 +97,7 @@ export default function Footer({ setCurrentTab }: FooterProps) {
 
         {/* Bottom bar */}
         <div className="mt-12 border-t border-gray-900 pt-8 flex flex-col sm:flex-row justify-between items-center text-xs text-gray-500 font-light gap-4">
-          <p>© {currentYear} {siteName}. All rights reserved.</p>
+          <p>© {currentYear} {siteName}. All rights reserved. Powered by Ropenix Investments Limited.</p>
           <button
             onClick={scrollToTop}
             aria-label="Scroll back to top of page"
@@ -110,4 +110,5 @@ export default function Footer({ setCurrentTab }: FooterProps) {
     </footer>
   );
 }
+
 

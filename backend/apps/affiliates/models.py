@@ -83,7 +83,7 @@ class AffiliateCampaign(models.Model):
     id = models.CharField(max_length=64, primary_key=True, default=uuid.uuid4, editable=False)
     affiliate = models.ForeignKey(AffiliateProfile, on_delete=models.CASCADE, related_name='campaigns')
     campaign_name = models.CharField(max_length=255)
-    target_url = models.URLField(max_length=1024, default='https://veloce.co.ke/')
+    target_url = models.URLField(max_length=1024, default='https://ropenix.co.ke/')
     custom_slug = models.SlugField(max_length=100, unique=True, db_index=True)
     total_clicks = models.IntegerField(default=0)
     total_conversions = models.IntegerField(default=0)

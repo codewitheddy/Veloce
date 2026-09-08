@@ -41,7 +41,11 @@ import {
   EyeOff,
   ExternalLink,
   ChevronRight,
-  Database
+  Database,
+  Cloud,
+  Image as ImageIcon,
+  Loader2,
+  CheckCircle
 } from 'lucide-react';
 import {
   FullSiteSettings,
@@ -57,10 +61,17 @@ import {
   INITIAL_THEME_PRESETS,
   applyAppearanceToDom
 } from '../services/siteSettingsApi';
+import {
+  checkCloudinaryStatus,
+  uploadImageToCloudinary,
+  getOptimizedCloudinaryUrl,
+  isCloudinaryUrl
+} from '../lib/cloudinary';
 
 type SettingsTab =
   | 'general'
   | 'appearance'
+  | 'media'
   | 'tax'
   | 'receipts'
   | 'backup'
@@ -81,6 +92,32 @@ export function SiteSettingsPanel() {
   const [isSaving, setIsSaving] = useState(false);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'success' | 'error'>('idle');
   const [statusMessage, setStatusMessage] = useState('');
+
+  // Cloudinary State & Diagnostics
+  const [cloudinaryStatus, setCloudinaryStatus] = useState<{
+    configured: boolean;
+    cloudName?: string;
+    source: 'backend' | 'client_preset' | 'none';
+    message: string;
+  }>({
+    configured: false,
+    source: 'none',
+    message: 'Checking Cloudinary configuration...'
+  });
+  const [isCheckingCloudinary, setIsCheckingCloudinary] = useState(false);
+  const [isTestingCloudinaryUpload, setIsTestingCloudinaryUpload] = useState(false);
+  const [cloudinaryTestResult, setCloudinaryTestResult] = useState<{
+    url: string;
+    secureUrl: string;
+    isCloudinary: boolean;
+    width?: number;
+    height?: number;
+    bytes?: number;
+    format?: string;
+    optimizedUrl?: string;
+  } | null>(null);
+  const [cloudinaryTestError, setCloudinaryTestError] = useState<string | null>(null);
+  const testFileInputRef = useRef<HTMLInputElement>(null);
 
   // Modals & Sub-states
   const [showNewThemeModal, setShowNewThemeModal] = useState(false);
@@ -116,6 +153,27 @@ export function SiteSettingsPanel() {
   const [showEtimsSecret, setShowEtimsSecret] = useState(false);
   const [showMpesaSecret, setShowMpesaSecret] = useState(false);
   const [showMpesaPasskey, setShowMpesaPasskey] = useState(false);
+
+  // Refresh Cloudinary status
+  const refreshCloudinaryStatus = async () => {
+    setIsCheckingCloudinary(true);
+    try {
+      const status = await checkCloudinaryStatus();
+      setCloudinaryStatus(status);
+    } catch {
+      setCloudinaryStatus({
+        configured: false,
+        source: 'none',
+        message: 'Could not contact Cloudinary diagnostic service.'
+      });
+    } finally {
+      setIsCheckingCloudinary(false);
+    }
+  };
+
+  useEffect(() => {
+    refreshCloudinaryStatus();
+  }, []);
 
   // Load initial settings from API / Local cache
   useEffect(() => {
@@ -197,7 +255,7 @@ export function SiteSettingsPanel() {
   const handleResetToDefaultTheme = () => {
     const defaultAppearance = {
       ...settings.appearance,
-      active_theme: 'Veloce Classic Indigo',
+      active_theme: 'Ropenix Classic Indigo',
       primary_color: '#4f46e5',
       secondary_color: '#06b6d4',
       accent_color: '#f59e0b',
@@ -335,9 +393,49 @@ export function SiteSettingsPanel() {
     }
   };
 
+  // Run Cloudinary Diagnostic Upload Test
+  const handleRunCloudinaryDiagnostic = async (file: File) => {
+    setCloudinaryTestError(null);
+    setCloudinaryTestResult(null);
+
+    if (!file.type.startsWith('image/')) {
+      setCloudinaryTestError('Please select a valid image file (PNG, JPG, SVG, WebP, AVIF)');
+      return;
+    }
+
+    setIsTestingCloudinaryUpload(true);
+    try {
+      const result = await uploadImageToCloudinary(file, {
+        folder: 'ropenix_diagnostics',
+        tags: ['diagnostic_test', 'system_check'],
+      });
+
+      if (result.success && result.url) {
+        const optimized = getOptimizedCloudinaryUrl(result.url, { width: 600, quality: 'auto', format: 'auto' });
+        setCloudinaryTestResult({
+          url: result.url,
+          secureUrl: result.secureUrl || result.url,
+          isCloudinary: result.isCloudinary,
+          width: result.width,
+          height: result.height,
+          bytes: result.bytes || file.size,
+          format: result.format || file.type.split('/')[1] || 'jpg',
+          optimizedUrl: optimized,
+        });
+      } else {
+        setCloudinaryTestError(result.error || 'Diagnostic test upload failed.');
+      }
+    } catch (err: any) {
+      setCloudinaryTestError(err.message || 'Error executing Cloudinary test upload.');
+    } finally {
+      setIsTestingCloudinaryUpload(false);
+    }
+  };
+
   const navTabs: { id: SettingsTab; label: string; icon: any; badge?: string }[] = [
     { id: 'general', label: 'General', icon: Building },
     { id: 'appearance', label: 'Appearance', icon: Palette, badge: settings.appearance.font_scale },
+    { id: 'media', label: 'Media & CDN', icon: Cloud, badge: cloudinaryStatus.configured ? 'Cloud Active' : 'Fallback' },
     { id: 'tax', label: 'Tax & VAT', icon: Percent },
     { id: 'receipts', label: 'Receipts & eTIMS', icon: FileText, badge: 'KRA' },
     { id: 'backup', label: 'Backup & Recovery', icon: Database, badge: `${(Array.isArray(backups) ? backups : []).length}` },
@@ -695,7 +793,7 @@ export function SiteSettingsPanel() {
                 <div>
                   <span className="text-[10px] font-mono uppercase text-gray-400 block font-bold">Typography Live Preview</span>
                   <p className="text-gray-850 dark:text-gray-100 font-sans font-medium mt-0.5">
-                    "Veloce Atelier: Luxury bespoke craftsmanship tailored for the modern connoisseur."
+                    "Ropenix Collections: Premium bespoke craftsmanship tailored for the modern connoisseur."
                   </p>
                 </div>
                 <span className="text-xs font-mono font-bold text-emerald-600">✓ Injected to :root</span>
@@ -1244,7 +1342,263 @@ export function SiteSettingsPanel() {
         )}
 
         {/* ========================================================================= */}
-        {/* TAB 3: TAX & VAT (KRA PIN & RATES) */}
+        {/* TAB 3: MEDIA & CLOUDINARY CDN CONFIGURATION */}
+        {/* ========================================================================= */}
+        {activeTab === 'media' && (
+          <div className="space-y-6 max-w-4xl animate-in fade-in duration-150">
+            <div>
+              <h3 className="text-sm font-bold text-gray-900 dark:text-white flex items-center gap-2">
+                <Cloud className="h-4 w-4 text-cyan-500" />
+                Cloudinary Media Hosting, Edge CDN &amp; Asset Delivery
+              </h3>
+              <p className="text-xs text-gray-500 font-light mt-0.5">
+                Manage high-performance cloud asset storage, automatic next-gen AVIF/WebP image optimization, and global edge delivery.
+              </p>
+            </div>
+
+            {/* Cloudinary Status Indicator Card */}
+            <div className={`p-5 rounded-2xl border ${
+              cloudinaryStatus.configured
+                ? 'border-cyan-200 dark:border-cyan-900/60 bg-gradient-to-r from-cyan-50/60 via-white to-indigo-50/30 dark:from-cyan-950/30 dark:via-gray-900 dark:to-indigo-950/20'
+                : 'border-amber-200 dark:border-amber-900/60 bg-amber-50/40 dark:bg-amber-950/20'
+            } space-y-4`}>
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div className={`h-10 w-10 rounded-xl flex items-center justify-center ${
+                    cloudinaryStatus.configured
+                      ? 'bg-cyan-500 text-white shadow-md shadow-cyan-500/20'
+                      : 'bg-amber-500 text-white shadow-md shadow-amber-500/20'
+                  }`}>
+                    <Cloud className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-bold text-gray-950 dark:text-white">
+                        Cloudinary Connection Status
+                      </span>
+                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-mono font-bold ${
+                        cloudinaryStatus.configured
+                          ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800'
+                          : 'bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-800'
+                      }`}>
+                        {cloudinaryStatus.configured ? '● CDN Active' : '○ Local Compression Fallback'}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-gray-500 dark:text-gray-400 font-light mt-0.5">
+                      {cloudinaryStatus.message}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={refreshCloudinaryStatus}
+                    disabled={isCheckingCloudinary}
+                    className="px-3 py-1.5 rounded-xl border border-gray-250 dark:border-gray-700 bg-white dark:bg-gray-800 text-xs font-bold text-gray-700 dark:text-gray-300 hover:bg-gray-50 flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                  >
+                    <RefreshCw className={`h-3 w-3 ${isCheckingCloudinary ? 'animate-spin' : ''}`} />
+                    <span>Re-check</span>
+                  </button>
+                  <a
+                    href="https://cloudinary.com/console"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="px-3 py-1.5 rounded-xl bg-cyan-600 hover:bg-cyan-700 text-white text-xs font-bold flex items-center gap-1.5 shadow-2xs cursor-pointer"
+                  >
+                    <span>Console</span>
+                    <ExternalLink className="h-3 w-3" />
+                  </a>
+                </div>
+              </div>
+
+              {/* Status Details Grid */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2 border-t border-gray-200/60 dark:border-gray-800/60">
+                <div className="p-3 rounded-xl bg-white/80 dark:bg-gray-800/60 border border-gray-150 dark:border-gray-700/60">
+                  <span className="text-[10px] font-mono text-gray-400 uppercase tracking-wider block">
+                    Cloud Name
+                  </span>
+                  <span className="text-xs font-bold font-mono text-gray-900 dark:text-white mt-0.5 block">
+                    {cloudinaryStatus.cloudName || 'Not configured'}
+                  </span>
+                </div>
+                <div className="p-3 rounded-xl bg-white/80 dark:bg-gray-800/60 border border-gray-150 dark:border-gray-700/60">
+                  <span className="text-[10px] font-mono text-gray-400 uppercase tracking-wider block">
+                    Upload Architecture
+                  </span>
+                  <span className="text-xs font-bold text-gray-900 dark:text-white mt-0.5 block">
+                    {cloudinaryStatus.source === 'backend' ? 'Signed Backend Server Proxy' : cloudinaryStatus.source === 'client_preset' ? 'Client Unsigned Preset' : 'Client Canvas Fallback'}
+                  </span>
+                </div>
+                <div className="p-3 rounded-xl bg-white/80 dark:bg-gray-800/60 border border-gray-150 dark:border-gray-700/60">
+                  <span className="text-[10px] font-mono text-gray-400 uppercase tracking-wider block">
+                    Auto Format / Quality
+                  </span>
+                  <span className="text-xs font-bold font-mono text-cyan-600 dark:text-cyan-400 mt-0.5 block">
+                    f_auto, q_auto, c_limit
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Interactive Cloudinary Upload & CDN Tester */}
+            <div className="p-5 rounded-2xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 space-y-4 shadow-2xs">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h4 className="text-xs font-bold text-gray-900 dark:text-white flex items-center gap-1.5">
+                    <Sparkles className="h-4 w-4 text-indigo-600" />
+                    Live CDN Transformation &amp; Upload Diagnostic Tester
+                  </h4>
+                  <p className="text-[11px] text-gray-500 font-light mt-0.5">
+                    Upload a sample image to test end-to-end Cloudinary API transmission and inspect the resulting optimized WebP/AVIF CDN stream.
+                  </p>
+                </div>
+              </div>
+
+              <input
+                type="file"
+                ref={testFileInputRef}
+                accept="image/*"
+                className="hidden"
+                onChange={(e) => {
+                  if (e.target.files && e.target.files[0]) {
+                    handleRunCloudinaryDiagnostic(e.target.files[0]);
+                  }
+                }}
+              />
+
+              <div
+                onClick={() => testFileInputRef.current?.click()}
+                className="border-2 border-dashed border-gray-250 dark:border-gray-700 hover:border-cyan-500 dark:hover:border-cyan-500 rounded-xl p-6 text-center cursor-pointer transition-all bg-gray-50/40 dark:bg-gray-800/30 hover:bg-cyan-50/20 dark:hover:bg-cyan-950/20 flex flex-col items-center justify-center gap-2"
+              >
+                {isTestingCloudinaryUpload ? (
+                  <div className="flex flex-col items-center gap-2 py-2">
+                    <Loader2 className="h-6 w-6 text-cyan-500 animate-spin" />
+                    <span className="text-xs font-bold text-cyan-600 dark:text-cyan-400">
+                      Transmitting test payload to Cloudinary...
+                    </span>
+                  </div>
+                ) : (
+                  <>
+                    <div className="p-3 rounded-full bg-cyan-50 dark:bg-cyan-950/80 text-cyan-600 dark:text-cyan-400 border border-cyan-200 dark:border-cyan-800">
+                      <Upload className="h-5 w-5" />
+                    </div>
+                    <span className="text-xs font-bold text-gray-800 dark:text-gray-200">
+                      Click to select a sample image file for diagnostic testing
+                    </span>
+                    <span className="text-[10px] text-gray-400 font-light">
+                      Supports JPG, PNG, WebP, AVIF, SVG (up to 20MB)
+                    </span>
+                  </>
+                )}
+              </div>
+
+              {cloudinaryTestError && (
+                <div className="p-3 rounded-xl bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-800 text-rose-700 dark:text-rose-300 text-xs font-medium flex items-center gap-2">
+                  <AlertTriangle className="h-4 w-4 shrink-0" />
+                  <span>{cloudinaryTestError}</span>
+                </div>
+              )}
+
+              {cloudinaryTestResult && (
+                <div className="p-4 rounded-xl bg-gray-50 dark:bg-gray-800/60 border border-gray-200 dark:border-gray-700 space-y-3 animate-in fade-in">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-1.5">
+                      <CheckCircle className="h-4 w-4" />
+                      Test Upload Completed Successfully
+                    </span>
+                    <span className="text-[10px] font-mono px-2 py-0.5 rounded-md bg-cyan-100 dark:bg-cyan-950 text-cyan-800 dark:text-cyan-300 font-bold">
+                      {cloudinaryTestResult.isCloudinary ? '☁️ Cloudinary CDN Verified' : 'Local Fallback'}
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-center">
+                    <div className="rounded-xl overflow-hidden border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 max-h-48 flex items-center justify-center p-2">
+                      <img
+                        src={cloudinaryTestResult.optimizedUrl || cloudinaryTestResult.url}
+                        alt="Test output"
+                        className="max-h-44 object-contain rounded"
+                      />
+                    </div>
+                    <div className="space-y-2 text-xs">
+                      <div>
+                        <span className="text-[10px] font-mono text-gray-400 uppercase">Dimensions:</span>
+                        <p className="font-mono font-bold text-gray-900 dark:text-white">
+                          {cloudinaryTestResult.width && cloudinaryTestResult.height
+                            ? `${cloudinaryTestResult.width} × ${cloudinaryTestResult.height} px`
+                            : 'Dynamic Vector / Responsive'}
+                        </p>
+                      </div>
+                      <div>
+                        <span className="text-[10px] font-mono text-gray-400 uppercase">Processed Size:</span>
+                        <p className="font-mono font-bold text-gray-900 dark:text-white">
+                          {Math.round((cloudinaryTestResult.bytes || 0) / 1024)} KB
+                        </p>
+                      </div>
+                      <div>
+                        <span className="text-[10px] font-mono text-gray-400 uppercase">CDN Delivery URL:</span>
+                        <div className="flex items-center gap-1.5 mt-0.5">
+                          <input
+                            type="text"
+                            readOnly
+                            value={cloudinaryTestResult.optimizedUrl || cloudinaryTestResult.url}
+                            className="h-7 w-full rounded border border-gray-250 dark:border-gray-700 px-2 text-[10px] font-mono bg-white dark:bg-gray-900 text-gray-700 dark:text-gray-300 select-all"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => {
+                              navigator.clipboard.writeText(cloudinaryTestResult.optimizedUrl || cloudinaryTestResult.url);
+                              alert('Cloudinary URL copied to clipboard!');
+                            }}
+                            className="h-7 px-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded text-[10px] font-bold shrink-0 cursor-pointer"
+                          >
+                            Copy
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* CDN Performance Architecture Details */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="p-4 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-900/40 space-y-1.5">
+                <span className="text-xs font-bold text-gray-900 dark:text-white flex items-center gap-1.5">
+                  <Zap className="h-3.5 w-3.5 text-amber-500" />
+                  f_auto Format Negotiation
+                </span>
+                <p className="text-[11px] text-gray-500 font-light leading-relaxed">
+                  Automatically delivers AVIF to Chrome/Edge and WebP to Safari/Firefox, cutting load times by up to 60%.
+                </p>
+              </div>
+
+              <div className="p-4 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-900/40 space-y-1.5">
+                <span className="text-xs font-bold text-gray-900 dark:text-white flex items-center gap-1.5">
+                  <Sparkles className="h-3.5 w-3.5 text-indigo-500" />
+                  q_auto Visual Fidelity
+                </span>
+                <p className="text-[11px] text-gray-500 font-light leading-relaxed">
+                  Applies intelligent perceptual SSIM algorithms to eliminate invisible pixel bloat while preserving sharp product clarity.
+                </p>
+              </div>
+
+              <div className="p-4 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-900/40 space-y-1.5">
+                <span className="text-xs font-bold text-gray-900 dark:text-white flex items-center gap-1.5">
+                  <Shield className="h-3.5 w-3.5 text-emerald-500" />
+                  100% Offline Resiliency
+                </span>
+                <p className="text-[11px] text-gray-500 font-light leading-relaxed">
+                  Fallback canvas compression ensures the product catalog, checkout, and admin dashboard never fail even if credentials expire.
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ========================================================================= */}
+        {/* TAB 4: TAX & VAT (KRA PIN & RATES) */}
         {/* ========================================================================= */}
         {activeTab === 'tax' && (
           <div className="space-y-6 max-w-4xl animate-in fade-in duration-150">

@@ -30,7 +30,7 @@ export interface DistanceResult {
   routeCoordinates?: [number, number][]; // [lat, lng] pairs for Leaflet Polyline
 }
 
-// Default Store Location (Veloce Nairobi CBD Central Hub: -1.286389, 36.817223)
+// Default Store Location (Ropenix Nairobi CBD Central Hub: -1.286389, 36.817223)
 export const DEFAULT_STORE_LOCATION: Coordinates = {
   lat: -1.286389,
   lng: 36.817223
@@ -38,7 +38,7 @@ export const DEFAULT_STORE_LOCATION: Coordinates = {
 
 // Preset Popular Kenyan Store & Delivery Hubs
 export const PRESET_KENYA_HUBS: { name: string; category: string; coords: Coordinates }[] = [
-  { name: 'Veloce Central Hub (Nairobi CBD)', category: 'Store Origin', coords: { lat: -1.286389, lng: 36.817223 } },
+  { name: 'Ropenix Central Hub (Nairobi CBD)', category: 'Store Origin', coords: { lat: -1.286389, lng: 36.817223 } },
   { name: 'Westlands / Sarit Centre', category: 'Inner Ring (0-8 km)', coords: { lat: -1.2642, lng: 36.8048 } },
   { name: 'Kilimani / Yaya Centre', category: 'Inner Ring (0-8 km)', coords: { lat: -1.2917, lng: 36.7877 } },
   { name: 'Parklands / Diamond Plaza', category: 'Inner Ring (0-8 km)', coords: { lat: -1.2615, lng: 36.8202 } },
@@ -237,7 +237,7 @@ export async function searchNominatimAddresses(
     const res = await fetch(url, {
       headers: {
         'Accept': 'application/json',
-        'User-Agent': 'VeloceCommercePlatform/1.0'
+        'User-Agent': 'RopenixCommercePlatform/1.0'
       },
       signal: controller.signal
     });
@@ -294,7 +294,7 @@ export async function reverseGeocodeNominatim(coords: Coordinates): Promise<stri
     const res = await fetch(url, {
       headers: {
         'Accept': 'application/json',
-        'User-Agent': 'VeloceCommercePlatform/1.0'
+        'User-Agent': 'RopenixCommercePlatform/1.0'
       },
       signal: controller.signal
     });

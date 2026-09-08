@@ -2,7 +2,7 @@ import { MetadataRoute } from 'next';
 import { fetchProducts } from '@/lib/api';
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
-  const baseUrl = 'https://veloce.co.ke';
+  const baseUrl = 'https://ropenix.co.ke';
   const { hits: products } = await fetchProducts({ pageSize: 100 });
 
   const productUrls: MetadataRoute.Sitemap = products.map((product) => ({

@@ -76,7 +76,7 @@ export default function SmtpHealthValidator({
           host: 'mail.marid.co.ke',
           port: 465,
           user: 'noreply@marid.co.ke',
-          defaultFrom: 'Veloce Kenya <noreply@marid.co.ke>',
+          defaultFrom: 'Ropenix Collections <noreply@marid.co.ke>',
           useSsl: true,
           backend: 'django.core.mail.backends.smtp.EmailBackend'
         },

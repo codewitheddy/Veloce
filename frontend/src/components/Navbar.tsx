@@ -23,8 +23,8 @@ export default function Navbar() {
           <div className="flex items-center gap-8">
             <Link href="/" className="flex items-center gap-2.5 group">
               <img
-                src="/veloce_logo-02.png"
-                alt="Veloce Logo"
+                src="/ropenix_logo.png"
+                alt="Ropenix Collections Logo"
                 className="h-9 w-auto max-h-10 object-contain shrink-0"
               />
             </Link>

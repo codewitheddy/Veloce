@@ -148,7 +148,7 @@ export const UnsubscribeView: React.FC<UnsubscribeViewProps> = ({ initialEmail, 
         setIsUnsubscribed(false);
         setMessage({
           type: 'success',
-          text: `Welcome back! (${email}) has been re-subscribed to Veloce Kenya updates & exclusive discounts.`,
+          text: `Welcome back! (${email}) has been re-subscribed to Ropenix Collections updates & exclusive discounts.`,
         });
       } else {
         setMessage({ type: 'error', text: res.error || 'Failed to re-subscribe.' });
@@ -171,7 +171,7 @@ export const UnsubscribeView: React.FC<UnsubscribeViewProps> = ({ initialEmail, 
             </div>
             <div>
               <h2 className="font-display font-bold text-lg">Communication Preferences</h2>
-              <p className="text-xs text-slate-300">Manage your Veloce Kenya email subscriptions</p>
+              <p className="text-xs text-slate-300">Manage your Ropenix Collections email subscriptions</p>
             </div>
           </div>
         </div>
@@ -309,7 +309,7 @@ export const UnsubscribeView: React.FC<UnsubscribeViewProps> = ({ initialEmail, 
               className="mt-2 text-xs font-bold text-gray-500 hover:text-gray-900 flex items-center justify-center gap-1.5 transition cursor-pointer"
             >
               <ArrowLeft className="h-3.5 w-3.5" />
-              <span>Return to Veloce Store</span>
+              <span>Return to Ropenix Store</span>
             </button>
           )}
         </div>

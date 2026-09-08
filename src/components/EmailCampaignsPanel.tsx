@@ -232,7 +232,7 @@ export default function EmailCampaignsPanel({
   const [editedTemplateBody, setEditedTemplateBody] = useState<string>('');
   const [editedTemplateCategory, setEditedTemplateCategory] = useState<'transactional' | 'lifecycle' | 'marketing'>('transactional');
   const [editorPreviewMode, setEditorPreviewMode] = useState<'split' | 'code' | 'preview'>('split');
-  const [editorTestEmail, setEditorTestEmail] = useState<string>('admin@veloce.co.ke');
+  const [editorTestEmail, setEditorTestEmail] = useState<string>('admin@ropenix.co.ke');
   const [isTestSending, setIsTestSending] = useState(false);
 
   // Device Preview Modal States
@@ -313,7 +313,7 @@ export default function EmailCampaignsPanel({
       body: editedTemplateBody,
       category: editedTemplateCategory,
       note: note.trim() || `Manual Snapshot (v${nextVerNum})`,
-      savedBy: 'Admin (admin@veloce.co.ke)'
+      savedBy: 'Admin (admin@ropenix.co.ke)'
     };
 
     const updatedHistory = [newVersion, ...versionHistory];
@@ -450,7 +450,7 @@ export default function EmailCampaignsPanel({
       body: editedTemplateBody,
       category: editedTemplateCategory,
       note: `Saved Changes (v${nextVerNum})`,
-      savedBy: 'Admin (admin@veloce.co.ke)'
+      savedBy: 'Admin (admin@ropenix.co.ke)'
     };
 
     const updatedHistory = [newVersion, ...versionHistory];
@@ -680,7 +680,7 @@ export default function EmailCampaignsPanel({
   
   // Segmentation and Sandbox Target
   const [targetSegment, setTargetSegment] = useState<'all' | 'vip' | 'frequent' | 'high-intent' | 'test'>('all');
-  const [testEmail, setTestEmail] = useState('admin@veloce.co.ke');
+  const [testEmail, setTestEmail] = useState('admin@ropenix.co.ke');
 
   // Scheduling Configuration
   const [deliveryType, setDeliveryType] = useState<'now' | 'scheduled'>('now');
@@ -857,23 +857,23 @@ export default function EmailCampaignsPanel({
       subject: 'Order Confirmed #10042 • Receipt & Breakdown for {{customer_name}}',
       templateType: 'transactional',
       category: 'transactional',
-      body: `Hi {{customer_name}},\n\nThank you for shopping with Veloce Kenya! We have received your payment and are preparing your order for immediate dispatch.\n\n==============================================\nORDER RECEIPT & BREAKDOWN\n==============================================\nOrder ID: #10042\nCustomer: {{customer_name}}\n\nITEMS:\n• {{product_name}} x 1 — KSh {{product_price}}\n\nSubtotal: KSh {{product_price}}\nVAT (16%): Included\nShipping: KSh 0 (Free Express Delivery)\n----------------------------------------------\nTOTAL PAID: KSh {{product_price}}\n==============================================\n\nYou can track your shipment status live inside your user account dashboard.\n\nQuestions? Reply to this email or contact support at orders@marid.co.ke.\n\nWarm regards,\nVeloce Express Logistics Team`
+      body: `Hi {{customer_name}},\n\nThank you for shopping with Ropenix Collections! We have received your payment and are preparing your order for immediate dispatch.\n\n==============================================\nORDER RECEIPT & BREAKDOWN\n==============================================\nOrder ID: #ROP-10042\nCustomer: {{customer_name}}\n\nITEMS:\n• {{product_name}} x 1 — KSh {{product_price}}\n\nSubtotal: KSh {{product_price}}\nVAT (16%): Included\nShipping: KSh 0 (Free Express Delivery)\n----------------------------------------------\nTOTAL PAID: KSh {{product_price}}\n==============================================\n\nYou can track your shipment status live inside your user account dashboard.\n\nQuestions? Reply to this email or contact support at support@ropenix.co.ke.\n\nWarm regards,\nRopenix Logistics Team`
     },
     {
       id: 'tx-2',
       name: '🚚 Shipping & Tracking Update',
-      subject: 'Your Veloce Order #10042 Has Shipped!',
+      subject: 'Your Ropenix Order #ROP-10042 Has Shipped!',
       templateType: 'transactional',
       category: 'transactional',
-      body: `Hi {{customer_name}},\n\nGreat news! Your package containing {{product_name}} has left our Nairobi fulfillment warehouse and is en route.\n\nSHIPMENT DETAILS:\n• Order ID: #10042\n• Item: {{product_name}}\n• Carrier: Veloce Express Courier\n• Tracking Number: VEL-KE-889421\n• Estimated Delivery: 24 - 48 Hours\n\nTrack your package live: https://veloce.co.ke/tracking/VEL-KE-889421\n\nBest regards,\nVeloce Fulfillment Team`
+      body: `Hi {{customer_name}},\n\nGreat news! Your package containing {{product_name}} has left our Nairobi fulfillment warehouse and is en route.\n\nSHIPMENT DETAILS:\n• Order ID: #ROP-10042\n• Item: {{product_name}}\n• Carrier: Ropenix Express Courier\n• Tracking Number: ROP-KE-889421\n• Estimated Delivery: 24 - 48 Hours\n\nTrack your package live: https://ropenix.co.ke/tracking/ROP-KE-889421\n\nBest regards,\nRopenix Fulfillment Team`
     },
     {
       id: 'tx-3',
       name: '📦 Delivery Confirmation',
-      subject: 'Delivered! Your Veloce package has arrived, {{customer_name}}',
+      subject: 'Delivered! Your Ropenix package has arrived, {{customer_name}}',
       templateType: 'transactional',
       category: 'transactional',
-      body: `Hi {{customer_name}},\n\nOur courier driver has marked your parcel for Order #10042 as delivered!\n\nDELIVERY SUMMARY:\n• Item Delivered: {{product_name}}\n• Delivery Status: Dropped Off & Verified\n\nWe hope you enjoy your new setup! If you have any questions or need setup help, reply directly to this email or contact support at support@marid.co.ke.\n\nThank you for choosing Veloce Kenya!`
+      body: `Hi {{customer_name}},\n\nOur courier driver has marked your parcel for Order #ROP-10042 as delivered!\n\nDELIVERY SUMMARY:\n• Item Delivered: {{product_name}}\n• Delivery Status: Dropped Off & Verified\n\nWe hope you enjoy your new setup! If you have any questions or need setup help, reply directly to this email or contact support at support@ropenix.co.ke.\n\nThank you for choosing Ropenix Collections!`
     },
     {
       id: 'tx-4',
@@ -881,23 +881,23 @@ export default function EmailCampaignsPanel({
       subject: 'Secure Verification Link for {{customer_name}}',
       templateType: 'transactional',
       category: 'transactional',
-      body: `Hello {{customer_name}},\n\nWe received a request to verify your Veloce Kenya account or reset your password.\n\nClick the link below to verify your email address:\nhttps://veloce.co.ke/verify-account?token=sec_9938210\n\nOne-Time Security Pin: 849-204\n\nThis security token expires in 15 minutes. If you did not initiate this request, please ignore this message or contact security@marid.co.ke.\n\nBest regards,\nVeloce Security Systems`
+      body: `Hello {{customer_name}},\n\nWe received a request to verify your Ropenix Collections account or reset your password.\n\nClick the link below to verify your email address:\nhttps://ropenix.co.ke/verify-account?token=sec_9938210\n\nOne-Time Security Pin: 849-204\n\nThis security token expires in 15 minutes. If you did not initiate this request, please ignore this message or contact security@ropenix.co.ke.\n\nBest regards,\nRopenix Security Systems`
     },
     {
       id: 'tx-5',
       name: '❌ Order Cancellation & Refund Notice',
-      subject: 'Order Cancellation Notice #10042 • Refund Information for {{customer_name}}',
+      subject: 'Order Cancellation Notice #ROP-10042 • Refund Information for {{customer_name}}',
       templateType: 'transactional',
       category: 'transactional',
-      body: `Hi {{customer_name}},\n\nYour order #10042 for {{product_name}} has been cancelled as requested.\n\nREFUND STATUS:\n• Refund Method: Original M-Pesa Number\n• Amount: KSh {{product_price}}\n• Estimated Processing: 1 - 24 Hours\n\nIf you believe this cancellation was made in error or have any questions, please reply to this email or contact support@marid.co.ke.\n\nBest regards,\nVeloce Customer Support`
+      body: `Hi {{customer_name}},\n\nYour order #ROP-10042 for {{product_name}} has been cancelled as requested.\n\nREFUND STATUS:\n• Refund Method: Original M-Pesa Number\n• Amount: KSh {{product_price}}\n• Estimated Processing: 1 - 24 Hours\n\nIf you believe this cancellation was made in error or have any questions, please reply to this email or contact support@ropenix.co.ke.\n\nBest regards,\nRopenix Customer Support`
     },
     {
       id: 'tx-6',
       name: '🤝 Affiliate Welcome & Partner Confirmation',
-      subject: '🎉 Application Approved! Welcome to Veloce Affiliate Program, {{customer_name}}',
+      subject: '🎉 Application Approved! Welcome to Ropenix Affiliate Program, {{customer_name}}',
       templateType: 'transactional',
       category: 'transactional',
-      body: `Hi {{customer_name}},\n\nWelcome aboard! Your application to become an official Veloce Hub Affiliate Partner is APPROVED.\n\nPARTNER DETAILS:\n• Partner Tier: Silver Tier Partner\n• Commission Rate: 10% - 15% per order\n• Personal Referral Link: https://marid.co.ke/?ref=VEL-AFF-882\n\nEarn instant cash commissions whenever customers buy via your referral link. Payouts are sent directly to your M-Pesa account.\n\nWarm regards,\nVeloce Partner Relations`
+      body: `Hi {{customer_name}},\n\nWelcome aboard! Your application to become an official Ropenix Collections Affiliate Partner is APPROVED.\n\nPARTNER DETAILS:\n• Partner Tier: Silver Tier Partner\n• Commission Rate: 10% - 15% per order\n• Personal Referral Link: https://ropenix.co.ke/?ref=ROP-AFF-882\n\nEarn instant cash commissions whenever customers buy via your referral link. Payouts are sent directly to your M-Pesa account.\n\nWarm regards,\nRopenix Partner Relations`
     },
     {
       id: 'tx-7',
@@ -905,17 +905,17 @@ export default function EmailCampaignsPanel({
       subject: '💸 Affiliate Commission Payout Dispatched • KSh {{product_price}} for {{customer_name}}',
       templateType: 'transactional',
       category: 'transactional',
-      body: `Hi {{customer_name}},\n\nYour monthly affiliate commission payout of KSh {{product_price}} has been processed and disbursed to your registered M-Pesa number!\n\nPAYOUT SUMMARY:\n• Amount Transferred: KSh {{product_price}}\n• M-Pesa Reference: MP-VEL98214\n• Status: Completed & Settled\n\nThank you for partnering with Veloce Kenya. Keep sharing your link to reach Gold Tier status!\n\nBest regards,\nVeloce Finance & Affiliate Department`
+      body: `Hi {{customer_name}},\n\nYour monthly affiliate commission payout of KSh {{product_price}} has been processed and disbursed to your registered M-Pesa number!\n\nPAYOUT SUMMARY:\n• Amount Transferred: KSh {{product_price}}\n• M-Pesa Reference: MP-ROP98214\n• Status: Completed & Settled\n\nThank you for partnering with Ropenix Collections. Keep sharing your link to reach Gold Tier status!\n\nBest regards,\nRopenix Finance & Affiliate Department`
     },
 
     // --- 2. CUSTOMER LIFECYCLE & ENGAGEMENT EMAILS ---
     {
       id: 'lc-1',
       name: '👋 Welcome Series (Brand Intro & Discount)',
-      subject: 'Welcome to Veloce, {{customer_name}}! Here is your discount code {{discount_code}}',
+      subject: 'Welcome to Ropenix, {{customer_name}}! Here is your discount code {{discount_code}}',
       templateType: 'lifecycle',
       category: 'lifecycle',
-      body: `Welcome {{customer_name}}!\n\nThank you for joining the Veloce Kenya community! We design & curate high-performance workspace gear engineered to keep you in peak focus.\n\nAs a special welcome gift, enjoy KSh 1,500 off your first purchase:\n\nYOUR EXCLUSIVE COUPON: {{discount_code}}\n\nExplore our top-selling ergonomic desks, desk pads, and peripherals today: {{product_link}}\n\nWarm regards,\nThe Veloce Founder Team`
+      body: `Welcome {{customer_name}}!\n\nThank you for joining the Ropenix Collections community! We design & curate high-performance workspace gear engineered to keep you in peak focus.\n\nAs a special welcome gift, enjoy KSh 1,500 off your first purchase:\n\nYOUR EXCLUSIVE COUPON: {{discount_code}}\n\nExplore our top-selling ergonomic desks, desk pads, and peripherals today: {{product_link}}\n\nWarm regards,\nThe Ropenix Founder Team`
     },
     {
       id: 'lc-2',
@@ -923,7 +923,7 @@ export default function EmailCampaignsPanel({
       subject: 'Did you leave something behind, {{customer_name}}? Your cart is saved!',
       templateType: 'lifecycle',
       category: 'lifecycle',
-      body: `Hi {{customer_name}},\n\nWe noticed you left {{product_name}} in your shopping cart without completing checkout.\n\nItems in high demand reserve stock for a limited window. We've saved your cart so you can pick up right where you left off.\n\nUse code {{discount_code}} at checkout to secure an extra discount:\n\nComplete your checkout now: {{product_link}}\n\nBest regards,\nVeloce Customer Success`
+      body: `Hi {{customer_name}},\n\nWe noticed you left {{product_name}} in your shopping cart without completing checkout.\n\nItems in high demand reserve stock for a limited window. We've saved your cart so you can pick up right where you left off.\n\nUse code {{discount_code}} at checkout to secure an extra discount:\n\nComplete your checkout now: {{product_link}}\n\nBest regards,\nRopenix Customer Success`
     },
     {
       id: 'lc-3',
@@ -931,7 +931,7 @@ export default function EmailCampaignsPanel({
       subject: 'Still eyeing the {{product_name}}? Stocks are limited!',
       templateType: 'lifecycle',
       category: 'lifecycle',
-      body: `Hey {{customer_name}},\n\nWe noticed you were checking out the {{product_name}} on Veloce Kenya!\n\nGood taste! This item is engineered for peak productivity and ergonomic comfort. Stock is currently running low in our Nairobi distribution center.\n\nReview item details and secure yours today: {{product_link}}\n\nBest regards,\nVeloce Workspace Team`
+      body: `Hey {{customer_name}},\n\nWe noticed you were checking out the {{product_name}} on Ropenix Collections!\n\nGood taste! This item is engineered for peak productivity and ergonomic comfort. Stock is currently running low in our Nairobi distribution center.\n\nReview item details and secure yours today: {{product_link}}\n\nBest regards,\nRopenix Workspace Team`
     },
     {
       id: 'lc-4',
@@ -939,7 +939,7 @@ export default function EmailCampaignsPanel({
       subject: 'How is your {{product_name}} working out, {{customer_name}}?',
       templateType: 'lifecycle',
       category: 'lifecycle',
-      body: `Hi {{customer_name}},\n\nIt’s been a week since your {{product_name}} was delivered! We hope it’s elevating your daily setup.\n\nCould you take 30 seconds to leave an honest review? Your feedback helps fellow creators in Kenya make informed decisions.\n\nLeave a review: https://veloce.co.ke/reviews/new\n\nAs a token of appreciation, reviewing unlocks a 15% discount on your next order!\n\nWarm regards,\nVeloce Product Team`
+      body: `Hi {{customer_name}},\n\nIt’s been a week since your {{product_name}} was delivered! We hope it’s elevating your daily setup.\n\nCould you take 30 seconds to leave an honest review? Your feedback helps fellow creators in Kenya make informed decisions.\n\nLeave a review: https://ropenix.co.ke/reviews/new\n\nAs a token of appreciation, reviewing unlocks a 15% discount on your next order!\n\nWarm regards,\nRopenix Product Team`
     },
     {
       id: 'lc-5',
@@ -947,7 +947,7 @@ export default function EmailCampaignsPanel({
       subject: 'We miss you, {{customer_name}}! KSh 2,000 credit inside 🎁',
       templateType: 'lifecycle',
       category: 'lifecycle',
-      body: `Hi {{customer_name}},\n\nIt’s been a while since your last visit to Veloce Kenya! We’ve added exciting new arrivals to our workspace collection.\n\nTo welcome you back, we’ve deposited a special discount coupon into your account:\n\nYOUR WIN-BACK CODE: {{discount_code}}\n\nExplore our latest collection now: {{product_link}}\n\nWe can't wait to serve you again!\n\nBest regards,\nThe Veloce Team`
+      body: `Hi {{customer_name}},\n\nIt’s been a while since your last visit to Ropenix Collections! We’ve added exciting new arrivals to our workspace collection.\n\nTo welcome you back, we’ve deposited a special discount coupon into your account:\n\nYOUR WIN-BACK CODE: {{discount_code}}\n\nExplore our latest collection now: {{product_link}}\n\nWe can't wait to serve you again!\n\nBest regards,\nThe Ropenix Team`
     },
 
     // --- 3. MARKETING & PROMOTIONAL EMAILS ---
@@ -957,7 +957,7 @@ export default function EmailCampaignsPanel({
       subject: '🚀 JUST DROPPED: The All-New {{product_name}} Series',
       templateType: 'spotlight',
       category: 'marketing',
-      body: `Hi {{customer_name}},\n\nThe wait is officially over! We are thrilled to introduce our latest flagship release: {{product_name}}.\n\nKEY HIGHLIGHTS:\n• Precision ergonomics & industrial build quality\n• Engineered specifically for modern remote professionals\n• Introductory Price: KSh {{product_price}}\n\nOrder yours today with code {{discount_code}}: {{product_link}}\n\nWarm regards,\nVeloce Design Lab`
+      body: `Hi {{customer_name}},\n\nThe wait is officially over! We are thrilled to introduce our latest flagship release: {{product_name}}.\n\nKEY HIGHLIGHTS:\n• Precision ergonomics & industrial build quality\n• Engineered specifically for modern remote professionals\n• Introductory Price: KSh {{product_price}}\n\nOrder yours today with code {{discount_code}}: {{product_link}}\n\nWarm regards,\nRopenix Design Lab`
     },
     {
       id: 'mk-2',
@@ -965,7 +965,7 @@ export default function EmailCampaignsPanel({
       subject: '🔥 Premium workspace gadgets curated for {{customer_name}} + Exclusive Discount!',
       templateType: 'promo',
       category: 'marketing',
-      body: `Hi {{customer_name}},\n\nUpgrade your remote work setup with our handpicked selections.\n\nWe are excited to spotlight the {{product_name}}, engineered to maximize your focus and physical workspace ergonomics.\n\nOnly KSh {{product_price}} this weekend!\n\nUse code {{discount_code}} at checkout to secure an extra discount.\n\nGet yours today: {{product_link}}\n\nWarm regards,\nThe Veloce Marketing Team`
+      body: `Hi {{customer_name}},\n\nUpgrade your remote work setup with our handpicked selections.\n\nWe are excited to spotlight the {{product_name}}, engineered to maximize your focus and physical workspace ergonomics.\n\nOnly KSh {{product_price}} this weekend!\n\nUse code {{discount_code}} at checkout to secure an extra discount.\n\nGet yours today: {{product_link}}\n\nWarm regards,\nThe Ropenix Marketing Team`
     },
     {
       id: 'mk-3',
@@ -973,7 +973,7 @@ export default function EmailCampaignsPanel({
       subject: 'Good news {{customer_name}}! {{product_name}} is back in stock at a special price',
       templateType: 'promo',
       category: 'marketing',
-      body: `Hi {{customer_name}},\n\nThe wait is over! The {{product_name}} you were watching is officially back in stock at our Nairobi distribution center.\n\nPlus, we've adjusted the price to KSh {{product_price}} for this week only!\n\nClaim your item before stock runs out again: {{product_link}}\n\nBest regards,\nVeloce Inventory Team`
+      body: `Hi {{customer_name}},\n\nThe wait is over! The {{product_name}} you were watching is officially back in stock at our Nairobi distribution center.\n\nPlus, we've adjusted the price to KSh {{product_price}} for this week only!\n\nClaim your item before stock runs out again: {{product_link}}\n\nBest regards,\nRopenix Inventory Team`
     },
     {
       id: 'mk-4',
@@ -981,7 +981,7 @@ export default function EmailCampaignsPanel({
       subject: '💡 Workspace Ergonomics Guide: Top setup tips for {{customer_name}}',
       templateType: 'spotlight',
       category: 'marketing',
-      body: `Hi {{customer_name}},\n\nCreating an inspiring workspace goes beyond aesthetics—it directly impacts your energy, posture, and focus.\n\nIn our latest setup guide, we share 5 essential tips for desk ergonomics, monitor positioning, and cable management.\n\nExplore recommended gear: {{product_link}}\n\nHappy creating!\nThe Veloce Editorial Team`
+      body: `Hi {{customer_name}},\n\nCreating an inspiring workspace goes beyond aesthetics—it directly impacts your energy, posture, and focus.\n\nIn our latest setup guide, we share 5 essential tips for desk ergonomics, monitor positioning, and cable management.\n\nExplore recommended gear: {{product_link}}\n\nHappy creating!\nThe Ropenix Editorial Team`
     }
   ], []);
 
@@ -3702,7 +3702,7 @@ export default function EmailCampaignsPanel({
       <SmtpDiagnosticsModal
         isOpen={isSmtpModalOpen}
         onClose={() => setIsSmtpModalOpen(false)}
-        defaultEmail={testEmail || 'admin@veloce.co.ke'}
+        defaultEmail={testEmail || 'admin@ropenix.co.ke'}
       />
 
       {/* VERSION COMPARISON & PREVIEW MODAL */}

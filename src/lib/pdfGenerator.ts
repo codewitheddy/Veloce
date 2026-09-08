@@ -30,18 +30,18 @@ export function exportSingleReceiptPDF(order: Order) {
 
   function getCachedSettings() {
     try {
-      const cached = localStorage.getItem('veloce_site_settings_cache');
+      const cached = localStorage.getItem('ropenix_site_settings_cache') || localStorage.getItem('veloce_site_settings_cache');
       if (cached) return JSON.parse(cached);
     } catch {}
     return null;
   }
   const settings = getCachedSettings();
-  const brandName = settings?.receipts?.legal_business_name || settings?.general?.site_name || "ROPENIX INVESTMENTS LTD";
-  const tagline = settings?.general?.tagline || "VELOCE COMMERCE & LOGISTICS OPERATIONS";
+  const brandName = settings?.receipts?.legal_business_name || settings?.general?.site_name || "ROPENIX INVESTMENTS LIMITED";
+  const tagline = settings?.general?.tagline || "ROPENIX COLLECTIONS & COMMERCE OPERATIONS";
   const address = settings?.receipts?.physical_address || settings?.general?.physical_address || "Nairobi CBD, Nairobi, Kenya";
   const paybill = settings?.payments?.mpesa_paybill || "303030";
   const account = settings?.payments?.mpesa_account_number || "2047728455";
-  const email = settings?.receipts?.contact_email || settings?.general?.business_email || "support@veloce.co.ke";
+  const email = settings?.receipts?.contact_email || settings?.general?.business_email || "support@ropenix.co.ke";
 
   // Header Background Accent Bar
   doc.setFillColor(primaryColor[0], primaryColor[1], primaryColor[2]);
@@ -232,20 +232,20 @@ export function exportSingleReceiptPDF(order: Order) {
   doc.setFontSize(7.5);
   doc.setTextColor(156, 163, 175); // Gray-400
   doc.text(
-    'This invoice has been cryptographically signed and archived on the Veloce Distributed Ledger.',
+    'This invoice has been cryptographically signed and archived on the Ropenix Distributed Ledger.',
     pageWidth / 2,
     pageHeight - 16,
     { align: 'center' }
   );
   doc.text(
-    'Thank you for your engineering enterprise and support of Veloce products.',
+    'Thank you for your enterprise and support of Ropenix Collections products.',
     pageWidth / 2,
     pageHeight - 12,
     { align: 'center' }
   );
 
   // Save the PDF
-  doc.save(`Veloce_Receipt_${order.id.slice(0, 8).toUpperCase()}.pdf`);
+  doc.save(`Ropenix_Receipt_${order.id.slice(0, 8).toUpperCase()}.pdf`);
 }
 
 /**
@@ -275,7 +275,7 @@ export function exportOrderHistoryPDF(orders: Order[], userEmail: string) {
   doc.setFont('Helvetica', 'bold');
   doc.setFontSize(16);
   doc.setTextColor(secondaryColor[0], secondaryColor[1], secondaryColor[2]);
-  doc.text('VELOCE ATELIER', margin, 26);
+  doc.text('ROPENIX COLLECTIONS', margin, 26);
 
   doc.setFontSize(10);
   doc.setTextColor(107, 114, 128); // Gray-500
@@ -392,11 +392,11 @@ export function exportOrderHistoryPDF(orders: Order[], userEmail: string) {
   doc.setFontSize(7.5);
   doc.setTextColor(156, 163, 175);
   doc.text(
-    `Veloce Logistics Ledger Systems • Page 1 of 1 • Secure Document Cryptography Approved`,
+    `Ropenix Logistics Ledger Systems • Page 1 of 1 • Secure Document Cryptography Approved`,
     pageWidth / 2,
     pageHeight - 12,
     { align: 'center' }
   );
 
-  doc.save(`Veloce_Order_History_Report_${new Date().toISOString().split('T')[0]}.pdf`);
+  doc.save(`Ropenix_Order_History_Report_${new Date().toISOString().split('T')[0]}.pdf`);
 }

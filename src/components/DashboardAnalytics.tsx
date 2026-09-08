@@ -1185,8 +1185,8 @@ Quantity Requested: ${qty} units
 Please confirm your current unit price, availability, and the estimated shipping lead time for this SKU. If you require any additional purchase order details, kindly let us know.
 
 Best regards,
-Veloce Logistics & Inventory Control Team
-admin@veloce.co.ke`;
+Ropenix Logistics & Inventory Control Team
+admin@ropenix.co.ke`;
 
     setSupplierSubject(subject);
     setSupplierBody(body);
@@ -2536,7 +2536,7 @@ admin@veloce.co.ke`;
               }}
               className="inline-flex items-center gap-1.5 text-xs font-semibold text-gray-500 hover:text-indigo-650 transition-colors uppercase tracking-wider mb-2 cursor-pointer"
             >
-              <ArrowLeft className="h-3.5 w-3.5" /> Back to Executive Studio
+              <ArrowLeft className="h-3.5 w-3.5" /> Back to Admin Dashboard
             </button>
             <h1 className="font-display text-2xl font-black text-gray-950 tracking-tight flex items-center gap-2">
               <Edit2 className="h-6 w-6 text-indigo-600" /> Edit Product Specification
@@ -3658,13 +3658,13 @@ admin@veloce.co.ke`;
               }}
               className="inline-flex items-center gap-1.5 text-xs font-semibold text-gray-500 hover:text-indigo-650 transition-colors uppercase tracking-wider mb-2 cursor-pointer"
             >
-              <ArrowLeft className="h-3.5 w-3.5" /> Back to Executive Studio
+              <ArrowLeft className="h-3.5 w-3.5" /> Back to Admin Dashboard
             </button>
             <h1 className="font-display text-2xl font-black text-gray-950 tracking-tight flex items-center gap-2">
               <PackagePlus className="h-6 w-6 text-indigo-600" /> Add Product
             </h1>
             <p className="text-xs text-gray-400 font-extralight mt-1">
-              Assemble and register verified physical inventory objects or digital download assets inside Veloce records.
+              Assemble and register verified physical inventory objects or digital download assets inside Ropenix records.
             </p>
           </div>
 
@@ -4855,7 +4855,7 @@ admin@veloce.co.ke`;
           <div>
             <div className="flex items-center gap-2">
               <h1 className="font-display text-xl sm:text-2xl font-bold text-slate-900 dark:text-white leading-tight">
-                Veloce Executive Studio
+                Ropenix Collection Admin
               </h1>
               <span className="px-2 py-0.5 rounded-md bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200 dark:border-indigo-800 text-indigo-700 dark:text-indigo-300 text-[10px] font-mono font-bold uppercase tracking-wider hidden sm:inline-block">
                 {adminSubTab.replace('-', ' ')}
@@ -5382,7 +5382,7 @@ admin@veloce.co.ke`;
                   SU
                 </div>
                 <div className="min-w-0">
-                  <p className="text-[11px] font-bold text-slate-900 dark:text-slate-100 truncate leading-tight">admin@veloce.co.ke</p>
+                  <p className="text-[11px] font-bold text-slate-900 dark:text-slate-100 truncate leading-tight">admin@ropenix.co.ke</p>
                   <span className="text-[9px] font-mono text-emerald-600 dark:text-emerald-400 font-bold flex items-center gap-1">
                     <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse inline-block" /> Superuser Active
                   </span>
@@ -9447,6 +9447,34 @@ admin@veloce.co.ke`;
             autoPrint={autoPrintOnce}
             allOrders={orders}
             onUpdateOrderPaymentStatus={onUpdateOrderPaymentStatus}
+          />
+        </Suspense>
+      )}
+
+      {showBulkUploadModal && (
+        <Suspense fallback={<ChartLoaderFallback />}>
+          <BulkProductUploadModal
+            isOpen={showBulkUploadModal}
+            onClose={() => setShowBulkUploadModal(false)}
+            onAddProduct={(newProduct) => {
+              onAddProduct(newProduct);
+              setLiveDbProducts((prev) => (prev ? [newProduct, ...prev] : [newProduct, ...products]));
+            }}
+            products={effectiveProducts}
+            onUpdateProductDetails={(id, updatedFields) => {
+              if (onUpdateProductDetails) {
+                onUpdateProductDetails(id, updatedFields);
+              }
+              setLiveDbProducts((prev) =>
+                prev ? prev.map((p) => (p.id === id ? { ...p, ...updatedFields } : p)) : null
+              );
+            }}
+            availableCategories={availableCategories}
+            onAddCategory={(cat) => {
+              if (!customCategories.includes(cat)) {
+                saveCategories([...customCategories, cat]);
+              }
+            }}
           />
         </Suspense>
       )}

@@ -6,16 +6,16 @@ from apps.affiliates.models import AffiliateProfile, CommissionEntry
 from apps.content.models import BlogPost, HeroBanner, SupportTicket
 
 class Command(BaseCommand):
-    help = 'Seeds SQLite database with default sample data for Veloce Store'
+    help = 'Seeds SQLite database with default sample data for Ropenix Collections'
 
     def handle(self, *args, **kwargs):
-        self.stdout.write(self.style.SUCCESS("Starting Veloce Store SQLite Data Seeding..."))
+        self.stdout.write(self.style.SUCCESS("Starting Ropenix Collections SQLite Data Seeding..."))
 
         # 1. Superuser / Default User
         admin_user, created = User.objects.get_or_create(
             username='admin',
             defaults={
-                'email': 'admin@veloce.co.ke',
+                'email': 'admin@ropenix.co.ke',
                 'is_staff': True,
                 'is_superuser': True
             }
@@ -38,9 +38,9 @@ class Command(BaseCommand):
         # 3. Sample Products
         products_data = [
             {
-                'sku': 'VEL-RUN-001',
-                'name': 'Veloce Pro Runner X',
-                'slug': 'veloce-pro-runner-x',
+                'sku': 'ROP-RUN-001',
+                'name': 'Ropenix Pro Runner X',
+                'slug': 'ropenix-pro-runner-x',
                 'category': 'Footwear',
                 'price': 12500.00,
                 'original_price': 15000.00,

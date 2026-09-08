@@ -181,7 +181,7 @@ export default function TaxInvoiceModal({ order, products, onClose, autoPrint = 
                     {(settings.receipts.legal_business_name || settings.general.site_name || 'V')[0].toUpperCase()}
                   </div>
                   <span className="font-display text-base font-black tracking-tight text-gray-950 block uppercase">
-                    {settings.receipts.legal_business_name || settings.general.site_name || "VELOCE KENYA LTD"}
+                    {settings.receipts.legal_business_name || settings.general.site_name || "ROPENIX INVESTMENTS LIMITED"}
                   </span>
                 </div>
                 <span className="font-mono text-[8px] font-extrabold text-gray-400 tracking-wider block mt-1 uppercase">
@@ -190,7 +190,7 @@ export default function TaxInvoiceModal({ order, products, onClose, autoPrint = 
                 <p className="text-[10px] text-gray-500 font-medium mt-2 leading-relaxed font-sans">
                   {settings.receipts.physical_address || settings.general.physical_address || 'L.R. No. 209/10245, Tech Park Plaza, Nairobi, Kenya'}<br />
                   <span className="font-bold text-gray-700">KRA PIN:</span> {settings.tax.kra_pin || 'P051234567A'} | <span className="font-bold text-gray-700">ETR No:</span> MPR18002345<br />
-                  <span className="font-bold text-gray-700">Email:</span> {settings.receipts.contact_email || settings.general.business_email || 'accounting@veloce.co.ke'}
+                  <span className="font-bold text-gray-700">Email:</span> {settings.receipts.contact_email || settings.general.business_email || 'accounting@ropenix.co.ke'}
                 </p>
               </div>
 
@@ -381,7 +381,7 @@ export default function TaxInvoiceModal({ order, products, onClose, autoPrint = 
             {/* Bottom Disclaimer */}
             <div className="border-t border-slate-150 mt-6 pt-4 text-center text-[9.5px] text-gray-400 font-medium font-sans leading-relaxed">
               This tax invoice is issued electronically. All transactions are securely recorded on our centralized ledger.<br />
-              Thank you for choosing <span className="font-bold text-gray-600">{settings.receipts.legal_business_name || settings.general.site_name || "Veloce Kenya Ltd"}</span>. Support & assistance: {settings.receipts.contact_email || settings.general.business_email || "customercare@veloce.co.ke"}
+              Thank you for choosing <span className="font-bold text-gray-600">{settings.receipts.legal_business_name || settings.general.site_name || "Ropenix Collections"}</span>. Support & assistance: {settings.receipts.contact_email || settings.general.business_email || "support@ropenix.co.ke"}
             </div>
 
           </div>

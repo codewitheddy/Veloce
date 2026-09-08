@@ -60,13 +60,17 @@ export default function AdminOrderNotificationBanner({
         playNewOrderSound();
       }
 
-      // Trigger native browser desktop window notification
-      showDesktopNotification(newOrder);
+      // Trigger native browser desktop window notification with automatic 5-second timeout
+      showDesktopNotification(newOrder, { timeoutMs: 5000 });
 
-      // Set active alert banner
+      // Set active alert banner with auto-dismiss after 10 seconds
       setActiveAlertOrder(newOrder);
       setUnreadCount((prev) => prev + 1);
       setNotificationHistory((prev) => [newOrder, ...prev.filter((o) => o.id !== newOrder.id)].slice(0, 15));
+
+      setTimeout(() => {
+        setActiveAlertOrder((curr) => (curr?.id === newOrder.id ? null : curr));
+      }, 10000);
     });
 
     // Check if permission is default and user is admin
@@ -103,23 +107,23 @@ export default function AdminOrderNotificationBanner({
       // Send sample test notification to verify
       playNewOrderSound();
       const testOrder: Order = {
-        id: 'VEL-TEST-' + Math.floor(1000 + Math.random() * 9000),
+        id: 'ROP-TEST-' + Math.floor(1000 + Math.random() * 9000),
         customerName: 'Desktop Alert Test',
-        customerEmail: 'test@veloce.io',
+        customerEmail: 'test@ropenix.co.ke',
         total: 18500,
         status: 'pending',
         date: new Date().toISOString().split('T')[0],
         paymentMethod: 'mpesa',
-        items: [{ productId: 'test', name: 'Veloce Pulse Active Smartwatch', price: 18500, quantity: 1, selectedVariations: {}, type: 'physical' }]
+        items: [{ productId: 'test', name: 'Bespoke Executive Suit Jacket', price: 18500, quantity: 1, selectedVariations: {}, type: 'physical' }]
       };
-      showDesktopNotification(testOrder);
+      showDesktopNotification(testOrder, { timeoutMs: 5000 });
     }
   };
 
   const handleTestNotification = () => {
     if (soundEnabled) playNewOrderSound();
     const mockOrder: Order = {
-      id: 'VEL-' + Math.floor(100 + Math.random() * 900) + '-LIVE',
+      id: 'ROP-' + Math.floor(100 + Math.random() * 900) + '-LIVE',
       customerName: 'Amina Mohamed',
       customerEmail: 'amina.m@example.com',
       total: 32400,
@@ -127,16 +131,19 @@ export default function AdminOrderNotificationBanner({
       date: new Date().toISOString().split('T')[0],
       paymentMethod: 'mpesa',
       items: [
-        { productId: 'pro-headphone-x1', name: 'Veloce Pro Wireless Headphones X1', price: 24500, quantity: 1, selectedVariations: {}, type: 'physical' },
-        { productId: 'mag-stand', name: 'Veloce MagSafe Desk Stand', price: 7900, quantity: 1, selectedVariations: {}, type: 'physical' }
+        { productId: 'bespoke-blazer', name: 'Tailored Velvet Dinner Blazer', price: 24500, quantity: 1, selectedVariations: {}, type: 'physical' },
+        { productId: 'silk-tie-set', name: 'Handcrafted Silk Tie & Pocket Square', price: 7900, quantity: 1, selectedVariations: {}, type: 'physical' }
       ]
     };
 
-    // Trigger cross-tab notification
-    showDesktopNotification(mockOrder);
+    // Trigger notification with 5s timeout
+    showDesktopNotification(mockOrder, { timeoutMs: 5000 });
     setActiveAlertOrder(mockOrder);
     setUnreadCount((prev) => prev + 1);
     setNotificationHistory((prev) => [mockOrder, ...prev].slice(0, 15));
+    setTimeout(() => {
+      setActiveAlertOrder((curr) => (curr?.id === mockOrder.id ? null : curr));
+    }, 10000);
   };
 
   // The alert button and real-time notification banner are strictly visible in the admin page

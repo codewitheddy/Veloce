@@ -56,8 +56,8 @@ def seed_default_theme_presets():
     presets = [
         {
             "id": "theme-default-indigo",
-            "name": "Veloce Classic Indigo",
-            "description": "The timeless signature Veloce palette with deep indigo and electric cyan.",
+            "name": "Ropenix Classic Indigo",
+            "description": "The timeless signature Ropenix palette with deep indigo and electric cyan.",
             "primary_color": "#4f46e5",
             "secondary_color": "#06b6d4",
             "accent_color": "#f59e0b",
@@ -172,7 +172,7 @@ class SiteSettingsAPIView(APIView):
 
     def patch(self, request, section=None):
         settings_obj = SiteSettings.get_solo()
-        user_email = getattr(request.user, 'email', None) or request.data.get('admin_email') or 'admin@veloce.co.ke'
+        user_email = getattr(request.user, 'email', None) or request.data.get('admin_email') or 'admin@ropenix.co.ke'
         ip_addr = get_client_ip(request)
 
         valid_sections = [
@@ -283,7 +283,7 @@ class ThemePresetViewSet(viewsets.ModelViewSet):
         settings_obj.appearance = new_appearance
         settings_obj.save()
 
-        user_email = getattr(request.user, 'email', None) or request.data.get('admin_email') or 'admin@veloce.co.ke'
+        user_email = getattr(request.user, 'email', None) or request.data.get('admin_email') or 'admin@ropenix.co.ke'
         SettingsAuditLog.objects.create(
             user_email=user_email,
             section='appearance',
@@ -314,7 +314,7 @@ class ThemePresetViewSet(viewsets.ModelViewSet):
             preset.end_date = datetime.fromisoformat(end_date.replace('Z', '+00:00'))
         preset.save()
 
-        user_email = getattr(request.user, 'email', None) or 'admin@veloce.co.ke'
+        user_email = getattr(request.user, 'email', None) or 'admin@ropenix.co.ke'
         SettingsAuditLog.objects.create(
             user_email=user_email,
             section='appearance',
@@ -365,7 +365,7 @@ class BackupManagementAPIView(APIView):
                 return Response({"error": "Backup snapshot not found."}, status=status.HTTP_404_NOT_FOUND)
 
             payload = snapshot.data_payload or {}
-            user_email = getattr(request.user, 'email', None) or request.data.get('admin_email') or 'admin@veloce.co.ke'
+            user_email = getattr(request.user, 'email', None) or request.data.get('admin_email') or 'admin@ropenix.co.ke'
 
             # If payload has settings, restore SiteSettings
             if 'site_settings' in payload:
@@ -390,12 +390,12 @@ class BackupManagementAPIView(APIView):
 
         # Manual Backup Trigger
         notes = request.data.get('notes', 'Manual admin backup snapshot')
-        user_email = getattr(request.user, 'email', None) or request.data.get('admin_email') or 'admin@veloce.co.ke'
+        user_email = getattr(request.user, 'email', None) or request.data.get('admin_email') or 'admin@ropenix.co.ke'
         settings_obj = SiteSettings.get_solo()
 
         # Build full JSON snapshot payload
         timestamp_str = datetime.now().strftime('%Y%m%d_%H%M%S')
-        filename = f"veloce_backup_{timestamp_str}.json"
+        filename = f"ropenix_backup_{timestamp_str}.json"
 
         backup_payload = {
             "version": "2.4.0",
@@ -405,7 +405,7 @@ class BackupManagementAPIView(APIView):
             "theme_presets": ThemePresetSerializer(ThemePreset.objects.all(), many=True).data,
             "backup_metadata": {
                 "engine": "Django SQLite / PostgreSQL Multi-tenant",
-                "platform": "Veloce Atelier Commerce",
+                "platform": "Ropenix Collections",
                 "notes": notes
             }
         }
@@ -481,7 +481,7 @@ class ETimsDiagnosticAPIView(APIView):
     permission_classes = [AllowAny]
 
     def post(self, request):
-        client_id = request.data.get('client_id') or 'ETIMS-VELOCE-LIVE-9042'
+        client_id = request.data.get('client_id') or 'ETIMS-ROPENIX-LIVE-9042'
         client_secret = request.data.get('client_secret') or 'sec_live_94819a8f27e6'
         kra_pin = request.data.get('kra_pin') or 'P051987654Z'
         environment = request.data.get('environment') or 'sandbox'

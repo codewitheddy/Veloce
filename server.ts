@@ -5,6 +5,7 @@
 
 import express from "express";
 import path from "path";
+import crypto from "crypto";
 import { createServer as createViteServer } from "vite";
 import dotenv from "dotenv";
 import nodemailer from "nodemailer";
@@ -31,11 +32,130 @@ app.use((_req, res, next) => {
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ limit: "50mb", extended: true }));
 
-
-
 // Health check endpoint
 app.get("/api/health", (req, res) => {
   res.json({ status: "healthy", timestamp: new Date().toISOString() });
+});
+
+// ==========================================
+// Cloudinary Media Upload & CDN Diagnostics
+// ==========================================
+app.get(["/api/upload/cloudinary/status", "/api/upload/cloudinary/status/"], (_req, res) => {
+  const cloudName = process.env.CLOUDINARY_CLOUD_NAME || process.env.VITE_CLOUDINARY_CLOUD_NAME || "";
+  const apiKey = process.env.CLOUDINARY_API_KEY || "";
+  const apiSecret = process.env.CLOUDINARY_API_SECRET || "";
+  const uploadPreset = process.env.CLOUDINARY_UPLOAD_PRESET || process.env.VITE_CLOUDINARY_UPLOAD_PRESET || "";
+
+  const isConfigured = Boolean(cloudName && apiKey && apiSecret);
+
+  res.json({
+    configured: isConfigured,
+    cloudName: cloudName ? `${cloudName.slice(0, 3)}***` : undefined,
+    fullCloudName: cloudName || undefined,
+    hasApiKey: Boolean(apiKey),
+    hasApiSecret: Boolean(apiSecret),
+    uploadPreset: uploadPreset || undefined,
+    source: isConfigured ? "backend" : uploadPreset ? "client_preset" : "none",
+    message: isConfigured
+      ? `Cloudinary signed upload active for cloud: ${cloudName}`
+      : "Cloudinary credentials not configured in environment. Using graceful local canvas compression fallback.",
+  });
+});
+
+app.post(["/api/upload/cloudinary", "/api/upload/cloudinary/"], async (req, res) => {
+  try {
+    const cloudName = process.env.CLOUDINARY_CLOUD_NAME || process.env.VITE_CLOUDINARY_CLOUD_NAME || "";
+    const apiKey = process.env.CLOUDINARY_API_KEY || "";
+    const apiSecret = process.env.CLOUDINARY_API_SECRET || "";
+
+    const { image, file, folder = "veloce_products", tags, publicId, public_id } = req.body || {};
+    const filePayload = image || file;
+
+    if (!filePayload) {
+      return res.status(400).json({ success: false, error: "Image payload (base64 or URL) is required." });
+    }
+
+    if (!cloudName || !apiKey || !apiSecret) {
+      return res.status(200).json({
+        success: false,
+        configured: false,
+        fallback: true,
+        error: "Cloudinary credentials not configured. Please set CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, and CLOUDINARY_API_SECRET in your .env file.",
+      });
+    }
+
+    const timestamp = Math.floor(Date.now() / 1000);
+    const targetFolder = String(folder || "veloce_products").trim();
+    const pid = publicId || public_id;
+
+    // Prepare parameters for signature in alphabetical order
+    const paramsToSign: Record<string, string> = {
+      folder: targetFolder,
+      timestamp: String(timestamp),
+    };
+
+    if (pid) {
+      paramsToSign.public_id = String(pid).trim();
+    }
+
+    if (tags) {
+      const tagsStr = Array.isArray(tags) ? tags.join(",") : String(tags);
+      paramsToSign.tags = tagsStr.trim();
+    }
+
+    // Sort keys alphabetically
+    const sortedKeys = Object.keys(paramsToSign).sort();
+    const toSign = sortedKeys.map((k) => `${k}=${paramsToSign[k]}`).join("&") + apiSecret;
+    const signature = crypto.createHash("sha1").update(toSign).digest("hex");
+
+    // Construct body for Cloudinary upload
+    const uploadPayload: Record<string, any> = {
+      file: filePayload,
+      api_key: apiKey,
+      timestamp,
+      signature,
+      folder: targetFolder,
+    };
+
+    if (pid) {
+      uploadPayload.public_id = pid;
+    }
+    if (paramsToSign.tags) {
+      uploadPayload.tags = paramsToSign.tags;
+    }
+
+    const cloudinaryRes = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/image/upload`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(uploadPayload),
+    });
+
+    const data = await cloudinaryRes.json();
+
+    if (!cloudinaryRes.ok || data.error) {
+      console.error("[Cloudinary API Error]:", data.error || data);
+      return res.status(cloudinaryRes.status >= 400 ? cloudinaryRes.status : 500).json({
+        success: false,
+        error: data.error?.message || "Failed to upload image to Cloudinary",
+        detail: data,
+      });
+    }
+
+    return res.json({
+      success: true,
+      url: data.secure_url || data.url,
+      secure_url: data.secure_url,
+      public_id: data.public_id,
+      format: data.format,
+      width: data.width,
+      height: data.height,
+      bytes: data.bytes,
+      created_at: data.created_at,
+    });
+  } catch (err: any) {
+    console.error("[Cloudinary Server Error]:", err);
+    return res.status(500).json({ success: false, error: err.message || "Internal server error during upload" });
+  }
 });
 
 const DJANGO_BACKEND_URL = process.env.DJANGO_BACKEND_URL || "http://127.0.0.1:8000";
@@ -130,10 +250,10 @@ app.post(["/api/email/send", "/api/email/send/"], async (req, res) => {
 
     const cleanTo = String(to).trim();
     const mailOptions = {
-      from: process.env.DEFAULT_FROM_EMAIL || '"Veloce Kenya" <noreply@marid.co.ke>',
+      from: process.env.DEFAULT_FROM_EMAIL || '"Ropenix Collections" <noreply@marid.co.ke>',
       to: cleanTo,
       subject: String(subject).trim(),
-      text: text || (html ? String(html).replace(/<[^>]*>?/gm, '') : 'Notification from Veloce Kenya'),
+      text: text || (html ? String(html).replace(/<[^>]*>?/gm, '') : 'Notification from Ropenix Collections'),
       html: html || `<p>${text || subject}</p>`,
     };
 
@@ -154,12 +274,12 @@ app.post(["/api/email/diagnose-smtp", "/api/email/diagnose-smtp/"], async (req, 
     await mailTransporter.verify();
     
     const testInfo = await mailTransporter.sendMail({
-      from: process.env.DEFAULT_FROM_EMAIL || '"Veloce Kenya" <noreply@marid.co.ke>',
+      from: process.env.DEFAULT_FROM_EMAIL || '"Ropenix Collections" <noreply@marid.co.ke>',
       to: recipient,
-      subject: "🧪 Veloce SMTP Node Diagnostic Test - Active",
-      text: "This is a verified test email from the Veloce Hub Express engine. Your cPanel SMTP transport is active and operational.",
+      subject: "🧪 Ropenix SMTP Node Diagnostic Test - Active",
+      text: "This is a verified test email from the Ropenix Collections Express engine. Your cPanel SMTP transport is active and operational.",
       html: `<div style="font-family: sans-serif; padding: 24px; border: 1px solid #4f46e5; border-radius: 12px; max-width: 550px; margin: 0 auto;">
-        <h2 style="color: #4f46e5; margin-top: 0;">✅ Veloce SMTP Diagnostic Succeeded</h2>
+        <h2 style="color: #4f46e5; margin-top: 0;">✅ Ropenix SMTP Diagnostic Succeeded</h2>
         <p style="color: #334155; line-height: 1.5;">Your mail server at <strong>mail.marid.co.ke:465</strong> is fully operational and successfully transmitting transactional messages.</p>
         <div style="background: #f8fafc; padding: 12px; border-radius: 6px; font-size: 12px; color: #64748b;">
           <strong>Target Recipient:</strong> ${recipient}<br/>
@@ -182,7 +302,7 @@ app.get(["/api/email/config", "/api/email/config/"], (req, res) => {
     host: process.env.EMAIL_HOST || 'mail.marid.co.ke',
     port: Number(process.env.EMAIL_PORT) || 465,
     user: process.env.EMAIL_HOST_USER || 'noreply@marid.co.ke',
-    defaultFrom: process.env.DEFAULT_FROM_EMAIL || 'Veloce Kenya <noreply@marid.co.ke>',
+    defaultFrom: process.env.DEFAULT_FROM_EMAIL || 'Ropenix Collections <noreply@marid.co.ke>',
     useSsl: true,
     unsubscribedCount: 0
   });
@@ -242,22 +362,22 @@ app.post(["/api/orders", "/api/orders/"], async (req, res) => {
 
     // 1. Customer Confirmation Email
     if (customerEmail && customerEmail.includes('@') && !customerEmail.includes('example.com')) {
-      const custSubject = `🛒 Order Confirmation: VL-${orderId.slice(-6).toUpperCase()}`;
-      const custBody = `Hi ${customerName},\n\nThank you for shopping with Veloce Hub! Your order VL-${orderId.slice(-6).toUpperCase()} has been received.\n\nItems Ordered:\n${itemsList}\n\nTotal: ${totalFormatted}\nPayment Method: ${newOrder.paymentMethod || newOrder.payment_method || 'M-PESA'}\nShipping Address: ${newOrder.shippingAddress || newOrder.shipping_address || 'Default Address'}\n\nWe will notify you as soon as your package enters fulfillment.\n\nWarm regards,\nThe Veloce Hub Team`;
+      const custSubject = `🛒 Order Confirmation: ROP-${orderId.slice(-6).toUpperCase()}`;
+      const custBody = `Hi ${customerName},\n\nThank you for shopping with Ropenix Collections! Your order ROP-${orderId.slice(-6).toUpperCase()} has been received.\n\nItems Ordered:\n${itemsList}\n\nTotal: ${totalFormatted}\nPayment Method: ${newOrder.paymentMethod || newOrder.payment_method || 'M-PESA'}\nShipping Address: ${newOrder.shippingAddress || newOrder.shipping_address || 'Default Address'}\n\nWe will notify you as soon as your package enters fulfillment.\n\nWarm regards,\nThe Ropenix Collections Team`;
       
       mailTransporter.sendMail({
-        from: process.env.DEFAULT_FROM_EMAIL || '"Veloce Kenya" <noreply@marid.co.ke>',
+        from: process.env.DEFAULT_FROM_EMAIL || '"Ropenix Collections" <noreply@marid.co.ke>',
         to: customerEmail,
         subject: custSubject,
         text: custBody,
         html: `<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; border: 1px solid #e2e8f0; border-radius: 12px; background: #fff;">
           <div style="background: #0f172a; padding: 20px; border-radius: 8px; text-align: center; color: white;">
-            <h2 style="margin:0; font-size: 20px;">VELOCE MARKETPLACE</h2>
+            <h2 style="margin:0; font-size: 20px;">ROPENIX COLLECTIONS</h2>
             <p style="margin:4px 0 0 0; color: #94a3b8; font-size: 12px; text-transform: uppercase;">Order Confirmation</p>
           </div>
           <div style="padding: 24px 0; color: #334155; font-size: 14px; line-height: 1.6; white-space: pre-wrap;">${custBody}</div>
           <div style="border-top: 1px solid #e2e8f0; padding-top: 16px; font-size: 11px; color: #64748b; text-align: center;">
-            Veloce Hub Kenya • Support: support@marid.co.ke | Hotline: +254 700 000 000
+            Ropenix Collections Kenya • Support: support@ropenix.co.ke | Hotline: +254 182 180 965 (0182180965)
           </div>
         </div>`
       }).then((res) => console.log(`[Express Order Email] Customer notification sent to ${customerEmail}:`, res.messageId))
@@ -266,18 +386,18 @@ app.post(["/api/orders", "/api/orders/"], async (req, res) => {
 
     // 2. Admin Alert Email to ropenixkenya@gmail.com
     if (adminEmail && adminEmail.includes('@')) {
-      const adminSubject = `🔔 [ADMIN ALERT] New Order VL-${orderId.slice(-6).toUpperCase()} Placed (${totalFormatted})`;
-      const adminBody = `ATTENTION ADMIN / FULFILLMENT TEAM:\n\nA new sale has been placed on Veloce Hub and requires fulfillment.\n\nOrder ID: VL-${orderId.slice(-6).toUpperCase()}\nCustomer: ${customerName} (${customerEmail})\nPhone: ${newOrder.phone || newOrder.customerPhone || newOrder.customer_phone || 'N/A'}\nTotal Amount: ${totalFormatted}\nPayment Method: ${newOrder.paymentMethod || newOrder.payment_method || 'M-PESA'}\nShipping Address: ${newOrder.shippingAddress || newOrder.shipping_address || 'N/A'}\n\nItems:\n${itemsList}\n\nPlease access the Admin Orders Portal to review and dispatch.`;
+      const adminSubject = `🔔 [ADMIN ALERT] New Order ROP-${orderId.slice(-6).toUpperCase()} Placed (${totalFormatted})`;
+      const adminBody = `ATTENTION ADMIN / FULFILLMENT TEAM:\n\nA new sale has been placed on Ropenix Collections and requires fulfillment.\n\nOrder ID: ROP-${orderId.slice(-6).toUpperCase()}\nCustomer: ${customerName} (${customerEmail})\nPhone: ${newOrder.phone || newOrder.customerPhone || newOrder.customer_phone || 'N/A'}\nTotal Amount: ${totalFormatted}\nPayment Method: ${newOrder.paymentMethod || newOrder.payment_method || 'M-PESA'}\nShipping Address: ${newOrder.shippingAddress || newOrder.shipping_address || 'N/A'}\n\nItems:\n${itemsList}\n\nPlease access the Admin Orders Portal to review and dispatch.`;
 
       mailTransporter.sendMail({
-        from: process.env.DEFAULT_FROM_EMAIL || '"Veloce Kenya" <noreply@marid.co.ke>',
+        from: process.env.DEFAULT_FROM_EMAIL || '"Ropenix Collections" <noreply@marid.co.ke>',
         to: adminEmail,
         replyTo: customerEmail || undefined,
         subject: adminSubject,
         text: adminBody,
         html: `<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; border: 1px solid #e2e8f0; border-radius: 12px; background: #fff;">
           <div style="background: #1e1b4b; padding: 20px; border-radius: 8px; text-align: center; color: white;">
-            <h2 style="margin:0; font-size: 20px;">VELOCE ADMIN NOTIFICATION</h2>
+            <h2 style="margin:0; font-size: 20px;">ROPENIX ADMIN NOTIFICATION</h2>
             <p style="margin:4px 0 0 0; color: #a5b4fc; font-size: 12px; text-transform: uppercase;">New Order Received</p>
           </div>
           <div style="padding: 24px 0; color: #334155; font-size: 14px; line-height: 1.6; white-space: pre-wrap;">${adminBody}</div>
@@ -299,8 +419,8 @@ app.post(["/api/orders", "/api/orders/"], async (req, res) => {
 
 // 1. Robots.txt endpoint
 app.get(["/robots.txt", "/robots.txt/"], (req, res) => {
-  const robotsTxt = `# Robots.txt for Veloce eCommerce & Affiliate Platform
-# https://veloce.co.ke
+  const robotsTxt = `# Robots.txt for Ropenix Collections eCommerce & Affiliate Platform
+# https://ropenix.co.ke
 
 User-agent: *
 Allow: /
@@ -323,7 +443,7 @@ Disallow: /api/payment/
 Disallow: /unsubscribe
 
 Crawl-delay: 1
-Sitemap: https://veloce.co.ke/sitemap.xml
+Sitemap: https://ropenix.co.ke/sitemap.xml
 `;
   res.header("Content-Type", "text/plain; charset=utf-8");
   res.header("Cache-Control", "public, max-age=86400");
@@ -333,9 +453,9 @@ Sitemap: https://veloce.co.ke/sitemap.xml
 // 2. Dynamic XML Sitemap generator
 app.get(["/sitemap.xml", "/sitemap.xml/"], (req, res) => {
   try {
-    const host = req.get("host") || "veloce.co.ke";
+    const host = req.get("host") || "ropenix.co.ke";
     const protocol = req.secure || req.headers["x-forwarded-proto"] === "https" ? "https" : "https";
-    const baseUrl = `${protocol}://${host.includes("localhost") || host.includes("127.0.0.1") ? "veloce.co.ke" : host}`;
+    const baseUrl = `${protocol}://${host.includes("localhost") || host.includes("127.0.0.1") ? "ropenix.co.ke" : host}`;
     const now = new Date().toISOString();
 
     let xml = `<?xml version="1.0" encoding="UTF-8"?>
@@ -1699,7 +1819,7 @@ let usersStore: any[] = [
   {
     id: 1,
     username: 'admin',
-    email: 'admin@veloce.co.ke',
+    email: 'admin@ropenix.co.ke',
     first_name: 'System',
     last_name: 'Administrator',
     is_staff: true,
@@ -2071,10 +2191,10 @@ app.get("/api/orders/track/:orderId", (req, res) => {
       success: true,
       orderId: cleanId,
       carrier: "Fargo Courier / G4S Express",
-      trackingNumber: `VEL-TRK-${cleanId.replace(/[^A-Z0-9]/g, '')}`,
+      trackingNumber: `ROP-TRK-${cleanId.replace(/[^A-Z0-9]/g, '')}`,
       status: "in_transit",
       estimatedDelivery: new Date(Date.now() + 86400000 * 2).toISOString(),
-      originHub: "Veloce Fulfillment Hub, Westlands, Nairobi",
+      originHub: "Ropenix Fulfillment Hub, Westlands, Nairobi",
       destinationHub: "Customer Delivery Address",
       checkpoints: [
         { status: "Order Placed & Payment Verified", location: "Nairobi Hub", timestamp: new Date(Date.now() - 86400000 * 1.5).toISOString() },
@@ -2103,7 +2223,7 @@ app.get("/api/courier/track", (req, res) => {
     // Check if order exists in store
     const existingOrder = productsStore ? null : null; // search store
     const couriers = [
-      { name: 'Sarah Jenkins', phone: '+254 712 345 678', vehicle: 'Veloce Electric Cargo Van', vehicleNo: 'KDA 892V', rating: '4.95 ★', deliveries: 1240, avatarBg: 'bg-indigo-600' },
+      { name: 'Sarah Jenkins', phone: '+254 712 345 678', vehicle: 'Ropenix Electric Cargo Van', vehicleNo: 'KDA 892V', rating: '4.95 ★', deliveries: 1240, avatarBg: 'bg-indigo-600' },
       { name: 'Marcus Chen', phone: '+254 722 987 654', vehicle: 'Fargo Express E-Bike #402', vehicleNo: 'EB-904', rating: '4.88 ★', deliveries: 890, avatarBg: 'bg-emerald-600' },
       { name: 'Elena Rostova', phone: '+254 733 112 233', vehicle: 'G4S Hybrid Cargo Truck', vehicleNo: 'KCY 402B', rating: '4.98 ★', deliveries: 2150, avatarBg: 'bg-violet-600' }
     ];
@@ -2116,7 +2236,7 @@ app.get("/api/courier/track", (req, res) => {
     res.json({
       success: true,
       orderId: cleanId,
-      trackingNumber: cleanId.startsWith('VEL-TRK-') ? cleanId : `VEL-TRK-${cleanId.replace(/[^A-Z0-9]/g, '').slice(-8)}`,
+      trackingNumber: cleanId.startsWith('ROP-TRK-') || cleanId.startsWith('VEL-TRK-') ? cleanId : `ROP-TRK-${cleanId.replace(/[^A-Z0-9]/g, '').slice(-8)}`,
       carrier: 'Fargo Courier / G4S Express Logistics',
       carrierCode: 'FARGO-G4S-KE',
       status,
@@ -2133,7 +2253,7 @@ app.get("/api/courier/track", (req, res) => {
         {
           stage: 'Order Verified & Logged',
           statusText: 'Consignment validated in Fargo Courier database',
-          location: 'Veloce Logistics Center, Westlands',
+          location: 'Ropenix Logistics Center, Westlands',
           timestamp: new Date(Date.now() - 86400000 * 1.5).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }),
           completed: true
         },
@@ -2183,6 +2303,7 @@ app.post("/api/sensitive/verify-promo", (req, res) => {
 
     const cleanCode = code.trim().toUpperCase();
     const promoDatabase: Record<string, { percent: number; minSpend: number; maxDiscount: number; desc: string; expiryDate: string }> = {
+      "ROPENIX10": { percent: 10, minSpend: 0, maxDiscount: 5000, desc: "10% off storewide", expiryDate: "2027-12-31" },
       "VELOCE10": { percent: 10, minSpend: 0, maxDiscount: 5000, desc: "10% off storewide", expiryDate: "2027-12-31" },
       "WELCOME20": { percent: 20, minSpend: 0, maxDiscount: 10000, desc: "20% Welcome promotional code", expiryDate: "2027-12-31" },
       "SUMMER30": { percent: 30, minSpend: 0, maxDiscount: 15000, desc: "30% Summer promotional special", expiryDate: "2027-08-31" },
@@ -2260,7 +2381,7 @@ app.post("/api/sensitive/authorize-refund", (req, res) => {
       orderId,
       refundStatus: "approved_pending_pickup",
       approvedAmount: refundAmount || 0,
-      dropoffLocation: "Nearest Veloce Parcel Hub or Courier Agent",
+      dropoffLocation: "Nearest Ropenix Parcel Hub or Courier Agent",
       timestamp: new Date().toISOString(),
       message: "Return request authorized. RMA shipment label generated."
     });
@@ -2737,14 +2858,14 @@ app.post(['/api/services/custom-clothing', '/api/services/custom-clothing/'], as
 
     try {
       const transporter = getSmtpTransporter();
-      const adminEmail = process.env.ADMIN_EMAIL || process.env.EMAIL_HOST_USER || 'admin@veloce.co.ke';
+      const adminEmail = process.env.ADMIN_EMAIL || process.env.EMAIL_HOST_USER || 'admin@ropenix.co.ke';
       const senderEmail = process.env.EMAIL_HOST_USER || 'noreply@marid.co.ke';
 
       // HTML template for Admin Notification
       const adminHtml = `
         <div style="font-family: system-ui, -apple-system, sans-serif; max-width: 650px; margin: 0 auto; background: #ffffff; padding: 24px; border: 1px solid #e2e8f0; border-radius: 12px;">
           <div style="border-bottom: 2px solid #4f46e5; padding-bottom: 16px; margin-bottom: 20px;">
-            <span style="font-size: 11px; font-weight: 800; color: #4f46e5; text-transform: uppercase; letter-spacing: 1px;">VELOCE BESPOKE APPAREL</span>
+            <span style="font-size: 11px; font-weight: 800; color: #4f46e5; text-transform: uppercase; letter-spacing: 1px;">ROPENIX BESPOKE APPAREL</span>
             <h2 style="margin: 4px 0 0 0; color: #0f172a; font-size: 20px; font-weight: 700;">New Custom Made Clothing Request</h2>
             <p style="margin: 4px 0 0 0; color: #64748b; font-size: 13px;">Reference Code: <strong style="color: #4f46e5;">${referenceNo}</strong></p>
           </div>
@@ -2837,7 +2958,7 @@ app.post(['/api/services/custom-clothing', '/api/services/custom-clothing/'], as
 
       // 1) Send Admin notification email
       await transporter.sendMail({
-        from: `"Veloce Bespoke Tailoring" <${senderEmail}>`,
+        from: `"Ropenix Bespoke Tailoring" <${senderEmail}>`,
         to: adminEmail,
         subject: `[New Custom Clothing Request] ${referenceNo} - ${newRequest.fullName} (${newRequest.garmentType})`,
         html: adminHtml,
@@ -2848,7 +2969,7 @@ app.post(['/api/services/custom-clothing', '/api/services/custom-clothing/'], as
         <div style="font-family: system-ui, -apple-system, sans-serif; max-width: 600px; margin: 0 auto; background: #ffffff; padding: 24px; border: 1px solid #e2e8f0; border-radius: 12px;">
           <h2 style="color: #0f172a; margin-top: 0;">We've Received Your Custom Order Request!</h2>
           <p style="color: #475569; font-size: 14px; line-height: 1.6;">Hello <strong>${newRequest.fullName}</strong>,</p>
-          <p style="color: #475569; font-size: 14px; line-height: 1.6;">Thank you for submitting your bespoke clothing specifications to Veloce Master Tailors. Your request reference number is <strong style="color: #4f46e5;">${referenceNo}</strong>.</p>
+          <p style="color: #475569; font-size: 14px; line-height: 1.6;">Thank you for submitting your bespoke clothing specifications to Ropenix Master Tailors. Your request reference number is <strong style="color: #4f46e5;">${referenceNo}</strong>.</p>
           
           <div style="background: #f8fafc; padding: 16px; border-radius: 8px; margin: 20px 0; font-size: 13px;">
             <p style="margin: 0 0 8px 0;"><strong>Summary of Request:</strong></p>
@@ -2862,12 +2983,12 @@ app.post(['/api/services/custom-clothing', '/api/services/custom-clothing/'], as
           <p style="color: #475569; font-size: 14px; line-height: 1.6;">Our lead designer and master tailors will review your design inspirations, material samples, and body measurements. We will contact you via email or phone within <strong>1–2 business days</strong> with a custom quote and fabric recommendations.</p>
           
           <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 24px 0;" />
-          <p style="color: #94a3b8; font-size: 12px; margin: 0;">Veloce Atelier & Bespoke Clothing Studio • Nairobi, Kenya</p>
+          <p style="color: #94a3b8; font-size: 12px; margin: 0;">Ropenix Atelier & Bespoke Clothing Studio • Nairobi, Kenya</p>
         </div>
       `;
 
       await transporter.sendMail({
-        from: `"Veloce Atelier" <${senderEmail}>`,
+        from: `"Ropenix Atelier" <${senderEmail}>`,
         to: newRequest.email,
         subject: `Custom Clothing Request Received — Ref #${referenceNo}`,
         html: userHtml,
@@ -3952,7 +4073,7 @@ async function performExpiryBackgroundCheck(isManualTrigger: boolean = false) {
     }
 
     if (adminEmailsSet.size === 0) {
-      adminEmailsSet.add('admin@veloce.co.ke');
+      adminEmailsSet.add('admin@ropenix.co.ke');
       adminEmailsSet.add('edwinmuliro64@gmail.com');
     }
 

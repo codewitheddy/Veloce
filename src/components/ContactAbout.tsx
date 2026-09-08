@@ -53,14 +53,14 @@ export default function ContactAbout({ onTriggerEmailToast }: ContactAboutProps)
       categoryName: 'Shipping & Delivery',
       icon: Truck,
       q: 'Are delivery fees refundable if an item is returned?',
-      a: 'Standard courier delivery fees are fully covered by Veloce if the return is due to a transit damage or manufacturing defect. For standard customer preference returns, outbound delivery fees are deducted from store credit.'
+      a: 'Standard courier delivery fees are fully covered by Ropenix Collections if the return is due to a transit damage or manufacturing defect. For standard customer preference returns, outbound delivery fees are deducted from store credit.'
     },
     {
       id: 'returns-1',
       category: 'returns',
       categoryName: 'Returns & Refunds',
       icon: RotateCcw,
-      q: 'What is Veloce’s standard return policy window?',
+      q: 'What is Ropenix’s standard return policy window?',
       a: 'We offer a 30-day money-back guarantee for all unblemished physical accessories and products returned in their original protective packaging.'
     },
     {
@@ -84,7 +84,7 @@ export default function ContactAbout({ onTriggerEmailToast }: ContactAboutProps)
       category: 'general',
       categoryName: 'General & Materials',
       icon: Package,
-      q: 'What materials are used in Veloce physical products?',
+      q: 'What materials are used in Ropenix physical products?',
       a: 'Our shelves, stands, and accessories are constructed exclusively from FSC-Certified solid American White Oak and Black Walnut. We finish surfaces with organic, non-toxic matte safflower oil to preserve natural grain without discoloration.'
     },
     {
@@ -93,7 +93,7 @@ export default function ContactAbout({ onTriggerEmailToast }: ContactAboutProps)
       categoryName: 'General & Materials',
       icon: Package,
       q: 'Do your products come with a warranty or guarantee?',
-      a: 'All Veloce physical products include a comprehensive 2-year manufacturer warranty covering structural integrity and craftsmanship defect protection with complimentary parts replacement.'
+      a: 'All Ropenix physical products include a comprehensive 2-year manufacturer warranty covering structural integrity and craftsmanship defect protection with complimentary parts replacement.'
     }
   ];
 
@@ -142,7 +142,7 @@ export default function ContactAbout({ onTriggerEmailToast }: ContactAboutProps)
             orderId: 'inquiry-' + Date.now().toString().slice(-4),
             customerName: inquiryName || 'Customer',
             customerEmail: inquiryEmail || 'customer@example.com',
-            subject: `📩 Inquiry Sent - Veloce Customer Desk`,
+            subject: `📩 Inquiry Sent - Ropenix Customer Desk`,
             body: `Hi ${inquiryName || 'Customer'},\n\nWe have logged your inquiry and sent it to our team (ropenixkenya@gmail.com). You will receive a response shortly.`,
             status: 'completed',
             timestamp: getCurrentTimestamp(),
@@ -210,7 +210,7 @@ export default function ContactAbout({ onTriggerEmailToast }: ContactAboutProps)
                 </div>
                 <div>
                   <span className="text-[10px] uppercase font-bold text-gray-400 font-mono block">Customer Hotline</span>
-                  <span className="text-xs font-medium text-gray-900 dark:text-white block">+254 700 000 000</span>
+                  <span className="text-xs font-medium text-gray-900 dark:text-white block">+254 182 180 965 (0182180965)</span>
                 </div>
               </div>
 

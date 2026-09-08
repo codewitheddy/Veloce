@@ -299,16 +299,41 @@ export default function BulkProductUploadModal({
     URL.revokeObjectURL(url);
   };
 
-  // Robust CSV Parser
+  // Robust CSV Parser with BOM Stripping and Auto-Delimiter Detection
   const parseCSV = (text: string): string[][] => {
+    // Strip UTF-8 Byte Order Mark (BOM) if present from Excel exports
+    const cleanText = text.replace(/^\uFEFF/, '').trim();
+    if (!cleanText) return [];
+
+    // Auto-detect delimiter from the first line (comma, semicolon, or tab)
+    const firstLine = cleanText.split(/\r?\n/)[0] || '';
+    let commaCount = 0;
+    let semiCount = 0;
+    let tabCount = 0;
+    let inQ = false;
+
+    for (let i = 0; i < firstLine.length; i++) {
+      const c = firstLine[i];
+      if (c === '"') inQ = !inQ;
+      else if (!inQ) {
+        if (c === ',') commaCount++;
+        else if (c === ';') semiCount++;
+        else if (c === '\t') tabCount++;
+      }
+    }
+
+    let delimiter = ',';
+    if (semiCount > commaCount && semiCount > tabCount) delimiter = ';';
+    else if (tabCount > commaCount && tabCount > semiCount) delimiter = '\t';
+
     const lines: string[][] = [];
     let row: string[] = [];
     let inQuotes = false;
     let currentVal = '';
 
-    for (let i = 0; i < text.length; i++) {
-      const char = text[i];
-      const nextChar = text[i + 1];
+    for (let i = 0; i < cleanText.length; i++) {
+      const char = cleanText[i];
+      const nextChar = cleanText[i + 1];
 
       if (char === '"') {
         if (inQuotes && nextChar === '"') {
@@ -317,7 +342,7 @@ export default function BulkProductUploadModal({
         } else {
           inQuotes = !inQuotes;
         }
-      } else if (char === ',' && !inQuotes) {
+      } else if (char === delimiter && !inQuotes) {
         row.push(currentVal);
         currentVal = '';
       } else if ((char === '\r' || char === '\n') && !inQuotes) {
@@ -535,7 +560,8 @@ export default function BulkProductUploadModal({
 
     if (e.dataTransfer.files && e.dataTransfer.files[0]) {
       const file = e.dataTransfer.files[0];
-      if (file.name.endsWith('.csv')) {
+      const lowerName = file.name.toLowerCase();
+      if (lowerName.endsWith('.csv') || lowerName.endsWith('.tsv') || lowerName.endsWith('.txt') || file.type.includes('csv') || file.type.includes('text')) {
         setFileName(file.name);
         const reader = new FileReader();
         reader.onload = (event) => {
@@ -553,14 +579,19 @@ export default function BulkProductUploadModal({
   const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       const file = e.target.files[0];
-      setFileName(file.name);
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        if (event.target && typeof event.target.result === 'string') {
-          processFileContents(event.target.result);
-        }
-      };
-      reader.readAsText(file);
+      const lowerName = file.name.toLowerCase();
+      if (lowerName.endsWith('.csv') || lowerName.endsWith('.tsv') || lowerName.endsWith('.txt') || file.type.includes('csv') || file.type.includes('text')) {
+        setFileName(file.name);
+        const reader = new FileReader();
+        reader.onload = (event) => {
+          if (event.target && typeof event.target.result === 'string') {
+            processFileContents(event.target.result);
+          }
+        };
+        reader.readAsText(file);
+      } else {
+        alert('Invalid file format. Please select a valid .csv spreadsheet file.');
+      }
     }
   };
 

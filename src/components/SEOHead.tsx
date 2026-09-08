@@ -28,14 +28,14 @@ export const SEOHead: React.FC<SEOHeadProps> = ({
   blogs = [],
 }) => {
   const { settings } = useSiteSettings();
-  const BASE_URL = settings.seo.canonical_base_url || 'https://veloce.co.ke';
-  const siteName = settings.general.site_name || 'Veloce Marketplace';
+  const BASE_URL = settings.seo.canonical_base_url || 'https://ropenix.co.ke';
+  const siteName = settings.general.site_name || 'Ropenix Collections';
 
   const seoConfig = useMemo<SEOConfig>(() => {
     // 1. If viewing an individual product detail
     if (selectedProduct) {
       const productName = selectedProduct.name || (selectedProduct as any).title || 'Product Detail';
-      const productImage = selectedProduct.imageUrl || (selectedProduct as any).image || settings.seo.og_image_url || 'https://veloce.co.ke/og-image.svg';
+      const productImage = selectedProduct.imageUrl || (selectedProduct as any).image || settings.seo.og_image_url || 'https://ropenix.co.ke/og-image.svg';
       const gallery = selectedProduct.images || selectedProduct.gallery_images || [];
 
       const cleanDesc = (selectedProduct.description || selectedProduct.shortDescription || '')
@@ -49,7 +49,7 @@ export const SEOHead: React.FC<SEOHeadProps> = ({
         name: productName,
         image: [productImage, ...gallery].filter(Boolean),
         description: cleanDesc || `Buy ${productName} at ${siteName}. Premium craftsmanship and guaranteed quality.`,
-        sku: selectedProduct.sku || `VEL-${selectedProduct.id}`,
+        sku: selectedProduct.sku || `ROP-${selectedProduct.id}`,
         brand: {
           '@type': 'Brand',
           name: selectedProduct.brand || siteName,

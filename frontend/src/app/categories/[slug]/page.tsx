@@ -14,12 +14,12 @@ export const revalidate = 60;
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const categoryName = decodeURIComponent(params.slug).replace(/-/g, ' ');
-  const title = `${categoryName.charAt(0).toUpperCase() + categoryName.slice(1)} Collections | Veloce`;
+  const title = `${categoryName.charAt(0).toUpperCase() + categoryName.slice(1)} Collections | Ropenix Collections`;
   return {
     title,
-    description: `Explore ${categoryName} performance gear and electronics at Veloce East Africa. Fast shipping to Kenya, Uganda, Tanzania & Rwanda.`,
+    description: `Explore ${categoryName} performance gear and electronics at Ropenix Collections East Africa. Fast shipping to Kenya, Uganda, Tanzania & Rwanda.`,
     alternates: {
-      canonical: `https://veloce.co.ke/categories/${params.slug}`,
+      canonical: `https://ropenix.co.ke/categories/${params.slug}`,
     },
   };
 }

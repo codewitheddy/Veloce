@@ -46,7 +46,7 @@ export default function DjangoAdminLogin({ onLoginSuccess, onCancel }: DjangoAdm
         if (rememberMe) {
           localStorage.setItem('veloce_remember_admin', 'true');
         }
-        setSuccessMsg("Welcome back! Loading executive studio...");
+        setSuccessMsg("Welcome back! Loading Ropenix Admin...");
         setTimeout(() => {
           onLoginSuccess();
         }, 350);
@@ -115,7 +115,7 @@ export default function DjangoAdminLogin({ onLoginSuccess, onCancel }: DjangoAdm
                   autoFocus
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
-                  placeholder="admin@veloce.co.ke"
+                  placeholder="admin@ropenix.co.ke"
                   className="h-10 w-full rounded-xl border border-slate-200 dark:border-slate-700 pl-9 pr-4 text-xs font-normal text-slate-900 dark:text-white focus:border-indigo-600 focus:ring-1 focus:ring-indigo-600 focus:outline-none bg-white dark:bg-slate-800 transition-colors"
                   id="input-admin-username"
                 />

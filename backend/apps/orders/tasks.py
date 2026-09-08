@@ -71,7 +71,7 @@ def _build_order_context(order, items=None) -> dict:
 
     whatsapp_link = (
         f"https://wa.me/{wa_phone}?text=Hello%20{urllib.parse.quote(customer_name)},"
-        f"%20this%20is%20Veloce%20Kenya%20regarding%20order%20%23{order_short_id}"
+        f"%20this%20is%20Ropenix%20Collections%20regarding%20order%20%23{order_short_id}"
         if wa_phone else None
     )
 

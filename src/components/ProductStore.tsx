@@ -104,8 +104,21 @@ export default function ProductStore({
   const [isMobileFiltersOpen, setIsMobileFiltersOpen] = useState(false);
   const [sortBy, setSortBy] = useState<string>('featured');
   const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 6;
+  const [itemsPerPage, setItemsPerPage] = useState<number>(12);
   const [viewLayout, setViewLayout] = useState<'grid' | 'list'>('grid');
+
+  const getPaginationItems = (current: number, total: number): (number | 'ellipsis')[] => {
+    if (total <= 7) {
+      return Array.from({ length: total }, (_, i) => i + 1);
+    }
+    if (current <= 4) {
+      return [1, 2, 3, 4, 5, 'ellipsis', total];
+    }
+    if (current >= total - 3) {
+      return [1, 'ellipsis', total - 4, total - 3, total - 2, total - 1, total];
+    }
+    return [1, 'ellipsis', current - 1, current, current + 1, 'ellipsis', total];
+  };
 
   React.useEffect(() => {
     if (initialCategory !== undefined && initialCategory !== activeCategory) {
@@ -1745,9 +1758,9 @@ export default function ProductStore({
                 {matches.map(({ p, matchCount }) => {
                   const shareUrl = typeof window !== 'undefined' 
                     ? `${window.location.origin}${window.location.pathname}?product=${p.id}` 
-                    : `https://veloce.workshop/catalog?product=${p.id}`;
+                    : `https://ropenix.co.ke/catalog?product=${p.id}`;
                   
-                  const shareText = `Check out this incredible ${p.name} on Veloce Workshop! Dynamic high-quality design for active systems.`;
+                  const shareText = `Check out this incredible ${p.name} on Ropenix Collections! Dynamic high-quality design for active systems.`;
                   const twitterShareUrl = `https://twitter.com/intent/tweet?url=${encodeURIComponent(shareUrl)}&text=${encodeURIComponent(shareText)}`;
                   const linkedinShareUrl = `https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(shareUrl)}`;
 
@@ -1817,7 +1830,7 @@ export default function ProductStore({
                       {/* Bottom price and social share controls row */}
                       <div className="mt-5 pt-3.5 border-t border-gray-100 flex items-center justify-between">
                         <div>
-                          <span className="block text-[8px] font-mono text-gray-400 uppercase tracking-wider font-semibold">Veloce Price</span>
+                          <span className="block text-[8px] font-mono text-gray-400 uppercase tracking-wider font-semibold">Ropenix Price</span>
                           <span className="text-sm font-mono font-bold text-slate-900">KSh {p.price.toLocaleString('en-KE')}</span>
                         </div>
 
@@ -1915,7 +1928,7 @@ export default function ProductStore({
       {/* Search and Filters Header */}
       <div className="border-b border-gray-100 dark:border-gray-800 pb-6 mb-6 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
         <div>
-          <h1 className="font-display text-2xl font-semibold text-gray-900 dark:text-white">Veloce Store</h1>
+          <h1 className="font-display text-2xl font-semibold text-gray-900 dark:text-white">Ropenix Store</h1>
           <p className="text-xs text-gray-500 dark:text-gray-400 font-extralight mt-1">Proprietary high-end workspace objects and downloadable resources.</p>
         </div>
         
@@ -2756,35 +2769,72 @@ export default function ProductStore({
 
             {/* Pagination Controls */}
             {totalPages > 1 && (
-              <div className="mt-10 flex flex-col sm:flex-row items-center justify-between gap-4 border-t border-gray-150 dark:border-gray-800/85 pt-6">
-                <p className="text-xs font-mono text-gray-500">
-                  Showing <span className="font-bold text-gray-850 dark:text-gray-200">{Math.min(totalItems, (currentPage - 1) * itemsPerPage + 1)}</span> to{' '}
-                  <span className="font-bold text-gray-850 dark:text-gray-200">{Math.min(totalItems, currentPage * itemsPerPage)}</span> of{' '}
-                  <span className="font-bold text-indigo-600 dark:text-indigo-400">{totalItems}</span> items
-                </p>
-                <div className="flex items-center gap-1.5">
+              <div className="mt-10 flex flex-col md:flex-row items-center justify-between gap-4 border-t border-slate-200/80 dark:border-slate-800 pt-6">
+                <div className="flex flex-wrap items-center gap-2 text-xs font-mono text-slate-500 dark:text-slate-400">
+                  <span className="whitespace-nowrap">
+                    Showing <span className="font-bold text-slate-800 dark:text-slate-200">{Math.min(totalItems, (currentPage - 1) * itemsPerPage + 1)}</span> to{' '}
+                    <span className="font-bold text-slate-800 dark:text-slate-200">{Math.min(totalItems, currentPage * itemsPerPage)}</span> of{' '}
+                    <span className="font-bold text-indigo-600 dark:text-indigo-400">{totalItems}</span> items
+                  </span>
+                  <span className="text-slate-300 dark:text-slate-700 hidden sm:inline">|</span>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-slate-400 text-[11px]">Per page:</span>
+                    <select
+                      value={itemsPerPage}
+                      onChange={(e) => {
+                        setItemsPerPage(Number(e.target.value));
+                        setCurrentPage(1);
+                      }}
+                      className="h-7 px-2 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-xs font-bold text-slate-700 dark:text-slate-200 cursor-pointer focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                    >
+                      <option value={6}>6</option>
+                      <option value={12}>12</option>
+                      <option value={24}>24</option>
+                      <option value={48}>48</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-1.5 flex-wrap justify-center">
                   <button
                     type="button"
                     disabled={currentPage === 1}
-                    onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-                    className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 text-gray-500 hover:text-indigo-600 dark:hover:text-indigo-400 hover:border-indigo-150 hover:bg-indigo-50/15 disabled:opacity-35 disabled:hover:text-gray-500 disabled:hover:border-gray-200 disabled:hover:bg-white cursor-pointer transition-all shadow-5xs"
+                    onClick={() => {
+                      setCurrentPage((p) => Math.max(1, p - 1));
+                      window.scrollTo({ top: 400, behavior: 'smooth' });
+                    }}
+                    className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400 hover:border-indigo-200 hover:bg-indigo-50/20 disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:text-slate-600 disabled:hover:border-slate-200 cursor-pointer transition-all shadow-xs"
                     title="Previous Page"
                   >
                     <ChevronLeft className="h-4 w-4" />
                   </button>
 
-                  {Array.from({ length: totalPages }).map((_, idx) => {
-                    const pageNum = idx + 1;
+                  {getPaginationItems(currentPage, totalPages).map((item, idx) => {
+                    if (item === 'ellipsis') {
+                      return (
+                        <span
+                          key={`ellipsis-${idx}`}
+                          className="inline-flex h-8 w-6 items-center justify-center text-xs font-mono text-slate-400 dark:text-slate-600 select-none"
+                        >
+                          ...
+                        </span>
+                      );
+                    }
+
+                    const pageNum = item as number;
                     const isActive = pageNum === currentPage;
                     return (
                       <button
                         key={pageNum}
                         type="button"
-                        onClick={() => setCurrentPage(pageNum)}
-                        className={`inline-flex h-8 w-8 items-center justify-center rounded-lg text-xs font-mono font-bold transition-all cursor-pointer ${
+                        onClick={() => {
+                          setCurrentPage(pageNum);
+                          window.scrollTo({ top: 400, behavior: 'smooth' });
+                        }}
+                        className={`inline-flex h-8 min-w-[32px] px-2 items-center justify-center rounded-lg text-xs font-mono font-bold transition-all cursor-pointer ${
                           isActive
-                            ? 'bg-indigo-600 text-white shadow-3xs hover:bg-indigo-700 scale-105'
-                            : 'border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 text-gray-600 dark:text-gray-300 hover:border-indigo-150 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-indigo-50/10'
+                            ? 'bg-indigo-600 text-white shadow-sm hover:bg-indigo-700'
+                            : 'border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 hover:border-indigo-300 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-indigo-50/10'
                         }`}
                       >
                         {pageNum}
@@ -2795,8 +2845,11 @@ export default function ProductStore({
                   <button
                     type="button"
                     disabled={currentPage === totalPages}
-                    onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-                    className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 text-gray-500 hover:text-indigo-600 dark:hover:text-indigo-400 hover:border-indigo-150 hover:bg-indigo-50/15 disabled:opacity-35 disabled:hover:text-gray-500 disabled:hover:border-gray-200 disabled:hover:bg-white cursor-pointer transition-all shadow-5xs"
+                    onClick={() => {
+                      setCurrentPage((p) => Math.min(totalPages, p + 1));
+                      window.scrollTo({ top: 400, behavior: 'smooth' });
+                    }}
+                    className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400 hover:border-indigo-200 hover:bg-indigo-50/20 disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:text-slate-600 disabled:hover:border-slate-200 cursor-pointer transition-all shadow-xs"
                     title="Next Page"
                   >
                     <ChevronRight className="h-4 w-4" />

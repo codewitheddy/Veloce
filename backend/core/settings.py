@@ -14,7 +14,7 @@ SECRET_KEY = os.getenv(
     's$7!9z*q#2m_p8v(w5x^k1y@3j&b6c+d4e-f0g)h~r%t=u[a{z}x<c>v?b!n@m#k$'
 )
 DEBUG = os.getenv('DJANGO_DEBUG', 'False').lower() in ('true', '1', 't')
-allowed_hosts_env = os.getenv('ALLOWED_HOSTS', 'localhost,127.0.0.1,0.0.0.0,veloce.co.ke,marid.co.ke')
+allowed_hosts_env = os.getenv('ALLOWED_HOSTS', 'localhost,127.0.0.1,0.0.0.0,ropenix.co.ke,www.ropenix.co.ke,veloce.co.ke,marid.co.ke')
 ALLOWED_HOSTS = [host.strip() for host in allowed_hosts_env.split(',') if host.strip()]
 if DEBUG and '*' not in ALLOWED_HOSTS:
     ALLOWED_HOSTS.append('*')
@@ -214,7 +214,7 @@ EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER', 'noreply@marid.co.ke')
 EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD', '')
 EMAIL_USE_TLS = os.getenv('EMAIL_USE_TLS', 'False').lower() in ('true', '1', 't')
 EMAIL_USE_SSL = os.getenv('EMAIL_USE_SSL', 'True').lower() in ('true', '1', 't')
-DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL', 'Veloce Kenya <noreply@marid.co.ke>')
+DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL', 'Ropenix Collections <noreply@marid.co.ke>')
 ADMIN_EMAIL = os.getenv('ADMIN_EMAIL', 'ropenixkenya@gmail.com')
 SERVER_EMAIL = os.getenv('SERVER_EMAIL', 'ropenixkenya@gmail.com')
 
@@ -222,7 +222,7 @@ SERVER_EMAIL = os.getenv('SERVER_EMAIL', 'ropenixkenya@gmail.com')
 CORS_ALLOW_ALL_ORIGINS = DEBUG and os.getenv('CORS_ALLOW_ALL_ORIGINS', 'False').lower() in ('true', '1')
 cors_whitelist_env = os.getenv(
     'CORS_ALLOWED_ORIGINS',
-    'http://localhost:3000,http://127.0.0.1:3000,http://localhost:5173,http://127.0.0.1:5173,https://veloce.co.ke,https://marid.co.ke'
+    'http://localhost:3000,http://127.0.0.1:3000,http://localhost:5173,http://127.0.0.1:5173,https://ropenix.co.ke,https://www.ropenix.co.ke,https://veloce.co.ke,https://marid.co.ke'
 )
 CORS_ALLOWED_ORIGINS = [origin.strip() for origin in cors_whitelist_env.split(',') if origin.strip()]
 CORS_ALLOW_CREDENTIALS = True

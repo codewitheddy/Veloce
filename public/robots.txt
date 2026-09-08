@@ -1,5 +1,5 @@
-# Robots.txt for Veloce eCommerce & Affiliate Platform
-# https://veloce.co.ke
+# Robots.txt for Ropenix Collections eCommerce & Affiliate Platform
+# https://ropenix.co.ke
 
 User-agent: *
 Allow: /
@@ -23,4 +23,5 @@ Disallow: /unsubscribe
 
 # Crawl Delay & Sitemap
 Crawl-delay: 1
-Sitemap: https://veloce.co.ke/sitemap.xml
+Sitemap: https://ropenix.co.ke/sitemap.xml
+

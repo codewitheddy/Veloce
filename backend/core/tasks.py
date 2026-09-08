@@ -22,7 +22,7 @@ def send_generic_email_async_task(to_email: str, subject: str, html_content: str
     """
     logger.info(f"[GenericEmail] Dispatching email to {to_email}: '{subject}'")
     plain = text_content or (strip_tags(html_content) if html_content else 'No text preview provided.')
-    from_email = getattr(settings, 'DEFAULT_FROM_EMAIL', 'Veloce Kenya <noreply@marid.co.ke>')
+    from_email = getattr(settings, 'DEFAULT_FROM_EMAIL', 'Ropenix Collections <noreply@marid.co.ke>')
     
     send_mail(
         subject=subject,
@@ -173,10 +173,10 @@ def generate_daily_sales_summary_task(self):
     yesterday = timezone.now() - timedelta(days=1)
     report = generate_sales_report_task(start_date=yesterday.isoformat())
     
-    admin_email = getattr(settings, 'SERVER_EMAIL', 'admin@veloce.co.ke')
+    admin_email = getattr(settings, 'SERVER_EMAIL', 'admin@ropenix.co.ke')
     metrics = report.get('metrics', {})
     
-    subject = f"📊 [DAILY DIGEST] Veloce Kenya Sales Summary - KSh {metrics.get('gross_revenue', 0):,.2f}"
+    subject = f"📊 [DAILY DIGEST] Ropenix Collections Sales Summary - KSh {metrics.get('gross_revenue', 0):,.2f}"
     body = f"""Daily Automated Sales Summary:
 ------------------------------------------
 Date Period      : Last 24 Hours

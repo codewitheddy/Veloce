@@ -22,20 +22,24 @@ export default function PrivacyPolicy({ setCurrentTab }: PrivacyPolicyProps) {
   } | null>(null);
 
   const keyLabels: Record<string, string> = {
-    'veloce_products': 'Product Catalog Data',
-    'veloce_orders': 'Customer Purchase Orders',
-    'veloce_affiliates': 'Affiliate Program Inventory',
-    'veloce_campaigns': 'Affiliate Campaign Tracks',
-    'veloce_clicklogs': 'Affiliate Referral Log Audits',
-    'veloce_payout_logs': 'Affiliate Commission Payouts',
-    'veloce_cart': 'Active Shopping Cart Items',
-    'veloce_wishlist': 'Personal Wishlisted Accessories',
-    'veloce_earnings': 'Affiliate Cumulative Revenue',
-    'veloce_loyalty_points': 'Earned Loyalty Balances',
-    'veloce_coupons': 'Active Promotional Discounts',
-    'veloce_promo_banner': 'Global Promo Headliner Settings',
-    'veloce_inventory_audit_logs': 'Security & Inventory Audit Trails',
-    'veloce_last_backup_time': 'Database Backup Chronology',
+    'ropenix_products': 'Product Catalog Data',
+    'ropenix_orders': 'Customer Purchase Orders',
+    'ropenix_site_settings_cache': 'Platform Site Settings',
+    'ropenix_affiliates': 'Affiliate Program Inventory',
+    'ropenix_campaigns': 'Affiliate Campaign Tracks',
+    'ropenix_clicklogs': 'Affiliate Referral Log Audits',
+    'ropenix_payout_logs': 'Affiliate Commission Payouts',
+    'ropenix_cart': 'Active Shopping Cart Items',
+    'ropenix_wishlist': 'Personal Wishlisted Accessories',
+    'ropenix_earnings': 'Affiliate Cumulative Revenue',
+    'ropenix_loyalty_points': 'Earned Loyalty Balances',
+    'ropenix_coupons': 'Active Promotional Discounts',
+    'ropenix_promo_banner': 'Global Promo Headliner Settings',
+    'ropenix_inventory_audit_logs': 'Security & Inventory Audit Trails',
+    'ropenix_last_backup_time': 'Database Backup Chronology',
+    'veloce_products': 'Product Catalog Data (Legacy)',
+    'veloce_orders': 'Customer Purchase Orders (Legacy)',
+    'veloce_cart': 'Active Shopping Cart Items (Legacy)',
     'theme': 'Interface Color Settings',
     'app-font-size': 'Accessible Type Scale Settings'
   };
@@ -46,7 +50,7 @@ export default function PrivacyPolicy({ setCurrentTab }: PrivacyPolicyProps) {
 
     for (let i = 0; i < localStorage.length; i++) {
       const key = localStorage.key(i);
-      if (key && (key.startsWith('veloce_') || key === 'theme' || key === 'app-font-size')) {
+      if (key && (key.startsWith('ropenix_') || key.startsWith('veloce_') || key === 'theme' || key === 'app-font-size')) {
         const value = localStorage.getItem(key) || '';
         const sizeInBytes = new Blob([value]).size;
         
@@ -58,12 +62,12 @@ export default function PrivacyPolicy({ setCurrentTab }: PrivacyPolicyProps) {
             count = parsed.length;
           }
         } catch (_) {
-          // Keep default count as 1 for primitive variables
+          count = 1;
         }
 
         data.push({
           key,
-          label: keyLabels[key] || key,
+          label: keyLabels[key] || key.replace(/_/g, ' ').toUpperCase(),
           size: sizeInBytes,
           count
         });
@@ -71,7 +75,7 @@ export default function PrivacyPolicy({ setCurrentTab }: PrivacyPolicyProps) {
       }
     }
 
-    setAuditData(data.sort((a, b) => b.size - a.size));
+    setAuditData(data);
     setTotalSize(total);
   };
 
@@ -82,13 +86,13 @@ export default function PrivacyPolicy({ setCurrentTab }: PrivacyPolicyProps) {
   const handlePurgeKey = (key: string) => {
     setConfirmConfig({
       isOpen: true,
-      title: "Confirm Purge",
-      message: `Are you sure you want to delete "${keyLabels[key] || key}"? This action cannot be undone.`,
+      title: "Purge Local Storage Variable",
+      message: `Are you sure you want to permanently erase the local variable "${key}"? This will clear its saved state immediately.`,
       onConfirm: () => {
         localStorage.removeItem(key);
+        setPurgeSuccess(`Purged "${key}" successfully.`);
         loadAuditData();
-        setPurgeSuccess(`Purged data for: ${keyLabels[key] || key}`);
-        setTimeout(() => setPurgeSuccess(null), 3500);
+        setTimeout(() => setPurgeSuccess(null), 3000);
       }
     });
   };
@@ -97,13 +101,13 @@ export default function PrivacyPolicy({ setCurrentTab }: PrivacyPolicyProps) {
     setConfirmConfig({
       isOpen: true,
       title: "CRITICAL: Erase All Local Data",
-      message: 'Are you sure you want to erase ALL local data for Veloce? This will reset all order history, affiliate commissions, settings, and custom products back to defaults.',
+      message: 'Are you sure you want to erase ALL local data for Ropenix Collections? This will reset all order history, affiliate commissions, settings, and custom products back to defaults.',
       onConfirm: () => {
         // Find all matching keys
         const keysToRemove: string[] = [];
         for (let i = 0; i < localStorage.length; i++) {
           const key = localStorage.key(i);
-          if (key && (key.startsWith('veloce_') || key === 'theme' || key === 'app-font-size')) {
+          if (key && (key.startsWith('ropenix_') || key.startsWith('veloce_') || key === 'theme' || key === 'app-font-size')) {
             keysToRemove.push(key);
           }
         }
@@ -142,7 +146,7 @@ export default function PrivacyPolicy({ setCurrentTab }: PrivacyPolicyProps) {
           Our absolute commitment to <span className="font-semibold">local-first data privacy</span>.
         </h1>
         <p className="mt-3 text-sm leading-relaxed text-gray-505 dark:text-gray-405 font-extralight max-w-3xl">
-          At Veloce Collective, privacy is not a compliance checklist; it is an architectural fundamental. 
+          At Ropenix Collections, privacy is not a compliance checklist; it is an architectural fundamental. 
           We have engineered this entire workspace infrastructure to run with zero server-side telemetry or trackers. 
           Every single byte of catalog customisations, click registries, order logs, and configuration state resides inside your browser's private database.
         </p>
@@ -159,7 +163,7 @@ export default function PrivacyPolicy({ setCurrentTab }: PrivacyPolicyProps) {
             </h3>
             <p className="mb-3">
               Most digital commerce platforms capture and aggregate behavioral telemetry on remote database nodes. 
-              Veloce stands in opposition to this practice. Our site does not transmit your search queries, review descriptions, cart actions, or referral codes to any remote endpoint. 
+              Ropenix Collections stands in opposition to this practice. Our site does not transmit your search queries, review descriptions, cart actions, or referral codes to any remote endpoint. 
             </p>
             <div className="rounded-lg p-3.5 bg-gray-50 dark:bg-gray-900 border border-gray-100 dark:border-gray-800 flex gap-3">
               <Server className="h-5 w-5 text-gray-400 shrink-0 mt-0.5" />
@@ -176,7 +180,7 @@ export default function PrivacyPolicy({ setCurrentTab }: PrivacyPolicyProps) {
               <span className="h-1.5 w-1.5 rounded-full bg-indigo-600"></span> 2. Tracking Cookies & Affiliation
             </h3>
             <p className="mb-3">
-              Veloce operates cooperative alliances with premium third-party woodcrafters and digital tool designers. 
+              Ropenix Collections operates cooperative alliances with premium third-party woodcrafters and digital tool designers. 
               When clicking external partner links from the Affiliate Marketplace, the following transparent controls apply:
             </p>
             <ul className="list-disc pl-5 space-y-2.5">
@@ -228,7 +232,7 @@ export default function PrivacyPolicy({ setCurrentTab }: PrivacyPolicyProps) {
             <Globe className="h-6 w-6 text-gray-400 mx-auto mb-2" />
             <h4 className="text-xs font-semibold text-gray-900 dark:text-white">Need a Corporate GDPR Data Protection Officer?</h4>
             <p className="text-[10px] mt-1 max-w-sm mx-auto">
-              Our engineering standby team responds to cryptographic and storage-scale queries within 24 working hours at <span className="underline font-mono">legal@veloce.io</span>.
+              Our engineering standby team responds to cryptographic and storage-scale queries within 24 working hours at <span className="underline font-mono">legal@ropenix.co.ke</span>.
             </p>
           </div>
 
@@ -345,7 +349,7 @@ export default function PrivacyPolicy({ setCurrentTab }: PrivacyPolicyProps) {
               <Shield className="h-4.5 w-4.5 shrink-0" /> Local Cookie & Tracker Consent
             </div>
             <p className="mb-3 font-extralight text-indigo-950/80 dark:text-indigo-300/80">
-              Veloce complies with strict GDPR "Privacy by Design" guidelines. You can inspect or modify your active cookie preference privileges at any time.
+              Ropenix Collections complies with strict GDPR "Privacy by Design" guidelines. You can inspect or modify your active cookie preference privileges at any time.
             </p>
             <button
               onClick={() => window.dispatchEvent(new CustomEvent('veloce_open_cookie_settings'))}

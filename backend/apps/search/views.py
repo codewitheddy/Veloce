@@ -47,7 +47,7 @@ class MeiliProductSearchView(APIView):
                 'id', 'name', 'slug', 'sku', 'category', 'price', 'rating', 'reviews_count', 'image_url', 'stock'
             ))
             for r in results:
-                r['brand'] = 'Veloce'
+                r['brand'] = 'Ropenix Collections'
                 r['price_kes'] = float(r.get('price') or 0.0)
                 r['price_ugx'] = round(r['price_kes'] * 28.5, 2)
                 r['price_tzs'] = round(r['price_kes'] * 20.0, 2)

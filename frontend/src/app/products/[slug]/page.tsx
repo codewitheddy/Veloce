@@ -19,14 +19,14 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const product = await fetchProductBySlug(params.slug);
   if (!product) {
     return {
-      title: 'Product Not Found | Veloce',
+      title: 'Product Not Found | Ropenix Collections',
     };
   }
 
-  const title = `${product.name} | Veloce East Africa`;
+  const title = `${product.name} | Ropenix Collections East Africa`;
   const description =
     product.description ||
-    `Shop ${product.name} at Veloce. High-quality performance wear and electronics with instant M-Pesa checkout and regional delivery.`;
+    `Shop ${product.name} at Ropenix Collections. High-quality performance wear and electronics with instant M-Pesa checkout and regional delivery.`;
 
   return {
     title,
@@ -34,12 +34,12 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     openGraph: {
       title,
       description,
-      url: `https://veloce.co.ke/products/${product.slug || product.id}`,
+      url: `https://ropenix.co.ke/products/${product.slug || product.id}`,
       images: product.image_url ? [{ url: product.image_url }] : [],
       type: 'article',
     },
     alternates: {
-      canonical: `https://veloce.co.ke/products/${product.slug || product.id}`,
+      canonical: `https://ropenix.co.ke/products/${product.slug || product.id}`,
     },
   };
 }
@@ -66,11 +66,11 @@ export default async function ProductDetailPage({ params }: Props) {
     sku: product.sku,
     brand: {
       '@type': 'Brand',
-      name: product.brand || 'Veloce',
+      name: product.brand || 'Ropenix Collections',
     },
     offers: {
       '@type': 'Offer',
-      url: `https://veloce.co.ke/products/${product.slug || product.id}`,
+      url: `https://ropenix.co.ke/products/${product.slug || product.id}`,
       priceCurrency: 'KES',
       price: product.price,
       priceValidUntil: '2027-12-31',
@@ -78,7 +78,7 @@ export default async function ProductDetailPage({ params }: Props) {
       itemCondition: 'https://schema.org/NewCondition',
       seller: {
         '@type': 'Organization',
-        name: 'Veloce Hub East Africa',
+        name: 'Ropenix Collections East Africa',
       },
     },
     aggregateRating: {
@@ -125,7 +125,7 @@ export default async function ProductDetailPage({ params }: Props) {
               />
             ) : (
               <div className="w-full h-full flex items-center justify-center text-slate-300 font-bold">
-                VELOCE
+                ROPENIX
               </div>
             )}
           </div>

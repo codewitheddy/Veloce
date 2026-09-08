@@ -59,10 +59,10 @@ def send_password_reset_otp_task(self, email: str, otp_code: str):
     Sends the 6-digit password reset OTP email securely in background.
     """
     logger.info(f"[Task {self.request.id}] Sending password reset OTP to {email}")
-    subject = "Password Reset Verification Code | Veloce Kenya"
+    subject = "Password Reset Verification Code | Ropenix Collections"
     body_text = f"""Hello,
 
-We received a request to reset your password for your Veloce Kenya account.
+We received a request to reset your password for your Ropenix Collections account.
 
 Your verification OTP code is:
 {otp_code}
@@ -70,7 +70,7 @@ Your verification OTP code is:
 This code will expire in 15 minutes. If you did not request this change, please ignore this email.
 
 Security Team,
-Veloce Kenya
+Ropenix Collections
 """
     send_mail(
         subject=subject,

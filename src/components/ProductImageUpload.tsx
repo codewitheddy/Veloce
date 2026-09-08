@@ -1,5 +1,6 @@
 import React, { useState, useRef } from 'react';
-import { Upload, Image as ImageIcon, X, Link as LinkIcon, RotateCcw } from 'lucide-react';
+import { Upload, Image as ImageIcon, X, Link as LinkIcon, RotateCcw, Cloud, Loader2 } from 'lucide-react';
+import { uploadImageToCloudinary, isCloudinaryUrl, getOptimizedCloudinaryUrl } from '../lib/cloudinary';
 
 interface ProductImageUploadProps {
   value: string;
@@ -21,78 +22,54 @@ export default function ProductImageUpload({
   productContext
 }: ProductImageUploadProps) {
   const [isDragActive, setIsDragActive] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [uploadNotice, setUploadNotice] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Parse if it is a base64 or a web URL
+  // Parse if it is a Cloudinary URL, base64 or a general web URL
+  const isCloudinary = isCloudinaryUrl(value);
   const isBase64 = value.startsWith('data:image/');
 
-  const handleFile = (file: File) => {
+  const handleFile = async (file: File) => {
     setError(null);
+    setUploadNotice(null);
+
     if (!file.type.startsWith('image/')) {
-      setError('Please select a valid image file (PNG, JPG, SVG, GIF, WebP)');
+      setError('Please select a valid image file (PNG, JPG, SVG, GIF, WebP, AVIF)');
       return;
     }
 
-    if (file.size > 10 * 1024 * 1024) {
-      setError('This file is larger than 10MB. Please upload a smaller image.');
+    if (file.size > 20 * 1024 * 1024) {
+      setError('This file is larger than 20MB. Please upload a smaller image.');
       return;
     }
 
-    const reader = new FileReader();
-    reader.onload = () => {
-      if (typeof reader.result === 'string') {
-        const src = reader.result;
+    setIsUploading(true);
 
-        // If SVG or tiny icon, use directly
-        if (file.type.includes('svg') || file.size < 30 * 1024) {
-          onChange(src);
-          return;
+    try {
+      // 1. Upload to Cloudinary (or automatic local compression fallback)
+      const uploadResult = await uploadImageToCloudinary(file, {
+        folder: 'veloce_products',
+        tags: ['product', productContext?.category || 'catalog', 'storefront'],
+      });
+
+      if (uploadResult.success && uploadResult.url) {
+        onChange(uploadResult.url);
+        if (uploadResult.isCloudinary) {
+          setUploadNotice('Uploaded to Cloudinary CDN with f_auto, q_auto next-gen delivery.');
+        } else {
+          setUploadNotice('Image saved locally with canvas compression.');
         }
-
-        // Compress and downscale with Canvas to avoid QuotaExceeded issues
-        const img = new Image();
-        img.onload = () => {
-          try {
-            const maxDim = 900;
-            let width = img.naturalWidth || img.width;
-            let height = img.naturalHeight || img.height;
-
-            if (width > maxDim || height > maxDim) {
-              if (width > height) {
-                height = Math.round((height * maxDim) / width);
-                width = maxDim;
-              } else {
-                width = Math.round((width * maxDim) / height);
-                height = maxDim;
-              }
-            }
-
-            const canvas = document.createElement('canvas');
-            canvas.width = width;
-            canvas.height = height;
-            const ctx = canvas.getContext('2d');
-            if (ctx) {
-              ctx.drawImage(img, 0, 0, width, height);
-              const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.82);
-              onChange(compressedDataUrl);
-              return;
-            }
-          } catch {
-            // Fallback if canvas fails
-          }
-          onChange(src);
-        };
-        img.onerror = () => {
-          onChange(src);
-        };
-        img.src = src;
+      } else {
+        setError(uploadResult.error || 'Failed to process image upload.');
       }
-    };
-    reader.onerror = () => {
-      setError('Something went wrong reading your file. Please try again.');
-    };
-    reader.readAsDataURL(file);
+    } catch (err: any) {
+      console.warn('[ProductImageUpload Error]:', err);
+      setError('Could not process upload. Please try again.');
+    } finally {
+      setIsUploading(false);
+    }
   };
 
   const handleDragOver = (e: React.DragEvent) => {
@@ -129,13 +106,17 @@ export default function ProductImageUpload({
 
   const handleApplyUrl = () => {
     if (urlInput.trim()) {
-      onChange(urlInput.trim());
+      const cleanUrl = urlInput.trim();
+      const optimizedUrl = getOptimizedCloudinaryUrl(cleanUrl);
+      onChange(optimizedUrl);
+      setUrlInput(optimizedUrl);
     }
   };
 
   const clearImage = () => {
     onChange('');
     setUrlInput('');
+    setUploadNotice(null);
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
@@ -186,16 +167,28 @@ export default function ProductImageUpload({
           id={`product-image-uploader-${label.replace(/\s+/g, '-').toLowerCase()}`}
         />
 
-        {value ? (
+        {isUploading ? (
+          <div className="flex flex-col items-center justify-center py-4 gap-2 animate-in fade-in">
+            <div className="p-3 bg-indigo-50 dark:bg-indigo-950/60 rounded-full border border-indigo-200 dark:border-indigo-800">
+              <Loader2 className="h-6 w-6 text-indigo-600 dark:text-indigo-400 animate-spin" />
+            </div>
+            <p className="text-xs font-bold text-indigo-650 dark:text-indigo-400">
+              Uploading & Optimizing Media...
+            </p>
+            <p className="text-[10px] text-gray-400 dark:text-gray-500">
+              Processing for Cloudinary CDN & high-fidelity caching
+            </p>
+          </div>
+        ) : value ? (
           <div className="flex flex-col items-center gap-3 w-full animate-in fade-in duration-200">
             {/* Image Preview Container */}
-            <div className="relative group max-w-xs rounded border border-gray-150 dark:border-gray-800 overflow-hidden bg-white dark:bg-gray-950">
+            <div className="relative group max-w-xs rounded border border-gray-150 dark:border-gray-800 overflow-hidden bg-white dark:bg-gray-950 shadow-xs">
               <img
                 src={value}
                 alt="Product preview"
                 className="max-h-24 w-auto object-contain mx-auto mix-blend-normal"
                 referrerPolicy="no-referrer"
-                onError={(e) => {
+                onError={() => {
                   setError('The image link is invalid, broken, or blocked by CORS policies.');
                 }}
               />
@@ -210,9 +203,18 @@ export default function ProductImageUpload({
             </div>
 
             <div className="flex flex-col items-center gap-1">
-              <span className="text-[10px] font-medium text-gray-500 dark:text-gray-400">
-                {isBase64 ? '✓ Locally uploaded document active' : '✓ Web photo address linked'}
-              </span>
+              <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-medium bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300">
+                {isCloudinary ? (
+                  <>
+                    <Cloud className="h-3 w-3 text-cyan-500" />
+                    <span className="font-semibold text-cyan-600 dark:text-cyan-400">Cloudinary CDN Active</span>
+                  </>
+                ) : isBase64 ? (
+                  <span>✓ Locally compressed document active</span>
+                ) : (
+                  <span>✓ Web photo address linked</span>
+                )}
+              </div>
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
@@ -238,7 +240,7 @@ export default function ProductImageUpload({
               or drag & drop
             </p>
             <p className="text-[9px] text-gray-400 dark:text-gray-500 mt-1 font-sans">
-              PNG, JPG, SVG, GIF up to 2.5MB
+              PNG, JPG, SVG, WebP, AVIF • Auto Cloudinary CDN Optimization
             </p>
           </div>
         )}
@@ -256,7 +258,7 @@ export default function ProductImageUpload({
             onChange={(e) => setUrlInput(e.target.value)}
             onBlur={() => {
               if (urlInput.trim() && urlInput.trim() !== value) {
-                onChange(urlInput.trim());
+                handleApplyUrl();
               }
             }}
             onKeyDown={(e) => {
@@ -265,7 +267,7 @@ export default function ProductImageUpload({
                 handleApplyUrl();
               }
             }}
-            placeholder={isBase64 ? 'Using local uploaded image file...' : 'Enter https:// images.unsplash.com or web url...'}
+            placeholder={isBase64 ? 'Using local uploaded image file...' : 'Enter https:// images.unsplash.com or res.cloudinary.com...'}
             className="h-8 flex-1 rounded border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 px-2.5 text-xs text-gray-700 dark:text-gray-300 font-mono focus:ring-1 focus:ring-indigo-500 focus:outline-none placeholder-gray-300 dark:placeholder-gray-700"
           />
           {urlInput.trim() !== value && (
@@ -279,6 +281,12 @@ export default function ProductImageUpload({
           )}
         </div>
       </div>
+
+      {uploadNotice && (
+        <p className="text-[10px] font-medium text-emerald-600 dark:text-emerald-400 leading-tight">
+          ✓ {uploadNotice}
+        </p>
+      )}
 
       {error && (
         <p className="text-[10px] font-bold text-red-650 dark:text-red-400 mt-1 animate-pulse leading-tight">

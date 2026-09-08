@@ -44,10 +44,10 @@ def check_low_stock_threshold_task(self):
 
     logger.warning(f"[Task {self.request.id}] Found {len(flagged)} low stock products: {[f['sku'] for f in flagged]}")
 
-    admin_email = getattr(settings, 'SERVER_EMAIL', 'admin@veloce.co.ke')
+    admin_email = getattr(settings, 'SERVER_EMAIL', 'admin@ropenix.co.ke')
     items_list = "\n".join([f"- {f['sku']} ({f['name']}): Current Stock = {f['stock']} (Alert Level: {f['threshold']})" for f in flagged])
     
-    subject = f"⚠️ [INVENTORY ALERT] {len(flagged)} Products Reached Low Stock Level | Veloce Kenya"
+    subject = f"⚠️ [INVENTORY ALERT] {len(flagged)} Products Reached Low Stock Level | Ropenix Collections"
     body = f"""Attention Inventory & Fulfillment Team,
 
 The following products have fallen to or below their configured stock safety thresholds:
@@ -57,7 +57,7 @@ The following products have fallen to or below their configured stock safety thr
 Please review supplier reorder queues and restock as necessary.
 
 Automated Inventory Monitor,
-Veloce Kenya
+Ropenix Collections
 """
 
     send_mail(

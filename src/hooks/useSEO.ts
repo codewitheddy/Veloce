@@ -18,11 +18,11 @@ export interface SEOConfig {
   jsonLd?: Record<string, any> | Array<Record<string, any>> | null;
 }
 
-const DEFAULT_BASE_TITLE = 'Veloce | Premium eCommerce & Affiliate Marketplace';
+const DEFAULT_BASE_TITLE = 'Ropenix Collections | Premium eCommerce & Affiliate Marketplace';
 const DEFAULT_DESCRIPTION =
-  'Explore Veloce, the unified luxury eCommerce and affiliate marketplace featuring bespoke tailoring, curated physical products, high-utility digital assets, and verified merchant tracking.';
-const DEFAULT_CANONICAL = 'https://veloce.co.ke/';
-const DEFAULT_OG_IMAGE = 'https://veloce.co.ke/og-image.svg';
+  'Explore Ropenix Collections, Kenya\'s unified luxury eCommerce and affiliate marketplace featuring bespoke tailoring, curated physical products, high-utility digital assets, and verified merchant tracking.';
+const DEFAULT_CANONICAL = 'https://ropenix.co.ke/';
+const DEFAULT_OG_IMAGE = 'https://ropenix.co.ke/og-image.svg';
 
 /**
  * Custom React hook to dynamically synchronize document title, meta tags, OpenGraph,
@@ -33,7 +33,9 @@ export function useSEO(config: SEOConfig) {
     if (typeof window === 'undefined' || typeof document === 'undefined') return;
 
     // 1. Update Title
-    const finalTitle = config.title ? `${config.title} | Veloce` : DEFAULT_BASE_TITLE;
+    const finalTitle = config.title
+      ? (config.title.includes('Ropenix') ? config.title : `${config.title} | Ropenix Collections`)
+      : DEFAULT_BASE_TITLE;
     document.title = finalTitle;
 
     // Helper to set or create a meta tag

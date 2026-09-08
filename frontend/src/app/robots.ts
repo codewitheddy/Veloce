@@ -7,6 +7,6 @@ export default function robots(): MetadataRoute.Robots {
       allow: '/',
       disallow: ['/checkout', '/api/'],
     },
-    sitemap: 'https://veloce.co.ke/sitemap.xml',
+    sitemap: 'https://ropenix.co.ke/sitemap.xml',
   };
 }

@@ -83,7 +83,7 @@ class OrderTrackingView(APIView):
             'trackingNumber': tracking_num,
             'status': order_status,
             'estimatedDelivery': (now + datetime.timedelta(days=2)).isoformat(),
-            'originHub': 'Veloce Fulfillment Hub, Westlands, Nairobi',
+            'originHub': 'Ropenix Fulfillment Hub, Westlands, Nairobi',
             'destinationHub': order.shipping_address if order and order.shipping_address else 'Customer Delivery Address',
             'checkpoints': [
                 {'status': 'Order Placed & Logged', 'location': 'Nairobi Central Hub', 'timestamp': (now - datetime.timedelta(hours=24)).isoformat()},
@@ -104,7 +104,8 @@ class VerifyPromoView(APIView):
             return Response({'valid': False, 'error': 'Promo code required.'}, status=status.HTTP_400_BAD_REQUEST)
 
         promo_db = {
-            'VELOCE10': {'percent': 10, 'minSpend': 0, 'maxDiscount': 5000, 'desc': '10% off storewide'},
+            'ROPENIX10': {'percent': 10, 'minSpend': 0, 'maxDiscount': 5000, 'desc': '10% off storewide'},
+            'VELOCE10': {'percent': 10, 'minSpend': 0, 'maxDiscount': 5000, 'desc': '10% off storewide (Legacy)'},
             'VIP20': {'percent': 20, 'minSpend': 10000, 'maxDiscount': 15000, 'desc': '20% VIP partner discount'},
             'WELCOME50': {'percent': 50, 'minSpend': 5000, 'maxDiscount': 10000, 'desc': '50% Welcome promotional code'},
             'SUMMER2026': {'percent': 15, 'minSpend': 2500, 'maxDiscount': 8000, 'desc': '15% Summer seasonal special'}
@@ -152,7 +153,7 @@ class AuthorizeRefundView(APIView):
             'orderId': order_id,
             'refundStatus': 'approved_pending_pickup',
             'approvedAmount': refund_amount,
-            'dropoffLocation': 'Nearest Veloce Parcel Hub or Courier Agent',
+            'dropoffLocation': 'Nearest Ropenix Parcel Hub or Courier Agent',
             'timestamp': datetime.datetime.now().isoformat(),
             'message': 'Return request authorized. RMA shipment label generated.'
         }, status=status.HTTP_200_OK)
@@ -171,7 +172,7 @@ class PasswordResetView(APIView):
         
         # In production, dispatch OTP via secure email task
         from core.tasks import send_generic_email_async_task
-        subject = "Password Reset Code - Veloce Kenya"
+        subject = "Password Reset Code - Ropenix Collections"
         body = f"Your one-time password reset code is: {otp_code}. This code expires in 15 minutes."
         try:
             send_generic_email_async_task.delay(email, subject, f"<p>{body}</p>", body)
@@ -194,7 +195,7 @@ class EmailConfigView(APIView):
             'host': getattr(settings, 'EMAIL_HOST', 'mail.marid.co.ke'),
             'port': getattr(settings, 'EMAIL_PORT', 465),
             'user': getattr(settings, 'EMAIL_HOST_USER', 'noreply@marid.co.ke'),
-            'defaultFrom': getattr(settings, 'DEFAULT_FROM_EMAIL', 'Veloce Kenya <noreply@marid.co.ke>'),
+            'defaultFrom': getattr(settings, 'DEFAULT_FROM_EMAIL', 'Ropenix Collections <noreply@marid.co.ke>'),
             'useSsl': True,
             'unsubscribedCount': 0
         }, status=status.HTTP_200_OK)

@@ -109,8 +109,8 @@ export default function DnsAuthenticationGuide() {
   };
 
   // Admin Test Email Trigger State
-  const [adminEmailRecipient, setAdminEmailRecipient] = useState(() => localStorage.getItem('veloce_smtp_test_recipient') || 'admin@veloce.co.ke');
-  const [testEmailSubject, setTestEmailSubject] = useState('[Veloce Admin Test] DNS & SMTP Configuration Verification');
+  const [adminEmailRecipient, setAdminEmailRecipient] = useState(() => localStorage.getItem('ropenix_smtp_test_recipient') || localStorage.getItem('veloce_smtp_test_recipient') || 'admin@ropenix.co.ke');
+  const [testEmailSubject, setTestEmailSubject] = useState('[Ropenix Admin Test] DNS & SMTP Configuration Verification');
   const [testEmailTemplate, setTestEmailTemplate] = useState<'dns_audit' | 'order_sample'>('dns_audit');
   const [testEmailStatus, setTestEmailStatus] = useState<'idle' | 'sending' | 'success' | 'error'>('idle');
   const [testEmailResponse, setTestEmailResponse] = useState<string | null>(null);
@@ -774,7 +774,7 @@ export default function DnsAuthenticationGuide() {
                     required
                     value={adminEmailRecipient}
                     onChange={(e) => setAdminEmailRecipient(e.target.value)}
-                    placeholder="admin@veloce.co.ke"
+                    placeholder="admin@ropenix.co.ke"
                     className="h-9 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-950 px-3 text-xs font-mono text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                   />
                 </div>

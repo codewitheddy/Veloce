@@ -145,7 +145,7 @@ export default function CookieConsent({ forceOpen = false, onCloseForceOpen }: C
                 Workspace Identity & Cookies
               </h3>
               <p className="text-[11px] text-gray-400 font-extralight mt-1.5 leading-relaxed">
-                Veloce Collective uses standard browser cookies and LocalStorage domains to secure affiliate program credits, remember your theme, and safely store order details locally.
+                Ropenix Collections uses standard browser cookies and LocalStorage domains to secure affiliate program credits, remember your theme, and safely store order details locally.
               </p>
             </div>
           </div>
@@ -232,7 +232,7 @@ export default function CookieConsent({ forceOpen = false, onCloseForceOpen }: C
                     Traffic Insights & Platform Diagnostics
                   </span>
                   <span className="block text-[10px] text-gray-500 mt-1 font-extralight leading-normal">
-                    Assists Veloce's standby engineers in evaluating visual speed benchmarks, page interactions, and screen sizes. All records are completely anonymized.
+                    Assists Ropenix Collections' standby engineers in evaluating visual speed benchmarks, page interactions, and screen sizes. All records are completely anonymized.
                   </span>
                 </div>
                 <div className="shrink-0 flex items-center h-6">

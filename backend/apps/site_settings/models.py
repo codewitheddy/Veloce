@@ -12,10 +12,10 @@ def generate_backup_id():
 
 def default_general_settings():
     return {
-        "site_name": "Veloce Atelier",
-        "tagline": "Luxury eCommerce & Affiliate Marketplace",
-        "business_email": "concierge@veloce.co.ke",
-        "support_phone": "+254 700 000 000",
+        "site_name": "Ropenix Collections",
+        "tagline": "Premium eCommerce & Affiliate Marketplace",
+        "business_email": "concierge@ropenix.co.ke",
+        "support_phone": "+254 182 180 965",
         "physical_address": "Enterprise Road, Industrial Area, Nairobi, Kenya",
         "currency": "KES",
         "currency_symbol": "KSh",
@@ -52,15 +52,15 @@ def default_receipts_settings():
     return {
         "invoice_prefix": "INV",
         "invoice_format": "INV-{YYYY}-{SEQ:5}",
-        "legal_business_name": "Veloce Technologies Ltd",
+        "legal_business_name": "Ropenix Investments Limited",
         "business_reg_number": "CPR/2023/981244",
-        "physical_address": "Veloce Hub, Ring Road Parklands, Westlands, Nairobi",
-        "contact_phone": "+254 712 345 678",
-        "contact_email": "invoicing@veloce.co.ke",
-        "receipt_header_text": "Thank you for acquiring with Veloce Atelier.",
+        "physical_address": "Ropenix Hub, Ring Road Parklands, Westlands, Nairobi",
+        "contact_phone": "+254 182 180 965",
+        "contact_email": "invoicing@ropenix.co.ke",
+        "receipt_header_text": "Thank you for acquiring with Ropenix Collections.",
         "receipt_footer_text": "All items carry dynamic warranty certificates. Returns accepted within 14 days in original condition.",
         "etims_enabled": True,
-        "etims_client_id": "ETIMS-VELOCE-LIVE-9042",
+        "etims_client_id": "ETIMS-ROPENIX-LIVE-9042",
         "etims_client_secret": "sec_live_94819a8f27e6",
         "etims_environment": "sandbox",  # "sandbox" or "production"
         "etims_auto_submit": True,
@@ -84,26 +84,28 @@ def default_payments_settings():
         "mpesa_paybill": "303030",
         "mpesa_account_name": "ROPENIX INVESTMENTS LTD",
         "mpesa_account_number": "2047728455",
-        "mpesa_consumer_key": "vLc_key_live_2026",
-        "mpesa_consumer_secret": "vLc_sec_99418294",
+        "mpesa_consumer_key": "rop_key_live_2026",
+        "mpesa_consumer_secret": "rop_sec_99418294",
         "mpesa_passkey": "bfb279f9aa9bdbcf158e97dd71a467cd2e0c893059b10f78e6b72ada1ed2c919",
         "card_enabled": True,
         "card_provider": "stripe",
         "cod_enabled": True,
-        "cod_max_limit": 50000
+        "cod_max_limit": 50000,
+        "whatsapp_order_enabled": True,
+        "whatsapp_number": "0182180965"
     }
 
 def default_notifications_settings():
     return {
         "smtp_host": "smtp.gmail.com",
         "smtp_port": 587,
-        "smtp_user": "notifications@veloce.co.ke",
+        "smtp_user": "notifications@ropenix.co.ke",
         "smtp_use_tls": True,
-        "sender_name": "Veloce Concierge",
-        "sender_email": "concierge@veloce.co.ke",
+        "sender_name": "Ropenix Concierge",
+        "sender_email": "concierge@ropenix.co.ke",
         "sms_enabled": True,
         "sms_provider": "africastalking",
-        "sms_sender_id": "VELOCE",
+        "sms_sender_id": "ROPENIX",
         "notify_on_order_placed": True,
         "notify_on_dispatched": True,
         "notify_on_delivered": True,
@@ -112,13 +114,13 @@ def default_notifications_settings():
 
 def default_seo_settings():
     return {
-        "meta_title": "Veloce Atelier | Premium eCommerce & Affiliate Marketplace",
+        "meta_title": "Ropenix Collections | Premium eCommerce & Affiliate Marketplace",
         "meta_description": "Curated luxury fashion, artisan timepieces, cutting-edge technology and tailored bespoke garments in Nairobi, Kenya.",
-        "meta_keywords": "luxury shopping, artisan fashion, watches, nairobi commerce, veloce, bespoke atelier",
+        "meta_keywords": "luxury shopping, artisan fashion, watches, nairobi commerce, ropenix collections, bespoke atelier",
         "og_image_url": "/src/assets/images/og_banner_default.jpg",
-        "canonical_base_url": "https://veloce.co.ke",
-        "google_analytics_id": "G-VELOCE2026",
-        "google_tag_manager_id": "GTM-VLC9981"
+        "canonical_base_url": "https://ropenix.co.ke",
+        "google_analytics_id": "G-ROPENIX2026",
+        "google_tag_manager_id": "GTM-ROP9981"
     }
 
 def default_access_control_settings():
@@ -229,7 +231,7 @@ class SettingsAuditLog(models.Model):
     Audit log tracking who changed what in Site Settings.
     """
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    user_email = models.CharField(max_length=255, default='admin@veloce.co.ke')
+    user_email = models.CharField(max_length=255, default='admin@ropenix.co.ke')
     section = models.CharField(max_length=64)  # 'general', 'appearance', 'tax', 'receipts', etc.
     action = models.CharField(max_length=64, default='update')  # 'update', 'restore', 'theme_activate', 'backup'
     old_state = models.JSONField(null=True, blank=True)

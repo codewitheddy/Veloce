@@ -36,13 +36,13 @@ function dispatchRealEmail(to: string, subject: string, bodyText: string, catego
     <body>
       <div class="card">
         <div class="header">
-          <h1>VELOCE MARKETPLACE</h1>
+          <h1>ROPENIX COLLECTIONS</h1>
           <p>${category}</p>
         </div>
         <div class="body">${bodyText}</div>
         <div class="footer">
-          <p style="margin:0 0 6px 0;"><strong>Veloce Hub Kenya</strong> • Powered by Ropenix Investments Limited</p>
-          <p style="margin:0;">Support: <a href="mailto:support@marid.co.ke">support@marid.co.ke</a> | Hotline: +254 700 000 000</p>
+          <p style="margin:0 0 6px 0;"><strong>Ropenix Collections Kenya</strong> • Powered by Ropenix Investments Limited</p>
+          <p style="margin:0;">Support: <a href="mailto:support@ropenix.co.ke">support@ropenix.co.ke</a> | Hotline: +254 182 180 965 (0182180965)</p>
         </div>
       </div>
     </body>
@@ -74,8 +74,8 @@ export function buildOrderConfirmationEmail(order: Order): EmailNotification {
   const customerEmail = order.customerEmail || 'customer@example.com';
   const itemsList = order.items.map(i => `• ${i.name} (x${i.quantity}) - KSh ${i.price.toLocaleString('en-KE')}`).join('\n');
   
-  const subject = `🛒 Order Confirmation: VL-${orderIdUpper}`;
-  const body = `Hi ${customer},\n\nThank you for shopping with Veloce Hub! Your order VL-${orderIdUpper} has been successfully placed on ${order.date}.\n\nItems Ordered:\n${itemsList}\n\nTotal Paid: KSh ${order.total.toLocaleString('en-KE')}\nPayment Method: ${order.paymentMethod || 'Credit Card / M-Pesa'}\nShipping Address: ${order.shippingAddress || 'Default Address'}\n\nWe will notify you as soon as your package enters fulfillment.\n\nWarm regards,\nThe Veloce Hub Team`;
+  const subject = `🛒 Order Confirmation: ROP-${orderIdUpper}`;
+  const body = `Hi ${customer},\n\nThank you for shopping with Ropenix Collections! Your order ROP-${orderIdUpper} has been successfully placed on ${order.date}.\n\nItems Ordered:\n${itemsList}\n\nTotal Paid: KSh ${order.total.toLocaleString('en-KE')}\nPayment Method: ${order.paymentMethod || 'Credit Card / M-Pesa'}\nShipping Address: ${order.shippingAddress || 'Default Address'}\n\nWe will notify you as soon as your package enters fulfillment.\n\nWarm regards,\nThe Ropenix Collections Team`;
 
   dispatchRealEmail(customerEmail, subject, body, 'Order Confirmation');
 
@@ -103,11 +103,11 @@ export function buildPaymentNotificationEmail(order: Order, isSuccess: boolean, 
   let body = '';
   
   if (isSuccess) {
-    subject = `💳 Payment Received for Order VL-${orderIdUpper}`;
-    body = `Hi ${customer},\n\nWe have received your payment of KSh ${order.total.toLocaleString('en-KE')} for Order VL-${orderIdUpper} via ${order.paymentMethod || 'M-Pesa/Card'}.\n\nYour transaction has been verified and your order is moving into warehouse sorting.\n\nThank you for choosing Veloce Hub!`;
+    subject = `💳 Payment Received for Order ROP-${orderIdUpper}`;
+    body = `Hi ${customer},\n\nWe have received your payment of KSh ${order.total.toLocaleString('en-KE')} for Order ROP-${orderIdUpper} via ${order.paymentMethod || 'M-Pesa/Card'}.\n\nYour transaction has been verified and your order is moving into warehouse sorting.\n\nThank you for choosing Ropenix Collections!`;
   } else {
-    subject = `⚠️ Payment Failed for Order VL-${orderIdUpper}`;
-    body = `Hi ${customer},\n\nWe were unable to process payment for your order VL-${orderIdUpper}.\n\nReason: ${reason || 'Transaction declined or session timed out.'}\n\nPlease revisit your checkout portal or contact support to select an alternate payment method.\n\nBest regards,\nThe Veloce Billing Desk`;
+    subject = `⚠️ Payment Failed for Order ROP-${orderIdUpper}`;
+    body = `Hi ${customer},\n\nWe were unable to process payment for your order ROP-${orderIdUpper}.\n\nReason: ${reason || 'Transaction declined or session timed out.'}\n\nPlease revisit your checkout portal or contact support to select an alternate payment method.\n\nBest regards,\nThe Ropenix Billing Desk`;
   }
 
   dispatchRealEmail(customerEmail, subject, body, isSuccess ? 'Payment Received' : 'Payment Failed');
@@ -127,14 +127,14 @@ export function buildPaymentNotificationEmail(order: Order, isSuccess: boolean, 
 }
 
 // 3. Shipping Confirmation with Tracking
-export function buildShippingConfirmationEmail(order: Order, trackingNumber?: string, carrier = 'Veloce Logistics / Fargo Courier'): EmailNotification {
+export function buildShippingConfirmationEmail(order: Order, trackingNumber?: string, carrier = 'Ropenix Logistics / Fargo Courier'): EmailNotification {
   const orderIdUpper = order.id.slice(0, 8).toUpperCase();
   const customer = order.customerName || 'Customer';
   const customerEmail = order.customerEmail || 'customer@example.com';
-  const tracking = trackingNumber || `VL-TRACK-${Math.floor(100000 + Math.random() * 900000)}`;
+  const tracking = trackingNumber || `ROP-TRACK-${Math.floor(100000 + Math.random() * 900000)}`;
 
-  const subject = `🚚 Shipping Confirmation: Order VL-${orderIdUpper} is En Route!`;
-  const body = `Hi ${customer},\n\nGreat news! Order VL-${orderIdUpper} has been packaged and handed over to our courier partner (${carrier}).\n\nTracking Number: ${tracking}\nEstimated Delivery Window: 1-2 Business Days\nDestination: ${order.shippingAddress || 'Nairobi, Kenya'}\n\nYou can track your shipment status anytime inside your Veloce Account Portal.\n\nWarm regards,\nThe Veloce Shipping Team`;
+  const subject = `🚚 Shipping Confirmation: Order ROP-${orderIdUpper} is En Route!`;
+  const body = `Hi ${customer},\n\nGreat news! Order ROP-${orderIdUpper} has been packaged and handed over to our courier partner (${carrier}).\n\nTracking Number: ${tracking}\nEstimated Delivery Window: 1-2 Business Days\nDestination: ${order.shippingAddress || 'Nairobi, Kenya'}\n\nYou can track your shipment status anytime inside your Ropenix Account Portal.\n\nWarm regards,\nThe Ropenix Shipping Team`;
 
   dispatchRealEmail(customerEmail, subject, body, 'Shipping Confirmation');
 
@@ -158,8 +158,8 @@ export function buildDeliveryConfirmationEmail(order: Order): EmailNotification 
   const customer = order.customerName || 'Customer';
   const customerEmail = order.customerEmail || 'customer@example.com';
 
-  const subject = `🎉 Order VL-${orderIdUpper} DELIVERED!`;
-  const body = `Hi ${customer},\n\nYour order VL-${orderIdUpper} has been marked as DELIVERED by our dispatch driver.\n\nWe hope you love your new products!\n\n⭐ Help Us Improve: Please take 60 seconds to submit a product review in your account dashboard to share your feedback with the Veloce community.\n\nThank you for shopping with Veloce Hub!`;
+  const subject = `🎉 Order ROP-${orderIdUpper} DELIVERED!`;
+  const body = `Hi ${customer},\n\nYour order ROP-${orderIdUpper} has been marked as DELIVERED by our dispatch driver.\n\nWe hope you love your new products!\n\n⭐ Help Us Improve: Please take 60 seconds to submit a product review in your account dashboard to share your feedback with the Ropenix community.\n\nThank you for shopping with Ropenix Collections!`;
 
   dispatchRealEmail(customerEmail, subject, body, 'Delivery Confirmation');
 
@@ -181,8 +181,8 @@ export function buildDeliveryConfirmationEmail(order: Order): EmailNotification 
 export function buildRefundCancellationNoticeEmail(customerName: string, customerEmail: string, orderId: string, status: string, note?: string): EmailNotification {
   const orderIdUpper = orderId.slice(0, 8).toUpperCase();
 
-  const subject = `ℹ️ Refund / Cancellation Notice: Order VL-${orderIdUpper}`;
-  const body = `Hi ${customerName},\n\nThis notice is regarding Order VL-${orderIdUpper}.\n\nStatus Update: ${status.toUpperCase()}\n${note ? `Details / Reason: "${note}"\n` : ''}\nIf a refund was authorized, funds will be returned to your original payment account within 3-5 business days.\n\nIf you have any questions, please reply to this email or reach our support team.\n\nBest regards,\nVeloce Customer Support`;
+  const subject = `ℹ️ Refund / Cancellation Notice: Order ROP-${orderIdUpper}`;
+  const body = `Hi ${customerName},\n\nThis notice is regarding Order ROP-${orderIdUpper}.\n\nStatus Update: ${status.toUpperCase()}\n${note ? `Details / Reason: "${note}"\n` : ''}\nIf a refund was authorized, funds will be returned to your original payment account within 3-5 business days.\n\nIf you have any questions, please reply to this email or reach our support team.\n\nBest regards,\nRopenix Customer Support`;
 
   dispatchRealEmail(customerEmail, subject, body, 'Refund / Cancellation');
 
@@ -202,8 +202,8 @@ export function buildRefundCancellationNoticeEmail(customerName: string, custome
 
 // 6. Password Reset & Account Verification
 export function buildPasswordResetEmail(customerEmail: string, code: string): EmailNotification {
-  const subject = `🔐 Password Reset Authorization Code - Veloce`;
-  const body = `Hi there,\n\nWe received a request to reset the password for your Veloce account (${customerEmail}).\n\nYour Verification Code: ${code}\n\nThis code expires in 15 minutes. If you did not initiate this request, you can safely disregard this message.\n\nStay secure,\nThe Veloce Security Desk`;
+  const subject = `🔐 Password Reset Authorization Code - Ropenix Collections`;
+  const body = `Hi there,\n\nWe received a request to reset the password for your Ropenix account (${customerEmail}).\n\nYour Verification Code: ${code}\n\nThis code expires in 15 minutes. If you did not initiate this request, you can safely disregard this message.\n\nStay secure,\nThe Ropenix Security Desk`;
 
   dispatchRealEmail(customerEmail, subject, body, 'Password Reset');
 
@@ -222,8 +222,8 @@ export function buildPasswordResetEmail(customerEmail: string, code: string): Em
 }
 
 export function buildAccountVerificationEmail(customerName: string, customerEmail: string): EmailNotification {
-  const subject = `✨ Welcome to Veloce - Account Verified`;
-  const body = `Hi ${customerName},\n\nWelcome to Veloce Hub! Your account (${customerEmail}) has been successfully created and verified.\n\nYou now have full access to fast checkout, wishlist sync, order tracking, and exclusive discounts.\n\nHappy shopping!\nThe Veloce Team`;
+  const subject = `✨ Welcome to Ropenix Collections - Account Verified`;
+  const body = `Hi ${customerName},\n\nWelcome to Ropenix Collections! Your account (${customerEmail}) has been successfully created and verified.\n\nYou now have full access to fast checkout, wishlist sync, order tracking, and exclusive discounts.\n\nHappy shopping!\nThe Ropenix Team`;
 
   dispatchRealEmail(customerEmail, subject, body, 'Account Verified');
 
@@ -243,8 +243,8 @@ export function buildAccountVerificationEmail(customerName: string, customerEmai
 
 // 7. Abandoned Cart Reminder
 export function buildAbandonedCartEmail(customerName: string, customerEmail: string, itemsCount: number, cartTotal: number): EmailNotification {
-  const subject = `🛒 You left ${itemsCount} item${itemsCount > 1 ? 's' : ''} in your Veloce cart!`;
-  const body = `Hi ${customerName},\n\nWe noticed you left some amazing items in your shopping cart valued at KSh ${cartTotal.toLocaleString('en-KE')}.\n\nItems in high demand sell out quickly! Revisit your cart now to complete your checkout and claim fast delivery.\n\nBest regards,\nThe Veloce Merchandising Team`;
+  const subject = `🛒 You left ${itemsCount} item${itemsCount > 1 ? 's' : ''} in your Ropenix cart!`;
+  const body = `Hi ${customerName},\n\nWe noticed you left some amazing items in your shopping cart valued at KSh ${cartTotal.toLocaleString('en-KE')}.\n\nItems in high demand sell out quickly! Revisit your cart now to complete your checkout and claim fast delivery.\n\nBest regards,\nThe Ropenix Merchandising Team`;
 
   dispatchRealEmail(customerEmail, subject, body, 'Abandoned Cart', true);
 
@@ -265,8 +265,8 @@ export function buildAbandonedCartEmail(customerName: string, customerEmail: str
 // 8. Review Request (post-delivery)
 export function buildReviewRequestEmail(customerName: string, customerEmail: string, orderId: string, productName?: string): EmailNotification {
   const orderIdUpper = orderId.slice(0, 8).toUpperCase();
-  const subject = `⭐ How was your purchase? Leave a review for Order VL-${orderIdUpper}`;
-  const body = `Hi ${customerName},\n\nThank you for your recent purchase from Veloce Hub (${productName ? `Item: ${productName}` : `Order VL-${orderIdUpper}`}).\n\nYour opinion matters! Please take a quick moment to rate your items and leave feedback. Your reviews help other buyers make informed choices and earn you loyalty points.\n\nBest regards,\nThe Veloce Quality Team`;
+  const subject = `⭐ How was your purchase? Leave a review for Order ROP-${orderIdUpper}`;
+  const body = `Hi ${customerName},\n\nThank you for your recent purchase from Ropenix Collections (${productName ? `Item: ${productName}` : `Order ROP-${orderIdUpper}`}).\n\nYour opinion matters! Please take a quick moment to rate your items and leave feedback. Your reviews help other buyers make informed choices and earn you loyalty points.\n\nBest regards,\nThe Ropenix Quality Team`;
 
   dispatchRealEmail(customerEmail, subject, body, 'Review Request');
 
@@ -296,8 +296,8 @@ export function buildAdminNewOrderEmail(order: Order): EmailNotification {
   const customerEmail = order.customerEmail || 'customer@example.com';
   const totalStr = `KSh ${order.total.toLocaleString('en-KE')}`;
   
-  const subject = `🔔 [ADMIN ALERT] New Order VL-${orderIdUpper} Placed (${totalStr})`;
-  const body = `ATTENTION ADMIN / FULFILLMENT TEAM:\n\nA new sale has been placed on Veloce Hub and requires fulfillment.\n\nOrder ID: VL-${orderIdUpper}\nCustomer: ${customer} (${customerEmail})\nTotal Amount: ${totalStr}\nPayment Method: ${order.paymentMethod || 'M-Pesa / Card'}\nShipping Address: ${order.shippingAddress || 'N/A'}\nItems Count: ${order.items.length}\n\nPlease access the Admin Dashboard -> Orders Management to review details and begin picking & packing.`;
+  const subject = `🔔 [ADMIN ALERT] New Order ROP-${orderIdUpper} Placed (${totalStr})`;
+  const body = `ATTENTION ADMIN / FULFILLMENT TEAM:\n\nA new sale has been placed on Ropenix Collections and requires fulfillment.\n\nOrder ID: ROP-${orderIdUpper}\nCustomer: ${customer} (${customerEmail})\nTotal Amount: ${totalStr}\nPayment Method: ${order.paymentMethod || 'M-Pesa / Card'}\nShipping Address: ${order.shippingAddress || 'N/A'}\nItems Count: ${order.items.length}\n\nPlease access the Admin Dashboard -> Orders Management to review details and begin picking & packing.`;
 
   dispatchRealEmail(ADMIN_EMAIL, subject, body, 'Admin: New Order');
 
@@ -340,8 +340,8 @@ export function buildAdminLowStockEmail(product: Product, currentStock: number, 
 // 3. Failed Payment or Fraud-Flag Alert
 export function buildAdminPaymentFraudAlertEmail(orderId: string, customerName: string, amount: number, reason: string): EmailNotification {
   const orderIdUpper = orderId.slice(0, 8).toUpperCase();
-  const subject = `🚨 [ADMIN ALERT] Payment Failed / Security Flag on Order VL-${orderIdUpper}`;
-  const body = `SECURITY & BILLING NOTICE:\n\nA payment failure or potential risk flag occurred on Order VL-${orderIdUpper}.\n\nCustomer: ${customerName}\nAttempted Amount: KSh ${amount.toLocaleString('en-KE')}\nReason / Flag: ${reason}\n\nPlease check the financial logs and hold shipment until payment verification is completed.`;
+  const subject = `🚨 [ADMIN ALERT] Payment Failed / Security Flag on Order ROP-${orderIdUpper}`;
+  const body = `SECURITY & BILLING NOTICE:\n\nA payment failure or potential risk flag occurred on Order ROP-${orderIdUpper}.\n\nCustomer: ${customerName}\nAttempted Amount: KSh ${amount.toLocaleString('en-KE')}\nReason / Flag: ${reason}\n\nPlease check the financial logs and hold shipment until payment verification is completed.`;
 
   dispatchRealEmail(ADMIN_EMAIL, subject, body, 'Admin: Payment Risk');
 
@@ -383,7 +383,7 @@ export function buildAdminCustomServiceRequestEmail(customerName: string, custom
 // 5. New Review Submitted (for Moderation)
 export function buildAdminNewReviewEmail(productName: string, reviewerName: string, rating: number, comment: string): EmailNotification {
   const subject = `⭐ [ADMIN ALERT] New Review Submitted for ${productName} (${rating}/5 Stars)`;
-  const body = `MODERATION NOTICE:\n\nA new customer review has been submitted on Veloce Hub.\n\nProduct: ${productName}\nReviewer: ${reviewerName}\nRating: ${'★'.repeat(rating)}${'☆'.repeat(5 - rating)} (${rating}/5)\n\nComment:\n"${comment}"\n\nPlease review this entry in the Product Reviews admin panel if approval or moderation is required.`;
+  const body = `MODERATION NOTICE:\n\nA new customer review has been submitted on Ropenix Collections.\n\nProduct: ${productName}\nReviewer: ${reviewerName}\nRating: ${'★'.repeat(rating)}${'☆'.repeat(5 - rating)} (${rating}/5)\n\nComment:\n"${comment}"\n\nPlease review this entry in the Product Reviews admin panel if approval or moderation is required.`;
 
   dispatchRealEmail(ADMIN_EMAIL, subject, body, 'Admin: New Review');
 
@@ -457,7 +457,7 @@ Clicking any rating above will open the verified review form with your rating pr
 Don't want review request emails? Unsubscribe here: #unsubscribe-review-requests?email=${encodeURIComponent(customerEmail)}
 
 Warm regards,
-The Veloce Customer Experience Team`;
+The Ropenix Customer Experience Team`;
 
   if (!isReviewRequestOptedOut(customerEmail)) {
     dispatchRealEmail(customerEmail, subject, body, 'Post-Delivery Review Request', true);

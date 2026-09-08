@@ -215,7 +215,7 @@ export default function ReturnRequestModal({
     const newRequest: ReturnRequest = {
       id: `RET-${Math.floor(10000 + Math.random() * 90000)}`,
       orderId: order.id,
-      customerEmail: order.customerEmail || 'customer@veloce.co.ke',
+      customerEmail: order.customerEmail || 'customer@ropenix.co.ke',
       customerName: order.customerName || 'Valued Customer',
       customerPhone: mpesaPhone || (order as any).customerPhone || (order as any).phone || '0712345678',
       items: itemsToReturn,

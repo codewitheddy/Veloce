@@ -815,7 +815,7 @@ export default function ServicesPanel({ setCurrentTab }: ServicesPanelProps) {
               >
                 <option value="In-Person Fitting at Atelier Nairobi">In-Person Fitting at Atelier (Nairobi)</option>
                 <option value="Courier Home Delivery">Courier Home Delivery (Self-Measurement)</option>
-                <option value="Pickup at Veloce Store Hub">Pickup at Veloce Store Hub</option>
+                <option value="Pickup at Ropenix Store Hub">Pickup at Ropenix Store Hub</option>
               </select>
             </div>
           </div>

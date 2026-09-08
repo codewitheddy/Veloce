@@ -92,6 +92,11 @@ import {
   getProductTaxInfo,
   TaxStatus,
 } from '../utils/taxUtils';
+import {
+  uploadImageToCloudinary,
+  isCloudinaryUrl,
+  getOptimizedCloudinaryUrl,
+} from '../lib/cloudinary';
 
 export type UserRole = 'super_admin' | 'store_manager' | 'catalog_editor';
 
@@ -611,7 +616,20 @@ export function ProductFormEditor({
     setImageInsertCaption('');
   };
 
-  const handleUploadImageFileForDescription = (file: File) => {
+  const handleUploadImageFileForDescription = async (file: File) => {
+    try {
+      const uploadRes = await uploadImageToCloudinary(file, {
+        folder: 'veloce_descriptions',
+        tags: ['description', 'rich_text'],
+      });
+      if (uploadRes.success && uploadRes.url) {
+        setImageInsertUrl(uploadRes.url);
+        return;
+      }
+    } catch {
+      // Fallback below
+    }
+
     const reader = new FileReader();
     reader.onload = (uploadEvent) => {
       const result = uploadEvent.target?.result as string;
@@ -1277,10 +1295,35 @@ export function ProductFormEditor({
     });
   };
 
-  // Client-Side Image Compression & Resizing
+  // Client-Side Image Compression & Cloudinary CDN Upload
   const processImageFile = async (file: File): Promise<{ dataUrl: string; meta: ImageMetadata }> => {
+    const originalSizeKb = Math.round(file.size / 1024);
+
+    // 1. Try Cloudinary CDN signed/preset upload
+    try {
+      const uploadRes = await uploadImageToCloudinary(file, {
+        folder: 'veloce_products',
+        tags: ['product', 'gallery', title || 'item'],
+      });
+
+      if (uploadRes.success && uploadRes.url) {
+        const meta = await inspectAndGetMeta(uploadRes.url);
+        return {
+          dataUrl: uploadRes.url,
+          meta: {
+            ...meta,
+            originalSizeKb,
+            compressedSizeKb: uploadRes.bytes ? Math.round(uploadRes.bytes / 1024) : originalSizeKb,
+            isCompressed: uploadRes.isCloudinary || originalSizeKb > 200,
+          },
+        };
+      }
+    } catch (uploadErr) {
+      console.warn('[ProductFormEditor Cloudinary Warning]:', uploadErr);
+    }
+
+    // 2. High-efficiency canvas downscaling fallback
     return new Promise((resolve, reject) => {
-      const originalSizeKb = Math.round(file.size / 1024);
       const reader = new FileReader();
 
       reader.onload = (e) => {
@@ -1365,10 +1408,12 @@ export function ProductFormEditor({
     });
   };
 
-  // Add URL Image Handler
+  // Add URL Image Handler (Auto-optimizes Cloudinary URLs)
   const handleAddImageFromUrl = async () => {
     if (!newImageUrlInput.trim()) return;
-    const url = newImageUrlInput.trim();
+    const rawUrl = newImageUrlInput.trim();
+    const url = getOptimizedCloudinaryUrl(rawUrl);
+
     if (images.length >= 10) {
       setMediaNotice({ type: 'warning', text: 'Maximum 10 product images allowed.' });
       return;
@@ -1389,7 +1434,7 @@ export function ProductFormEditor({
         text: `Image added with quality warning: ${meta.warnings.join(' ')}`,
       });
     } else {
-      setMediaNotice({ type: 'success', text: 'Product image URL added successfully.' });
+      setMediaNotice({ type: 'success', text: isCloudinaryUrl(url) ? 'Product image connected to Cloudinary CDN!' : 'Product image URL added successfully.' });
     }
   };
 

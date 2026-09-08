@@ -514,10 +514,10 @@ export default function Header({
                 <div className="absolute right-0 top-full mt-2 w-60 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-2xl z-50 p-2 text-sm text-slate-700 dark:text-slate-200 animate-in fade-in">
                   <div className="p-2 border-b border-slate-100 dark:border-slate-800 mb-1">
                     <p className="font-bold text-slate-900 dark:text-white">
-                      {typeof window !== 'undefined' && localStorage.getItem('veloce_login_name') ? localStorage.getItem('veloce_login_name') : 'Store Customer'}
+                      {typeof window !== 'undefined' && (localStorage.getItem('ropenix_login_name') || localStorage.getItem('veloce_login_name')) ? (localStorage.getItem('ropenix_login_name') || localStorage.getItem('veloce_login_name')) : 'Store Customer'}
                     </p>
                     <p className="text-xs text-slate-500 dark:text-slate-400">
-                      {typeof window !== 'undefined' && localStorage.getItem('veloce_login_email') ? localStorage.getItem('veloce_login_email') : 'customer@veloce.co.ke'}
+                      {typeof window !== 'undefined' && (localStorage.getItem('ropenix_login_email') || localStorage.getItem('veloce_login_email')) ? (localStorage.getItem('ropenix_login_email') || localStorage.getItem('veloce_login_email')) : 'customer@ropenix.co.ke'}
                     </p>
                   </div>
 

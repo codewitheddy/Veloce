@@ -65,9 +65,9 @@ export default function OrderReceiptPage({
   const mpesaAccountName = settings.payments.mpesa_account_name || 'ROPENIX INVESTMENTS LTD';
   const legalBusinessName = settings.receipts.legal_business_name || settings.general.site_name || 'ROPENIX INVESTMENTS LTD';
   const businessAddress = settings.receipts.physical_address || settings.general.physical_address || 'Nairobi Central Business District, Nairobi, Kenya';
-  const businessEmail = settings.receipts.contact_email || settings.general.business_email || 'support@veloce.co.ke';
-  const businessPhone = settings.receipts.contact_phone || settings.general.support_phone || '+254 700 123 456';
-  const tagline = settings.general.tagline || 'Veloce Commerce & Logistics Operations';
+  const businessEmail = settings.receipts.contact_email || settings.general.business_email || 'support@ropenix.co.ke';
+  const businessPhone = settings.receipts.contact_phone || settings.general.support_phone || '+254 182 180 965';
+  const tagline = settings.general.tagline || 'Ropenix Collections & Logistics Operations';
 
   const [copiedField, setCopiedField] = useState<'paybill' | 'account' | 'orderId' | null>(null);
   const printableAreaRef = useRef<HTMLDivElement>(null);
@@ -155,7 +155,7 @@ export default function OrderReceiptPage({
       const blobUrl = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = blobUrl;
-      link.download = `Veloce_Order_QR_${order.id.slice(0, 8).toUpperCase()}.png`;
+      link.download = `Ropenix_Order_QR_${order.id.slice(0, 8).toUpperCase()}.png`;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
@@ -703,7 +703,7 @@ export default function OrderReceiptPage({
             This acquisition receipt is certified under 256-bit SSL encryption. All standard catalog hardware items carry comprehensive structural warranties.
           </p>
           <p className="mt-1 font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400">
-            ◆ ROPENIX INVESTMENTS LTD • VELOCE SYSTEM TERMINAL REGISTERED ◆
+            ◆ ROPENIX INVESTMENTS LTD • ROPENIX COLLECTIONS SYSTEM TERMINAL REGISTERED ◆
           </p>
         </div>
       </div>

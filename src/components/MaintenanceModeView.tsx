@@ -34,11 +34,11 @@ export default function MaintenanceModeView({ onAdminLoginClick }: MaintenanceMo
   const [isChecking, setIsChecking] = useState(false);
   const [checkStatusMessage, setCheckStatusMessage] = useState<string | null>(null);
 
-  const siteName = settings.general.site_name || 'Veloce Kenya';
-  const tagline = settings.general.tagline || 'Luxury eCommerce & Affiliate Marketplace';
+  const siteName = settings.general.site_name || 'Ropenix Collections';
+  const tagline = settings.general.tagline || 'Premium eCommerce & Affiliate Marketplace';
   const message = settings.general.maintenance_message || 'We are currently conducting scheduled system maintenance and platform enhancements. Please check back shortly.';
-  const businessEmail = settings.general.business_email || 'support@veloce.co.ke';
-  const supportPhone = settings.general.support_phone || '+254 717 147 007';
+  const businessEmail = settings.general.business_email || 'support@ropenix.co.ke';
+  const supportPhone = settings.general.support_phone || '+254 182 180 965';
   const physicalAddress = settings.general.physical_address || 'Enterprise Road, Industrial Area, Nairobi, Kenya';
 
   const handleManualRefresh = async () => {
@@ -72,7 +72,8 @@ export default function MaintenanceModeView({ onAdminLoginClick }: MaintenanceMo
   const whatsappMessage = encodeURIComponent(
     `Hello ${siteName}, I am reaching out regarding the storefront maintenance.`
   );
-  const whatsappUrl = `https://wa.me/254717147007?text=${whatsappMessage}`;
+  const cleanWaNumber = (settings.payments?.whatsapp_number || '0182180965').replace(/\D/g, '').replace(/^0/, '254');
+  const whatsappUrl = `https://wa.me/${cleanWaNumber}?text=${whatsappMessage}`;
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col justify-between font-sans selection:bg-indigo-600 selection:text-white">

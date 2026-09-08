@@ -27,7 +27,7 @@ export default function ProductShareModal({ product, onClose }: ProductShareModa
   const shareUrl = `${window.location.origin}${window.location.pathname}?product=${product.id}`;
 
   const colorOptions = [
-    { name: 'Indigo Veloce', hex: '#1e1b4b' },
+    { name: 'Indigo Ropenix', hex: '#1e1b4b' },
     { name: 'Obsidian Black', hex: '#0f172a' },
     { name: 'Emerald Forest', hex: '#064e3b' },
     { name: 'Ruby Wine', hex: '#4c0519' },
@@ -62,9 +62,7 @@ export default function ProductShareModal({ product, onClose }: ProductShareModa
               const logoGroup = `
   <g transform="translate(${x.toFixed(4)}, ${y.toFixed(4)}) scale(${scale.toFixed(6)})">
     <rect x="0" y="0" width="56" height="56" rx="12" ry="12" fill="#ffffff" stroke="#f1f5f9" stroke-width="1.5" />
-    <path d="M18 18h6l4 18h-6z" fill="${qrColor}" />
-    <path d="M38 18h-6l-4 18h6z" fill="${qrColor}" />
-    <path d="M28 15l3 3l-3 3l-3-3z" fill="#6366f1" />
+    <image href="/ropenix_icon.png" x="8" y="8" width="40" height="40" preserveAspectRatio="xMidYMid meet" />
   </g>`;
               finalSvg = svgString.replace('</svg>', `${logoGroup}</svg>`);
             }
@@ -89,7 +87,7 @@ export default function ProductShareModal({ product, onClose }: ProductShareModa
           },
           errorCorrectionLevel: 'H'
         })
-        .then(() => {
+        .then(async () => {
           if (includeLogo) {
             const ctx = canvas.getContext('2d');
             if (ctx) {
@@ -128,33 +126,16 @@ export default function ProductShareModal({ product, onClose }: ProductShareModa
               ctx.lineWidth = 1.5;
               ctx.stroke();
 
-              // Stylized high-fidelity minimalist brand 'V' crest matching chosen color
-              ctx.fillStyle = qrColor;
-              ctx.beginPath();
-              ctx.moveTo(x + 18, y + 18);
-              ctx.lineTo(x + 24, y + 18);
-              ctx.lineTo(x + 28, y + 36);
-              ctx.lineTo(x + 22, y + 36);
-              ctx.closePath();
-              ctx.fill();
-              
-              ctx.beginPath();
-              ctx.moveTo(x + 38, y + 18);
-              ctx.lineTo(x + 32, y + 18);
-              ctx.lineTo(x + 28, y + 36);
-              ctx.lineTo(x + 34, y + 36);
-              ctx.closePath();
-              ctx.fill();
-
-              // Indigo spark highlighting the top vertex intersection
-              ctx.beginPath();
-              ctx.moveTo(x + 28, y + 15);
-              ctx.lineTo(x + 31, y + 18);
-              ctx.lineTo(x + 28, y + 21);
-              ctx.lineTo(x + 25, y + 18);
-              ctx.closePath();
-              ctx.fillStyle = '#6366f1';
-              ctx.fill();
+              // Draw Ropenix icon
+              await new Promise<void>((resolve) => {
+                const img = new Image();
+                img.onload = () => {
+                  ctx.drawImage(img, x + 8, y + 8, 40, 40);
+                  resolve();
+                };
+                img.onerror = () => resolve();
+                img.src = '/ropenix_icon.png';
+              });
             }
           }
           
@@ -211,7 +192,7 @@ export default function ProductShareModal({ product, onClose }: ProductShareModa
       name: 'Email',
       icon: Mail,
       color: 'bg-gray-700 hover:bg-gray-800 text-white',
-      url: `mailto:?subject=${encodeURIComponent(`Aesthetic Workspace Objects: ${product.name}`)}&body=${encodeURIComponent(`Hi!\n\nI thought you'd love to see this exquisite workspace design artifact on Veloce:\n\n${product.name}\n${product.description}\n\nView details: ${shareUrl}`)}`,
+      url: `mailto:?subject=${encodeURIComponent(`Aesthetic Workspace Objects: ${product.name}`)}&body=${encodeURIComponent(`Hi!\n\nI thought you'd love to see this exquisite workspace design artifact on Ropenix Collections:\n\n${product.name}\n${product.description}\n\nView details: ${shareUrl}`)}`,
     },
   ];
 

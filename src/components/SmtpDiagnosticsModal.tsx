@@ -73,7 +73,7 @@ interface DiagnosticReport {
 export default function SmtpDiagnosticsModal({
   isOpen,
   onClose,
-  defaultEmail = 'admin@veloce.co.ke'
+  defaultEmail = 'admin@ropenix.co.ke'
 }: SmtpDiagnosticsModalProps) {
   const [recipient, setRecipient] = useState(defaultEmail);
   const [isRunning, setIsRunning] = useState(false);
@@ -183,7 +183,7 @@ export default function SmtpDiagnosticsModal({
           host: 'mail.marid.co.ke',
           port: 465,
           user: 'noreply@marid.co.ke',
-          defaultFrom: 'Veloce Kenya <noreply@marid.co.ke>',
+          defaultFrom: 'Ropenix Collections <noreply@marid.co.ke>',
           useSsl: true,
           backend: 'django.core.mail.backends.smtp.EmailBackend'
         },
@@ -209,7 +209,7 @@ export default function SmtpDiagnosticsModal({
 
   const handleCopyLogs = () => {
     if (!logs.length) return;
-    const textToCopy = `=== VELOCE SMTP DIAGNOSTIC REPORT ===\nTimestamp: ${report?.timestamp || new Date().toISOString()}\nRecipient: ${recipient}\nHost: ${report?.config.host}:${report?.config.port}\nStatus: ${report?.success ? 'PASSED' : 'FAILED'}\n\nLOGS:\n${logs.join('\n')}\n\n${report?.errorDetails ? `ERROR DETAILS:\n${JSON.stringify(report.errorDetails, null, 2)}` : ''}`;
+    const textToCopy = `=== ROPENIX SMTP DIAGNOSTIC REPORT ===\nTimestamp: ${report?.timestamp || new Date().toISOString()}\nRecipient: ${recipient}\nHost: ${report?.config.host}:${report?.config.port}\nStatus: ${report?.success ? 'PASSED' : 'FAILED'}\n\nLOGS:\n${logs.join('\n')}\n\n${report?.errorDetails ? `ERROR DETAILS:\n${JSON.stringify(report.errorDetails, null, 2)}` : ''}`;
     navigator.clipboard.writeText(textToCopy);
     setCopiedLogs(true);
     setTimeout(() => setCopiedLogs(false), 2000);
@@ -259,7 +259,7 @@ export default function SmtpDiagnosticsModal({
                     type="email"
                     value={recipient}
                     onChange={(e) => setRecipient(e.target.value)}
-                    placeholder="Enter email e.g. admin@veloce.co.ke"
+                    placeholder="Enter email e.g. admin@ropenix.co.ke"
                     className="w-full pl-10 pr-4 py-2.5 text-sm bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all text-slate-800 dark:text-slate-100 font-mono"
                   />
                   <Mail className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />

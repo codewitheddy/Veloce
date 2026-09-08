@@ -267,12 +267,12 @@ function generateHTMLReceipt(order: Order, currency: CurrencyType = 'KSh') {
     <table class="header-table">
       <tr>
         <td style="vertical-align: top;">
-          <div class="brand-title">ROPENIX INVESTMENTS LTD</div>
-          <div class="brand-subtitle">Veloce Commerce & Logistics Operations</div>
+          <div class="brand-title">ROPENIX INVESTMENTS LIMITED</div>
+          <div class="brand-subtitle">Ropenix Collections & Commerce Operations</div>
           <p style="font-size: 11px; color: #4b5563; font-weight: 300; line-height: 1.5; margin-top: 10px;">
             Nairobi CBD, Nairobi, Kenya<br>
             Paybill: 303030 | Account: 2047728455<br>
-            support@veloce.co.ke
+            support@ropenix.co.ke
           </p>
         </td>
         <td style="text-align: right; vertical-align: top;" class="invoice-details">
@@ -419,7 +419,7 @@ export default function CheckoutFlow({
   const mpesaPaybill = settings.payments.mpesa_paybill || '303030';
   const mpesaAccountNumber = settings.payments.mpesa_account_number || '2047728455';
   const mpesaAccountName = settings.payments.mpesa_account_name || 'ROPENIX INVESTMENTS LTD';
-  const whatsappNumber = settings.payments.whatsapp_number || '0717147007';
+  const whatsappNumber = settings.payments.whatsapp_number || '0182180965';
   const cleanWhatsAppNumber = whatsappNumber.replace(/\D/g, '').replace(/^0/, '254').replace(/^254254/, '254');
 
   const buildWhatsAppOrderUrl = (order: Order) => {
@@ -437,34 +437,34 @@ export default function CheckoutFlow({
 
     const deliveryText =
       order.fulfillmentType === 'pickup'
-        ? `🏬 *Fulfillment:* Self-Pickup (${order.pickupLocation || 'Warehouse Hub'})`
-        : `🚚 *Delivery Address:* ${order.shippingAddress || 'Nairobi'} (${shippingCity}, Postal Code: ${shippingZip})`;
+        ? `• *Fulfillment:* Self-Pickup (${order.pickupLocation || 'Warehouse Hub'})`
+        : `• *Delivery Address:* ${order.shippingAddress || 'Nairobi'} (${shippingCity}, Postal Code: ${shippingZip})`;
 
     const discountsText =
       order.discountAmount && order.discountAmount > 0
-        ? `\n🏷️ *Discount Savings:* -KSh ${order.discountAmount.toLocaleString('en-KE')}`
+        ? `\n• *Discount Savings:* -KSh ${order.discountAmount.toLocaleString('en-KE')}`
         : '';
 
     const couponText = order.couponCode ? ` (Promo: ${order.couponCode})` : '';
 
-    const message = `🛍️ *NEW ORDER - VELOCE KENYA*
+    const message = `*NEW ORDER - ROPENIX COLLECTIONS*
 ----------------------------------------
-📋 *Order Ref:* #${order.id.toUpperCase()}
-👤 *Customer Name:* ${order.customerName}
-📞 *Phone Number:* ${order.phone || 'N/A'}
-📧 *Email:* ${order.customerEmail}
+• *Order Ref:* #${order.id.toUpperCase()}
+• *Customer Name:* ${order.customerName}
+• *Phone Number:* ${order.phone || 'N/A'}
+• *Email:* ${order.customerEmail}
 ${deliveryText}
 
-📦 *Order Items:*
+*Order Items:*
 ${itemsList}
 ----------------------------------------
-💰 *Subtotal:* KSh ${(order.subtotal || order.total).toLocaleString('en-KE')}
-🚚 *Delivery:* ${order.shippingFee === 0 ? 'FREE' : `KSh ${(order.shippingFee || 0).toLocaleString('en-KE')}`}${discountsText}${couponText}
-💵 *ORDER TOTAL:* *KSh ${order.total.toLocaleString('en-KE')}*
+• *Subtotal:* KSh ${(order.subtotal || order.total).toLocaleString('en-KE')}
+• *Delivery:* ${order.shippingFee === 0 ? 'FREE' : `KSh ${(order.shippingFee || 0).toLocaleString('en-KE')}`}${discountsText}${couponText}
+• *ORDER TOTAL:* *KSh ${order.total.toLocaleString('en-KE')}*
 
-💳 *Payment Option:* WhatsApp Order (M-Pesa / Cash on Confirmation)
+• *Payment Option:* WhatsApp Order (M-Pesa / Cash on Confirmation)
 ----------------------------------------
-_Hello Veloce Team, I would like to place and confirm this order!_`;
+_Hello Ropenix Team, I would like to place and confirm this order!_`;
 
     return `https://wa.me/${cleanWhatsAppNumber}?text=${encodeURIComponent(message)}`;
   };
@@ -1460,9 +1460,9 @@ _Hello Veloce Team, I would like to place and confirm this order!_`;
                 {/* Receipt Sign-off */}
                 <div className="mt-8 border-t border-gray-100 pt-4 text-[11px] text-gray-500 leading-relaxed">
                   <p className="margin: 0 0 4px 0;">Thank you for shopping with us,</p>
-                  <strong className="text-gray-800 block mt-0.5 font-semibold">{settings.general.site_name || 'Veloce Kenya Team'}</strong>
+                  <strong className="text-gray-800 block mt-0.5 font-semibold">{settings.general.site_name || 'Ropenix Collections Team'}</strong>
                   <p className="text-[10px] text-gray-400 mt-3 leading-normal">
-                    Need help with your order? Reach our support desk at <a href={`mailto:${settings.general.business_email || 'support@veloce.co.ke'}`} className="text-indigo-600 underline">{settings.general.business_email || 'support@veloce.co.ke'}</a> or call {settings.general.support_phone || '+254 717 147 007'}.
+                    Need help with your order? Reach our support desk at <a href={`mailto:${settings.general.business_email || 'support@ropenix.co.ke'}`} className="text-indigo-600 underline">{settings.general.business_email || 'support@ropenix.co.ke'}</a> or call {settings.general.support_phone || '+254 182 180 965'}.
                   </p>
                 </div>
               </div>
@@ -1476,7 +1476,7 @@ _Hello Veloce Team, I would like to place and confirm this order!_`;
             <div className="flex justify-between items-start border-b-2 border-indigo-100 pb-5">
               <div>
                 <span className="font-display text-xl font-bold tracking-tight text-gray-950 block">
-                  {settings.receipts.legal_business_name || settings.general.site_name || 'VELOCE KENYA LTD'}
+                  {settings.receipts.legal_business_name || settings.general.site_name || 'ROPENIX INVESTMENTS LIMITED'}
                 </span>
                 <span className="font-mono text-[9px] font-bold text-gray-400 uppercase tracking-widest block mt-0.5">
                   {settings.receipts.receipt_header_text || 'Official Order Confirmation & Receipt'}
@@ -1484,7 +1484,7 @@ _Hello Veloce Team, I would like to place and confirm this order!_`;
                 <p className="text-[10px] text-gray-550 font-extralight mt-2 max-w-xs leading-relaxed">
                   {settings.receipts.physical_address || settings.general.physical_address || 'Nairobi CBD, Nairobi, Kenya'}<br />
                   Paybill: {settings.payments.mpesa_paybill || '303030'} | Account: {settings.payments.mpesa_account_number || '2047728455'}<br />
-                  {settings.receipts.contact_email || settings.general.business_email || 'support@veloce.co.ke'}
+                  {settings.receipts.contact_email || settings.general.business_email || 'support@ropenix.co.ke'}
                 </p>
               </div>
               <div className="text-right flex flex-col items-end">
@@ -2792,7 +2792,7 @@ _Hello Veloce Team, I would like to place and confirm this order!_`;
                                   Official WhatsApp Concierge Desk
                                 </h5>
                                 <span className="text-[11px] font-mono font-bold text-[#1ea952] dark:text-[#25D366]">
-                                  WhatsApp Line: +254 717 147 007 ({whatsappNumber})
+                                  WhatsApp Line: +254 182 180 965 ({whatsappNumber})
                                 </span>
                               </div>
                               <span className="px-2 py-0.5 rounded-md bg-emerald-100 dark:bg-emerald-900 text-emerald-800 dark:text-emerald-300 font-mono text-[9.5px] font-bold">

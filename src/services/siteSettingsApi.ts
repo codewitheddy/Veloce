@@ -14,17 +14,17 @@ import {
 
 const API_BASE = '/api/settings';
 
-const DEFAULT_SETTINGS_STORAGE_KEY = 'veloce_site_settings_cache';
-const THEMES_STORAGE_KEY = 'veloce_theme_presets_cache';
-const BACKUPS_STORAGE_KEY = 'veloce_backups_cache';
-const AUDIT_LOGS_STORAGE_KEY = 'veloce_settings_audit_logs_cache';
+const DEFAULT_SETTINGS_STORAGE_KEY = 'ropenix_site_settings_cache';
+const THEMES_STORAGE_KEY = 'ropenix_theme_presets_cache';
+const BACKUPS_STORAGE_KEY = 'ropenix_backups_cache';
+const AUDIT_LOGS_STORAGE_KEY = 'ropenix_settings_audit_logs_cache';
 
 export const INITIAL_DEFAULT_SETTINGS: FullSiteSettings = {
   general: {
-    site_name: 'Veloce Atelier',
-    tagline: 'Luxury eCommerce & Affiliate Marketplace',
-    business_email: 'concierge@veloce.co.ke',
-    support_phone: '+254 700 000 000',
+    site_name: 'Ropenix Collections',
+    tagline: 'Premium eCommerce & Affiliate Marketplace',
+    business_email: 'concierge@ropenix.co.ke',
+    support_phone: '+254 182 180 965',
     physical_address: 'Enterprise Road, Industrial Area, Nairobi, Kenya',
     currency: 'KES',
     currency_symbol: 'KSh',
@@ -56,15 +56,15 @@ export const INITIAL_DEFAULT_SETTINGS: FullSiteSettings = {
   receipts: {
     invoice_prefix: 'INV',
     invoice_format: 'INV-{YYYY}-{SEQ:5}',
-    legal_business_name: 'Veloce Technologies Ltd',
+    legal_business_name: 'Ropenix Investments Limited',
     business_reg_number: 'CPR/2023/981244',
-    physical_address: 'Veloce Hub, Ring Road Parklands, Westlands, Nairobi',
-    contact_phone: '+254 712 345 678',
-    contact_email: 'invoicing@veloce.co.ke',
-    receipt_header_text: 'Thank you for acquiring with Veloce Atelier.',
+    physical_address: 'Ropenix Hub, Ring Road Parklands, Westlands, Nairobi',
+    contact_phone: '+254 182 180 965',
+    contact_email: 'invoicing@ropenix.co.ke',
+    receipt_header_text: 'Thank you for acquiring with Ropenix Collections.',
     receipt_footer_text: 'All items carry dynamic warranty certificates. Returns accepted within 14 days in original condition.',
     etims_enabled: true,
-    etims_client_id: 'ETIMS-VELOCE-LIVE-9042',
+    etims_client_id: 'ETIMS-ROPENIX-LIVE-9042',
     etims_client_secret: 'sec_live_94819a8f27e6',
     etims_environment: 'sandbox',
     etims_auto_submit: true,
@@ -84,39 +84,39 @@ export const INITIAL_DEFAULT_SETTINGS: FullSiteSettings = {
     mpesa_paybill: '303030',
     mpesa_account_name: 'ROPENIX INVESTMENTS LTD',
     mpesa_account_number: '2047728455',
-    mpesa_consumer_key: 'vLc_key_live_2026',
-    mpesa_consumer_secret: 'vLc_sec_99418294',
+    mpesa_consumer_key: 'rop_key_live_2026',
+    mpesa_consumer_secret: 'rop_sec_99418294',
     mpesa_passkey: 'bfb279f9aa9bdbcf158e97dd71a467cd2e0c893059b10f78e6b72ada1ed2c919',
     card_enabled: true,
     card_provider: 'stripe',
     cod_enabled: true,
     cod_max_limit: 50000,
     whatsapp_order_enabled: true,
-    whatsapp_number: '0717147007'
+    whatsapp_number: '0182180965'
   },
   notifications: {
     smtp_host: 'smtp.gmail.com',
     smtp_port: 587,
-    smtp_user: 'notifications@veloce.co.ke',
+    smtp_user: 'notifications@ropenix.co.ke',
     smtp_use_tls: true,
-    sender_name: 'Veloce Concierge',
-    sender_email: 'concierge@veloce.co.ke',
+    sender_name: 'Ropenix Concierge',
+    sender_email: 'concierge@ropenix.co.ke',
     sms_enabled: true,
     sms_provider: 'africastalking',
-    sms_sender_id: 'VELOCE',
+    sms_sender_id: 'ROPENIX',
     notify_on_order_placed: true,
     notify_on_dispatched: true,
     notify_on_delivered: true,
     notify_on_refund: true
   },
   seo: {
-    meta_title: 'Veloce Atelier | Premium eCommerce & Affiliate Marketplace',
+    meta_title: 'Ropenix Collections | Premium eCommerce & Affiliate Marketplace',
     meta_description: 'Curated luxury fashion, artisan timepieces, cutting-edge technology and tailored bespoke garments in Nairobi, Kenya.',
-    meta_keywords: 'luxury shopping, artisan fashion, watches, nairobi commerce, veloce, bespoke atelier',
+    meta_keywords: 'luxury shopping, artisan fashion, watches, nairobi commerce, ropenix collections, bespoke atelier',
     og_image_url: '/src/assets/images/og_banner_default.jpg',
-    canonical_base_url: 'https://veloce.co.ke',
-    google_analytics_id: 'G-VELOCE2026',
-    google_tag_manager_id: 'GTM-VLC9981'
+    canonical_base_url: 'https://ropenix.co.ke',
+    google_analytics_id: 'G-ROPENIX2026',
+    google_tag_manager_id: 'GTM-ROP9981'
   },
   access_control: {
     enforce_2fa: false,
@@ -136,8 +136,8 @@ export const INITIAL_DEFAULT_SETTINGS: FullSiteSettings = {
 export const INITIAL_THEME_PRESETS: ThemePreset[] = [
   {
     id: 'theme-default-indigo',
-    name: 'Veloce Classic Indigo',
-    description: 'The timeless signature Veloce palette with deep indigo and electric cyan.',
+    name: 'Ropenix Classic Indigo',
+    description: 'The timeless signature Ropenix palette with deep indigo and electric cyan.',
     primary_color: '#4f46e5',
     secondary_color: '#06b6d4',
     accent_color: '#f59e0b',
@@ -448,6 +448,9 @@ export function applyAppearanceToDom(appearance: AppearanceSettings) {
 
   // Broadcast event for active listeners
   window.dispatchEvent(
+    new CustomEvent('ropenix_appearance_applied', { detail: appearance })
+  );
+  window.dispatchEvent(
     new CustomEvent('veloce_appearance_applied', { detail: appearance })
   );
 }
@@ -458,27 +461,18 @@ export function applyAppearanceToDom(appearance: AppearanceSettings) {
 // Vite dev proxy from cancelling in-flight write requests mid-lifecycle.
 async function fetchWithTimeout(url: string, options: RequestInit = {}, timeoutMs = 10000): Promise<Response> {
   const isWriteOp = options.method && options.method !== 'GET' && options.method !== 'HEAD';
+  const timeout = isWriteOp ? Math.max(timeoutMs, 10000) : timeoutMs;
+  let timerId: any;
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timerId = setTimeout(() => reject(new Error(`Fetch timed out after ${timeout}ms: ${url}`)), timeout);
+  });
 
-  if (isWriteOp) {
-    // Write operations get a plain fetch with no signal — cannot be externally aborted.
-    // Timeout is enforced via Promise.race with a plain rejection (not AbortError).
-    return Promise.race([
-      fetch(url, options),
-      new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error(`Request to ${url} timed out after ${timeoutMs}ms`)), timeoutMs)
-      )
-    ]);
-  }
-
-  // Read operations use AbortController for clean cancellation on timeout.
-  const controller = new AbortController();
-  const id = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const response = await fetch(url, { ...options, signal: controller.signal });
-    clearTimeout(id);
-    return response;
+    const result = await Promise.race([fetch(url, options), timeoutPromise]);
+    clearTimeout(timerId);
+    return result as Response;
   } catch (err) {
-    clearTimeout(id);
+    clearTimeout(timerId);
     throw err;
   }
 }
@@ -491,6 +485,7 @@ export const siteSettingsApi = {
       if (res.ok) {
         const data = await res.json();
         localStorage.setItem(DEFAULT_SETTINGS_STORAGE_KEY, JSON.stringify(data));
+        localStorage.setItem('veloce_site_settings_cache', JSON.stringify(data));
         applyAppearanceToDom(data.appearance);
         return data;
       }
@@ -498,8 +493,19 @@ export const siteSettingsApi = {
       console.warn('Backend settings unavailable, reading local cache:', err);
     }
 
-    const cached = localStorage.getItem(DEFAULT_SETTINGS_STORAGE_KEY);
-    const settings = cached ? JSON.parse(cached) : INITIAL_DEFAULT_SETTINGS;
+    const cached = localStorage.getItem('ropenix_site_settings_cache') || localStorage.getItem('veloce_site_settings_cache');
+    const settings: FullSiteSettings = cached ? JSON.parse(cached) : INITIAL_DEFAULT_SETTINGS;
+    if (settings) {
+      if (settings.general && (settings.general.support_phone === '+254 700 000 000' || settings.general.support_phone === '+254 717 147 007')) {
+        settings.general.support_phone = '+254 182 180 965';
+      }
+      if (settings.receipts && (settings.receipts.contact_phone === '+254 712 345 678' || settings.receipts.contact_phone === '+254 700 000 000')) {
+        settings.receipts.contact_phone = '+254 182 180 965';
+      }
+      if (settings.payments && (!settings.payments.whatsapp_number || settings.payments.whatsapp_number === '0717147007' || settings.payments.whatsapp_number === '0700000000')) {
+        settings.payments.whatsapp_number = '0182180965';
+      }
+    }
     applyAppearanceToDom(settings.appearance);
     return settings;
   },
@@ -507,7 +513,7 @@ export const siteSettingsApi = {
   async updateSection<K extends keyof FullSiteSettings>(
     section: K,
     data: Partial<FullSiteSettings[K]>,
-    adminEmail = 'admin@veloce.co.ke'
+    adminEmail = 'admin@ropenix.co.ke'
   ): Promise<{ message: string; data: FullSiteSettings[K] }> {
     // 1. Try to synchronize with Django REST backend FIRST (primary source of truth)
     let backendSuccess = false;
@@ -532,7 +538,7 @@ export const siteSettingsApi = {
     }
 
     // 2. Update local storage ONLY AFTER backend succeeds
-    const cached = localStorage.getItem(DEFAULT_SETTINGS_STORAGE_KEY);
+    const cached = localStorage.getItem('ropenix_site_settings_cache') || localStorage.getItem('veloce_site_settings_cache');
     const current: FullSiteSettings = cached ? JSON.parse(cached) : INITIAL_DEFAULT_SETTINGS;
 
     // If backend succeeded, use backend data; otherwise use optimistic data
@@ -543,11 +549,17 @@ export const siteSettingsApi = {
     }
 
     localStorage.setItem(DEFAULT_SETTINGS_STORAGE_KEY, JSON.stringify(current));
+    localStorage.setItem('veloce_site_settings_cache', JSON.stringify(current));
 
     if (section === 'appearance') {
       applyAppearanceToDom(current.appearance);
     }
 
+    window.dispatchEvent(
+      new CustomEvent('ropenix_site_settings_updated', {
+        detail: { section, data: current[section] }
+      })
+    );
     window.dispatchEvent(
       new CustomEvent('veloce_site_settings_updated', {
         detail: { section, data: current[section] }
@@ -619,7 +631,7 @@ export const siteSettingsApi = {
     return newPreset;
   },
 
-  async activateThemePreset(id: string, adminEmail = 'admin@veloce.co.ke'): Promise<AppearanceSettings> {
+  async activateThemePreset(id: string, adminEmail = 'admin@ropenix.co.ke'): Promise<AppearanceSettings> {
     let backendAppearance: AppearanceSettings | null = null;
     let backendPreset: ThemePreset | null = null;
 
@@ -681,6 +693,11 @@ export const siteSettingsApi = {
     localStorage.setItem(DEFAULT_SETTINGS_STORAGE_KEY, JSON.stringify(settings));
     applyAppearanceToDom(settings.appearance);
 
+    window.dispatchEvent(
+      new CustomEvent('ropenix_site_settings_updated', {
+        detail: { section: 'appearance', data: settings.appearance }
+      })
+    );
     window.dispatchEvent(
       new CustomEvent('veloce_site_settings_updated', {
         detail: { section: 'appearance', data: settings.appearance }
@@ -749,9 +766,9 @@ export const siteSettingsApi = {
     return INITIAL_BACKUP_SNAPSHOTS;
   },
 
-  async createBackup(notes = 'Manual admin snapshot', adminEmail = 'admin@veloce.co.ke'): Promise<BackupSnapshot> {
+  async createBackup(notes = 'Manual admin snapshot', adminEmail = 'admin@ropenix.co.ke'): Promise<BackupSnapshot> {
     const timestampStr = new Date().toISOString().replace(/[:.]/g, '-');
-    const filename = `veloce_backup_${timestampStr}.json`;
+    const filename = `ropenix_backup_${timestampStr}.json`;
     const cached = localStorage.getItem(DEFAULT_SETTINGS_STORAGE_KEY);
     const settings: FullSiteSettings = cached ? JSON.parse(cached) : INITIAL_DEFAULT_SETTINGS;
     const backupObj = {
@@ -818,7 +835,7 @@ export const siteSettingsApi = {
     return snapshot;
   },
 
-  async restoreBackup(id: string, adminEmail = 'admin@veloce.co.ke'): Promise<{ message: string }> {
+  async restoreBackup(id: string, adminEmail = 'admin@ropenix.co.ke'): Promise<{ message: string }> {
     // 1. Try to restore backup on backend FIRST (primary source of truth)
     let restoreResult: { message: string } | null = null;
 
@@ -886,7 +903,7 @@ export const siteSettingsApi = {
     section: string,
     action: string,
     newState: Record<string, any>,
-    userEmail = 'admin@veloce.co.ke'
+    userEmail = 'admin@ropenix.co.ke'
   ) {
     const entry: SettingsAuditLog = {
       id: `audit-${Date.now()}-${Math.floor(Math.random() * 1000)}`,

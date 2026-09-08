@@ -22,6 +22,14 @@ const nextConfig = {
       },
       {
         protocol: 'https',
+        hostname: 'ropenix.co.ke',
+      },
+      {
+        protocol: 'https',
+        hostname: 'res.cloudinary.com',
+      },
+      {
+        protocol: 'https',
         hostname: 'veloce.co.ke',
       },
     ],
