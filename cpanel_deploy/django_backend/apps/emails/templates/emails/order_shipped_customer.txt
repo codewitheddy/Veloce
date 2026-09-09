@@ -1,0 +1,12 @@
+{% extends "emails/base.txt" %}
+
+{% block content %}
+Dear {{ customer_name }},
+
+Your order #{{ order_short_id }} has shipped!
+
+Tracking Number : {{ tracking_number|default:"In Transit (Standard Dispatch)" }}
+Shipping Address: {{ shipping_address|default:"Customer Delivery Address" }}
+
+You can track your package progress anytime at: {{ frontend_url }}/orders
+{% endblock %}

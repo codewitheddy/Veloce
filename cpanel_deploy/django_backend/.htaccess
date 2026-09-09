@@ -1,0 +1,19 @@
+# ==============================================================================
+# Django Backend - cPanel Apache Configuration (.htaccess)
+# ==============================================================================
+
+# Protect source files and databases from direct web access
+<FilesMatch "\.(py|pyc|sqlite|sqlite3|env|example|json|log|sh|md)$">
+  Order allow,deny
+  Deny from all
+</FilesMatch>
+
+Options -Indexes
+
+# Security Headers
+<IfModule mod_headers.c>
+  Header set X-Content-Type-Options "nosniff"
+  Header set X-Frame-Options "SAMEORIGIN"
+  Header set X-XSS-Protection "1; mode=block"
+  Header set Referrer-Policy "strict-origin-when-cross-origin"
+</IfModule>

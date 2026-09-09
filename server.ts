@@ -6,7 +6,6 @@
 import express from "express";
 import path from "path";
 import crypto from "crypto";
-import { createServer as createViteServer } from "vite";
 import dotenv from "dotenv";
 import nodemailer from "nodemailer";
 import dns from "dns";
@@ -16,7 +15,9 @@ import { getSqliteDbStatus, pushSyncDataSqlite, pullSyncDataSqlite, purgeAllSqli
 dotenv.config();
 
 const app = express();
-const PORT = Number(process.env.PORT) || 3000;
+const rawPort = process.env.PORT;
+const isNumericPort = rawPort && !isNaN(Number(rawPort));
+const PORT: number | string = isNumericPort ? Number(rawPort) : rawPort || 3000;
 
 // Security & Production Hardening Headers
 app.disable("x-powered-by");
@@ -4540,14 +4541,26 @@ async function startServer() {
     console.error("[Expiry Check] Startup execution error:", err);
   });
 
-  // Vite dev middleware setup in dev mode
+  // Vite dev middleware setup in dev mode (dynamically loaded so production bundle does not require Vite)
   if (process.env.NODE_ENV !== "production") {
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
-      appType: "spa",
-    });
-    // Use Vite middlewares
-    app.use(vite.middlewares);
+    try {
+      const { createServer: createViteServer } = await import("vite");
+      const vite = await createViteServer({
+        server: { middlewareMode: true },
+        appType: "spa",
+      });
+      // Use Vite middlewares
+      app.use(vite.middlewares);
+    } catch (viteErr) {
+      console.warn("[Vite Middleware] Vite dev server not initialized, falling back to production static assets:", viteErr);
+      const distPath = path.join(process.cwd(), "dist");
+      app.use("/assets", express.static(path.join(distPath, "assets"), { maxAge: "1y", immutable: true }));
+      app.use(express.static(distPath, { maxAge: "1h" }));
+      app.get("*", (req, res) => {
+        res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+        res.sendFile(path.join(distPath, "index.html"));
+      });
+    }
   } else {
     // Serve production static assets from dist with caching policies
     const distPath = path.join(process.cwd(), "dist");
@@ -4578,9 +4591,13 @@ async function startServer() {
     });
   });
 
-  const server = app.listen(PORT, "0.0.0.0", () => {
-    console.log(`[Veloce Server] Running on http://localhost:${PORT}`);
-  });
+  const server = typeof PORT === "number"
+    ? app.listen(PORT, "0.0.0.0", () => {
+        console.log(`[Veloce Server] Running on http://localhost:${PORT}`);
+      })
+    : app.listen(PORT, () => {
+        console.log(`[Veloce Server] Running on Passenger socket/custom port: ${PORT}`);
+      });
 
   const gracefulShutdown = (signal: string) => {
     console.log(`[Veloce Server] Received ${signal}. Shutting down gracefully...`);

@@ -195,7 +195,7 @@ export default function ProductImageUpload({
               <button
                 type="button"
                 onClick={clearImage}
-                className="absolute top-1 right-1 rounded-full bg-red-650 hover:bg-red-750 text-white p-1 shadow-md transition-all opacity-90 hover:scale-105 cursor-pointer"
+                className="absolute top-1 right-1 rounded-full bg-red-600 hover:bg-red-700 text-white p-1 shadow-md transition-all opacity-90 hover:scale-105 cursor-pointer"
                 title="Discard picture"
               >
                 <X className="h-3 w-3" />
@@ -289,7 +289,7 @@ export default function ProductImageUpload({
       )}
 
       {error && (
-        <p className="text-[10px] font-bold text-red-650 dark:text-red-400 mt-1 animate-pulse leading-tight">
+        <p className="text-[10px] font-bold text-red-600 dark:text-red-400 mt-1 animate-pulse leading-tight">
           {error}
         </p>
       )}

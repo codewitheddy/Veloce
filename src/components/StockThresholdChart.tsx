@@ -419,7 +419,7 @@ export default function StockThresholdChart({
                           <div className="space-y-1.5 font-sans">
                             <div className="flex justify-between text-gray-500 dark:text-slate-400">
                               <span>Current Stock:</span>
-                              <strong className={`font-mono ${d.stock <= d.threshold ? 'text-red-650 dark:text-red-400 font-bold' : 'text-gray-900 dark:text-slate-200'}`}>
+                              <strong className={`font-mono ${d.stock <= d.threshold ? 'text-red-600 dark:text-red-400 font-bold' : 'text-gray-900 dark:text-slate-200'}`}>
                                 {d.stock} units
                               </strong>
                             </div>
@@ -521,7 +521,7 @@ export default function StockThresholdChart({
                       </div>
                       <span className={`text-[8px] font-extrabold font-mono px-1.5 py-0.2 rounded shrink-0 uppercase tracking-wider ${
                         item.priority === 'high'
-                          ? 'bg-red-50 text-red-650 border border-red-100'
+                          ? 'bg-red-50 text-red-700 border border-red-100'
                           : 'bg-amber-50 text-amber-700 border border-amber-100'
                       }`}>
                         {item.stock === 0 ? 'OUT OF STOCK' : `${item.priority} Priority`}

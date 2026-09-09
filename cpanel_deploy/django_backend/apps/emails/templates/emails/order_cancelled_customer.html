@@ -1,0 +1,28 @@
+{% extends "emails/base.html" %}
+
+{% block title %}Order Cancelled #{{ order_short_id }} | {{ brand_name }}{% endblock %}
+
+{% block header_style %}
+background: linear-gradient(135deg, #dc2626 0%, #991b1b 100%);
+{% endblock %}
+
+{% block header %}
+<span class="header-badge" style="background: rgba(255,255,255,0.25);">Cancelled</span>
+<h1 class="header-title">Order Has Been Cancelled</h1>
+<p class="header-subtitle">Order #{{ order_short_id }} • {{ current_time_utc }}</p>
+{% endblock %}
+
+{% block content %}
+<p style="font-size: 15px; margin: 0 0 12px 0;">Hi <strong>{{ customer_name }}</strong>,</p>
+<p style="font-size: 14px; color: #4b5563; line-height: 1.6; margin: 0 0 16px 0;">
+    Your order <strong>#{{ order_short_id }}</strong> has been cancelled.
+</p>
+
+<div class="highlight-badge" style="background-color: #fef2f2; border-left-color: #dc2626; color: #991b1b;">
+    <strong>Notice:</strong> Any pending transaction hold or payment refund will be settled according to standard turnaround guidelines.
+</div>
+
+<p style="font-size: 13px; color: #6b7280; line-height: 1.5;">
+    If you believe this cancellation was in error, please contact our helpdesk at <a href="mailto:{{ support_email }}">{{ support_email }}</a>.
+</p>
+{% endblock %}

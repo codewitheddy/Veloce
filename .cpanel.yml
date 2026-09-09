@@ -1,0 +1,15 @@
+---
+# ==============================================================================
+# cPanel Git Version Control Automated Deployment Configuration (.cpanel.yml)
+# ==============================================================================
+# When pushing code via cPanel Git Version Control, tasks listed below are
+# automatically executed by cPanel's deployment engine.
+#
+# Customize DEPLOYPATH to match your cPanel username and destination directory:
+# Example: export DEPLOYPATH=/home/YOUR_CPANEL_USER/public_html/
+# ==============================================================================
+deployment:
+  tasks:
+    - export DEPLOYPATH=$HOME/public_html/
+    - /bin/cp -R dist/* $DEPLOYPATH/
+    - /bin/cp public/.htaccess $DEPLOYPATH/.htaccess

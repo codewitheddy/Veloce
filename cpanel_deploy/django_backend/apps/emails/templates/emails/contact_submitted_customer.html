@@ -1,0 +1,36 @@
+{% extends "emails/base.html" %}
+
+{% block title %}We Received Your Message | {{ brand_name }}{% endblock %}
+
+{% block header_style %}
+background: linear-gradient(135deg, #4f46e5 0%, #3730a3 100%);
+{% endblock %}
+
+{% block header %}
+<span class="header-badge" style="background: rgba(255,255,255,0.2);">Inquiry Received</span>
+<h1 class="header-title">We've Got Your Message!</h1>
+<p class="header-subtitle">Support Ticket Logged • {{ current_time_utc }}</p>
+{% endblock %}
+
+{% block content %}
+<p style="font-size: 15px; margin: 0 0 12px 0;">Hi <strong>{{ sender_name }}</strong>,</p>
+<p style="font-size: 14px; color: #4b5563; line-height: 1.6; margin: 0 0 16px 0;">
+    Thank you for reaching out to <strong>{{ brand_name }}</strong>! We have received your inquiry regarding <strong>"{{ subject_clean }}"</strong> and dispatched it directly to our customer operations desk.
+</p>
+
+<div class="highlight-badge">
+    <strong>⏱️ Response Window:</strong> Our team typically responds within <strong>1–2 business hours</strong> during standard working hours (Mon – Sat: 8:00 AM – 6:00 PM EAT).
+</div>
+
+<h3 style="font-size: 13px; text-transform: uppercase; color: #64748b; letter-spacing: 0.5px; margin: 20px 0 10px 0; font-weight: 700;">
+    Summary of Your Inquiry
+</h3>
+<div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px; margin-bottom: 20px; font-size: 13px; color: #334155;">
+    <p style="margin: 0 0 6px 0;"><strong>Topic:</strong> {{ subject_clean }}</p>
+    <p style="margin: 0; font-style: italic; color: #64748b; white-space: pre-wrap;">"{{ message }}"</p>
+</div>
+
+<p style="font-size: 13px; color: #6b7280; line-height: 1.5;">
+    If this is urgent regarding an active dispatch or payment reference, you may also reach our desk via hotline at <strong>{{ hotline_phone }}</strong>.
+</p>
+{% endblock %}

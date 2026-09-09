@@ -1,14 +1,20 @@
-export type CurrencyType = 'KSh' | 'USD' | 'EUR' | 'GBP' | 'CAD' | 'JPY' | 'AUD' | 'ZAR';
+export type CurrencyType = 'KSh' | 'USD' | 'EUR' | 'GBP' | 'CAD' | 'JPY' | 'AUD' | 'ZAR' | 'AED' | 'CNY' | 'KRW' | 'INR' | 'UGX' | 'TZS';
 
 export const DEFAULT_EXCHANGE_RATES: Record<CurrencyType, number> = {
   KSh: 1,
-  USD: 1 / 130,
-  EUR: 1 / 140,
-  GBP: 1 / 168,
-  CAD: 1 / 95,
-  JPY: 1 / 0.85,
-  AUD: 1 / 86,
-  ZAR: 1 / 7.10,
+  USD: 1 / 130,      // ~0.00769
+  EUR: 1 / 141,      // ~0.00709
+  GBP: 1 / 168,      // ~0.00595
+  CAD: 1 / 95,       // ~0.0105
+  JPY: 1 / 0.86,     // ~1.16
+  AUD: 1 / 85,       // ~0.0117
+  ZAR: 1 / 7.10,     // ~0.1408
+  AED: 1 / 35.4,     // ~0.0282
+  CNY: 1 / 18.0,     // ~0.0555
+  KRW: 1 / 0.095,    // ~10.52
+  INR: 1 / 1.55,     // ~0.645
+  UGX: 28.5,         // ~28.5 UGX
+  TZS: 20.0,         // ~20.0 TZS
 };
 
 export const CURRENCY_SYMBOLS: Record<CurrencyType, string> = {
@@ -20,6 +26,12 @@ export const CURRENCY_SYMBOLS: Record<CurrencyType, string> = {
   JPY: '¥',
   AUD: 'A$',
   ZAR: 'R',
+  AED: 'AED',
+  CNY: '¥',
+  KRW: '₩',
+  INR: '₹',
+  UGX: 'UGX',
+  TZS: 'TZS',
 };
 
 export const CURRENCY_NAMES: Record<CurrencyType, string> = {
@@ -31,6 +43,12 @@ export const CURRENCY_NAMES: Record<CurrencyType, string> = {
   JPY: 'Japanese Yen',
   AUD: 'Australian Dollar',
   ZAR: 'South African Rand',
+  AED: 'UAE Dirham',
+  CNY: 'Chinese Yuan',
+  KRW: 'South Korean Won',
+  INR: 'Indian Rupee',
+  UGX: 'Ugandan Shilling',
+  TZS: 'Tanzanian Shilling',
 };
 
 export const CURRENCY_LOCALE: Record<CurrencyType, string> = {
@@ -42,6 +60,12 @@ export const CURRENCY_LOCALE: Record<CurrencyType, string> = {
   JPY: 'ja-JP',
   AUD: 'en-AU',
   ZAR: 'en-ZA',
+  AED: 'ar-AE',
+  CNY: 'zh-CN',
+  KRW: 'ko-KR',
+  INR: 'en-IN',
+  UGX: 'en-UG',
+  TZS: 'sw-TZ',
 };
 
 // In-memory dynamic exchange rates cache
@@ -127,19 +151,16 @@ export async function fetchLiveExchangeRates(): Promise<{ success: boolean; rate
     }
     throw new Error('Invalid rate structure returned from API');
   } catch (err) {
-    console.warn('[Currency] Live Forex API fetch failed, using fallback cached rates:', err);
     // If API fetch fails, synthesize slight organic variation to simulate live market ping if offline
     const jitter = (val: number) => Number((val * (1 + (Math.random() * 0.002 - 0.001))).toFixed(6));
-    const fallbackRates: Record<CurrencyType, number> = {
-      KSh: 1,
-      USD: jitter(activeExchangeRates.USD || DEFAULT_EXCHANGE_RATES.USD),
-      EUR: jitter(activeExchangeRates.EUR || DEFAULT_EXCHANGE_RATES.EUR),
-      GBP: jitter(activeExchangeRates.GBP || DEFAULT_EXCHANGE_RATES.GBP),
-      CAD: jitter(activeExchangeRates.CAD || DEFAULT_EXCHANGE_RATES.CAD),
-      JPY: jitter(activeExchangeRates.JPY || DEFAULT_EXCHANGE_RATES.JPY),
-      AUD: jitter(activeExchangeRates.AUD || DEFAULT_EXCHANGE_RATES.AUD),
-      ZAR: jitter(activeExchangeRates.ZAR || DEFAULT_EXCHANGE_RATES.ZAR),
-    };
+    const fallbackRates = {} as Record<CurrencyType, number>;
+    (Object.keys(DEFAULT_EXCHANGE_RATES) as CurrencyType[]).forEach((cur) => {
+      if (cur === 'KSh') {
+        fallbackRates[cur] = 1;
+      } else {
+        fallbackRates[cur] = jitter(activeExchangeRates[cur] || DEFAULT_EXCHANGE_RATES[cur]);
+      }
+    });
     updateExchangeRates(fallbackRates, false);
     return {
       success: false,
@@ -177,10 +198,11 @@ export function formatPrice(
   const symbol = CURRENCY_SYMBOLS[targetCurrency] || targetCurrency;
 
   let formatted = '';
-  if (targetCurrency === 'KSh') {
-    formatted = Math.round(converted).toLocaleString('en-KE', options);
-  } else if (targetCurrency === 'JPY') {
-    formatted = Math.round(converted).toLocaleString('ja-JP', options);
+  if (targetCurrency === 'KSh' || targetCurrency === 'UGX' || targetCurrency === 'TZS' || targetCurrency === 'JPY' || targetCurrency === 'KRW') {
+    formatted = Math.round(converted).toLocaleString(CURRENCY_LOCALE[targetCurrency] || 'en-KE', {
+      maximumFractionDigits: 0,
+      ...options
+    });
   } else {
     formatted = converted.toLocaleString(CURRENCY_LOCALE[targetCurrency] || 'en-US', {
       minimumFractionDigits: options.notation === 'compact' ? 0 : 2,

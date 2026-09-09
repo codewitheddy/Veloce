@@ -12,6 +12,7 @@ import {
   Play, Info, ChevronRight, CheckCircle
 } from 'lucide-react';
 import { Order, Product } from '../types';
+import { CurrencyType, formatPrice } from '../lib/currency';
 
 interface OrderStatusModalProps {
   isOpen: boolean;
@@ -19,6 +20,7 @@ interface OrderStatusModalProps {
   orders: Order[];
   products: Product[];
   initialOrderId?: string | null;
+  currency?: CurrencyType;
 }
 
 interface Courier {
@@ -45,7 +47,14 @@ interface Checkpoint {
   completed: boolean;
 }
 
-export default function OrderStatusModal({ isOpen, onClose, orders, products, initialOrderId }: OrderStatusModalProps) {
+export default function OrderStatusModal({
+  isOpen,
+  onClose,
+  orders,
+  products,
+  initialOrderId,
+  currency = 'KSh',
+}: OrderStatusModalProps) {
   const [searchId, setSearchId] = useState('');
   const [trackedOrder, setTrackedOrder] = useState<Order | null>(null);
   const [isSimulated, setIsSimulated] = useState(false);
@@ -612,11 +621,11 @@ export default function OrderStatusModal({ isOpen, onClose, orders, products, in
                               {item.name}
                             </span>
                             <span className="block text-[10px] text-gray-500 dark:text-gray-400 font-mono mt-0.5">
-                              QTY: {item.quantity} × KSh {item.price.toLocaleString('en-KE')}
+                              QTY: {item.quantity} × {formatPrice(item.price, currency)}
                             </span>
                           </div>
                           <div className="text-right font-mono font-bold text-gray-900 dark:text-white shrink-0">
-                            KSh {(item.price * item.quantity).toLocaleString('en-KE')}
+                            {formatPrice(item.price * item.quantity, currency)}
                           </div>
                         </div>
                       );

@@ -2563,7 +2563,7 @@ admin@ropenix.co.ke`;
 
         {/* Global Edit Error Banner */}
         {editSkuError && (
-          <div className="mb-6 rounded-xl bg-red-50 p-4 text-xs text-red-650 flex items-center justify-between gap-3 border border-red-150 animate-in fade-in slide-in-from-top-2 duration-200">
+          <div className="mb-6 rounded-xl bg-red-50 p-4 text-xs text-red-700 flex items-center justify-between gap-3 border border-red-150 animate-in fade-in slide-in-from-top-2 duration-200">
             <div className="flex items-center gap-2 font-sans font-semibold">
               <AlertCircle className="h-5 w-5 shrink-0 text-red-500" />
               <span>{editSkuError}</span>
@@ -3685,7 +3685,7 @@ admin@ropenix.co.ke`;
 
         {/* Global Error Banner */}
         {skuError && (
-          <div className="mb-6 rounded-xl bg-red-50 p-4 text-xs text-red-650 flex items-center justify-between gap-3 border border-red-150 animate-in fade-in slide-in-from-top-2 duration-200">
+          <div className="mb-6 rounded-xl bg-red-50 p-4 text-xs text-red-700 flex items-center justify-between gap-3 border border-red-150 animate-in fade-in slide-in-from-top-2 duration-200">
             <div className="flex items-center gap-2 font-sans font-semibold">
               <AlertCircle className="h-5 w-5 shrink-0 text-red-500" />
               <span>{skuError}</span>

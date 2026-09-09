@@ -1,0 +1,27 @@
+# Robots.txt for Ropenix Collections eCommerce & Affiliate Platform
+# https://ropenix.co.ke
+
+User-agent: *
+Allow: /
+Allow: /store
+Allow: /services
+Allow: /blog
+Allow: /contact
+Allow: /privacy
+Allow: /favicon.svg
+Allow: /og-image.svg
+Allow: /site.webmanifest
+
+# Disallow private administrative & checkout paths
+Disallow: /admin
+Disallow: /admin/
+Disallow: /checkout
+Disallow: /api/admin/
+Disallow: /api/orders/
+Disallow: /api/payment/
+Disallow: /unsubscribe
+
+# Crawl Delay & Sitemap
+Crawl-delay: 1
+Sitemap: https://ropenix.co.ke/sitemap.xml
+

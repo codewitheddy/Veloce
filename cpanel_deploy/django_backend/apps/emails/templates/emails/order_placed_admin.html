@@ -1,0 +1,144 @@
+{% extends "emails/base.html" %}
+
+{% block title %}🔔 [NEW ORDER] #{{ order_short_id }} – KSh {{ total_formatted }} from {{ customer_name }}{% endblock %}
+
+{% block header_style %}
+background: linear-gradient(135deg, #1e1b4b 0%, #312e81 100%);
+{% endblock %}
+
+{% block header %}
+<span class="header-badge" style="background: #4338ca; color: #ffffff;">🔔 Administrator Notification</span>
+<h1 class="header-title">New Customer Order Received</h1>
+<p class="header-subtitle">Order #{{ order_short_id }} • {{ order_date|default:current_time_utc }}</p>
+{% endblock %}
+
+{% block content %}
+<!-- Status Bar -->
+<div style="background-color: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; padding: 14px 18px; margin-bottom: 24px;">
+    <div style="display: flex; justify-content: space-between; align-items: center;">
+        <span style="color: #166534; font-size: 13px; font-weight: 700;">
+            Status: <span style="background: #dcfce7; padding: 2px 8px; border-radius: 4px; border: 1px solid #86efac;">{{ status|default:"Processing" }}</span>
+        </span>
+        <span style="color: #374151; font-size: 12px; font-weight: 600; background: #f3f4f6; padding: 2px 8px; border-radius: 4px;">
+            Account: {{ account_badge|default:"Guest Checkout" }}
+        </span>
+    </div>
+    <div style="margin-top: 8px; font-size: 12px; color: #15803d; border-top: 1px dashed #bbf7d0; padding-top: 6px;">
+        Payment Method: <strong>{{ payment_method }}</strong> | Payment Ref: <code>{{ payment_reference|default:"Pending Verification" }}</code> | Affiliate: <code>{{ affiliate_code|default:"None" }}</code>
+    </div>
+</div>
+
+<!-- Customer Details Box -->
+<div style="background-color: #faf5ff; border: 1px solid #e9d5ff; border-radius: 8px; padding: 18px; margin-bottom: 24px;">
+    <h3 style="font-size: 13px; text-transform: uppercase; color: #6b21a8; letter-spacing: 0.5px; margin: 0 0 12px 0; font-weight: 700;">
+        👤 Full Customer Information
+    </h3>
+    <table style="width: 100%; font-size: 13px; border-collapse: collapse;">
+        <tr>
+            <td style="padding: 6px 0; color: #6b7280; width: 140px; font-weight: 500;">Customer Name:</td>
+            <td style="padding: 6px 0; color: #111827; font-weight: 700; font-size: 14px;">{{ customer_name }}</td>
+        </tr>
+        <tr>
+            <td style="padding: 6px 0; color: #6b7280; font-weight: 500;">Email Address:</td>
+            <td style="padding: 6px 0; color: #111827;">
+                <a href="mailto:{{ customer_email }}" style="color: #6d28d9; font-weight: 600; text-decoration: underline;">{{ customer_email }}</a>
+                <span style="font-size: 11px; color: #8b5cf6; margin-left: 6px;">(Reply directly to email this customer)</span>
+            </td>
+        </tr>
+        <tr>
+            <td style="padding: 6px 0; color: #6b7280; font-weight: 500;">Phone Number:</td>
+            <td style="padding: 6px 0; color: #111827;">
+                <a href="tel:{{ customer_phone }}" style="color: #111827; text-decoration: none; font-weight: 600;">{{ customer_phone|default:"Not provided" }}</a>
+                {% if whatsapp_link %}
+                <a href="{{ whatsapp_link }}" style="display: inline-block; margin-left: 8px; font-size: 11px; color: #059669; text-decoration: none; font-weight: 600; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 2px 8px; border-radius: 4px;">💬 WhatsApp</a>
+                {% endif %}
+            </td>
+        </tr>
+        <tr>
+            <td style="padding: 6px 0; color: #6b7280; font-weight: 500; vertical-align: top;">Shipping Address:</td>
+            <td style="padding: 6px 0; color: #111827; line-height: 1.4;">
+                <strong>{{ shipping_address|default:"Direct Customer Pickup / Store Hub Fulfillment" }}</strong>
+                {% if maps_link %}
+                <br/><a href="{{ maps_link }}" target="_blank" style="display: inline-block; margin-top: 4px; font-size: 11px; color: #4338ca; text-decoration: none; font-weight: 600;">📍 View Location on Google Maps →</a>
+                {% endif %}
+            </td>
+        </tr>
+        {% if notes %}
+        <tr>
+            <td style="padding: 6px 0; color: #6b7280; font-weight: 500; vertical-align: top;">Customer Notes:</td>
+            <td style="padding: 6px 0; color: #4b5563; font-style: italic; background: #ffffff; padding: 6px 10px; border-radius: 4px; border: 1px solid #f3e8ff;">{{ notes }}</td>
+        </tr>
+        {% endif %}
+    </table>
+</div>
+
+<!-- Items Ordered -->
+<h3 style="font-size: 13px; text-transform: uppercase; color: #6b7280; letter-spacing: 0.5px; margin: 0 0 12px 0; font-weight: 700;">
+    Items Ordered
+</h3>
+<table style="width: 100%; border-collapse: collapse; margin-bottom: 24px;">
+    <thead>
+        <tr style="background-color: #f9fafb; border-bottom: 2px solid #e5e7eb;">
+            <th style="padding: 10px 8px; text-align: left; font-size: 12px; color: #4b5563;">Product & Variations</th>
+            <th style="padding: 10px 8px; text-align: center; font-size: 12px; color: #4b5563;">Qty</th>
+            <th style="padding: 10px 8px; text-align: right; font-size: 12px; color: #4b5563;">Unit Price</th>
+            <th style="padding: 10px 8px; text-align: right; font-size: 12px; color: #4b5563;">Total</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for item in items %}
+        <tr style="border-bottom: 1px solid #e5e7eb;">
+            <td style="padding: 12px 8px; font-size: 13px; color: #111827;">
+                <strong>{{ item.product_name }}</strong>
+                {% if item.product_sku %} (SKU: <code>{{ item.product_sku }}</code>){% endif %}
+                {% if item.selected_variations %}
+                <br/><span style="font-size: 11px; color: #6b7280;">Variations: {{ item.selected_variations }}</span>
+                {% endif %}
+            </td>
+            <td style="padding: 12px 8px; font-size: 13px; color: #374151; text-align: center;">{{ item.quantity }}</td>
+            <td style="padding: 12px 8px; font-size: 13px; color: #374151; text-align: right;">KSh {{ item.unit_price_formatted }}</td>
+            <td style="padding: 12px 8px; font-size: 13px; font-weight: 600; color: #111827; text-align: right;">KSh {{ item.total_formatted }}</td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="4" style="padding: 12px; text-align: center; color: #9ca3af;">Standard catalog items</td></tr>
+        {% endfor %}
+    </tbody>
+</table>
+
+<!-- Financial Breakdown -->
+<div class="summary-box">
+    <table style="width: 100%; font-size: 13px; border-collapse: collapse;">
+        <tr>
+            <td style="padding: 5px 0; color: #4b5563;">Subtotal:</td>
+            <td style="padding: 5px 0; color: #111827; text-align: right; font-weight: 600;">KSh {{ subtotal_formatted }}</td>
+        </tr>
+        {% if discount > 0 %}
+        <tr>
+            <td style="padding: 5px 0; color: #dc2626;">Discount:</td>
+            <td style="padding: 5px 0; color: #dc2626; text-align: right; font-weight: 600;">-KSh {{ discount_formatted }}</td>
+        </tr>
+        {% endif %}
+        <tr>
+            <td style="padding: 5px 0; color: #4b5563;">Shipping Fee:</td>
+            <td style="padding: 5px 0; color: #111827; text-align: right; font-weight: 600;">KSh {{ shipping_fee_formatted }}</td>
+        </tr>
+        {% if tax_amount > 0 %}
+        <tr>
+            <td style="padding: 5px 0; color: #4b5563;">VAT (16%):</td>
+            <td style="padding: 5px 0; color: #111827; text-align: right; font-weight: 600;">KSh {{ tax_amount_formatted }}</td>
+        </tr>
+        {% endif %}
+        <tr style="border-top: 2px solid #d1d5db;">
+            <td style="padding: 12px 0 0 0; font-size: 16px; font-weight: 700; color: #111827;">Grand Total:</td>
+            <td style="padding: 12px 0 0 0; font-size: 18px; font-weight: 800; color: #4f46e5; text-align: right;">KSh {{ total_formatted }}</td>
+        </tr>
+    </table>
+</div>
+
+<!-- Action Button -->
+<div style="text-align: center; margin: 32px 0 16px 0;">
+    <a href="{{ frontend_url }}/admin" class="btn-primary" style="background-color: #4f46e5; padding: 14px 32px;">
+        Open Admin Dashboard →
+    </a>
+</div>
+{% endblock %}

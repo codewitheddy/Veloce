@@ -120,13 +120,99 @@ export function freeUpLocalStorageSpace(targetKey?: string): boolean {
 }
 
 /**
+ * Strips huge base64 data URLs, deeply nested raw logs, and excess metadata
+ * from Cart items to guarantee localStorage serialization is lightweight (< 30 KB)
+ * and immune to QuotaExceededError while preserving all essential product attributes.
+ */
+export function sanitizeCartForStorage(cartItems: any[]): any[] {
+  if (!Array.isArray(cartItems)) return [];
+  return cartItems.map((item) => {
+    if (!item || typeof item !== 'object') return item;
+    const p = item.product || {};
+    
+    // If imageUrl is a huge base64 string (> 2KB), strip from localStorage to avoid quota lock
+    let safeImageUrl = p.imageUrl || p.image || '';
+    if (typeof safeImageUrl === 'string' && safeImageUrl.startsWith('data:') && safeImageUrl.length > 2048) {
+      safeImageUrl = ''; // Will be seamlessly rehydrated from active product catalog
+    }
+
+    const safeProduct = {
+      id: String(p.id || ''),
+      name: String(p.name || 'Product'),
+      price: Number(p.price || 0),
+      originalPrice: p.originalPrice ? Number(p.originalPrice) : undefined,
+      category: String(p.category || 'General'),
+      subcategory: String(p.subcategory || ''),
+      stock: Number(p.stock !== undefined ? p.stock : 99),
+      imageUrl: safeImageUrl,
+      image: safeImageUrl,
+      variations: Array.isArray(p.variations) ? p.variations : [],
+      rating: Number(p.rating || 5),
+      reviewsCount: Number(p.reviewsCount || 0),
+      sku: String(p.sku || ''),
+      isDigital: Boolean(p.isDigital),
+      isService: Boolean(p.isService),
+      serviceDuration: p.serviceDuration,
+      bulkDiscountThreshold: p.bulkDiscountThreshold,
+      bulkDiscountPercent: p.bulkDiscountPercent,
+    };
+
+    return {
+      product: safeProduct,
+      quantity: Number(item.quantity || 1),
+      selectedVariations: item.selectedVariations || {},
+    };
+  });
+}
+
+/**
  * Robust, exception-safe localStorage.setItem wrapper that intercepts QuotaExceededError,
  * cleans up space automatically, and gracefully falls back to IndexedDB.
  */
 export function safeLocalStorageSetItem(key: string, value: string): boolean {
   if (typeof window === 'undefined' || !window.localStorage) return false;
 
-  // Scalability Optimization: If payload is large (> 250 KB, e.g. 2,000+ products),
+  // 1. Critical Shopping Cart & Wishlist Storage
+  if (key === 'veloce_cart' || key === 'veloce_wishlist') {
+    let payloadToStore = value;
+    if (key === 'veloce_cart') {
+      try {
+        const parsed = JSON.parse(value);
+        if (Array.isArray(parsed)) {
+          const sanitized = sanitizeCartForStorage(parsed);
+          payloadToStore = JSON.stringify(sanitized);
+        }
+      } catch {}
+    }
+
+    try {
+      localStorage.setItem(key, payloadToStore);
+      // Also write full fidelity to IndexedDB cache as backup
+      try {
+        const parsed = JSON.parse(value);
+        saveToIndexedDb('veloce_cache', key, parsed).catch(() => {});
+      } catch {}
+      return true;
+    } catch (err: unknown) {
+      if (isQuotaExceededError(err)) {
+        freeUpLocalStorageSpace(key);
+        try {
+          localStorage.setItem(key, payloadToStore);
+          return true;
+        } catch {
+          // IndexedDB fallback
+          try {
+            const parsed = JSON.parse(value);
+            saveToIndexedDb('veloce_cache', key, parsed).catch(() => {});
+          } catch {}
+          return false;
+        }
+      }
+      return false;
+    }
+  }
+
+  // 2. Scalability Optimization: If payload is large (> 250 KB, e.g. 2,000+ products),
   // store directly in high-capacity IndexedDB to preserve browser localStorage quota
   if (value.length > 250000 || key === 'veloce_products') {
     try {
@@ -144,6 +230,7 @@ export function safeLocalStorageSetItem(key: string, value: string): boolean {
     return true;
   }
 
+  // 3. General localStorage Write
   try {
     localStorage.setItem(key, value);
     return true;
@@ -166,7 +253,6 @@ export function safeLocalStorageSetItem(key: string, value: string): boolean {
             if (Array.isArray(parsed)) {
               const lightweight = parsed.map((p: any) => ({
                 ...p,
-                // Replace large base64 strings with lightweight fallback
                 image: (typeof p.image === 'string' && p.image.startsWith('data:'))
                   ? 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?auto=format&fit=crop&q=80&w=600'
                   : p.image,
@@ -176,38 +262,10 @@ export function safeLocalStorageSetItem(key: string, value: string): boolean {
               }));
               localStorage.setItem(key, JSON.stringify(lightweight));
               console.info(`[Storage] Saved sanitized lightweight version of "${key}".`);
-              
-              // Also store the full fidelity object in IndexedDB
               saveToIndexedDb('veloce_cache', key, parsed).catch(() => {});
               return true;
             }
-          } catch {
-            // Ignore parse error
-          }
-        }
-
-        // Step 3: If it is veloce_hero_slides and still fails, create sanitized lightweight version
-        if (key === 'veloce_hero_slides' || key.includes('hero_slides')) {
-          try {
-            const parsed = JSON.parse(value);
-            if (Array.isArray(parsed)) {
-              const lightweight = parsed.map((s: any) => ({
-                ...s,
-                hero_image_url: (typeof s.hero_image_url === 'string' && s.hero_image_url.startsWith('data:'))
-                  ? 'https://images.unsplash.com/photo-1587829741301-dc798b83add3?auto=format&fit=crop&q=80&w=1200'
-                  : s.hero_image_url,
-                background_image_url: (typeof s.background_image_url === 'string' && s.background_image_url.startsWith('data:'))
-                  ? 'https://images.unsplash.com/photo-1550745165-9bc0b252726f?auto=format&fit=crop&q=80&w=1800'
-                  : s.background_image_url
-              }));
-              localStorage.setItem(key, JSON.stringify(lightweight));
-              console.info(`[Storage] Saved sanitized lightweight version of "${key}".`);
-              saveToIndexedDb('veloce_cache', key, parsed).catch(() => {});
-              return true;
-            }
-          } catch {
-            // Ignore parse error
-          }
+          } catch {}
         }
 
         // Asynchronous IndexedDB fallback
@@ -453,6 +511,18 @@ export function clearVeloceLocalStorageItems(): number {
   if (typeof window === 'undefined' || !window.localStorage) return 0;
   let count = 0;
   const preservedKeys = new Set([
+    'veloce_cart',
+    'veloce_wishlist',
+    'veloce_recently_viewed',
+    'veloce_return_requests',
+    'veloce_coupons',
+    'veloce_promo_banner',
+    'veloce_exchange_rates',
+    'veloce_rates_last_updated',
+    'veloce_currency',
+    'veloce_theme',
+    'veloce_font_size',
+    'veloce_language',
     'veloce_cookie_consent',
     'cookie_consent',
     'veloce_access_token',
@@ -461,10 +531,12 @@ export function clearVeloceLocalStorageItems(): number {
     'refresh_token',
     'veloce_refresh_token',
     'veloce_user_role',
-    'veloce_currency',
-    'veloce_theme',
-    'veloce_font_size',
-    'veloce_language',
+    'veloce_login_email',
+    'veloce_login_name',
+    'veloce_current_user',
+    'veloce_user',
+    'veloce_auth_user',
+    'user',
     'veloce_custom_categories',
     'veloce_categories_cleared',
     'veloce_categories_data',
@@ -485,8 +557,6 @@ export function clearVeloceLocalStorageItems(): number {
         key.startsWith('veloce_') || 
         key.includes('affiliate') || 
         key.includes('loyalty') || 
-        key.includes('cart') || 
-        key.includes('order') || 
         key.includes('review') || 
         key.includes('product') ||
         key.includes('category') ||
@@ -520,6 +590,11 @@ export function clearVeloceLocalStorageItems(): number {
  */
 export function checkAndPurgeBackendSyncStorage(): boolean {
   if (typeof window === 'undefined') return false;
-  clearVeloceLocalStorageItems();
+  // One-time initialization check to avoid redundant or unintended storage purges on page refresh
+  const alreadySynced = localStorage.getItem('is_backend_sync_enabled');
+  if (!alreadySynced) {
+    clearVeloceLocalStorageItems();
+    safeLocalStorageSetItem('is_backend_sync_enabled', 'true');
+  }
   return true;
 }

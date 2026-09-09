@@ -624,8 +624,8 @@ _Hello Ropenix Team, I would like to place and confirm this order!_`;
   }, [mpesaPhone, isGuest]);
 
   // Analyze payment restrictions in cart
-  const hasPrepaid = cart.some(item => item.product.paymentRestriction === 'prepaid');
-  const hasCod = cart.some(item => item.product.paymentRestriction === 'cod');
+  const hasPrepaid = cart.some(item => item.product?.paymentRestriction === 'prepaid');
+  const hasCod = cart.some(item => item.product?.paymentRestriction === 'cod');
   const hasConflict = hasPrepaid && hasCod;
 
   // Sync chosen payment method based on cart contents
@@ -641,8 +641,8 @@ _Hello Ropenix Team, I would like to place and confirm this order!_`;
   // Handle splitting a conflicting cart
   const handleSplitCart = () => {
     // Move all COD items to the wishlist
-    const codItems = cart.filter(item => item.product.paymentRestriction === 'cod');
-    const codProductIds = codItems.map(item => item.product.id);
+    const codItems = cart.filter(item => item.product?.paymentRestriction === 'cod');
+    const codProductIds = codItems.map(item => item.product?.id).filter(Boolean);
     onBulkMoveToWishlist(codProductIds);
     setSelectedItemKeys([]);
   };
@@ -759,7 +759,7 @@ _Hello Ropenix Team, I would like to place and confirm this order!_`;
   const totalCombinedAllSavings = promotionalMarkdownSavings + totalDiscountSavings;
   const discountedSubtotal = Math.max(0, originalSubtotal - totalDiscountSavings);
   const subtotalAfterCouponOnly = Math.max(0, originalSubtotal - percentageDiscountAmount);
-  const hasPhysicalItems = cart.some(item => item.product.type === 'physical');
+  const hasPhysicalItems = cart.some(item => !item.product?.type || item.product.type === 'physical');
 
   // Dynamic Multi-layered Delivery Fee Calculation Engine
   const deliveryFeeCalculation = useMemo(() => {
@@ -1690,7 +1690,7 @@ _Hello Ropenix Team, I would like to place and confirm this order!_`;
                       checked={cart.length > 0 && selectedItemKeys.length === cart.length}
                       onChange={toggleSelectAll}
                       style={{ accentColor: '#4f46e5' }}
-                      className="h-4 w-4 rounded-none border-gray-300 text-indigo-600 focus:ring-indigo-600 cursor-pointer"
+                      className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-600 cursor-pointer"
                     />
                     <label htmlFor="selectAllCartItemsCheckbox" className="font-display text-xs font-bold uppercase tracking-wider text-gray-700 dark:text-gray-300 font-mono cursor-pointer select-none">
                       Select All ({cart.length})
@@ -1700,7 +1700,7 @@ _Hello Ropenix Team, I would like to place and confirm this order!_`;
                   <button
                     onClick={handleRemoveSelected}
                     disabled={selectedItemKeys.length === 0}
-                    className={`inline-flex items-center gap-1.5 text-[10px] uppercase font-bold px-3 py-1 border transition-all cursor-pointer rounded-none ${
+                    className={`inline-flex items-center gap-1.5 text-[10px] uppercase font-bold px-3 py-1 border transition-all cursor-pointer rounded-lg ${
                       selectedItemKeys.length > 0
                         ? 'text-red-700 dark:text-red-400 bg-red-50 dark:bg-red-950/20 hover:bg-red-100 dark:hover:bg-red-950/40 border-red-200 dark:border-red-900/40'
                         : 'text-gray-400 dark:text-gray-500 bg-gray-50 dark:bg-gray-850 border-gray-150 dark:border-gray-800 cursor-not-allowed opacity-60'
@@ -1715,7 +1715,7 @@ _Hello Ropenix Team, I would like to place and confirm this order!_`;
                 <div className="flex flex-wrap items-center gap-1.5 ms-auto">
                   <button
                     onClick={handleMoveAllToWishlist}
-                    className="inline-flex items-center gap-1 text-[10px] uppercase font-bold text-indigo-700 dark:text-indigo-450 bg-indigo-50/70 dark:bg-indigo-950/40 hover:bg-indigo-100 dark:hover:bg-indigo-950/60 px-2.5 py-1 rounded-none transition-colors cursor-pointer"
+                    className="inline-flex items-center gap-1 text-[10px] uppercase font-bold text-indigo-700 dark:text-indigo-450 bg-indigo-50/70 dark:bg-indigo-950/40 hover:bg-indigo-100 dark:hover:bg-indigo-950/60 px-2.5 py-1 rounded-lg transition-colors cursor-pointer"
                     title="Move all items currently in cart to wishlist"
                   >
                     <Heart className="h-3 w-3 fill-indigo-700 dark:fill-indigo-400 text-indigo-700 dark:text-indigo-400" />
@@ -1728,7 +1728,7 @@ _Hello Ropenix Team, I would like to place and confirm this order!_`;
                         onClearCart();
                       }
                     }}
-                    className="inline-flex items-center gap-1 text-[10px] uppercase font-bold text-gray-600 dark:text-gray-400 bg-gray-50 dark:bg-gray-850 hover:bg-gray-100 dark:hover:bg-gray-800 px-2.5 py-1 rounded-none transition-colors cursor-pointer"
+                    className="inline-flex items-center gap-1 text-[10px] uppercase font-bold text-gray-600 dark:text-gray-400 bg-gray-50 dark:bg-gray-850 hover:bg-gray-100 dark:hover:bg-gray-800 px-2.5 py-1 rounded-lg transition-colors cursor-pointer"
                     title="Remove all items from your cart"
                   >
                     <Trash2 className="h-3 w-3" />
@@ -1739,21 +1739,21 @@ _Hello Ropenix Team, I would like to place and confirm this order!_`;
 
               {/* Selection-specific interactive Bulk Bar that activates when items are checked */}
               {selectedItemKeys.length > 0 && (
-                <div className="flex items-center justify-between gap-3 bg-indigo-50/50 dark:bg-indigo-950/30 border border-indigo-100/40 dark:border-indigo-900/35 rounded-none px-3 py-2 animate-in fade-in duration-200">
+                <div className="flex items-center justify-between gap-3 bg-indigo-50/50 dark:bg-indigo-950/30 border border-indigo-100/40 dark:border-indigo-900/35 rounded-xl px-3 py-2 animate-in fade-in duration-200">
                   <span className="text-[10px] font-mono font-bold text-indigo-700 dark:text-indigo-400">
                     {selectedItemKeys.length} of {cart.length} item{selectedItemKeys.length === 1 ? '' : 's'} checkmarked
                   </span>
                   <div className="flex items-center gap-2">
                     <button
                       onClick={handleMoveSelectedToWishlist}
-                      className="inline-flex items-center gap-1 text-[9px] uppercase font-extrabold text-white bg-indigo-600 hover:bg-indigo-700 px-2.5 py-1 rounded-none transition-colors cursor-pointer"
+                      className="inline-flex items-center gap-1 text-[9px] uppercase font-extrabold text-white bg-indigo-600 hover:bg-indigo-700 px-2.5 py-1 rounded-lg transition-colors cursor-pointer"
                     >
                       <Heart className="h-2.5 w-2.5 fill-white text-white" />
                       Move Selected
                     </button>
                     <button
                       onClick={handleRemoveSelected}
-                      className="inline-flex items-center gap-1 text-[9px] uppercase font-extrabold text-[#991B1B] dark:text-red-400 bg-red-50 dark:bg-red-950/30 hover:bg-red-100 dark:hover:bg-red-950/55 px-2.5 py-1 rounded-none border border-red-100 dark:border-red-900/40 transition-colors cursor-pointer"
+                      className="inline-flex items-center gap-1 text-[9px] uppercase font-extrabold text-[#991B1B] dark:text-red-400 bg-red-50 dark:bg-red-950/30 hover:bg-red-100 dark:hover:bg-red-950/55 px-2.5 py-1 rounded-lg border border-red-100 dark:border-red-900/40 transition-colors cursor-pointer"
                     >
                       <Trash2 className="h-2.5 w-2.5" />
                       Remove Selected
@@ -1784,7 +1784,7 @@ _Hello Ropenix Team, I would like to place and confirm this order!_`;
                         checked={isChecked}
                         onChange={() => toggleSelectItem(itemKey)}
                         style={{ accentColor: '#4f46e5' }}
-                        className="h-3.5 w-3.5 rounded-none border-gray-300 text-indigo-600 focus:ring-indigo-600 cursor-pointer"
+                        className="h-3.5 w-3.5 rounded border-gray-300 text-indigo-600 focus:ring-indigo-600 cursor-pointer"
                       />
                     </div>
 
@@ -1977,31 +1977,31 @@ _Hello Ropenix Team, I would like to place and confirm this order!_`;
                             <Plus className="h-3 w-3" />
                           </button>
                         </div>
-                        {item.product.type !== 'physical' && (
+                        {item.product?.type && item.product.type !== 'physical' && (
                           <span className="text-[9px] font-mono text-indigo-500 font-medium">({item.product.type.toUpperCase()})</span>
                         )}
-                        {item.product.type === 'physical' && item.product.stock !== null && item.product.stock !== undefined && (
+                        {(!item.product?.type || item.product.type === 'physical') && item.product?.stock !== null && item.product?.stock !== undefined && (
                           <span className="text-[9px] font-mono text-gray-400 dark:text-gray-500">({item.product.stock} left)</span>
                         )}
                       </div>
 
                       {confirmDeleteKey === itemKey ? (
-                        <div className="flex items-center gap-1.5 bg-red-50 dark:bg-red-950/30 px-2 py-1 rounded border border-red-200 dark:border-red-900/60 animate-in fade-in zoom-in-95 duration-150">
-                          <span className="text-[10px] text-red-700 dark:text-red-400 font-bold whitespace-nowrap">Are you sure?</span>
+                        <div className="flex items-center gap-2 bg-red-50 dark:bg-red-950/40 px-2.5 py-1 rounded-md border border-red-200 dark:border-red-900/60 animate-in fade-in zoom-in-95 duration-150">
+                          <span className="text-[10px] text-red-700 dark:text-red-300 font-bold whitespace-nowrap">Are you sure?</span>
                           <button
                             type="button"
                             onClick={() => {
                               onRemoveFromCart(item.product.id, item.selectedVariations);
                               setConfirmDeleteKey(null);
                             }}
-                            className="bg-red-650 hover:bg-red-700 text-white text-[9px] font-bold px-1.5 py-0.5 rounded uppercase transition-colors cursor-pointer"
+                            className="bg-red-600 hover:bg-red-700 dark:bg-red-600 dark:hover:bg-red-700 text-white text-[9px] font-bold px-2 py-0.5 rounded uppercase tracking-wider transition-colors cursor-pointer shadow-xs"
                           >
                             Remove
                           </button>
                           <button
                             type="button"
                             onClick={() => setConfirmDeleteKey(null)}
-                            className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 text-[9px] font-bold px-1.5 py-0.5 rounded uppercase transition-colors cursor-pointer"
+                            className="text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-200 text-[9px] font-bold px-1.5 py-0.5 rounded hover:bg-gray-200/60 dark:hover:bg-gray-800 uppercase transition-colors cursor-pointer"
                           >
                             Cancel
                           </button>
@@ -2010,7 +2010,7 @@ _Hello Ropenix Team, I would like to place and confirm this order!_`;
                         <button
                           type="button"
                           onClick={() => setConfirmDeleteKey(itemKey)}
-                          className="text-gray-400 hover:text-red-650 dark:hover:text-red-400 flex items-center gap-1 hover:bg-red-50 dark:hover:bg-red-950/25 px-2 py-1 rounded transition-colors cursor-pointer"
+                          className="text-gray-400 hover:text-red-600 dark:hover:text-red-400 flex items-center gap-1 hover:bg-red-50 dark:hover:bg-red-950/25 px-2 py-1 rounded transition-colors cursor-pointer"
                         >
                           <Trash2 className="h-3.5 w-3.5" />
                           <span className="text-[10px] uppercase font-bold">Remove</span>
@@ -2131,7 +2131,7 @@ _Hello Ropenix Team, I would like to place and confirm this order!_`;
               </button>
             </form>
             {couponError && (
-              <p className="text-[11px] text-red-650 font-semibold mt-2.5 flex items-center gap-1.5 bg-red-50/70 border border-red-100 p-2 rounded-md">
+              <p className="text-[11px] text-red-600 font-semibold mt-2.5 flex items-center gap-1.5 bg-red-50/70 border border-red-100 p-2 rounded-md">
                 <AlertCircle className="h-3.5 w-3.5 text-red-500 shrink-0" />
                 <span>{couponError}</span>
               </p>
@@ -2678,41 +2678,70 @@ _Hello Ropenix Team, I would like to place and confirm this order!_`;
                     </div>
                   </div>
                 ) : (
-                  <div className="text-left">
-                    <div className="flex items-center justify-between mb-2">
-                      <label className="block text-[9px] font-bold text-gray-400 uppercase">Payment & Order Placement Method</label>
-                      <span className="text-[9.5px] font-mono font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
-                        <Zap className="h-3 w-3" /> WhatsApp Checkout Available
+                  <div className="text-left space-y-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div>
+                        <label className="block text-[11px] font-extrabold text-slate-700 dark:text-slate-300 uppercase tracking-wider font-mono">
+                          Payment &amp; Order Placement Method
+                        </label>
+                        <p className="text-[11px] text-slate-500 dark:text-slate-400 font-normal mt-0.5">
+                          Choose how you would like to settle and confirm your order dispatch.
+                        </p>
+                      </div>
+                      <span className="inline-flex items-center gap-1.5 text-[11px] font-mono font-bold text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-800/60 px-2.5 py-1 rounded-full shadow-3xs">
+                        <Zap className="h-3 w-3 text-emerald-600" /> WhatsApp Checkout Available
                       </span>
                     </div>
 
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                    <div className="space-y-2.5">
                       {/* WhatsApp Order Option */}
                       <button
                         type="button"
                         onClick={() => setPaymentMethod('whatsapp')}
-                        className={`p-3 rounded-xl border flex flex-col items-start gap-1 transition-all text-left relative cursor-pointer ${
+                        className={`w-full group p-3.5 sm:p-4 rounded-xl border text-left transition-all duration-200 cursor-pointer relative flex items-center justify-between gap-3 sm:gap-4 ${
                           paymentMethod === 'whatsapp'
-                            ? 'border-[#25D366] bg-[#25D366]/10 dark:bg-[#25D366]/15 ring-1.5 ring-[#25D366] shadow-3xs'
-                            : 'border-gray-200 bg-white hover:bg-gray-55/30 dark:bg-gray-900 dark:border-gray-800'
+                            ? 'border-[#25D366] bg-emerald-50/50 dark:bg-emerald-950/25 ring-2 ring-[#25D366]/70 shadow-sm'
+                            : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:border-emerald-300 dark:hover:border-emerald-800 hover:bg-slate-50/50 dark:hover:bg-slate-850/50'
                         }`}
                       >
-                        <div className="flex items-center justify-between w-full">
-                          <span className="text-xs font-black font-sans tracking-tight text-gray-950 dark:text-white flex items-center gap-1.5">
-                            <MessageCircle className="h-3.5 w-3.5 text-[#25D366]" /> WhatsApp Order
-                          </span>
-                          <span className={`h-3.5 w-3.5 rounded-full border flex items-center justify-center ${
-                            paymentMethod === 'whatsapp' ? 'border-[#25D366]' : 'border-gray-300 dark:border-gray-700'
+                        {/* Left: Radio + Icon + Method Name & Description */}
+                        <div className="flex items-center gap-3 sm:gap-3.5 min-w-0 flex-1">
+                          <div className={`h-4.5 w-4.5 rounded-full border-2 flex items-center justify-center shrink-0 transition-colors ${
+                            paymentMethod === 'whatsapp'
+                              ? 'border-[#25D366] bg-[#25D366]'
+                              : 'border-slate-300 dark:border-slate-600'
                           }`}>
-                            {paymentMethod === 'whatsapp' && <span className="h-2 w-2 rounded-full bg-[#25D366]" />}
+                            {paymentMethod === 'whatsapp' && <span className="h-2 w-2 rounded-full bg-white" />}
+                          </div>
+
+                          <div className="p-2 sm:p-2.5 rounded-lg bg-emerald-50 dark:bg-emerald-950/60 text-[#25D366] border border-emerald-200/60 dark:border-emerald-800/40 shrink-0">
+                            <MessageCircle className="h-4.5 w-4.5 sm:h-5 sm:w-5" />
+                          </div>
+
+                          <div className="min-w-0 flex-1">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white">
+                                WhatsApp Order
+                              </span>
+                              <span className="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-900/60 text-[#128C7E] dark:text-emerald-300 text-[10px] font-bold font-mono uppercase">
+                                ⚡ Instant Chat
+                              </span>
+                            </div>
+                            <p className="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400 font-normal truncate sm:whitespace-normal">
+                              Chat directly with our sales team on <strong className="text-slate-800 dark:text-slate-200">{whatsappNumber}</strong> to finalize dispatch
+                            </p>
+                          </div>
+                        </div>
+
+                        {/* Right: Badges / Subtext */}
+                        <div className="shrink-0 flex flex-col items-end gap-1">
+                          <span className="text-[10px] font-mono font-semibold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200/60 dark:border-emerald-800/40 px-2 py-0.5 rounded-md">
+                            No Prepay Needed
+                          </span>
+                          <span className="text-[10px] text-slate-400 font-medium hidden sm:inline-block">
+                            Fast Setup
                           </span>
                         </div>
-                        <span className="text-[9.5px] text-gray-500 dark:text-gray-400 leading-normal">
-                          Chat directly with our sales team on <strong>{whatsappNumber}</strong> to finalize dispatch.
-                        </span>
-                        <span className="absolute -top-1.5 right-4 px-1.5 py-0.2 rounded bg-emerald-500 text-white text-[8px] font-black uppercase font-mono shadow-3xs">
-                          ⚡ Instant Chat
-                        </span>
                       </button>
 
                       {/* M-Pesa Toggle Option */}
@@ -2720,30 +2749,56 @@ _Hello Ropenix Team, I would like to place and confirm this order!_`;
                         type="button"
                         disabled={hasCod}
                         onClick={() => setPaymentMethod('mpesa')}
-                        className={`p-3 rounded-xl border flex flex-col items-start gap-1 transition-all text-left relative cursor-pointer ${
+                        className={`w-full group p-3.5 sm:p-4 rounded-xl border text-left transition-all duration-200 cursor-pointer relative flex items-center justify-between gap-3 sm:gap-4 ${
                           paymentMethod === 'mpesa'
-                            ? 'border-indigo-600 bg-indigo-50/10 ring-1.5 ring-indigo-500 shadow-3xs'
-                            : 'border-gray-200 bg-white hover:bg-gray-55/30 dark:bg-gray-900 dark:border-gray-800'
-                        } ${hasCod ? 'opacity-40 cursor-not-allowed' : ''}`}
+                            ? 'border-indigo-600 bg-indigo-50/40 dark:bg-indigo-950/25 ring-2 ring-indigo-500/70 shadow-sm'
+                            : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:border-indigo-300 dark:hover:border-indigo-800 hover:bg-slate-50/50 dark:hover:bg-slate-850/50'
+                        } ${hasCod ? 'opacity-40 cursor-not-allowed pointer-events-none' : ''}`}
                       >
-                        <div className="flex items-center justify-between w-full">
-                          <span className="text-xs font-black font-sans tracking-tight text-gray-950 dark:text-white flex items-center gap-1.5">
-                            <Smartphone className="h-3.5 w-3.5 text-indigo-600" /> M-Pesa Paybill
-                          </span>
-                          <span className={`h-3.5 w-3.5 rounded-full border flex items-center justify-center ${
-                            paymentMethod === 'mpesa' ? 'border-indigo-600' : 'border-gray-300 dark:border-gray-700'
+                        {/* Left: Radio + Icon + Method Name & Description */}
+                        <div className="flex items-center gap-3 sm:gap-3.5 min-w-0 flex-1">
+                          <div className={`h-4.5 w-4.5 rounded-full border-2 flex items-center justify-center shrink-0 transition-colors ${
+                            paymentMethod === 'mpesa'
+                              ? 'border-indigo-600 bg-indigo-600'
+                              : 'border-slate-300 dark:border-slate-600'
                           }`}>
-                            {paymentMethod === 'mpesa' && <span className="h-2 w-2 rounded-full bg-indigo-600" />}
+                            {paymentMethod === 'mpesa' && <span className="h-2 w-2 rounded-full bg-white" />}
+                          </div>
+
+                          <div className="p-2 sm:p-2.5 rounded-lg bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 border border-indigo-200/60 dark:border-indigo-800/40 shrink-0">
+                            <Smartphone className="h-4.5 w-4.5 sm:h-5 sm:w-5" />
+                          </div>
+
+                          <div className="min-w-0 flex-1">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white">
+                                M-Pesa Paybill
+                              </span>
+                              {hasPrepaid ? (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-900/60 text-emerald-800 dark:text-emerald-300 text-[10px] font-bold font-mono uppercase">
+                                  Required
+                                </span>
+                              ) : (
+                                <span className="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-indigo-100 dark:bg-indigo-900/60 text-indigo-800 dark:text-indigo-300 text-[10px] font-bold font-mono uppercase">
+                                  Paybill {mpesaPaybill}
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400 font-normal truncate sm:whitespace-normal">
+                              Pay via Lipa na M-Pesa Paybill <strong className="text-slate-800 dark:text-slate-200">{mpesaPaybill}</strong> (Account: {mpesaAccountNumber})
+                            </p>
+                          </div>
+                        </div>
+
+                        {/* Right: Badges / Subtext */}
+                        <div className="shrink-0 flex flex-col items-end gap-1">
+                          <span className="text-[10px] font-mono font-semibold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/50 border border-indigo-200/60 dark:border-indigo-800/40 px-2 py-0.5 rounded-md">
+                            Mobile Money
+                          </span>
+                          <span className="text-[10px] text-slate-400 font-medium hidden sm:inline-block">
+                            Instant Receipt
                           </span>
                         </div>
-                        <span className="text-[9.5px] text-gray-500 dark:text-gray-400 leading-normal">
-                          Pay via Lipa na M-Pesa Paybill {mpesaPaybill} / Till.
-                        </span>
-                        {hasPrepaid && (
-                          <span className="absolute -top-1.5 right-4 px-1.5 py-0.2 rounded bg-emerald-100 border border-emerald-300 text-[8px] font-extrabold text-emerald-800 uppercase font-mono shadow-3xs">
-                            Required
-                          </span>
-                        )}
                       </button>
 
                       {/* Cash on Delivery Option */}
@@ -2751,30 +2806,56 @@ _Hello Ropenix Team, I would like to place and confirm this order!_`;
                         type="button"
                         disabled={hasPrepaid}
                         onClick={() => setPaymentMethod('cod')}
-                        className={`p-3 rounded-xl border flex flex-col items-start gap-1 transition-all text-left relative cursor-pointer ${
+                        className={`w-full group p-3.5 sm:p-4 rounded-xl border text-left transition-all duration-200 cursor-pointer relative flex items-center justify-between gap-3 sm:gap-4 ${
                           paymentMethod === 'cod'
-                            ? 'border-indigo-600 bg-indigo-50/10 ring-1.5 ring-indigo-500 shadow-3xs'
-                            : 'border-gray-200 bg-white hover:bg-gray-55/30 dark:bg-gray-900 dark:border-gray-800'
-                        } ${hasPrepaid ? 'opacity-40 cursor-not-allowed' : ''}`}
+                            ? 'border-amber-500 bg-amber-50/40 dark:bg-amber-950/25 ring-2 ring-amber-500/70 shadow-sm'
+                            : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:border-amber-300 dark:hover:border-amber-800 hover:bg-slate-50/50 dark:hover:bg-slate-850/50'
+                        } ${hasPrepaid ? 'opacity-40 cursor-not-allowed pointer-events-none' : ''}`}
                       >
-                        <div className="flex items-center justify-between w-full">
-                          <span className="text-xs font-black font-sans tracking-tight text-gray-950 dark:text-white flex items-center gap-1.5">
-                            <Truck className="h-3.5 w-3.5 text-amber-600" /> Cash on Delivery
-                          </span>
-                          <span className={`h-3.5 w-3.5 rounded-full border flex items-center justify-center ${
-                            paymentMethod === 'cod' ? 'border-indigo-600' : 'border-gray-300 dark:border-gray-700'
+                        {/* Left: Radio + Icon + Method Name & Description */}
+                        <div className="flex items-center gap-3 sm:gap-3.5 min-w-0 flex-1">
+                          <div className={`h-4.5 w-4.5 rounded-full border-2 flex items-center justify-center shrink-0 transition-colors ${
+                            paymentMethod === 'cod'
+                              ? 'border-amber-500 bg-amber-500'
+                              : 'border-slate-300 dark:border-slate-600'
                           }`}>
-                            {paymentMethod === 'cod' && <span className="h-2 w-2 rounded-full bg-indigo-600" />}
+                            {paymentMethod === 'cod' && <span className="h-2 w-2 rounded-full bg-white" />}
+                          </div>
+
+                          <div className="p-2 sm:p-2.5 rounded-lg bg-amber-50 dark:bg-amber-950/60 text-amber-600 dark:text-amber-400 border border-amber-200/60 dark:border-amber-800/40 shrink-0">
+                            <Truck className="h-4.5 w-4.5 sm:h-5 sm:w-5" />
+                          </div>
+
+                          <div className="min-w-0 flex-1">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white">
+                                Cash on Delivery
+                              </span>
+                              {hasCod ? (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/60 text-amber-800 dark:text-amber-300 text-[10px] font-bold font-mono uppercase">
+                                  Required
+                                </span>
+                              ) : (
+                                <span className="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-100/80 dark:bg-amber-900/60 text-amber-800 dark:text-amber-300 text-[10px] font-bold font-mono uppercase">
+                                  Doorstep Pay
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400 font-normal truncate sm:whitespace-normal">
+                              Settle securely in cash or mobile money upon physical package receipt
+                            </p>
+                          </div>
+                        </div>
+
+                        {/* Right: Badges / Subtext */}
+                        <div className="shrink-0 flex flex-col items-end gap-1">
+                          <span className="text-[10px] font-mono font-semibold text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/50 border border-amber-200/60 dark:border-amber-800/40 px-2 py-0.5 rounded-md">
+                            Pay on Delivery
+                          </span>
+                          <span className="text-[10px] text-slate-400 font-medium hidden sm:inline-block">
+                            Verified Courier
                           </span>
                         </div>
-                        <span className="text-[9.5px] text-gray-500 dark:text-gray-400 leading-normal">
-                          Settle in cash or mobile money upon physical package receipt.
-                        </span>
-                        {hasCod && (
-                          <span className="absolute -top-1.5 right-4 px-1.5 py-0.2 rounded bg-amber-100 border border-amber-300 text-[8px] font-extrabold text-amber-800 uppercase font-mono shadow-3xs">
-                            Required
-                          </span>
-                        )}
                       </button>
                     </div>
 

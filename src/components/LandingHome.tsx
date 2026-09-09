@@ -4,12 +4,14 @@
  */
 
 import React from 'react';
-import { Product, Order } from '../types';
+import { Product, Order, CartItem } from '../types';
 import { HeroBannerSlider } from './HeroBannerSlider';
 import DailyOffersSection from './DailyOffersSection';
 import BestSellersNewArrivalsCarousel from './BestSellersNewArrivalsCarousel';
 import BestSellingByCategory from './BestSellingByCategory';
 import SaleProducts from './SaleProducts';
+
+import { CurrencyType } from '../lib/currency';
 
 interface LandingHomeProps {
   featuredProducts: Product[];
@@ -21,9 +23,11 @@ interface LandingHomeProps {
   onTriggerEmailToast?: (mockOrder: Order, status: string) => void;
   onTriggerCustomEmail?: (subject: string, body: string, status?: string) => void;
   onAddToCart?: (product: Product, quantity: number, vars: Record<string, string>) => void;
+  cart?: CartItem[];
   wishlist?: string[];
   onToggleWishlist?: (productId: string) => void;
   darkMode?: boolean;
+  currency?: CurrencyType;
 }
 
 export default function LandingHome({
@@ -36,9 +40,11 @@ export default function LandingHome({
   onTriggerEmailToast,
   onTriggerCustomEmail,
   onAddToCart,
+  cart = [],
   wishlist = [],
   onToggleWishlist = () => {},
   darkMode = false,
+  currency = 'KSh',
 }: LandingHomeProps) {
 
   return (
@@ -62,6 +68,7 @@ export default function LandingHome({
         onProductClick={onProductClick}
         setCurrentTab={setCurrentTab}
         onSelectSale={onSelectSale}
+        currency={currency}
       />
 
       {/* Curated Showcase: Best Selling Products & New Arrivals */}
@@ -70,9 +77,12 @@ export default function LandingHome({
           products={featuredProducts}
           onSelectProduct={onProductClick}
           onAddToCart={onAddToCart}
+          cart={cart}
+          onViewCart={() => setCurrentTab('checkout')}
           wishlist={wishlist}
           onToggleWishlist={onToggleWishlist}
           darkMode={darkMode}
+          currency={currency}
           className="shadow-xs"
         />
       </div>
@@ -84,6 +94,7 @@ export default function LandingHome({
         onProductClick={onProductClick}
         setCurrentTab={setCurrentTab}
         onSelectCategory={onSelectCategory}
+        currency={currency}
       />
 
       {/* Exclusive Archival Offerings (Sale Section) */}
@@ -92,6 +103,7 @@ export default function LandingHome({
         onProductClick={onProductClick}
         setCurrentTab={setCurrentTab}
         onSelectSale={onSelectSale}
+        currency={currency}
       />
     </div>
   );

@@ -1,0 +1,18 @@
+{% extends "emails/base.txt" %}
+
+{% block content %}
+Hi {{ sender_name }},
+
+Thank you for reaching out to {{ brand_name }}! We have received your inquiry regarding "{{ subject_clean }}".
+
+Our support operations desk will review your message and get back to you within 1-2 business hours.
+
+YOUR INQUIRY SUMMARY:
+----------------------------------------
+Subject: {{ subject_clean }}
+Message:
+{{ message }}
+----------------------------------------
+
+For urgent issues regarding order fulfillment, reach our hotline at {{ hotline_phone }}.
+{% endblock %}

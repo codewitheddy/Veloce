@@ -8,6 +8,7 @@ import { Product, Order } from '../types';
 import { Star, TrendingUp, ArrowRight, ShoppingBag, Award } from 'lucide-react';
 import { getProductDiscountInfo } from '../utils/productUtils';
 import { cleanDescriptionExcerpt } from '../utils/formatDescription';
+import { CurrencyType, formatPrice } from '../lib/currency';
 
 interface BestSellingByCategoryProps {
   products: Product[];
@@ -15,6 +16,7 @@ interface BestSellingByCategoryProps {
   onProductClick: (product: Product) => void;
   setCurrentTab: (tab: string) => void;
   onSelectCategory?: (category: string) => void;
+  currency?: CurrencyType;
 }
 
 export default function BestSellingByCategory({
@@ -23,6 +25,7 @@ export default function BestSellingByCategory({
   onProductClick,
   setCurrentTab,
   onSelectCategory,
+  currency = 'KSh',
 }: BestSellingByCategoryProps) {
   const [expandedDescIds, setExpandedDescIds] = React.useState<Record<string, boolean>>({});
 
@@ -302,11 +305,11 @@ export default function BestSellingByCategory({
                         <div className="flex flex-col">
                           {isSale && originalPriceVal && (
                             <span className="font-mono text-[8px] sm:text-[10px] line-through text-gray-400">
-                              KSh {originalPriceVal.toLocaleString('en-KE')}
+                              {formatPrice(originalPriceVal, currency)}
                             </span>
                           )}
                           <span className="font-mono font-bold text-[11px] sm:text-sm text-indigo-950">
-                            KSh {product.price.toLocaleString('en-KE')}
+                            {formatPrice(product.price, currency)}
                           </span>
                         </div>
                         <span className="inline-flex items-center gap-0.5 text-[8px] sm:text-[10px] font-bold text-indigo-600 group-hover:text-indigo-850 transition-colors shrink-0">

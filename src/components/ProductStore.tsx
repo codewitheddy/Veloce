@@ -6,7 +6,7 @@
 import React, { useState } from 'react';
 import { motion } from 'motion/react';
 import DOMPurify from 'dompurify';
-import { Search, Filter, Star, Plus, Check, ShoppingBag, X, FileText, Sparkles, User, Heart, ArrowLeft, Tag, Share2, Clock, ArrowRightLeft, Twitter, Linkedin, Bell, Mail, ArrowUpDown, Package, Layers, ChevronLeft, ChevronRight, ChevronDown, ShoppingCart, FolderTree, Edit2, Edit3, Flame } from 'lucide-react';
+import { Search, Filter, Star, Plus, Check, ShoppingBag, X, FileText, Sparkles, User, Heart, ArrowLeft, Tag, Share2, Clock, ArrowRightLeft, Twitter, Linkedin, Bell, Mail, ArrowUpDown, Package, Layers, ChevronLeft, ChevronRight, ChevronDown, ShoppingCart, FolderTree, Edit2, Edit3, Flame, ShieldCheck } from 'lucide-react';
 import { Product, CartItem, Review } from '../types';
 import {
   isProductHiddenFromStorefront,
@@ -32,6 +32,7 @@ interface ProductStoreProps {
   onUpdateCartQty?: (productId: string, vars: Record<string, string>, qty: number) => void;
   onRemoveFromCart?: (productId: string, vars: Record<string, string>) => void;
   onBuyNow?: (product: Product, quantity: number, vars: Record<string, string>) => void;
+  onViewCart?: () => void;
   onAddReview: (productId: string, review: Review) => void;
   selectedProduct: Product | null;
   setSelectedProduct: (product: Product | null) => void;
@@ -65,6 +66,7 @@ export default function ProductStore({
   onUpdateCartQty,
   onRemoveFromCart,
   onBuyNow,
+  onViewCart,
   onAddReview,
   selectedProduct,
   setSelectedProduct,
@@ -186,12 +188,6 @@ export default function ProductStore({
     }
   });
 
-  // Review form states
-  const [reviewerName, setReviewerName] = useState('');
-  const [reviewerRating, setReviewerRating] = useState(5);
-  const [reviewerComment, setReviewerComment] = useState('');
-  const [reviewSuccessMsg, setReviewSuccessMsg] = useState('');
-
   // Price-drop notifications state
   const [notifyEmail, setNotifyEmail] = useState('');
   const [notifySuccessMsg, setNotifySuccessMsg] = useState('');
@@ -247,10 +243,6 @@ export default function ProductStore({
 
   React.useEffect(() => {
     if (selectedProduct) {
-      setReviewerName(prefilledReviewerName);
-      setReviewSuccessMsg('');
-      setReviewerComment('');
-      setReviewerRating(5);
       setNotifyEmail('');
       setNotifySuccessMsg('');
       setNotifyErrorMsg('');
@@ -288,6 +280,7 @@ export default function ProductStore({
   const [selectedVars, setSelectedVars] = useState<Record<string, string>>({});
   const [quantity, setQuantity] = useState(1);
   const [addedToCartToast, setAddedToCartToast] = useState(false);
+  const [detailAddedIds, setDetailAddedIds] = useState<Set<string>>(new Set());
 
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
   const [shareTargetProduct, setShareTargetProduct] = useState<Product | null>(null);
@@ -601,7 +594,6 @@ export default function ProductStore({
     setSelectedProduct(p);
     setQuantity(1);
     setAddedToCartToast(false);
-    setReviewSuccessMsg('');
     const initialVars: Record<string, string> = {};
     if (p.variations) {
       p.variations.forEach((v) => {
@@ -688,39 +680,23 @@ export default function ProductStore({
     });
   };
 
-  const handleReviewSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedProduct || !reviewerName || !reviewerComment) return;
-
-    const newReview: Review = {
-      id: 'rev-usr-' + Date.now(),
-      userName: reviewerName,
-      rating: reviewerRating,
-      comment: reviewerComment,
-      date: new Date().toISOString().split('T')[0]
-    };
-
-    onAddReview(selectedProduct.id, newReview);
-    setReviewerName('');
-    setReviewerComment('');
-    setReviewSuccessMsg('Your review was successfully authenticated and logged!');
-  };
-
   const handleCartAdd = () => {
     if (!selectedProduct) return;
-    onAddToCart(selectedProduct, quantity, selectedVars);
+    onAddToCart(selectedProduct, 1, selectedVars);
     setAddedToCartToast(true);
+    setDetailAddedIds((prev) => new Set(prev).add(selectedProduct.id));
     setTimeout(() => {
       setAddedToCartToast(false);
-    }, 3000);
+    }, 1500);
   };
 
-  const handleBuyNow = () => {
-    if (!selectedProduct) return;
-    if (onBuyNow) {
-      onBuyNow(selectedProduct, quantity, selectedVars);
+  const handleViewCart = () => {
+    if (onViewCart) {
+      onViewCart();
+    } else if (onBuyNow && selectedProduct) {
+      onBuyNow(selectedProduct, 0, selectedVars);
     } else {
-      onAddToCart(selectedProduct, quantity, selectedVars);
+      window.dispatchEvent(new CustomEvent('veloce_navigate_tab', { detail: 'checkout' }));
     }
   };
 
@@ -960,11 +936,11 @@ export default function ProductStore({
                       <div className="flex flex-col">
                         {hasDiscount && modalOriginalPrice && (
                           <span className="font-mono text-xs text-gray-400 dark:text-gray-500 line-through">
-                            KSh {modalOriginalPrice.toLocaleString('en-KE')}
+                            {formatPrice(modalOriginalPrice, currency)}
                           </span>
                         )}
                         <span className="font-mono font-bold text-xl sm:text-2xl text-indigo-950 dark:text-indigo-300">
-                          KSh {selectedProduct.price.toLocaleString('en-KE')}
+                          {formatPrice(selectedProduct.price, currency)}
                         </span>
                       </div>
                       {hasDiscount && (
@@ -1099,7 +1075,7 @@ export default function ProductStore({
 
               {/* Volume Discount Module */}
               <div id="volume-discount-module" className="border-t border-indigo-50/50 dark:border-gray-800/50 pt-5 flex flex-col gap-3">
-                <div className="rounded-xl border border-emerald-100 dark:border-emerald-900/50 bg-emerald-50/15 dark:bg-emerald-950/10 p-4 flex flex-col gap-3">
+                <div className="rounded-xl border border-emerald-100 dark:border-emerald-900/50 bg-emerald-50/15 dark:bg-emerald-950/10 p-4 flex flex-col gap-2.5">
                   <div className="flex items-center justify-between">
                     <span className="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-800 dark:text-emerald-400 uppercase tracking-wide font-mono">
                       <Tag className="h-4 w-4 text-emerald-600 dark:text-emerald-500 fill-emerald-100 dark:fill-emerald-950/35" />
@@ -1113,102 +1089,86 @@ export default function ProductStore({
                   <p className="text-xs text-gray-500 dark:text-gray-400 font-extralight leading-relaxed">
                     Optimize unit margins securely. Order 6 or more units of this item, and an automatic <strong className="font-semibold text-emerald-700 dark:text-emerald-400">15% discount</strong> applies to the entirety of this batch in your checkout ledger!
                   </p>
-
-                  {/* Quantity interactive progress tracker */}
-                  <div className="flex flex-col gap-1.5 mt-1">
-                    <div className="flex justify-between items-center text-[10px] font-mono">
-                      <span className="text-gray-400 dark:text-gray-500">Current Order: <strong className="text-gray-700 dark:text-gray-300">{quantity} units</strong></span>
-                      {quantity > 5 ? (
-                        <span className="text-emerald-600 dark:text-emerald-400 font-bold flex items-center gap-1">
-                          🎉 15% DISCOUNT IN EFFECT! (Saved KSh {(selectedProduct.price * quantity * 0.15).toLocaleString('en-KE')})
-                        </span>
-                      ) : (
-                        <span className="text-indigo-650 font-medium">
-                          Add {6 - quantity} more to unlock 15% discount
-                        </span>
-                      )}
-                    </div>
-                    {/* Visual Progress Bar */}
-                    <div className="w-full bg-gray-100 dark:bg-gray-800 rounded-full h-2 overflow-hidden border border-gray-150 dark:border-gray-750">
-                      <div 
-                        className={`h-full rounded-full transition-all duration-300 ease-out ${quantity > 5 ? 'bg-emerald-550 bg-emerald-500' : 'bg-indigo-500'}`}
-                        style={{ width: `${Math.min(100, (quantity / 6) * 100)}%` }}
-                      />
-                    </div>
-                  </div>
                 </div>
               </div>
 
               {/* Purchase Box */}
-              <div className="mt-3 rounded-2xl border border-indigo-100/80 dark:border-gray-800/85 bg-indigo-50/10 dark:bg-indigo-950/20 p-5 flex flex-col xl:flex-row xl:items-center justify-between gap-5 shadow-[0_2px_4px_rgba(37,44,139,0.02)]">
+              <div className="mt-3 rounded-2xl border border-indigo-100/80 dark:border-gray-800/85 bg-indigo-50/10 dark:bg-indigo-950/20 p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-5 shadow-[0_2px_4px_rgba(37,44,139,0.02)]">
                 <div>
                   <span className="text-[10px] text-indigo-650 dark:text-indigo-400 font-mono font-bold tracking-widest block uppercase">TOTAL AMOUNT</span>
                   {(() => {
                     const { hasDiscount: modalHasDiscount, originalPrice: modalOriginalPrice } = getProductDiscountInfo(selectedProduct);
                     
-                    if (quantity > 5) {
-                      return (
-                        <div className="flex flex-col">
-                          <span className="font-mono text-xs text-gray-400 dark:text-gray-500 line-through">KSh {(selectedProduct.price * quantity).toLocaleString('en-KE')}</span>
-                          <span className="font-mono text-2xl font-black text-emerald-600 dark:text-emerald-400">KSh {(selectedProduct.price * quantity * 0.85).toLocaleString('en-KE')}</span>
-                          <span className="text-[9px] font-mono font-bold text-emerald-600 dark:text-emerald-400 tracking-tight mt-0.5 animate-pulse">15% VOLUME SAVINGS INCLUDED</span>
-                        </div>
-                      );
-                    }
-
                     if (modalHasDiscount && modalOriginalPrice) {
                       return (
                         <div className="flex flex-col">
-                          <span className="font-mono text-xs text-gray-400 dark:text-gray-500 line-through">KSh {(modalOriginalPrice * quantity).toLocaleString('en-KE')}</span>
-                          <span className="font-mono text-2xl font-black text-indigo-900 dark:text-indigo-350">KSh {(selectedProduct.price * quantity).toLocaleString('en-KE')}</span>
+                          <span className="font-mono text-xs text-gray-400 dark:text-gray-500 line-through">{formatPrice(modalOriginalPrice, currency)}</span>
+                          <span className="font-mono text-2xl font-black text-indigo-900 dark:text-indigo-350">{formatPrice(selectedProduct.price, currency)}</span>
                         </div>
                       );
                     }
 
                     return (
-                      <span className="font-mono text-2xl font-black text-indigo-900 dark:text-indigo-350">KSh {(selectedProduct.price * quantity).toLocaleString('en-KE')}</span>
+                      <span className="font-mono text-2xl font-black text-indigo-900 dark:text-indigo-350">{formatPrice(selectedProduct.price, currency)}</span>
                     );
                   })()}
                 </div>
 
-                <div className="flex flex-wrap items-center gap-3">
-                  {selectedProduct.type === 'physical' && selectedProduct.stock !== null && (
-                    <div className="flex items-center rounded-lg border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-950 p-1">
-                      <button
-                        onClick={() => setQuantity((q) => Math.max(1, q - 1))}
-                        className="px-2.5 py-1 text-sm font-semibold text-gray-750 dark:text-gray-300 hover:text-black dark:hover:text-white hover:bg-gray-50 dark:hover:bg-gray-850 rounded cursor-pointer disabled:opacity-30"
-                        disabled={selectedProduct.stock === 0}
-                      >
-                        -
-                      </button>
-                      <span className="px-3.5 font-mono text-xs font-semibold text-gray-800 dark:text-gray-250">{quantity}</span>
-                      <button
-                        onClick={() => setQuantity((q) => Math.min(selectedProduct.stock !== null && selectedProduct.stock !== undefined ? selectedProduct.stock : 999, q + 1))}
-                        className="px-2.5 py-1 text-sm font-semibold text-gray-750 dark:text-gray-300 hover:text-black dark:hover:text-white hover:bg-gray-50 dark:hover:bg-gray-850 rounded cursor-pointer disabled:opacity-30"
-                        disabled={selectedProduct.stock === 0}
-                      >
-                        +
-                      </button>
-                    </div>
-                  )}
+                <div className="flex items-center gap-3 w-full sm:w-auto">
+                  {(() => {
+                    const isOutOfStock = selectedProduct.type === 'physical' && selectedProduct.stock === 0;
+                    const isJustAdded = addedToCartToast;
+                    const isInCart = selectedProduct
+                      ? detailAddedIds.has(selectedProduct.id) || (cart && cart.some((item) => item.product?.id === selectedProduct.id || (item as any).productId === selectedProduct.id))
+                      : false;
+                    const showViewCart = isInCart && !isJustAdded;
 
-                  <button
-                    onClick={handleCartAdd}
-                    disabled={selectedProduct.type === 'physical' && selectedProduct.stock === 0}
-                    className="flex-1 sm:flex-none inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-[#111827] dark:bg-gray-800 hover:bg-gray-800 dark:hover:bg-gray-700 px-6 font-display text-xs font-bold text-white transition-all disabled:opacity-40 cursor-pointer shadow-xs whitespace-nowrap"
-                  >
-                    <ShoppingBag className="h-4 w-4" />
-                    Add to Cart
-                  </button>
+                    if (isOutOfStock) {
+                      return (
+                        <button
+                          type="button"
+                          disabled
+                          className="w-full sm:w-auto inline-flex h-12 items-center justify-center gap-2 rounded-xl bg-gray-200 dark:bg-gray-800 px-8 font-display text-xs font-bold text-gray-400 dark:text-gray-500 cursor-not-allowed shadow-xs whitespace-nowrap"
+                        >
+                          <ShoppingBag className="h-4.5 w-4.5 opacity-50" />
+                          <span>Out of Stock</span>
+                        </button>
+                      );
+                    }
 
-                  <button
-                    onClick={handleBuyNow}
-                    disabled={selectedProduct.type === 'physical' && selectedProduct.stock === 0}
-                    className="flex-1 sm:flex-none inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 dark:bg-indigo-500 dark:hover:bg-indigo-650 px-6 font-display text-xs font-bold text-white transition-all disabled:opacity-40 cursor-pointer shadow-xs whitespace-nowrap"
-                  >
-                    <Sparkles className="h-4 w-4" />
-                    Buy Now
-                  </button>
+                    return (
+                      <button
+                        type="button"
+                        id="btn-detail-add-view-cart"
+                        onClick={showViewCart ? handleViewCart : handleCartAdd}
+                        className={`w-full sm:w-auto inline-flex h-12 items-center justify-center gap-2.5 rounded-xl px-8 font-display text-sm font-bold transition-all cursor-pointer shadow-md active:scale-95 whitespace-nowrap ${
+                          isJustAdded
+                            ? 'bg-emerald-600 dark:bg-emerald-500 text-white ring-2 ring-emerald-400/60 shadow-emerald-600/25 animate-pulse'
+                            : showViewCart
+                            ? 'bg-emerald-600 hover:bg-emerald-700 dark:bg-emerald-500 dark:hover:bg-emerald-600 text-white shadow-emerald-600/20 hover:shadow-emerald-600/30 ring-1 ring-emerald-500/50'
+                            : 'bg-indigo-600 hover:bg-indigo-700 dark:bg-indigo-500 dark:hover:bg-indigo-600 text-white shadow-indigo-600/25 hover:shadow-indigo-600/35 hover:scale-101'
+                        }`}
+                        title={isJustAdded ? 'Added to cart successfully!' : showViewCart ? 'Click to proceed to cart and checkout' : 'Add product to cart'}
+                      >
+                        {isJustAdded ? (
+                          <>
+                            <Check className="h-4.5 w-4.5 stroke-[2.5]" />
+                            <span>Added to Cart!</span>
+                          </>
+                        ) : showViewCart ? (
+                          <>
+                            <ShoppingBag className="h-4.5 w-4.5" />
+                            <span>View Cart &rarr;</span>
+                          </>
+                        ) : (
+                          <>
+                            <ShoppingBag className="h-4.5 w-4.5" />
+                            <span>Add to Cart</span>
+                          </>
+                        )}
+                      </button>
+                    );
+                  })()}
                 </div>
               </div>
 
@@ -1509,7 +1469,7 @@ export default function ProductStore({
               {addedToCartToast && (
                 <div className="flex items-center gap-2 rounded-lg bg-emerald-50 border border-emerald-100 p-3 text-xs text-emerald-800 animate-in fade-in duration-200">
                   <Check className="h-4 w-4 text-emerald-600 shrink-0" />
-                  <span className="font-medium">Success: {quantity}x {selectedProduct.name} appended to your Checkout Cart!</span>
+                  <span className="font-medium">Success: {selectedProduct.name} appended to your Checkout Cart!</span>
                 </div>
               )}
 
@@ -1592,105 +1552,84 @@ export default function ProductStore({
             </div>
 
             {/* Customer Review Logs Section */}
-            <div className="border-t border-gray-100 dark:border-gray-800 pt-7">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="font-display font-semibold text-gray-900 dark:text-white text-base">Customer Reviews & Audits</h3>
+            <div className="border-t border-gray-150 dark:border-gray-800 pt-7">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+                <div>
+                  <h3 className="font-display font-semibold text-gray-900 dark:text-white text-base flex items-center gap-2">
+                    <span>Customer Reviews & Audits</span>
+                    <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60 px-2 py-0.5 text-[9px] font-mono font-bold text-emerald-700 dark:text-emerald-300">
+                      <ShieldCheck className="h-3 w-3 text-emerald-600 dark:text-emerald-400" />
+                      100% Verified Purchases
+                    </span>
+                  </h3>
+                  <p className="text-[11px] text-gray-500 dark:text-gray-400 font-sans mt-0.5">
+                    Authentic feedback from confirmed buyers. Review invitations are sent via email after order completion.
+                  </p>
+                </div>
+                
                 <button
                   onClick={() => setReviewsViewProduct(selectedProduct)}
-                  className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold shadow-xs transition-colors flex items-center gap-1.5 cursor-pointer font-mono"
+                  className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 dark:bg-indigo-500 dark:hover:bg-indigo-600 text-white rounded-xl text-xs font-bold shadow-xs transition-colors flex items-center gap-1.5 cursor-pointer font-mono whitespace-nowrap self-start sm:self-auto"
                 >
                   <Sparkles className="h-3.5 w-3.5" /> Open Reviews Page ({selectedProduct.reviewsCount})
                 </button>
               </div>
 
               {selectedProduct.reviews.length === 0 ? (
-                <p className="text-xs text-gray-400 font-extralight italic mb-5">Be the first verified customer to write feedback for this product.</p>
+                <div className="rounded-xl border border-indigo-100/70 dark:border-gray-800 bg-linear-to-r from-indigo-50/20 via-white to-indigo-50/10 dark:from-gray-900/40 dark:via-gray-900 dark:to-gray-900/40 p-5 flex flex-col sm:flex-row items-start sm:items-center gap-3.5 shadow-3xs mb-4">
+                  <div className="h-9 w-9 rounded-xl bg-emerald-100 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0">
+                    <ShieldCheck className="h-5 w-5" />
+                  </div>
+                  <div className="flex-1">
+                    <h4 className="text-xs font-bold text-gray-900 dark:text-white font-sans">
+                      Be the first verified customer to write feedback for this product.
+                    </h4>
+                    <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-0.5 leading-relaxed font-sans">
+                      To protect authentic community trust, reviews are only written by customers who purchased products. The secure review link will be shared to your customer email after the purchase is complete.
+                    </p>
+                  </div>
+                </div>
               ) : (
-                <div className="flex flex-col gap-4 mb-6">
+                <div className="flex flex-col gap-3.5 mb-5">
                   {selectedProduct.reviews.map((rev) => (
-                    <div key={rev.id} className="rounded-xl bg-white p-4 border border-indigo-50/50 shadow-3xs flex flex-col gap-2">
-                       <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <div className="h-7 w-7 rounded-full bg-indigo-50 text-indigo-600 flex items-center justify-center font-bold text-[10px]">
+                    <div key={rev.id} className="rounded-xl bg-white dark:bg-gray-900 p-4 border border-indigo-50/70 dark:border-gray-800 shadow-3xs flex flex-col gap-2">
+                       <div className="flex items-center justify-between flex-wrap gap-2">
+                        <div className="flex items-center gap-2.5">
+                          <div className="h-7 w-7 rounded-full bg-indigo-50 dark:bg-indigo-950 text-indigo-600 dark:text-indigo-400 flex items-center justify-center font-bold text-[10px]">
                             {rev.userName.slice(0, 2).toUpperCase()}
                           </div>
                           <div>
-                            <span className="text-xs font-bold text-gray-800 block leading-none">{rev.userName}</span>
-                            <div className="flex items-center text-amber-500 mt-0.5">
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-xs font-bold text-gray-800 dark:text-gray-100 leading-none">{rev.userName}</span>
+                              <span className="inline-flex items-center gap-0.5 text-[8.5px] font-mono font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 px-1.5 py-0.2 rounded border border-emerald-150 dark:border-emerald-900/40">
+                                <Check className="h-2.5 w-2.5" /> Verified Buyer
+                              </span>
+                            </div>
+                            <div className="flex items-center text-amber-500 mt-1">
                               {Array.from({ length: 5 }).map((_, idx) => (
                                 <Star
                                   key={idx}
-                                  className={`h-3 w-3 ${idx < Math.floor(rev.rating) ? 'fill-current text-amber-500' : 'text-gray-200'}`}
+                                  className={`h-3 w-3 ${idx < Math.floor(rev.rating) ? 'fill-current text-amber-500' : 'text-gray-200 dark:text-gray-800'}`}
                                 />
                               ))}
                             </div>
                           </div>
                         </div>
-                        <span className="text-[10px] text-gray-400 font-semibold font-mono">{rev.date}</span>
+                        <span className="text-[10px] text-gray-400 dark:text-gray-500 font-semibold font-mono">{rev.date}</span>
                       </div>
-                      <p className="text-xs text-gray-650 font-extralight mt-1.5 leading-relaxed italic">"{rev.comment}"</p>
+                      <p className="text-xs text-gray-650 dark:text-gray-300 font-normal mt-1 leading-relaxed italic">"{rev.comment}"</p>
                     </div>
                   ))}
+                  
+                  {/* Verified Purchase Assurance Note */}
+                  <div className="rounded-lg border border-slate-200/80 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-900/60 p-3 flex items-center gap-2.5 text-[11px] text-slate-500 dark:text-slate-400 font-sans">
+                    <ShieldCheck className="h-4 w-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                    <span>
+                      Reviews are only written by customers who purchased products. A dedicated review link is shared to customer email after purchase delivery is confirmed.
+                    </span>
+                  </div>
                 </div>
               )}
-
-              {/* Submission Form */}
-              <form onSubmit={handleReviewSubmit} className="border border-slate-200/80 dark:border-slate-800 rounded-xl p-5 bg-white dark:bg-slate-900 shadow-xs">
-                <h4 className="font-display text-xs font-bold text-indigo-900 dark:text-indigo-300 flex items-center gap-1.5 mb-3.5 uppercase tracking-wide font-mono">
-                  <Sparkles className="h-4 w-4 text-indigo-600" /> Post Verified Customer Audit
-                </h4>
-                {reviewSuccessMsg && (
-                  <div className="mb-4 rounded-lg bg-emerald-50 border border-emerald-100 text-emerald-800 p-3 text-xs font-medium">
-                    {reviewSuccessMsg}
-                  </div>
-                )}
-                
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
-                  <div>
-                    <label className="block text-[10px] font-bold text-indigo-650 dark:text-indigo-400 uppercase tracking-wider mb-1 font-mono">Auditor Name</label>
-                    <input
-                      type="text"
-                      required
-                      value={reviewerName}
-                      onChange={(e) => setReviewerName(e.target.value)}
-                      placeholder="e.g., Jane Sterling"
-                      className="h-10 w-full rounded-lg border border-gray-200 dark:border-gray-800 px-3.5 text-xs font-light text-gray-800 dark:text-gray-100 placeholder-gray-400 focus:border-indigo-500 focus:outline-hidden bg-white dark:bg-gray-950"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[10px] font-bold text-indigo-650 dark:text-indigo-400 uppercase tracking-wider mb-1 font-mono">Metric Score</label>
-                    <select
-                      value={reviewerRating}
-                      onChange={(e) => setReviewerRating(Number(e.target.value))}
-                      className="h-10 w-full rounded-lg border border-gray-200 dark:border-gray-800 px-3 text-xs font-semibold text-gray-850 dark:text-gray-200 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-550 focus:outline-hidden bg-white dark:bg-gray-950 cursor-pointer"
-                    >
-                      <option value={5}>5 Stars - Elite Grade</option>
-                      <option value={4}>4 Stars - High Quality</option>
-                      <option value={3}>3 Stars - Fair/Decent</option>
-                      <option value={2}>2 Stars - Underperforming</option>
-                      <option value={1}>1 Star - Flawed</option>
-                    </select>
-                  </div>
-                </div>
-                
-                <div className="mb-4.5">
-                  <label className="block text-[10px] font-bold text-indigo-650 dark:text-indigo-400 uppercase tracking-wider mb-1 font-mono">Detailed Statement</label>
-                  <textarea
-                    required
-                    value={reviewerComment}
-                    onChange={(e) => setReviewerComment(e.target.value)}
-                    placeholder="Enter your experience details with our structural workshop objects..."
-                    rows={4}
-                    className="w-full rounded-lg border border-gray-200 dark:border-gray-800 px-3.5 py-2.5 text-xs font-light text-gray-800 dark:text-gray-100 focus:border-indigo-500 focus:outline-hidden bg-white dark:bg-gray-950"
-                  />
-                </div>
-                <button
-                  type="submit"
-                  className="w-full h-10 rounded-lg bg-[#111827] dark:bg-gray-800 hover:bg-gray-800 dark:hover:bg-gray-700 font-display text-xs font-bold text-white transition-colors cursor-pointer shadow-xs"
-                >
-                  Publish Verified Review
-                </button>
-              </form>
             </div>
           </div>
         </div>
@@ -2602,11 +2541,11 @@ export default function ProductStore({
                             <div className="flex flex-col">
                               {hasDiscount && originalPriceVal && (
                                 <span className="font-mono text-[10px] sm:text-xs text-slate-400 dark:text-slate-500 line-through">
-                                  KSh {originalPriceVal.toLocaleString('en-KE')}
+                                  {formatPrice(originalPriceVal, currency)}
                                 </span>
                               )}
                               <span className="font-mono font-bold text-xs sm:text-sm text-slate-900 dark:text-white whitespace-nowrap">
-                                KSh {product.price.toLocaleString('en-KE')}
+                                {formatPrice(product.price, currency)}
                               </span>
                             </div>
                           );
@@ -2744,11 +2683,11 @@ export default function ProductStore({
                               <div className="flex items-baseline gap-2">
                                 {hasDiscount && originalPriceVal && (
                                   <span className="font-mono text-xs text-slate-400 dark:text-slate-500 line-through">
-                                    KSh {originalPriceVal.toLocaleString('en-KE')}
+                                    {formatPrice(originalPriceVal, currency)}
                                   </span>
                                 )}
                                 <span className="font-mono font-bold text-sm sm:text-base text-slate-900 dark:text-white whitespace-nowrap">
-                                  KSh {product.price.toLocaleString('en-KE')}
+                                  {formatPrice(product.price, currency)}
                                 </span>
                               </div>
                             );
@@ -3031,11 +2970,11 @@ export default function ProductStore({
                         <div className="flex flex-col">
                           {hasDiscount && originalPriceVal && (
                             <span className="font-mono text-[10px] text-gray-400 dark:text-gray-500 line-through">
-                              KSh {originalPriceVal.toLocaleString('en-KE')}
+                              {formatPrice(originalPriceVal, currency)}
                             </span>
                           )}
                           <span className="font-mono font-bold text-xs text-indigo-950 dark:text-indigo-300">
-                            KSh {p.price.toLocaleString('en-KE')}
+                            {formatPrice(p.price, currency)}
                           </span>
                         </div>
                       );
@@ -3058,6 +2997,7 @@ export default function ProductStore({
           initialRightProductId={compareRightId}
           onClose={() => setIsCompareOpen(false)}
           onAddToCart={onAddToCart}
+          currency={currency}
         />
       )}
     </div>

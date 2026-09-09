@@ -8,12 +8,14 @@ import { Product } from '../types';
 import { Tag, Clock, ArrowRight, Star, Flame, Sparkles, Percent } from 'lucide-react';
 import CountdownTimer from './CountdownTimer';
 import { getProductDiscountInfo } from '../utils/productUtils';
+import { CurrencyType, formatPrice } from '../lib/currency';
 
 interface SaleProductsProps {
   products: Product[];
   onProductClick: (product: Product) => void;
   setCurrentTab: (tab: string) => void;
   onSelectSale?: () => void;
+  currency?: CurrencyType;
 }
 
 export default function SaleProducts({
@@ -21,6 +23,7 @@ export default function SaleProducts({
   onProductClick,
   setCurrentTab,
   onSelectSale,
+  currency = 'KSh',
 }: SaleProductsProps) {
   // Filter active products that are on sale (have a valid previousPrice greater than current price)
   const saleProducts = products.filter(
@@ -58,29 +61,20 @@ export default function SaleProducts({
   }, []);
 
   // Format with leading zeros
-  const formatTime = (num: number) => String(num).padStart(2, '0');
+  const fNum = (n: number) => n.toString().padStart(2, '0');
 
-  if (saleProducts.length === 0) {
-    return null; // Don't render the section if no products are on sale
-  }
+  if (saleProducts.length === 0) return null;
 
   return (
-    <section className="bg-slate-50 dark:bg-slate-900/60 py-16 border-t border-slate-200/80 dark:border-slate-800" id="promotional-sales-section">
+    <section className="py-8 bg-gradient-to-b from-[#f8faff] via-rose-50/20 to-[#f8faff] border-t border-rose-100/40">
       <div className="w-full max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8">
-        
-        {/* Editorial Promotion Header */}
-        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between border-b border-rose-100 pb-8 mb-10 gap-6">
-          <div className="max-w-xl">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="inline-flex items-center gap-1 rounded-full bg-rose-50 px-2.5 py-0.5 text-[10px] font-mono font-bold text-rose-600 uppercase tracking-wider">
-                <Flame className="h-3 w-3 text-rose-500 animate-pulse" />
-                Limited Valuations
-              </span>
-              <span className="inline-flex items-center gap-1 text-[9px] font-mono text-rose-700 bg-rose-50/50 px-2 py-0.5 rounded-full font-bold uppercase tracking-wider">
-                Active Offer
-              </span>
+        <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-6 mb-8">
+          <div>
+            <div className="flex items-center gap-2 text-xs font-mono font-bold text-rose-600 uppercase tracking-widest">
+              <Flame className="h-4 w-4" />
+              <span>Limited-Time Price Cuts</span>
             </div>
-            <h2 className="mt-2.5 font-display text-2xl font-bold text-gray-900 tracking-tight">
+            <h2 className="mt-1 text-2xl font-display font-bold text-gray-900 tracking-tight">
               Exclusive Archival Offerings
             </h2>
             <p className="mt-1.5 text-xs text-gray-400 font-extralight leading-relaxed">
@@ -97,21 +91,21 @@ export default function SaleProducts({
               <div className="flex items-center gap-1.5">
                 <div className="flex flex-col items-center">
                   <div className="bg-rose-950 text-rose-100 font-mono text-sm font-bold h-9 w-10 rounded-lg flex items-center justify-center shadow-[inset_0_2px_4px_rgba(0,0,0,0.4)] border border-rose-800/30">
-                    {formatTime(timeLeft.hours)}
+                    {fNum(timeLeft.hours)}
                   </div>
                   <span className="text-[8px] text-rose-500 font-mono mt-1 font-bold tracking-wider uppercase">Hrs</span>
                 </div>
                 <span className="text-rose-500 font-bold -mt-4 animate-pulse">:</span>
                 <div className="flex flex-col items-center">
                   <div className="bg-rose-950 text-rose-100 font-mono text-sm font-bold h-9 w-10 rounded-lg flex items-center justify-center shadow-[inset_0_2px_4px_rgba(0,0,0,0.4)] border border-rose-800/30">
-                    {formatTime(timeLeft.minutes)}
+                    {fNum(timeLeft.minutes)}
                   </div>
                   <span className="text-[8px] text-rose-500 font-mono mt-1 font-bold tracking-wider uppercase">Min</span>
                 </div>
                 <span className="text-rose-500 font-bold -mt-4 animate-pulse">:</span>
                 <div className="flex flex-col items-center">
                   <div className="bg-rose-600 text-white font-mono text-sm font-bold h-9 w-10 rounded-lg flex items-center justify-center shadow-[0_2px_8px_rgba(220,38,38,0.25)] border border-rose-500 animate-pulse">
-                    {formatTime(timeLeft.seconds)}
+                    {fNum(timeLeft.seconds)}
                   </div>
                   <span className="text-[8px] text-rose-600 font-mono mt-1 font-bold tracking-wider uppercase">Sec</span>
                 </div>
@@ -234,11 +228,11 @@ export default function SaleProducts({
                   <div className="flex flex-col">
                     {previousPrice && previousPrice > product.price && (
                       <span className="font-mono text-[10px] line-through text-gray-400">
-                        KSh {previousPrice.toLocaleString('en-KE')}
+                        {formatPrice(previousPrice, currency)}
                       </span>
                     )}
                     <span className="font-mono font-bold text-base text-rose-600">
-                      KSh {product.price.toLocaleString('en-KE')}
+                      {formatPrice(product.price, currency)}
                     </span>
                   </div>
                   <span className="inline-flex items-center gap-0.5 text-[10px] font-bold text-rose-600 group-hover:text-rose-800 transition-colors">

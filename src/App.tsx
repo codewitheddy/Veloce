@@ -88,7 +88,7 @@ import {
 } from './data';
 import api, { fetchProducts, productService, pushOrderToBackend, orderService, mapBackendProductToFrontend } from './services/api';
 import { mapBackendOrderToFrontend } from './api/orders';
-import { clearVeloceLocalStorageItems, checkAndPurgeBackendSyncStorage, safeLocalStorageSetItem, safeLocalStorageGetItem, saveToIndexedDb } from './lib/storage';
+import { clearVeloceLocalStorageItems, safeLocalStorageSetItem, safeLocalStorageGetItem, saveToIndexedDb, getFromIndexedDb } from './lib/storage';
 import { siteSettingsApi } from './services/siteSettingsApi';
 
 export default function App() {
@@ -382,9 +382,6 @@ export default function App() {
 
   // Fetch products, orders & inventory state directly from Django backend API as primary source of truth
   useEffect(() => {
-    // Purge 'veloce_' prefixed items from localStorage if is_backend_sync_enabled flag is set
-    checkAndPurgeBackendSyncStorage();
-
     let isMounted = true;
     const loadBackendData = async () => {
       // 1. Authoritative Products from Django Backend
@@ -465,6 +462,48 @@ export default function App() {
   const [cart, setCart] = useState<CartItem[]>(() => {
     return safeLocalStorageGetItem('veloce_cart', []);
   });
+
+  // Asynchronous IndexedDB cart recovery fallback if localStorage is empty on initial load
+  useEffect(() => {
+    if (cart.length === 0) {
+      getFromIndexedDb<CartItem[]>('veloce_cache', 'veloce_cart', []).then((idbCart) => {
+        if (Array.isArray(idbCart) && idbCart.length > 0) {
+          setCart((prev) => (prev.length === 0 ? idbCart : prev));
+        }
+      }).catch(() => {});
+    }
+  }, []);
+
+  // Rehydrate cart items with fresh product details (full resolution images, stock, variations)
+  useEffect(() => {
+    if (products.length > 0) {
+      setCart((prevCart) => {
+        if (!prevCart || prevCart.length === 0) return prevCart;
+        let changed = false;
+        const updated = prevCart.map((item) => {
+          const freshProd = products.find((p) => p.id === item.product?.id);
+          if (freshProd) {
+            const hasMissingImage = !item.product?.imageUrl && freshProd.imageUrl;
+            const priceChanged = item.product?.price !== freshProd.price;
+            const stockChanged = item.product?.stock !== freshProd.stock;
+            if (hasMissingImage || priceChanged || stockChanged) {
+              changed = true;
+              return {
+                ...item,
+                product: {
+                  ...freshProd,
+                  ...item.product,
+                  imageUrl: freshProd.imageUrl || item.product.imageUrl,
+                },
+              };
+            }
+          }
+          return item;
+        });
+        return changed ? updated : prevCart;
+      });
+    }
+  }, [products]);
 
   const [wishlist, setWishlist] = useState<string[]>(() => {
     return safeLocalStorageGetItem('veloce_wishlist', []);
@@ -985,40 +1024,49 @@ export default function App() {
           JSON.stringify(item.selectedVariations) === JSON.stringify(vars)
       );
 
+      let updated: CartItem[];
       if (existingIdx > -1) {
-        const updated = [...prevCart];
+        updated = [...prevCart];
         updated[existingIdx].quantity += quantity;
-        return updated;
       } else {
-        return [...prevCart, { product, quantity, selectedVariations: vars }];
+        updated = [...prevCart, { product, quantity, selectedVariations: vars }];
       }
+      safeLocalStorageSetItem('veloce_cart', JSON.stringify(updated));
+      return updated;
     });
   };
 
   const handleUpdateCartQty = (productId: string, vars: Record<string, string>, qty: number) => {
-    setCart((prevCart) =>
-      prevCart.map((item) =>
+    setCart((prevCart) => {
+      const updated = prevCart.map((item) =>
         item.product.id === productId &&
         JSON.stringify(item.selectedVariations) === JSON.stringify(vars)
           ? { ...item, quantity: qty }
           : item
-      )
-    );
+      );
+      safeLocalStorageSetItem('veloce_cart', JSON.stringify(updated));
+      return updated;
+    });
   };
 
   const handleRemoveFromCart = (productId: string, vars: Record<string, string>) => {
-    setCart((prevCart) =>
-      prevCart.filter(
+    setCart((prevCart) => {
+      const updated = prevCart.filter(
         (item) =>
           !(
             item.product.id === productId &&
             JSON.stringify(item.selectedVariations) === JSON.stringify(vars)
           )
-      )
-    );
+      );
+      safeLocalStorageSetItem('veloce_cart', JSON.stringify(updated));
+      return updated;
+    });
   };
 
-  const handleClearCart = () => setCart([]);
+  const handleClearCart = () => {
+    setCart([]);
+    safeLocalStorageSetItem('veloce_cart', JSON.stringify([]));
+  };
 
   const handleBulkMoveToWishlist = (productIds: string[]) => {
     // Add all of these productIds to the wishlist if they aren't already there
@@ -1812,9 +1860,11 @@ export default function App() {
             onSelectSale={handleSelectSale}
             onTriggerCustomEmail={triggerCustomEmail}
             onAddToCart={handleAddToCart}
+            cart={cart}
             wishlist={wishlist}
             onToggleWishlist={handleToggleWishlist}
             darkMode={darkMode}
+            currency={currency}
           />
         );
       case 'store':
@@ -1829,6 +1879,7 @@ export default function App() {
               handleAddToCart(product, quantity, vars);
               handleTabChange('checkout');
             }}
+            onViewCart={() => handleTabChange('checkout')}
             onAddReview={handleAddReview}
             selectedProduct={selectedProduct}
             setSelectedProduct={setSelectedProduct}
@@ -1886,6 +1937,7 @@ export default function App() {
             darkMode={darkMode}
             fontSize={fontSize}
             onChangeFontSize={setFontSize}
+            currency={currency}
             returnRequests={returnRequests}
             onCreateReturnRequest={handleCreateReturnRequest}
             onUpdateReturnRequestStatus={handleUpdateReturnRequestStatus}

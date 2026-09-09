@@ -7,6 +7,7 @@ import React, { useState } from 'react';
 import { X, Star, ShoppingBag, Check, ShieldCheck, Scale, Award, Info, ArrowRightLeft, Sparkles } from 'lucide-react';
 import { Product } from '../types';
 import { getProductDiscountInfo } from '../utils/productUtils';
+import { CurrencyType, formatPrice } from '../lib/currency';
 
 interface ProductCompareModalProps {
   products: Product[];
@@ -14,6 +15,7 @@ interface ProductCompareModalProps {
   initialRightProductId?: string;
   onClose: () => void;
   onAddToCart: (product: Product, quantity: number, vars: Record<string, string>) => void;
+  currency?: CurrencyType;
 }
 
 interface ProductSpec {
@@ -113,6 +115,7 @@ export default function ProductCompareModal({
   initialRightProductId,
   onClose,
   onAddToCart,
+  currency = 'KSh',
 }: ProductCompareModalProps) {
   // Try to default Left product
   const [leftProduct, setLeftProduct] = useState<Product | null>(() => {
@@ -246,7 +249,7 @@ export default function ProductCompareModal({
               >
                 {products.map(p => (
                   <option key={p.id} value={p.id} disabled={rightProduct?.id === p.id}>
-                    [{p.type.toUpperCase()}] {p.name} — KSh {p.price.toLocaleString('en-KE')}
+                    [{p.type.toUpperCase()}] {p.name} — {formatPrice(p.price, currency)}
                   </option>
                 ))}
               </select>
@@ -266,7 +269,7 @@ export default function ProductCompareModal({
                 <option value="" disabled>-- Select secondary product --</option>
                 {products.map(p => (
                   <option key={p.id} value={p.id} disabled={leftProduct?.id === p.id}>
-                    [{p.type.toUpperCase()}] {p.name} — KSh {p.price.toLocaleString('en-KE')}
+                    [{p.type.toUpperCase()}] {p.name} — {formatPrice(p.price, currency)}
                   </option>
                 ))}
               </select>
@@ -319,10 +322,10 @@ export default function ProductCompareModal({
                       <div className="flex flex-col">
                         {hasDiscount && originalPriceVal && (
                           <span className="font-mono text-xs text-gray-400 line-through">
-                            KSh {originalPriceVal.toLocaleString('en-KE')}
+                            {formatPrice(originalPriceVal, currency)}
                           </span>
                         )}
-                        <span className="text-lg font-mono font-bold text-gray-950">KSh {leftProduct.price.toLocaleString('en-KE')}</span>
+                        <span className="text-lg font-mono font-bold text-gray-950">{formatPrice(leftProduct.price, currency)}</span>
                       </div>
                     );
                   })()}
@@ -390,10 +393,10 @@ export default function ProductCompareModal({
                       <div className="flex flex-col">
                         {hasDiscount && originalPriceVal && (
                           <span className="font-mono text-xs text-gray-400 line-through">
-                            KSh {originalPriceVal.toLocaleString('en-KE')}
+                            {formatPrice(originalPriceVal, currency)}
                           </span>
                         )}
-                        <span className="text-lg font-mono font-bold text-gray-950">KSh {rightProduct.price.toLocaleString('en-KE')}</span>
+                        <span className="text-lg font-mono font-bold text-gray-950">{formatPrice(rightProduct.price, currency)}</span>
                       </div>
                     );
                   })()}
@@ -433,14 +436,14 @@ export default function ProductCompareModal({
                   <div className="col-span-12 md:col-span-4 font-bold text-gray-500 uppercase text-[9px] font-mono">Retail Price</div>
                   <div className="col-span-6 md:col-span-4 mt-1 md:mt-0">
                     <span className={`font-mono font-bold text-sm ${leftCheaper ? 'text-emerald-600' : 'text-gray-900'}`}>
-                      KSh {leftProduct.price.toLocaleString('en-KE')}
+                      {formatPrice(leftProduct.price, currency)}
                     </span>
                     {leftCheaper && <span className="ml-1.5 text-[9px] font-mono text-emerald-600 bg-emerald-50 px-1 py-0.1 rounded font-bold uppercase">Better value</span>}
                     {pricesEqual && <span className="ml-1.5 text-[9px] font-mono text-gray-500 bg-gray-50 px-1 py-0.1 rounded font-semibold uppercase">Tie</span>}
                   </div>
                   <div className="col-span-6 md:col-span-4 mt-1 md:mt-0 text-right md:text-left">
                     <span className={`font-mono font-bold text-sm ${rightCheaper ? 'text-emerald-600' : 'text-gray-900'}`}>
-                      KSh {rightProduct.price.toLocaleString('en-KE')}
+                      {formatPrice(rightProduct.price, currency)}
                     </span>
                     {rightCheaper && <span className="ml-1.5 text-[9px] font-mono text-emerald-600 bg-emerald-50 px-1 py-0.1 rounded font-bold uppercase">Better value</span>}
                     {pricesEqual && <span className="ml-1.5 text-[9px] font-mono text-gray-500 bg-gray-50 px-1 py-0.1 rounded font-semibold uppercase">Tie</span>}

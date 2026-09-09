@@ -6,7 +6,7 @@
 import React, { useState, useMemo } from 'react';
 import { User, ShieldCheck, Mail, Key, ShoppingBag, FileText, Check, Award, Copy, Heart, Users, LogOut, Printer, RefreshCw, Clock, Truck, MapPin, ShoppingCart, Edit2, Trash2, MessageSquare, History, Plus, Calendar, Filter, Sparkles, Search, X, Download, Settings, Bell, TrendingDown, AlertCircle, Tag, Trophy, Medal, Sun, Moon, Type, ArrowRight, Navigation, Ticket, PlusCircle, LifeBuoy, Send, HelpCircle, CheckCircle, Package, Eye, List, Grid, ChevronDown, ChevronUp, ChevronLeft, ChevronRight } from 'lucide-react';
 import { Order, Product, OrderStatusHistoryEntry, CartItem, ReturnRequest } from '../types';
-import { formatPrice } from '../lib/currency';
+import { CurrencyType, formatPrice } from '../lib/currency';
 import { getProductDiscountInfo } from '../utils/productUtils';
 import OrderReceiptModal from './OrderReceiptModal';
 import TaxInvoiceModal from './TaxInvoiceModal';
@@ -42,6 +42,7 @@ interface UserAccountProps {
   darkMode?: boolean;
   fontSize?: string;
   onChangeFontSize?: (size: string) => void;
+  currency?: CurrencyType;
   returnRequests?: ReturnRequest[];
   onCreateReturnRequest?: (request: ReturnRequest) => void;
   onUpdateReturnRequestStatus?: (requestId: string, status: ReturnRequest['status'], adminNote?: string, trackingNumber?: string) => void;
@@ -237,6 +238,7 @@ export default function UserAccount({
   darkMode = false,
   fontSize = 'normal',
   onChangeFontSize = () => {},
+  currency = 'KSh',
   returnRequests = [],
   onCreateReturnRequest = () => {},
   onUpdateReturnRequestStatus = () => {},
@@ -968,7 +970,7 @@ export default function UserAccount({
           )}
           <button
             onClick={handleSignOut}
-            className="inline-flex h-9 items-center gap-1.5 rounded-md border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-950 px-3 text-xs font-medium text-gray-600 dark:text-gray-300 hover:text-red-650 hover:bg-red-50 dark:hover:bg-red-955/20 transition-colors cursor-pointer"
+            className="inline-flex h-9 items-center gap-1.5 rounded-md border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-950 px-3 text-xs font-medium text-gray-600 dark:text-gray-300 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-955/20 transition-colors cursor-pointer"
           >
             <LogOut className="h-4 w-4" /> Sign Out
           </button>
@@ -2455,7 +2457,7 @@ export default function UserAccount({
                               {order.status === 'pending-cancellation' ? 'Cancellation Pending Review' : 'Transaction Terminated'}
                             </span>
                             <div className="text-[11px] text-gray-550 dark:text-gray-400 font-light mt-0.5">
-                              This order is <span className="font-mono font-bold text-red-650 dark:text-red-400 uppercase">{order.status === 'pending-cancellation' ? 'Pending Cancellation' : 'Cancelled'}</span>.
+                              This order is <span className="font-mono font-bold text-red-600 dark:text-red-400 uppercase">{order.status === 'pending-cancellation' ? 'Pending Cancellation' : 'Cancelled'}</span>.
                             </div>
                           </div>
                         </div>
@@ -2987,7 +2989,7 @@ export default function UserAccount({
                                 if (onUpdateOrderNote) onUpdateOrderNote(order.id, '');
                               }
                             }}
-                            className="text-gray-400 hover:text-red-650 dark:hover:text-red-400 p-0.5 rounded transition-all shrink-0 cursor-pointer self-start opacity-0 group-hover:opacity-100 focus:opacity-100"
+                            className="text-gray-400 hover:text-red-600 dark:hover:text-red-400 p-0.5 rounded transition-all shrink-0 cursor-pointer self-start opacity-0 group-hover:opacity-100 focus:opacity-100"
                             title="Remove Note"
                           >
                             <Trash2 className="h-3.5 w-3.5" />
@@ -4162,6 +4164,7 @@ export default function UserAccount({
         orders={orders}
         products={products}
         initialOrderId={trackingOrderId}
+        currency={currency}
       />
 
       <EditProfileModal

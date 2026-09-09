@@ -1,0 +1,30 @@
+{% extends "emails/base.html" %}
+
+{% block title %}Welcome to {{ brand_name }}! 🌟{% endblock %}
+
+{% block header_style %}
+background: linear-gradient(135deg, #4f46e5 0%, #3730a3 100%);
+{% endblock %}
+
+{% block header %}
+<span class="header-badge" style="background: rgba(255,255,255,0.2);">Member Onboarding</span>
+<h1 class="header-title">Welcome to {{ brand_name }}!</h1>
+<p class="header-subtitle">Your Premier Commerce Account is Active</p>
+{% endblock %}
+
+{% block content %}
+<p style="font-size: 15px; margin: 0 0 12px 0;">Hi <strong>{{ user_name }}</strong>,</p>
+<p style="font-size: 14px; color: #4b5563; line-height: 1.6; margin: 0 0 16px 0;">
+    Thank you for joining <strong>{{ brand_name }}</strong>! Your account has been initialized and <strong>150 Loyalty Welcome Points</strong> have been credited to your profile.
+</p>
+
+<div class="highlight-badge">
+    🎁 <strong>Exclusive Benefits:</strong> Fast-track checkout, order tracking, reward redemption, and partner discounts are now unlocked.
+</div>
+
+<div style="text-align: center; margin: 24px 0 8px 0;">
+    <a href="{{ frontend_url }}" class="btn-primary">
+        Start Shopping Now →
+    </a>
+</div>
+{% endblock %}

@@ -1,0 +1,35 @@
+{% extends "emails/base.txt" %}
+
+{% block content %}
+NEW ORDER RECEIVED
+==================
+Order ID: #{{ order_short_id }} ({{ order_id }})
+Date    : {{ order_date|default:current_time_utc }}
+Status  : {{ status|default:"Processing" }}
+Account : {{ account_badge|default:"Guest Checkout" }}
+
+CUSTOMER INFORMATION:
+Name    : {{ customer_name }}
+Email   : {{ customer_email }}
+Phone   : {{ customer_phone|default:"N/A" }}
+Shipping: {{ shipping_address|default:"N/A" }}
+{% if notes %}Notes   : {{ notes }}
+{% endif %}
+Payment : {{ payment_method }} (Ref: {{ payment_reference|default:"Pending" }})
+Affiliate: {{ affiliate_code|default:"None" }}
+
+ITEMS ORDERED:
+----------------------------------------
+{% for item in items %}
+• {{ item.product_name }}{% if item.product_sku %} (SKU: {{ item.product_sku }}){% endif %}{% if item.selected_variations %} [{{ item.selected_variations }}]{% endif %} (x{{ item.quantity }}) - KSh {{ item.total_formatted }}
+{% endfor %}
+----------------------------------------
+Subtotal    : KSh {{ subtotal_formatted }}
+{% if discount > 0 %}Discount    : -KSh {{ discount_formatted }}
+{% endif %}Shipping Fee: KSh {{ shipping_fee_formatted }}
+{% if tax_amount > 0 %}VAT (16%)   : KSh {{ tax_amount_formatted }}
+{% endif %}Grand Total : KSh {{ total_formatted }}
+
+Manage order in Admin: {{ frontend_url }}/admin
+* Note: You can reply directly to this email to contact {{ customer_name }} at {{ customer_email }}.
+{% endblock %}

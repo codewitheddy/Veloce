@@ -20,31 +20,39 @@ import {
   Check,
   Zap
 } from 'lucide-react';
-import { Product } from '../types';
+import { Product, CartItem } from '../types';
 import LazyImage from './LazyImage';
 import { getProductDiscountInfo } from '../utils/productUtils';
+import { CurrencyType, formatPrice } from '../lib/currency';
 
 interface BestSellersNewArrivalsCarouselProps {
   products: Product[];
   onSelectProduct: (product: Product) => void;
   onAddToCart?: (product: Product, quantity: number, vars: Record<string, string>) => void;
+  cart?: CartItem[];
+  onViewCart?: () => void;
   wishlist?: string[];
   onToggleWishlist?: (productId: string) => void;
   className?: string;
   darkMode?: boolean;
+  currency?: CurrencyType;
 }
 
 export default function BestSellersNewArrivalsCarousel({
   products,
   onSelectProduct,
   onAddToCart,
+  cart = [],
+  onViewCart,
   wishlist = [],
   onToggleWishlist = () => {},
   className = '',
   darkMode = false,
+  currency = 'KSh',
 }: BestSellersNewArrivalsCarouselProps) {
   const [activeTab, setActiveTab] = useState<'bestsellers' | 'newarrivals' | 'all'>('bestsellers');
   const [addedToastId, setAddedToastId] = useState<string | null>(null);
+  const [addedProductIds, setAddedProductIds] = useState<Set<string>>(new Set());
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const [canScrollLeft, setCanScrollLeft] = useState(false);
   const [canScrollRight, setCanScrollRight] = useState(true);
@@ -108,12 +116,36 @@ export default function BestSellersNewArrivalsCarousel({
     }
   };
 
-  const handleQuickAdd = (e: React.MouseEvent, product: Product) => {
+  const isItemInCart = (prodId: string) => {
+    return (
+      addedProductIds.has(prodId) ||
+      Boolean(
+        cart &&
+        cart.some(
+          (item) => item.product?.id === prodId || (item as any).productId === prodId
+        )
+      )
+    );
+  };
+
+  const handleActionClick = (e: React.MouseEvent, product: Product) => {
     e.stopPropagation();
+    const isInCart = isItemInCart(product.id);
+
+    // If already in cart and not in brief 'Added!' success flash, navigate directly to cart
+    if (isInCart && addedToastId !== product.id) {
+      if (onViewCart) {
+        onViewCart();
+      } else {
+        onSelectProduct(product);
+      }
+      return;
+    }
+
     if (onAddToCart) {
       const defaultVars: Record<string, string> = {};
       if (product.variations) {
-        product.variations.forEach(v => {
+        product.variations.forEach((v) => {
           if (v.options && v.options.length > 0) {
             defaultVars[v.name] = v.options[0];
           }
@@ -121,7 +153,12 @@ export default function BestSellersNewArrivalsCarousel({
       }
       onAddToCart(product, 1, defaultVars);
       setAddedToastId(product.id);
-      setTimeout(() => setAddedToastId(null), 1800);
+      setAddedProductIds((prev) => {
+        const next = new Set(prev);
+        next.add(product.id);
+        return next;
+      });
+      setTimeout(() => setAddedToastId(null), 1500);
     } else {
       onSelectProduct(product);
     }
@@ -250,6 +287,8 @@ export default function BestSellersNewArrivalsCarousel({
             const isBestSeller = bestSellers.some(bs => bs.id === p.id);
             const isNewArrival = newArrivals.some(na => na.id === p.id);
             const isJustAdded = addedToastId === p.id;
+            const isInCart = isItemInCart(p.id);
+            const showViewCart = isInCart && !isJustAdded;
             const { hasDiscount, originalPrice: originalPriceVal, discountPercent } = getProductDiscountInfo(p);
 
             return (
@@ -342,27 +381,33 @@ export default function BestSellersNewArrivalsCarousel({
                   <div className="flex flex-col">
                     {hasDiscount && originalPriceVal && (
                       <span className="text-[10px] font-mono text-gray-400 line-through">
-                        KSh {originalPriceVal.toLocaleString('en-KE')}
+                        {formatPrice(originalPriceVal, currency)}
                       </span>
                     )}
                     <span className="font-mono text-base font-bold text-gray-900 dark:text-white">
-                      KSh {p.price.toLocaleString('en-KE')}
+                      {formatPrice(p.price, currency)}
                     </span>
                   </div>
 
                   <button
                     type="button"
-                    onClick={(e) => handleQuickAdd(e, p)}
-                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer shadow-3xs ${
+                    onClick={(e) => handleActionClick(e, p)}
+                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer shadow-3xs active:scale-95 ${
                       isJustAdded
-                        ? 'bg-emerald-600 text-white'
+                        ? 'bg-emerald-600 text-white animate-pulse'
+                        : showViewCart
+                        ? 'bg-emerald-600 hover:bg-emerald-700 dark:bg-emerald-500 dark:hover:bg-emerald-600 text-white ring-1 ring-emerald-500/50'
                         : 'bg-indigo-600 hover:bg-indigo-700 dark:bg-indigo-500 dark:hover:bg-indigo-600 text-white'
                     }`}
-                    title="Add to cart"
+                    title={isJustAdded ? 'Item added to cart!' : showViewCart ? 'View item in your cart' : 'Add to cart'}
                   >
                     {isJustAdded ? (
                       <>
                         <Check className="h-3.5 w-3.5" /> Added!
+                      </>
+                    ) : showViewCart ? (
+                      <>
+                        <ShoppingBag className="h-3.5 w-3.5" /> View Cart &rarr;
                       </>
                     ) : (
                       <>

@@ -95,7 +95,7 @@ export default function Header({
   activeCategory,
   activeType,
 }: HeaderProps) {
-  const { language, setLanguage, t } = useLanguage();
+  const { language, setLanguage, supportedLanguages, t } = useLanguage();
   const [localSearchQuery, setLocalSearchQuery] = useState('');
   const searchQuery = searchQueryProp !== undefined ? searchQueryProp : localSearchQuery;
 
@@ -258,7 +258,7 @@ export default function Header({
                 onClick={() => setIsLocationMenuOpen(!isLocationMenuOpen)}
                 className="flex items-center gap-1.5 text-slate-300 hover:text-white font-medium cursor-pointer transition-colors text-[11px] sm:text-xs whitespace-nowrap"
               >
-                <span className="text-slate-400">Deliver to</span>
+                <span className="text-slate-400">{t('deliverTo')}</span>
                 <span className="font-bold text-white flex items-center gap-1">
                   <span>{selectedLocation.flag}</span>
                   <span>{selectedLocation.city}</span>
@@ -269,7 +269,7 @@ export default function Header({
               {isLocationMenuOpen && (
                 <div className="absolute left-0 top-full mt-1.5 w-48 bg-slate-900 border border-slate-750 rounded-lg shadow-2xl z-50 py-1.5 animate-in fade-in">
                   <div className="px-3 py-1 text-[10px] uppercase font-bold text-slate-400 border-b border-slate-800 mb-1">
-                    Select Destination
+                    {t('deliverTo')}
                   </div>
                   {DELIVERY_LOCATIONS.map((loc) => (
                     <button
@@ -296,13 +296,13 @@ export default function Header({
             {/* Express Delivery */}
             <div className="hidden md:flex items-center gap-1.5 text-slate-400 font-medium text-[11px] sm:text-xs whitespace-nowrap">
               <Truck className="w-3.5 h-3.5 text-indigo-400" />
-              <span>Express Delivery</span>
+              <span>{t('expressDelivery')}</span>
             </div>
 
             {/* Free Returns */}
             <div className="hidden lg:flex items-center gap-1.5 text-slate-400 font-medium text-[11px] sm:text-xs whitespace-nowrap">
               <RotateCcw className="w-3.5 h-3.5 text-slate-400" />
-              <span>Free Returns</span>
+              <span>{t('freeReturns')}</span>
             </div>
 
             {/* Our Location */}
@@ -311,7 +311,7 @@ export default function Header({
               className="hidden lg:flex items-center gap-1.5 text-slate-400 hover:text-white font-medium text-[11px] sm:text-xs whitespace-nowrap cursor-pointer transition-colors"
             >
               <MapPin className="w-3.5 h-3.5 text-indigo-400" />
-              <span>Our Location</span>
+              <span>{t('ourLocation')}</span>
             </button>
           </div>
 
@@ -321,18 +321,18 @@ export default function Header({
             <button
               type="button"
               onClick={onToggleDarkMode}
-              title={darkMode ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
+              title={darkMode ? t('switchToLight') : t('switchToDark')}
               className="flex items-center gap-1.5 bg-slate-800 border border-slate-700 hover:border-slate-500 rounded-full px-2 py-0.5 text-[11px] text-slate-200 transition-all cursor-pointer"
             >
               {darkMode ? (
                 <>
                   <Moon className="w-3 h-3 text-indigo-400" />
-                  <span className="hidden sm:inline">Dark</span>
+                  <span className="hidden sm:inline">{t('darkMode')}</span>
                 </>
               ) : (
                 <>
                   <Sun className="w-3 h-3 text-amber-400" />
-                  <span className="hidden sm:inline">Light</span>
+                  <span className="hidden sm:inline">{t('lightMode')}</span>
                 </>
               )}
             </button>
@@ -342,26 +342,40 @@ export default function Header({
               <select
                 value={currency}
                 onChange={(e) => onChangeCurrency(e.target.value as CurrencyType)}
+                aria-label="Currency Selector"
                 className="bg-slate-800 border border-slate-700 hover:border-slate-500 rounded px-2 py-0.5 text-[11px] font-bold text-white cursor-pointer focus:outline-none appearance-none pr-5"
               >
                 <option value="KSh" className="bg-slate-900 text-white">KES (KSh)</option>
                 <option value="USD" className="bg-slate-900 text-white">USD ($)</option>
                 <option value="EUR" className="bg-slate-900 text-white">EUR (€)</option>
                 <option value="GBP" className="bg-slate-900 text-white">GBP (£)</option>
-                <option value="AED" className="bg-slate-900 text-white">AED (د.إ)</option>
+                <option value="AED" className="bg-slate-900 text-white">AED (AED)</option>
+                <option value="CAD" className="bg-slate-900 text-white">CAD (CA$)</option>
+                <option value="AUD" className="bg-slate-900 text-white">AUD (A$)</option>
+                <option value="CNY" className="bg-slate-900 text-white">CNY (¥)</option>
+                <option value="JPY" className="bg-slate-900 text-white">JPY (¥)</option>
+                <option value="KRW" className="bg-slate-900 text-white">KRW (₩)</option>
+                <option value="INR" className="bg-slate-900 text-white">INR (₹)</option>
+                <option value="ZAR" className="bg-slate-900 text-white">ZAR (R)</option>
+                <option value="UGX" className="bg-slate-900 text-white">UGX (UGX)</option>
+                <option value="TZS" className="bg-slate-900 text-white">TZS (TZS)</option>
               </select>
               <ChevronDown className="w-3 h-3 text-slate-400 absolute right-1.5 top-1/2 -translate-y-1/2 pointer-events-none" />
             </div>
 
-            {/* Language Selector */}
+            {/* Multi-Language Selector */}
             <div className="relative">
               <select
                 value={language}
                 onChange={(e) => setLanguage(e.target.value as any)}
+                aria-label="Select Language"
                 className="bg-slate-800 border border-slate-700 hover:border-slate-500 rounded px-2 py-0.5 text-[11px] font-bold text-white cursor-pointer focus:outline-none appearance-none pr-5"
               >
-                <option value="en" className="bg-slate-900 text-white">🌐 English</option>
-                <option value="sw" className="bg-slate-900 text-white">🌐 Kiswahili</option>
+                {supportedLanguages.map((lang) => (
+                  <option key={lang.code} value={lang.code} className="bg-slate-900 text-white">
+                    {lang.flag} {lang.nativeName}
+                  </option>
+                ))}
               </select>
               <ChevronDown className="w-3 h-3 text-slate-400 absolute right-1.5 top-1/2 -translate-y-1/2 pointer-events-none" />
             </div>
@@ -394,7 +408,7 @@ export default function Header({
                     setIsSearchOpen(true);
                   }}
                   onFocus={() => setIsSearchOpen(true)}
-                  placeholder="What are you looking for?"
+                  placeholder={t('searchPlaceholder')}
                   className="w-full h-11 bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100 placeholder-slate-400 text-sm px-4 rounded-l-md focus:outline-none focus:border-indigo-600 focus:ring-1 focus:ring-indigo-600 transition-colors"
                 />
                 {searchQuery && (
@@ -409,7 +423,7 @@ export default function Header({
               </div>
               <button
                 type="submit"
-                aria-label="Search catalog"
+                aria-label={t('searchAction')}
                 className="h-11 px-5 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white font-bold rounded-r-md flex items-center justify-center cursor-pointer transition-colors shadow-xs border-y border-r border-indigo-600 hover:border-indigo-700"
               >
                 <Search className="w-5 h-5 text-white stroke-[2.5]" />
@@ -420,13 +434,13 @@ export default function Header({
             {isSearchOpen && searchQuery.trim().length > 0 && (
               <div className="absolute left-0 right-0 top-full mt-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg shadow-2xl overflow-hidden z-50 max-h-96 overflow-y-auto">
                 <div className="p-2 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-850">
-                  <span>Products matching "{searchQuery}"</span>
-                  <span className="font-semibold">{filteredProducts.length} results</span>
+                  <span>{t('productsMatching', { query: searchQuery })}</span>
+                  <span className="font-semibold">{filteredProducts.length} {t('results')}</span>
                 </div>
 
                 {filteredProducts.length === 0 ? (
                   <div className="p-6 text-center text-sm text-slate-500 dark:text-slate-400">
-                    No products found. Press enter to search full catalog.
+                    {t('noProductsFound')}
                   </div>
                 ) : (
                   <div className="divide-y divide-slate-100 dark:divide-slate-800">
@@ -502,10 +516,10 @@ export default function Header({
                 </div>
                 <div className="hidden lg:flex flex-col items-start leading-tight">
                   <span className="text-[10px] text-slate-500 dark:text-slate-400 font-medium">
-                    {typeof window !== 'undefined' && localStorage.getItem('veloce_login_name') ? 'Welcome' : 'Account'}
+                    {typeof window !== 'undefined' && localStorage.getItem('veloce_login_name') ? t('welcome') : t('account')}
                   </span>
                   <span className="text-xs font-bold tracking-wider uppercase text-slate-900 dark:text-white flex items-center gap-1">
-                    {typeof window !== 'undefined' && localStorage.getItem('veloce_login_name') ? `HELLO ${localStorage.getItem('veloce_login_name')?.split(' ')[0].toUpperCase()}` : 'MY ACCOUNT'} <ChevronDown className="w-3 h-3 text-slate-400" />
+                    {typeof window !== 'undefined' && localStorage.getItem('veloce_login_name') ? `${t('welcome').toUpperCase()} ${localStorage.getItem('veloce_login_name')?.split(' ')[0].toUpperCase()}` : t('myAccount')} <ChevronDown className="w-3 h-3 text-slate-400" />
                   </span>
                 </div>
               </button>
@@ -529,7 +543,7 @@ export default function Header({
                     className="w-full text-left px-3 py-2 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 flex items-center gap-2 text-xs text-slate-700 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
                   >
                     <Truck className="w-4 h-4 text-emerald-500" />
-                    <span>Track Orders</span>
+                    <span>{t('trackOrders')}</span>
                   </button>
 
                   <button
@@ -540,22 +554,22 @@ export default function Header({
                     className="w-full text-left px-3 py-2 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 flex items-center gap-2 text-xs text-slate-700 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
                   >
                     <User className="w-4 h-4 text-indigo-500" />
-                    <span>Customer Profile</span>
+                    <span>{t('customerProfile')}</span>
                   </button>
 
                   {/* Font Scaling Options */}
                   <div className="pt-2 mt-1 border-t border-slate-100 dark:border-slate-800">
                     <div className="px-3 py-1 flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-400">
-                      <span className="flex items-center gap-1.5"><Type className="w-3.5 h-3.5" /> Text Size</span>
+                      <span className="flex items-center gap-1.5"><Type className="w-3.5 h-3.5" /> {t('textSize')}</span>
                       <select
                         value={fontSize}
                         onChange={(e) => onChangeFontSize(e.target.value)}
                         className="bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-slate-200 text-[10px] rounded px-1.5 py-0.5 border border-slate-200 dark:border-slate-700 focus:outline-none"
                       >
-                        <option value="small">Small</option>
-                        <option value="normal">Normal</option>
-                        <option value="medium">Medium</option>
-                        <option value="large">Large</option>
+                        <option value="small">{t('small')}</option>
+                        <option value="normal">{t('normal')}</option>
+                        <option value="medium">{t('medium')}</option>
+                        <option value="large">{t('large')}</option>
                       </select>
                     </div>
                   </div>
@@ -577,7 +591,7 @@ export default function Header({
                 )}
               </div>
               <span className="text-[10px] font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 mt-1 transition-colors">
-                WISHLIST
+                {t('wishlist')}
               </span>
             </button>
 
@@ -593,7 +607,7 @@ export default function Header({
                 </span>
               </div>
               <span className="text-[10px] font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 mt-1 transition-colors">
-                YOUR CART
+                {t('yourCart')}
               </span>
             </button>
 
@@ -621,7 +635,7 @@ export default function Header({
               className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs sm:text-sm px-3.5 sm:px-4 py-1.5 rounded-md cursor-pointer transition-all shrink-0 shadow-xs border border-indigo-700"
             >
               <Menu className="w-4 h-4 text-indigo-100" />
-              <span className="uppercase tracking-wider whitespace-nowrap">ALL CATEGORIES</span>
+              <span className="uppercase tracking-wider whitespace-nowrap">{t('allCategories')}</span>
             </button>
 
             {/* Category Links */}
@@ -648,7 +662,7 @@ export default function Header({
                   onClick={() => handleCategoryClick()}
                   className="px-2.5 lg:px-3 py-1 text-[11px] lg:text-xs xl:text-[13px] font-semibold text-slate-600 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-indigo-50/60 dark:hover:bg-indigo-950/40 rounded transition-colors whitespace-nowrap shrink-0"
                 >
-                  CATALOG STORE
+                  {t('catalogStore')}
                 </button>
               )}
             </div>
@@ -660,7 +674,7 @@ export default function Header({
               onClick={() => handleCategoryClick('All')}
               className="bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/50 border border-indigo-200 dark:border-indigo-800 text-indigo-700 dark:text-indigo-300 font-bold text-[10px] sm:text-xs px-2.5 sm:px-3.5 py-1.5 rounded uppercase tracking-wider cursor-pointer shadow-3xs transition-colors whitespace-nowrap"
             >
-              NEW RELEASES
+              {t('newReleases')}
             </button>
             <button
               onClick={handleSaleClick}
@@ -670,7 +684,7 @@ export default function Header({
                   : 'bg-amber-500 hover:bg-amber-600 active:bg-amber-700 text-white'
               }`}
             >
-              CLEARANCE SALE
+              {t('clearanceSale')}
             </button>
           </div>
         </div>
@@ -727,7 +741,7 @@ export default function Header({
 
                   <div className="space-y-2">
                     <h4 className="font-extrabold text-sm text-indigo-600 dark:text-indigo-400 uppercase mb-2 flex items-center gap-2">
-                      Quick Portals
+                      {t('quickPortals')}
                     </h4>
                     <ul className="space-y-1.5 text-xs text-slate-600 dark:text-slate-400">
                       <li>
@@ -737,7 +751,7 @@ export default function Header({
                           }}
                           className="text-indigo-600 dark:text-indigo-400 font-bold hover:underline cursor-pointer"
                         >
-                          All Products Catalog
+                          {t('allProductsCatalog')}
                         </button>
                       </li>
                       <li>
@@ -748,7 +762,29 @@ export default function Header({
                           }}
                           className="hover:text-indigo-600 dark:hover:text-indigo-300 font-semibold cursor-pointer"
                         >
-                          Custom Services
+                          {t('storeServices')}
+                        </button>
+                      </li>
+                      <li>
+                        <button
+                          onClick={() => {
+                            setCurrentTab('order-lookup');
+                            setIsCategoryDrawerOpen(false);
+                          }}
+                          className="hover:text-indigo-600 dark:hover:text-indigo-300 font-semibold cursor-pointer"
+                        >
+                          {t('orderTracking')}
+                        </button>
+                      </li>
+                      <li>
+                        <button
+                          onClick={() => {
+                            setCurrentTab('support');
+                            setIsCategoryDrawerOpen(false);
+                          }}
+                          className="hover:text-indigo-600 dark:hover:text-indigo-300 font-semibold cursor-pointer"
+                        >
+                          {t('supportFaq')}
                         </button>
                       </li>
                       <li>
@@ -759,7 +795,7 @@ export default function Header({
                           }}
                           className="hover:text-indigo-600 dark:hover:text-indigo-300 cursor-pointer"
                         >
-                          Insights & News
+                          {t('insights')}
                         </button>
                       </li>
                       <li>
@@ -770,7 +806,7 @@ export default function Header({
                           }}
                           className="hover:text-indigo-600 dark:hover:text-indigo-300 cursor-pointer"
                         >
-                          Contact & Support
+                          {t('contactUs')}
                         </button>
                       </li>
                     </ul>
@@ -791,7 +827,7 @@ export default function Header({
                     }}
                     className="mt-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-lg transition-colors cursor-pointer shadow-xs"
                   >
-                    Browse Store Catalog
+                    {t('backToStore')}
                   </button>
                 </div>
               )}
@@ -809,25 +845,25 @@ export default function Header({
               onClick={() => { setCurrentTab('home'); setIsMobileMenuOpen(false); }}
               className="p-3 bg-slate-800 rounded-lg text-left font-bold text-xs hover:bg-slate-750 text-slate-100 hover:text-white"
             >
-              Home
+              {t('overview')}
             </button>
             <button
               onClick={() => { setCurrentTab('store'); setIsMobileMenuOpen(false); }}
               className="p-3 bg-slate-800 rounded-lg text-left font-bold text-xs hover:bg-slate-750 text-slate-100 hover:text-white"
             >
-              Store & Catalog
+              {t('store')}
             </button>
             <button
               onClick={() => { setCurrentTab('services'); setIsMobileMenuOpen(false); }}
               className="p-3 bg-slate-800 rounded-lg text-left font-bold text-xs hover:bg-slate-750 text-slate-100 hover:text-white"
             >
-              Services
+              {t('services')}
             </button>
             <button
               onClick={() => { setCurrentTab('blog'); setIsMobileMenuOpen(false); }}
               className="p-3 bg-slate-800 rounded-lg text-left font-bold text-xs hover:bg-slate-750 text-slate-100 hover:text-white"
             >
-              Insights & Blog
+              {t('insights')}
             </button>
           </div>
 
