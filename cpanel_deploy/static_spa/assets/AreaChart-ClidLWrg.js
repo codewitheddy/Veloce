@@ -1,0 +1,1 @@
+import{r as a}from"./index-ImOX36js.js";import{a7 as t,a8 as o}from"./AdminLayout-MluDz5ud.js";var p=["axis"],s=a.forwardRef((r,e)=>a.createElement(t,{chartName:"AreaChart",defaultTooltipEventType:"axis",validateTooltipEventTypes:p,tooltipPayloadSearcher:o,categoricalChartProps:r,ref:e}));export{s as A};

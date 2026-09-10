@@ -22,7 +22,7 @@ const AUDIT_LOGS_STORAGE_KEY = 'ropenix_settings_audit_logs_cache';
 export const INITIAL_DEFAULT_SETTINGS: FullSiteSettings = {
   general: {
     site_name: 'Ropenix Collections',
-    tagline: 'Premium eCommerce & Affiliate Marketplace',
+    tagline: 'Premium eCommerce & Bespoke Collections',
     business_email: 'concierge@ropenix.co.ke',
     support_phone: '+254 182 180 965',
     physical_address: 'Enterprise Road, Industrial Area, Nairobi, Kenya',
@@ -110,7 +110,7 @@ export const INITIAL_DEFAULT_SETTINGS: FullSiteSettings = {
     notify_on_refund: true
   },
   seo: {
-    meta_title: 'Ropenix Collections | Premium eCommerce & Affiliate Marketplace',
+    meta_title: 'Ropenix Collections | Premium eCommerce & Bespoke Fashion',
     meta_description: 'Curated luxury fashion, artisan timepieces, cutting-edge technology and tailored bespoke garments in Nairobi, Kenya.',
     meta_keywords: 'luxury shopping, artisan fashion, watches, nairobi commerce, ropenix collections, bespoke atelier',
     og_image_url: '/src/assets/images/og_banner_default.jpg',

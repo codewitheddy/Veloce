@@ -4,10 +4,19 @@
 
 <IfModule mod_rewrite.c>
   RewriteEngine On
-  RewriteBase /
+
+  # Pass Authorization Header
+  RewriteCond %{HTTP:Authorization} .
+  RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
 
   # ----------------------------------------------------------------------------
-  # 1. Block Access to Sensitive Files & Dotfiles
+  # 1. Allow cPanel Well-Known & SSL validation challenges
+  # ----------------------------------------------------------------------------
+  RewriteCond %{REQUEST_URI} ^/\.well-known [NC]
+  RewriteRule ^ - [L]
+
+  # ----------------------------------------------------------------------------
+  # 2. Block Access to Sensitive Files & Dotfiles
   # ----------------------------------------------------------------------------
   RewriteRule (^|/)\.(?!well-known) - [F]
   <FilesMatch "\.(env|example|sqlite|sqlite3|sql|log|md|yml|yaml|config|lock|ts|tsx)$">
@@ -16,19 +25,15 @@
   </FilesMatch>
 
   # ----------------------------------------------------------------------------
-  # 2. Single Page Application (SPA) Routing
+  # 3. Single Page Application (SPA) Routing
   # ----------------------------------------------------------------------------
   # Pass through existing files and directories directly
   RewriteCond %{REQUEST_FILENAME} -f [OR]
   RewriteCond %{REQUEST_FILENAME} -d
   RewriteRule ^ - [L]
 
-  # Allow cPanel Well-Known & SSL validation challenges
-  RewriteCond %{REQUEST_URI} ^/\.well-known [NC]
-  RewriteRule ^ - [L]
-
   # Fallback all other client-side routes to index.html
-  RewriteRule ^ index.html [L]
+  RewriteRule ^ index.html [QSA,L]
 </IfModule>
 
 # ------------------------------------------------------------------------------

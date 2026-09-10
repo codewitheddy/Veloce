@@ -1,0 +1,1 @@
+import{r as a}from"./index-ImOX36js.js";import{a7 as o,a8 as t}from"./AdminLayout-MluDz5ud.js";var p=["axis"],l=a.forwardRef((r,e)=>a.createElement(o,{chartName:"ComposedChart",defaultTooltipEventType:"axis",validateTooltipEventTypes:p,tooltipPayloadSearcher:t,categoricalChartProps:r,ref:e}));export{l as C};

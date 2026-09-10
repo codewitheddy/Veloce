@@ -33,27 +33,7 @@ export default defineConfig(() => {
       },
     },
     build: {
-      chunkSizeWarningLimit: 1000,
-      rollupOptions: {
-        output: {
-          manualChunks(id) {
-            if (id.includes('node_modules')) {
-              if (id.includes('react') || id.includes('react-dom') || id.includes('@tanstack/react-query')) {
-                return 'vendor-react';
-              }
-              if (id.includes('lucide-react') || id.includes('motion')) {
-                return 'vendor-ui';
-              }
-              if (id.includes('recharts') || id.includes('d3')) {
-                return 'vendor-charts';
-              }
-              if (id.includes('jspdf') || id.includes('html2canvas') || id.includes('leaflet') || id.includes('dompurify') || id.includes('qrcode')) {
-                return 'vendor-utils';
-              }
-            }
-          },
-        },
-      },
+      chunkSizeWarningLimit: 2000,
     },
   };
 });

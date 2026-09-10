@@ -438,7 +438,6 @@ export default function DashboardAnalytics({
 
       try {
         await fetch('/api/sqlite/purge-all', { method: 'POST' });
-        await fetch('/api/v1/admin/affiliates/purge-all', { method: 'POST' });
       } catch (e) {
         console.warn('[DashboardAnalytics] Backend cleanup endpoint warning:', e);
       }

@@ -51,7 +51,6 @@ urlpatterns = [
     path('api/products/', include('products.urls')),
     path('api/orders/', include('apps.orders.urls')),
     path('api/shipping/', include('apps.shipping.urls')),
-    path('api/affiliates/', include('apps.affiliates.urls')),
     path('api/content/', include('apps.content.urls')),
     path('api/hero-banners/', include('apps.content.urls_herobanners')),
     path('api/settings/', include('apps.site_settings.urls')),

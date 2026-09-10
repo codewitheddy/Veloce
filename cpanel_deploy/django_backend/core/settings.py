@@ -14,10 +14,17 @@ SECRET_KEY = os.getenv(
     's$7!9z*q#2m_p8v(w5x^k1y@3j&b6c+d4e-f0g)h~r%t=u[a{z}x<c>v?b!n@m#k$'
 )
 DEBUG = os.getenv('DJANGO_DEBUG', 'False').lower() in ('true', '1', 't')
-allowed_hosts_env = os.getenv('ALLOWED_HOSTS', 'localhost,127.0.0.1,0.0.0.0,ropenix.co.ke,www.ropenix.co.ke,veloce.co.ke,marid.co.ke')
+allowed_hosts_env = os.getenv('ALLOWED_HOSTS', os.getenv('DJANGO_ALLOWED_HOSTS', 'localhost,127.0.0.1,0.0.0.0,ropenix.co.ke,www.ropenix.co.ke,api.ropenix.co.ke,veloce.co.ke,marid.co.ke'))
 ALLOWED_HOSTS = [host.strip() for host in allowed_hosts_env.split(',') if host.strip()]
 if DEBUG and '*' not in ALLOWED_HOSTS:
     ALLOWED_HOSTS.append('*')
+
+# CSRF Trusted Origins for Django 4+ and 5+ on HTTPS
+csrf_origins_env = os.getenv(
+    'CSRF_TRUSTED_ORIGINS',
+    'https://ropenix.co.ke,https://www.ropenix.co.ke,https://api.ropenix.co.ke,https://veloce.co.ke,https://marid.co.ke,http://localhost:3000,http://127.0.0.1:3000,http://localhost:5173,http://127.0.0.1:5173'
+)
+CSRF_TRUSTED_ORIGINS = [origin.strip() for origin in csrf_origins_env.split(',') if origin.strip()]
 
 # ==============================================================================
 # Security Headers & Cookies (Hardened for Production)
@@ -70,7 +77,6 @@ INSTALLED_APPS = [
     'apps.customers',
     'apps.orders',
     'apps.shipping',
-    'apps.affiliates',
     'apps.content',
     'apps.site_settings',
     'apps.suppliers',
@@ -129,15 +135,21 @@ if DATABASE_URL and DATABASE_URL.startswith(('postgres://', 'postgresql://')):
                 'PORT': url.port or '5432',
             }
         }
-elif os.getenv('POSTGRES_DB'):
+elif os.getenv('POSTGRES_DB') or os.getenv('DB_NAME'):
+    db_name = os.getenv('POSTGRES_DB') or os.getenv('DB_NAME')
+    db_user = os.getenv('POSTGRES_USER') or os.getenv('DB_USER', 'postgres')
+    db_pass = os.getenv('POSTGRES_PASSWORD') or os.getenv('DB_PASSWORD', '')
+    db_host = os.getenv('POSTGRES_HOST') or os.getenv('DB_HOST', 'localhost')
+    db_port = os.getenv('POSTGRES_PORT') or os.getenv('DB_PORT', '5432')
+    db_engine = os.getenv('DB_ENGINE', 'django.db.backends.postgresql')
     DATABASES = {
         'default': {
-            'ENGINE': 'django.db.backends.postgresql',
-            'NAME': os.getenv('POSTGRES_DB', 'veloce_db'),
-            'USER': os.getenv('POSTGRES_USER', 'postgres'),
-            'PASSWORD': os.getenv('POSTGRES_PASSWORD', ''),
-            'HOST': os.getenv('POSTGRES_HOST', 'localhost'),
-            'PORT': os.getenv('POSTGRES_PORT', '5432'),
+            'ENGINE': db_engine,
+            'NAME': db_name,
+            'USER': db_user,
+            'PASSWORD': db_pass,
+            'HOST': db_host,
+            'PORT': str(db_port),
         }
     }
 else:
@@ -272,13 +284,7 @@ CELERY_BEAT_SCHEDULE = {
         'schedule': crontab(hour=0, minute=5),  # Daily at 00:05 UTC
         'options': {'queue': 'reports'},
     },
-    # 3. Daily Commission Settlement & Affiliate Hold Maturity Check
-    'process-affiliate-commission-maturities': {
-        'task': 'apps.affiliates.tasks.check_affiliate_commission_maturities_task',
-        'schedule': crontab(hour=1, minute=0),  # Daily at 01:00 UTC
-        'options': {'queue': 'affiliates'},
-    },
-    # 4. Weekly Expired Promo Code & Session Cleanup
+    # 3. Weekly Expired Promo Code & Session Cleanup
     'cleanup-expired-promos-weekly': {
         'task': 'core.tasks.cleanup_expired_promos_and_tokens_task',
         'schedule': crontab(day_of_week='sunday', hour=2, minute=0),
@@ -293,7 +299,6 @@ CELERY_TASK_ROUTES = {
     'apps.orders.tasks.*': {'queue': 'orders'},
     'apps.users.tasks.*': {'queue': 'notifications'},
     'apps.products.tasks.*': {'queue': 'inventory'},
-    'apps.affiliates.tasks.*': {'queue': 'affiliates'},
     'core.tasks.*': {'queue': 'reports'},
 }
 

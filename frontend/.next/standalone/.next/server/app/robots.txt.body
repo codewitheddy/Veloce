@@ -1,6 +1,0 @@
-User-Agent: *
-Allow: /
-Disallow: /checkout
-Disallow: /api/
-
-Sitemap: https://veloce.co.ke/sitemap.xml

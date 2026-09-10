@@ -24,8 +24,9 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
 // server.ts
 var import_express = __toESM(require("express"), 1);
 var import_path2 = __toESM(require("path"), 1);
+var import_fs2 = __toESM(require("fs"), 1);
 var import_crypto = __toESM(require("crypto"), 1);
-var import_dotenv2 = __toESM(require("dotenv"), 1);
+var import_dotenv3 = __toESM(require("dotenv"), 1);
 var import_nodemailer = __toESM(require("nodemailer"), 1);
 var import_dns = __toESM(require("dns"), 1);
 
@@ -145,27 +146,6 @@ async function initializeDatabaseSchema() {
     } catch (_) {
     }
     await dbPool.query(`
-      CREATE TABLE IF NOT EXISTS affiliates (
-        id VARCHAR(255) PRIMARY KEY,
-        name VARCHAR(255) NOT NULL,
-        merchant VARCHAR(255) NULL,
-        description TEXT NULL,
-        commissionRate DECIMAL(5, 2) NOT NULL,
-        price DECIMAL(15, 2) NOT NULL,
-        category VARCHAR(255) NULL,
-        imageUrl TEXT NULL,
-        affiliateUrl TEXT NULL,
-        clicks INT DEFAULT 0,
-        conversions INT DEFAULT 0,
-        revenueEarned DECIMAL(15, 2) DEFAULT 0,
-        affiliateNotes TEXT NULL
-      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-    `);
-    try {
-      await dbPool.query("ALTER TABLE affiliates ADD COLUMN affiliateNotes TEXT NULL");
-    } catch (_) {
-    }
-    await dbPool.query(`
       CREATE TABLE IF NOT EXISTS orders (
         id VARCHAR(255) PRIMARY KEY,
         customerName VARCHAR(255) NOT NULL,
@@ -256,17 +236,13 @@ async function getDbStatus() {
     }
     const [prodCount] = await pool.query("SELECT COUNT(*) as count FROM products");
     const [orderCount] = await pool.query("SELECT COUNT(*) as count FROM orders");
-    const [affCount] = await pool.query("SELECT COUNT(*) as count FROM affiliates");
-    const [campCount] = await pool.query("SELECT COUNT(*) as count FROM campaigns");
     return {
       configured: true,
       connected: true,
       message: "Successfully connected to production MySQL database.",
       stats: {
         products: prodCount[0]?.count || 0,
-        orders: orderCount[0]?.count || 0,
-        affiliates: affCount[0]?.count || 0,
-        campaigns: campCount[0]?.count || 0
+        orders: orderCount[0]?.count || 0
       }
     };
   } catch (error) {
@@ -322,32 +298,6 @@ async function pushSyncData(payload) {
             p.features ? JSON.stringify(p.features) : null,
             p.specifications ? JSON.stringify(p.specifications) : null,
             p.whatsInTheBox || null
-          ]
-        );
-      }
-    }
-    if (Array.isArray(payload.veloce_affiliates)) {
-      await connection.query("DELETE FROM affiliates");
-      for (const a of payload.veloce_affiliates) {
-        if (!a.id || !a.name) continue;
-        await connection.query(
-          `INSERT INTO affiliates 
-           (id, name, merchant, description, commissionRate, price, category, imageUrl, affiliateUrl, clicks, conversions, revenueEarned, affiliateNotes)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          [
-            a.id,
-            a.name,
-            a.merchant || null,
-            a.description || null,
-            a.commissionRate || 0,
-            a.price || 0,
-            a.category || null,
-            a.imageUrl || null,
-            a.affiliateUrl || null,
-            a.clicks || 0,
-            a.conversions || 0,
-            a.revenueEarned || 0,
-            a.affiliateNotes ? JSON.stringify(a.affiliateNotes) : null
           ]
         );
       }
@@ -514,22 +464,6 @@ async function pullSyncData() {
       features: p.features ? JSON.parse(p.features) : void 0,
       specifications: p.specifications ? JSON.parse(p.specifications) : void 0,
       whatsInTheBox: p.whatsInTheBox || void 0
-    }));
-    const [affiliatesRows] = await pool.query("SELECT * FROM affiliates");
-    result.veloce_affiliates = affiliatesRows.map((a) => ({
-      id: a.id,
-      name: a.name,
-      merchant: a.merchant || "",
-      description: a.description || "",
-      commissionRate: Number(a.commissionRate),
-      price: Number(a.price),
-      category: a.category || "",
-      imageUrl: a.imageUrl || "",
-      affiliateUrl: a.affiliateUrl || "",
-      clicks: Number(a.clicks),
-      conversions: Number(a.conversions),
-      revenueEarned: Number(a.revenueEarned),
-      affiliateNotes: a.affiliateNotes ? JSON.parse(a.affiliateNotes) : void 0
     }));
     const [ordersRows] = await pool.query("SELECT * FROM orders");
     result.veloce_orders = ordersRows.map((o) => ({
@@ -722,22 +656,6 @@ function initializeSqliteSchema(db) {
       verified INTEGER DEFAULT 1
     );
 
-    CREATE TABLE IF NOT EXISTS affiliates (
-      id TEXT PRIMARY KEY,
-      name TEXT NOT NULL,
-      merchant TEXT,
-      description TEXT,
-      commissionRate REAL NOT NULL,
-      price REAL NOT NULL,
-      category TEXT,
-      imageUrl TEXT,
-      affiliateUrl TEXT,
-      clicks INTEGER DEFAULT 0,
-      conversions INTEGER DEFAULT 0,
-      revenueEarned REAL DEFAULT 0,
-      affiliateNotes TEXT
-    );
-
     CREATE TABLE IF NOT EXISTS campaigns (
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
@@ -841,8 +759,6 @@ async function getSqliteDbStatus() {
     const prodCount = prodRes.length > 0 ? prodRes[0].values[0][0] : 0;
     const orderRes = db.exec("SELECT COUNT(*) as count FROM orders;");
     const orderCount = orderRes.length > 0 ? orderRes[0].values[0][0] : 0;
-    const affRes = db.exec("SELECT COUNT(*) as count FROM affiliates;");
-    const affCount = affRes.length > 0 ? affRes[0].values[0][0] : 0;
     const revRes = db.exec("SELECT COUNT(*) as count FROM reviews;");
     const revCount = revRes.length > 0 ? revRes[0].values[0][0] : 0;
     return {
@@ -855,7 +771,6 @@ async function getSqliteDbStatus() {
       stats: {
         products: prodCount,
         orders: orderCount,
-        affiliates: affCount,
         reviews: revCount
       }
     };
@@ -945,34 +860,6 @@ async function pushSyncDataSqlite(payload) {
         o.paymentMethod || "cod",
         o.review_request_sent_at || null,
         o.review_request_status || null
-      ]);
-    }
-    stmt.free();
-  }
-  if (Array.isArray(payload.veloce_affiliates)) {
-    db.run("DELETE FROM affiliates;");
-    const stmt = db.prepare(`
-      INSERT INTO affiliates (
-        id, name, merchant, description, commissionRate, price, category, imageUrl,
-        affiliateUrl, clicks, conversions, revenueEarned, affiliateNotes
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-    for (const a of payload.veloce_affiliates) {
-      if (!a.id || !a.name) continue;
-      stmt.run([
-        a.id,
-        a.name,
-        a.merchant || null,
-        a.description || null,
-        a.commissionRate || 0,
-        a.price || 0,
-        a.category || null,
-        a.imageUrl || null,
-        a.affiliateUrl || null,
-        a.clicks || 0,
-        a.conversions || 0,
-        a.revenueEarned || 0,
-        a.affiliateNotes ? JSON.stringify(a.affiliateNotes) : null
       ]);
     }
     stmt.free();
@@ -1074,27 +961,6 @@ async function pullSyncDataSqlite() {
     });
   } else {
     result.veloce_orders = [];
-  }
-  const affRes = db.exec("SELECT * FROM affiliates;");
-  if (affRes.length > 0) {
-    const cols = affRes[0].columns;
-    result.veloce_affiliates = affRes[0].values.map((row) => {
-      const obj = {};
-      cols.forEach((col, idx) => {
-        obj[col] = row[idx];
-      });
-      return {
-        ...obj,
-        commissionRate: Number(obj.commissionRate),
-        price: Number(obj.price),
-        clicks: Number(obj.clicks),
-        conversions: Number(obj.conversions),
-        revenueEarned: Number(obj.revenueEarned),
-        affiliateNotes: obj.affiliateNotes ? JSON.parse(obj.affiliateNotes) : void 0
-      };
-    });
-  } else {
-    result.veloce_affiliates = [];
   }
   const catRes = db.exec("SELECT * FROM categories ORDER BY displayOrder ASC, name ASC;");
   if (catRes.length > 0) {
@@ -1208,7 +1074,6 @@ async function purgeAllSqliteData() {
   db.run("DELETE FROM products;");
   db.run("DELETE FROM orders;");
   db.run("DELETE FROM categories;");
-  db.run("DELETE FROM affiliates;");
   db.run("DELETE FROM campaigns;");
   db.run("DELETE FROM click_logs;");
   db.run("DELETE FROM inventory_audit_logs;");
@@ -1351,9 +1216,166 @@ async function saveSqliteHeroBanners(banners) {
   return getAllSqliteHeroBanners();
 }
 
-// server.ts
-var import_fs2 = __toESM(require("fs"), 1);
+// src/lib/postgres-db.ts
+var import_pg = __toESM(require("pg"), 1);
+var import_dotenv2 = __toESM(require("dotenv"), 1);
 import_dotenv2.default.config();
+var { Pool } = import_pg.default;
+var pgPool = null;
+function getPostgresPool() {
+  if (pgPool) return pgPool;
+  const databaseUrl = process.env.DATABASE_URL || process.env.POSTGRES_URL || "";
+  const isPostgresUrl = databaseUrl.startsWith("postgres://") || databaseUrl.startsWith("postgresql://");
+  const host = process.env.POSTGRES_HOST || process.env.PGHOST || (isPostgresUrl ? void 0 : "");
+  const user = process.env.POSTGRES_USER || process.env.PGUSER || "";
+  const password = process.env.POSTGRES_PASSWORD || process.env.PGPASSWORD || "";
+  const database = process.env.POSTGRES_DB || process.env.PGDATABASE || "";
+  const port = Number(process.env.POSTGRES_PORT || process.env.PGPORT) || 5432;
+  if (isPostgresUrl) {
+    try {
+      pgPool = new Pool({
+        connectionString: databaseUrl,
+        ssl: process.env.POSTGRES_SSL === "true" ? { rejectUnauthorized: false } : void 0,
+        max: 20,
+        idleTimeoutMillis: 3e4,
+        connectionTimeoutMillis: 5e3
+      });
+      return pgPool;
+    } catch (err) {
+      console.error("[PostgreSQL] Failed to initialize connection pool with DATABASE_URL:", err);
+      return null;
+    }
+  }
+  if (host && user && database) {
+    try {
+      pgPool = new Pool({
+        host,
+        user,
+        password,
+        database,
+        port,
+        ssl: process.env.POSTGRES_SSL === "true" ? { rejectUnauthorized: false } : void 0,
+        max: 20,
+        idleTimeoutMillis: 3e4,
+        connectionTimeoutMillis: 5e3
+      });
+      return pgPool;
+    } catch (err) {
+      console.error("[PostgreSQL] Failed to initialize connection pool:", err);
+      return null;
+    }
+  }
+  return null;
+}
+async function initPostgresTables() {
+  const pool = getPostgresPool();
+  if (!pool) return;
+  const client = await pool.connect();
+  try {
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS products (
+        id VARCHAR(255) PRIMARY KEY,
+        sku VARCHAR(255),
+        name VARCHAR(255) NOT NULL,
+        description TEXT,
+        price NUMERIC(15, 2) NOT NULL,
+        category VARCHAR(255),
+        tags JSONB,
+        type VARCHAR(50) DEFAULT 'physical',
+        image_url TEXT,
+        images JSONB,
+        stock INT,
+        low_stock_threshold INT,
+        variations JSONB,
+        rating NUMERIC(3, 2) DEFAULT 0,
+        reviews_count INT DEFAULT 0,
+        reviews JSONB,
+        digital_file_url TEXT,
+        previous_price NUMERIC(15, 2),
+        back_in_stock_alert BOOLEAN DEFAULT FALSE,
+        cost_price NUMERIC(15, 2),
+        tax_id VARCHAR(255),
+        status VARCHAR(50) DEFAULT 'Active',
+        payment_restriction VARCHAR(50) DEFAULT 'both',
+        short_description TEXT,
+        detailed_description TEXT,
+        features JSONB,
+        specifications JSONB,
+        whats_in_the_box TEXT,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+      );
+    `);
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS categories (
+        id VARCHAR(255) PRIMARY KEY,
+        name VARCHAR(255) NOT NULL,
+        slug VARCHAR(255) NOT NULL UNIQUE,
+        parent_id VARCHAR(255),
+        description TEXT,
+        image_url TEXT,
+        status VARCHAR(50) DEFAULT 'active',
+        display_order INT DEFAULT 0,
+        previous_slugs JSONB,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+      );
+    `);
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS orders (
+        id VARCHAR(255) PRIMARY KEY,
+        user_id VARCHAR(255),
+        customer_name VARCHAR(255),
+        customer_email VARCHAR(255),
+        customer_phone VARCHAR(255),
+        delivery_address TEXT,
+        city VARCHAR(255),
+        postal_code VARCHAR(50),
+        items JSONB NOT NULL,
+        subtotal NUMERIC(15, 2) NOT NULL,
+        discount NUMERIC(15, 2) DEFAULT 0,
+        shipping_fee NUMERIC(15, 2) DEFAULT 0,
+        tax_amount NUMERIC(15, 2) DEFAULT 0,
+        total NUMERIC(15, 2) NOT NULL,
+        status VARCHAR(50) DEFAULT 'Pending',
+        payment_method VARCHAR(50) DEFAULT 'cod',
+        payment_reference VARCHAR(255),
+        payment_status VARCHAR(50) DEFAULT 'Pending',
+        tracking_number VARCHAR(255),
+        notes TEXT,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+      );
+    `);
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS reviews (
+        id VARCHAR(255) PRIMARY KEY,
+        product_id VARCHAR(255) NOT NULL,
+        author VARCHAR(255) NOT NULL,
+        rating INT NOT NULL,
+        comment TEXT NOT NULL,
+        date TIMESTAMPTZ DEFAULT NOW(),
+        verified BOOLEAN DEFAULT TRUE,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      );
+    `);
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS app_settings (
+        setting_key VARCHAR(255) PRIMARY KEY,
+        setting_value JSONB,
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+      );
+    `);
+    console.log("[PostgreSQL] Database tables initialized successfully.");
+  } catch (err) {
+    console.error("[PostgreSQL] Failed to initialize tables:", err);
+  } finally {
+    client.release();
+  }
+}
+
+// server.ts
+import_dotenv3.default.config();
 var app = (0, import_express.default)();
 var rawPort = process.env.PORT;
 var isNumericPort = rawPort && !isNaN(Number(rawPort));
@@ -5235,9 +5257,61 @@ async function startServer() {
   } catch (err) {
     console.error("[SQLite Startup] Error initializing SQLite database:", err);
   }
+  initPostgresTables().catch((err) => {
+    console.warn("[PostgreSQL Startup] Notice:", err?.message || err);
+  });
   performExpiryBackgroundCheck().catch((err) => {
     console.error("[Expiry Check] Startup execution error:", err);
   });
+  const resolveDistPath = () => {
+    const candidates = [
+      import_path2.default.resolve(__dirname),
+      // When running inside dist/ (e.g., dist/server.cjs)
+      import_path2.default.resolve(__dirname, "dist"),
+      // When running from project root
+      import_path2.default.resolve(process.cwd(), "dist"),
+      import_path2.default.resolve(process.cwd())
+    ];
+    for (const candidate of candidates) {
+      if (import_fs2.default.existsSync(import_path2.default.join(candidate, "index.html"))) {
+        return candidate;
+      }
+    }
+    return import_path2.default.resolve(process.cwd(), "dist");
+  };
+  const serveStaticProductionAssets = () => {
+    const distPath = resolveDistPath();
+    const assetsPath = import_path2.default.join(distPath, "assets");
+    if (import_fs2.default.existsSync(assetsPath)) {
+      app.use(
+        "/assets",
+        import_express.default.static(assetsPath, {
+          maxAge: "1y",
+          immutable: true
+        })
+      );
+    }
+    app.use(import_express.default.static(distPath, { maxAge: "1h" }));
+    app.get("*", (req, res) => {
+      res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+      const indexPath = import_path2.default.join(distPath, "index.html");
+      if (import_fs2.default.existsSync(indexPath)) {
+        res.sendFile(indexPath);
+      } else {
+        res.status(404).send(`
+          <!DOCTYPE html>
+          <html>
+            <head><title>Veloce Hub - 404 Build Asset Missing</title></head>
+            <body style="font-family: sans-serif; padding: 40px; background: #0f172a; color: #f8fafc;">
+              <h1 style="color: #38bdf8;">Veloce Hub - Production Assets Not Found</h1>
+              <p>The server is running, but <code>index.html</code> was not found at: <code>${indexPath}</code>.</p>
+              <p>Please make sure you ran <code>npm run package:cpanel</code> and uploaded the complete bundle.</p>
+            </body>
+          </html>
+        `);
+      }
+    });
+  };
   if (process.env.NODE_ENV !== "production") {
     try {
       const { createServer: createViteServer } = await import("vite");
@@ -5248,28 +5322,10 @@ async function startServer() {
       app.use(vite.middlewares);
     } catch (viteErr) {
       console.warn("[Vite Middleware] Vite dev server not initialized, falling back to production static assets:", viteErr);
-      const distPath = import_path2.default.join(process.cwd(), "dist");
-      app.use("/assets", import_express.default.static(import_path2.default.join(distPath, "assets"), { maxAge: "1y", immutable: true }));
-      app.use(import_express.default.static(distPath, { maxAge: "1h" }));
-      app.get("*", (req, res) => {
-        res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
-        res.sendFile(import_path2.default.join(distPath, "index.html"));
-      });
+      serveStaticProductionAssets();
     }
   } else {
-    const distPath = import_path2.default.join(process.cwd(), "dist");
-    app.use(
-      "/assets",
-      import_express.default.static(import_path2.default.join(distPath, "assets"), {
-        maxAge: "1y",
-        immutable: true
-      })
-    );
-    app.use(import_express.default.static(distPath, { maxAge: "1h" }));
-    app.get("*", (req, res) => {
-      res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
-      res.sendFile(import_path2.default.join(distPath, "index.html"));
-    });
+    serveStaticProductionAssets();
   }
   app.use((err, req, res, next) => {
     console.error(`[Unhandled Server Error] ${req.method} ${req.originalUrl}:`, err);
@@ -5282,11 +5338,22 @@ async function startServer() {
       timestamp: (/* @__PURE__ */ new Date()).toISOString()
     });
   });
-  const server = typeof PORT === "number" ? app.listen(PORT, "0.0.0.0", () => {
-    console.log(`[Veloce Server] Running on http://localhost:${PORT}`);
-  }) : app.listen(PORT, () => {
-    console.log(`[Veloce Server] Running on Passenger socket/custom port: ${PORT}`);
-  });
+  let server;
+  if (typeof global.PhusionPassenger !== "undefined") {
+    global.PhusionPassenger?.configure?.({ autoInstall: false });
+    server = app.listen("passenger", () => {
+      console.log("[Veloce Server] Running on Phusion Passenger internal socket");
+    });
+  } else if (process.env.PORT === "passenger" || process.env.PORT && isNaN(Number(process.env.PORT))) {
+    server = app.listen(process.env.PORT, () => {
+      console.log(`[Veloce Server] Running on custom / Passenger socket: ${process.env.PORT}`);
+    });
+  } else {
+    const port = Number(process.env.PORT) || 3e3;
+    server = app.listen(port, () => {
+      console.log(`[Veloce Server] Running on http://localhost:${port}`);
+    });
+  }
   const gracefulShutdown = (signal) => {
     console.log(`[Veloce Server] Received ${signal}. Shutting down gracefully...`);
     server.close(() => {

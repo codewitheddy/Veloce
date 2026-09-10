@@ -1,6 +1,6 @@
 # 🚀 Complete cPanel Deployment Master Guide for Veloce Hub
 
-This comprehensive guide details the exact steps to deploy **Veloce Hub** to any **cPanel** hosting environment.
+This guide details the exact steps to deploy **Veloce Hub** (React Frontend + Django Backend + PostgreSQL) to any **cPanel** hosting environment.
 
 ---
 
@@ -12,169 +12,119 @@ Generate ready-to-upload ZIP archives with a single command:
 npm run package:cpanel
 ```
 
-This automated command:
-1. Compiles the production frontend and bundles the Express server.
-2. Packages clean, optimized ZIP archives in the `cpanel_deploy/` directory:
-   - 📦 `cpanel_deploy/veloce_node_fullstack.zip` (Node.js Fullstack Passenger App)
-   - 📦 `cpanel_deploy/veloce_static_spa.zip` (Direct drop-in for `public_html/`)
-   - 📦 `cpanel_deploy/veloce_django_backend.zip` (Django Python Passenger App)
+This automated command packages clean, optimized ZIP archives in `cpanel_deploy/`:
+- 📦 **`cpanel_deploy/veloce_static_spa.zip`** -> React Frontend for `public_html/`
+- 📦 **`cpanel_deploy/veloce_django_backend.zip`** -> Django REST Framework Python Backend for cPanel Python App
+- 📦 **`cpanel_deploy/veloce_node_fullstack.zip`** -> Node.js Fullstack Alternative (Optional)
 
 ---
 
-## 🛠️ Deployment Options
+## 🏗️ Architecture: React Frontend + Django Backend + PostgreSQL
 
-| Option | Best For | Prerequisites |
-| :--- | :--- | :--- |
-| **Option 1: Node.js Full-Stack (Recommended)** | Complete eCommerce with integrated Gemini AI, database sync & local API | cPanel "Setup Node.js App" (Node 18+ or 20+) |
-| **Option 2: Pure Static SPA** | Frontend store & dashboard only, hosted directly on Apache | Standard Shared cPanel (`public_html/`) |
-| **Option 3: Django Backend + SPA** | Python DRF API + React SPA | cPanel "Setup Python App" + `public_html/` |
-
----
-
-## 📦 Option 1: Full-Stack Node.js Deployment (Recommended)
-
-### Step 1: Upload Files
-1. Run `npm run package:cpanel` on your computer.
-2. In cPanel, open **File Manager**.
-3. Create a folder in your home directory (outside `public_html`), e.g., `/home/username/veloce-app`.
-4. Upload `cpanel_deploy/veloce_node_fullstack.zip` into `/home/username/veloce-app/`.
-5. Right-click the uploaded ZIP and select **Extract**.
-
-### Step 2: Create MySQL Database in cPanel
-1. In cPanel, click **MySQL® Database Wizard**.
-2. Create database: `username_veloce`.
-3. Create user: `username_admin` with a strong password.
-4. Assign user to database and grant **ALL PRIVILEGES**.
-
-### Step 3: Create Node.js Application in cPanel
-1. In cPanel, open **Setup Node.js App** (under the *Software* category).
-2. Click **Create Application**.
-3. Fill in the configuration:
-   - **Node.js version**: Select `18.x`, `20.x`, or `22.x`.
-   - **Application mode**: `Production`.
-   - **Application root**: `veloce-app` (the folder where you extracted the files).
-   - **Application URL**: Select your domain or subdomain (e.g. `yourdomain.com`).
-   - **Application startup file**: `app.js`.
-4. Click **Create** (top right).
-
-### Step 4: Configure Environment Variables
-In the same cPanel Node.js application page, scroll down to **Environment variables** and add:
-
-| Key | Example Value | Description |
-| :--- | :--- | :--- |
-| `NODE_ENV` | `production` | Enables production caching & optimizations |
-| `DB_HOST` | `localhost` | cPanel local MySQL host |
-| `DB_PORT` | `3306` | MySQL port |
-| `DB_NAME` | `username_veloce` | Your cPanel database name |
-| `DB_USER` | `username_admin` | Your cPanel database user |
-| `DB_PASSWORD` | `your_mysql_password` | Database user password |
-| `GEMINI_API_KEY` | `AIzaSy...` | Optional: Gemini AI API key |
-| `CLOUDINARY_CLOUD_NAME` | `your_cloud_name` | Cloudinary CDN name |
-| `CLOUDINARY_API_KEY` | `your_api_key` | Cloudinary API Key |
-| `CLOUDINARY_API_SECRET` | `your_api_secret` | Cloudinary Secret |
-| `EMAIL_HOST` | `mail.yourdomain.com` | cPanel SMTP mail server |
-| `EMAIL_PORT` | `465` | SMTP SSL Port |
-| `EMAIL_HOST_USER` | `noreply@yourdomain.com`| cPanel Webmail address |
-| `EMAIL_HOST_PASSWORD` | `your_email_password` | cPanel Webmail password |
-
-Click **Save** to store the variables.
-
-### Step 5: Install Production Dependencies
-1. Scroll to the top of the Node.js selector page.
-2. Click **Run JS Install** (or open cPanel **Terminal** and run `npm install --omit=dev`).
-
-### Step 6: Restart & Test
-1. Click **Restart Application** on the top right.
-2. Visit `https://yourdomain.com` in your browser!
-
----
-
-## 📄 Option 2: Pure Static Frontend Deployment
-
-Use this option if your hosting account only provides standard Apache hosting without Node.js or Python runtime.
-
-### Step 1: Build the Static Package
-```bash
-npm run package:cpanel
+```mermaid
+graph TD
+    Client[Customer / User Browser] --> Apache[cPanel Web Server / HTTPS]
+    Apache -->|Main Domain / ropenix.co.ke| ReactSPA[React 19 SPA in public_html]
+    Apache -->|API / api.ropenix.co.ke or /api/| DjangoAPI[Django REST Framework Passenger App]
+    DjangoAPI --> Postgres[(cPanel PostgreSQL / Remote PostgreSQL)]
 ```
 
-### Step 2: Upload to `public_html`
-1. Open cPanel **File Manager**.
-2. Navigate to **`public_html`** (or your subdomain directory).
-3. Upload `cpanel_deploy/veloce_static_spa.zip`.
-4. Extract the archive directly inside `public_html`.
-5. Verify that `index.html`, `assets/`, and `.htaccess` are present at the root of `public_html`.
-
-> [!TIP]
-> The included `.htaccess` file is pre-configured with Gzip compression, 1-year asset caching, and SPA routing rewrites to ensure deep links and page refreshes work smoothly without 404 errors.
-
 ---
 
-## 🐍 Option 3: Django REST Framework Backend Deployment
+## 🚀 Step-by-Step Deployment: Django Backend + React Frontend
 
-### Step 1: Upload Django Backend
-1. In cPanel **File Manager**, create a folder `/home/username/veloce-backend`.
-2. Upload and extract `cpanel_deploy/veloce_django_backend.zip`.
+### Part A: Deploy the Django Backend (Python App)
 
-### Step 2: Set Up Python Application in cPanel
-1. In cPanel, click **Setup Python App**.
+#### 1. Upload Backend Archive
+1. In cPanel, open **File Manager**.
+2. Create a folder in your home directory (outside `public_html`), for example: `/home/username/veloce-backend`.
+3. Upload **`cpanel_deploy/veloce_django_backend.zip`** into that folder and click **Extract**.
+
+#### 2. Create PostgreSQL Database in cPanel
+1. In cPanel, open **PostgreSQL Database Wizard** (or **PostgreSQL Databases**).
+2. Create a database: `username_veloce`.
+3. Create a database user: `username_admin` with a strong password.
+4. Assign the user to the database and grant **ALL PRIVILEGES**.
+
+#### 3. Create Python Application in cPanel
+1. In cPanel, navigate to **Setup Python App** (under *Software*).
 2. Click **Create Application**:
    - **Python version**: Select `3.10`, `3.11`, or `3.12`.
-   - **Application root**: `veloce-backend`.
-   - **Application URL**: `api` (or a dedicated subdomain `api.yourdomain.com`).
+   - **Application root**: `veloce-backend` (the folder where backend was extracted).
+   - **Application URL**: Select your subdomain (e.g. `api.ropenix.co.ke`) or `ropenix.co.ke/api`.
    - **Application startup file**: `passenger_wsgi.py`.
    - **Application Entry point**: `application`.
-3. Click **Create**.
+3. Click **Create** (top right).
 
-### Step 3: Install Requirements & Migrate
-1. Copy the virtual environment activation command shown at the top of the cPanel Python App screen (e.g., `source /home/username/virtualenv/veloce-backend/3.11/bin/activate && cd /home/username/veloce-backend`).
-2. Open cPanel **Terminal** and paste the command.
-3. Install dependencies:
+#### 4. Install Dependencies & Migrate Database
+1. Copy the virtual environment activation command displayed at the top of the cPanel Python App screen:
+   ```bash
+   source /home/username/virtualenv/veloce-backend/3.11/bin/activate && cd /home/username/veloce-backend
+   ```
+2. Open cPanel **Terminal** (or connect via SSH), paste the command, and press Enter.
+3. Install Python dependencies:
    ```bash
    pip install -r requirements.txt
    ```
-4. Run migrations and database seeding:
+4. Create the `.env` file:
+   ```bash
+   nano .env
+   ```
+   Add your environment configuration:
+   ```env
+   DJANGO_SECRET_KEY="your-production-secret-key"
+   DJANGO_DEBUG=False
+   ALLOWED_HOSTS="ropenix.co.ke,www.ropenix.co.ke,api.ropenix.co.ke,localhost"
+   CSRF_TRUSTED_ORIGINS="https://ropenix.co.ke,https://www.ropenix.co.ke,https://api.ropenix.co.ke"
+   
+   # PostgreSQL Database Configuration
+   POSTGRES_DB="username_veloce"
+   POSTGRES_USER="username_admin"
+   POSTGRES_PASSWORD="your_postgres_password"
+   POSTGRES_HOST="localhost"
+   POSTGRES_PORT=5432
+   
+   # Or full connection URL:
+   # DATABASE_URL="postgresql://username_admin:your_postgres_password@localhost:5432/username_veloce"
+   ```
+   *(Save with `Ctrl+O`, `Enter`, then exit with `Ctrl+X`)*.
+
+5. Run migrations, seed initial data, and collect static files:
    ```bash
    python manage.py migrate
    python manage.py seed_db
    python manage.py collectstatic --noinput
    ```
 
-### Step 4: Configure Django Environment
-Create `/home/username/veloce-backend/.env`:
-```env
-DJANGO_SECRET_KEY="generate_random_secret_key"
-DJANGO_DEBUG=False
-DJANGO_ALLOWED_HOSTS="yourdomain.com,api.yourdomain.com,localhost"
-DB_NAME="username_veloce"
-DB_USER="username_admin"
-DB_PASSWORD="your_mysql_password"
-DB_HOST="localhost"
-```
-
-5. Click **Restart** on the Python application page.
+6. In cPanel **Setup Python App**, click **Restart Application**.
 
 ---
 
-## 🔒 Post-Deployment Checklist
+### Part B: Deploy the React Frontend (SPA)
 
-- [ ] **SSL / HTTPS**: In cPanel, go to **SSL/TLS Status** and run **AutoSSL** to ensure free Let's Encrypt SSL certificates are active.
-- [ ] **Database Backup**: In cPanel, use **Backup Wizard** to schedule automated MySQL backups.
-- [ ] **Email Testing**: In cPanel **Email Accounts**, test sending and receiving emails from `noreply@yourdomain.com`.
-- [ ] **File Permissions**: Folders should be `755` and files `644`.
+#### 1. Upload React SPA
+1. In cPanel **File Manager**, navigate to **`public_html`** (or your primary web root).
+2. Upload **`cpanel_deploy/veloce_static_spa.zip`**.
+3. Right-click and select **Extract** directly in `public_html`.
+4. Verify that `index.html`, `assets/`, and `.htaccess` are in `public_html`.
+
+> [!NOTE]
+> The included `.htaccess` file handles SPA routing (redirecting page refreshes like `/products`, `/orders`, `/dashboard` to `index.html` seamlessly without 404 errors) and enables Gzip compression and browser caching.
 
 ---
 
-## ❓ Frequently Asked Questions & Troubleshooting
+## 🔍 Troubleshooting & Diagnostics
 
-### Q: Why do I see a 404 Error when reloading pages like `/dashboard` or `/products`?
-**A**: Ensure that `.htaccess` is present in the document root (`public_html`). Some FTP and cPanel file managers hide dotfiles. In cPanel File Manager, click **Settings** (top right) and check **Show Hidden Files (dotfiles)**.
+### 1. Checking Django Startup Errors on cPanel
+Our `passenger_wsgi.py` includes automatic error logging. If the Python app fails to start:
+1. Open cPanel **File Manager** and go to `/home/username/veloce-backend/`.
+2. Open **`passenger_wsgi_error.log`** to see the full Python exception traceback.
 
-### Q: How do I restart the Node.js application after updating files?
-**A**: In cPanel **Setup Node.js App**, click the **Restart** button, or create/touch a file named `tmp/restart.txt` in your application root directory:
-```bash
-mkdir -p tmp && touch tmp/restart.txt
-```
+### 2. Common Fixes
 
-### Q: Does the Node.js app automatically create MySQL tables?
-**A**: Yes! As soon as `DB_NAME`, `DB_USER`, and `DB_PASSWORD` are configured, `src/lib/mysql-db.ts` automatically runs table initializations for products, orders, categories, suppliers, reviews, and logs.
+| Issue | Cause | Solution |
+| :--- | :--- | :--- |
+| **503 Service Unavailable** | Python packages not installed or syntax error | Run `pip install -r requirements.txt` inside the active virtual environment |
+| **403 Forbidden (CSRF Failed)** | `CSRF_TRUSTED_ORIGINS` missing domain | Ensure `CSRF_TRUSTED_ORIGINS="https://ropenix.co.ke,https://api.ropenix.co.ke"` is in `.env` |
+| **PostgreSQL Connection Refused** | PostgreSQL service or wrong port/host | Verify database credentials in `.env` and ensure database user is granted privileges |
+| **404 on Frontend Page Refresh** | `.htaccess` missing or hidden | In cPanel File Manager Settings, enable "Show Hidden Files (dotfiles)" and ensure `.htaccess` is in `public_html` |

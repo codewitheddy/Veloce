@@ -2,7 +2,6 @@ from django.core.management.base import BaseCommand
 from django.contrib.auth.models import User
 from products.models import ProductCategory, Product, ProductReview, CustomClothingDesign
 from apps.shipping.models import ShippingZone, HappyHourWindow, TaxRate
-from apps.affiliates.models import AffiliateProfile, CommissionEntry
 from apps.content.models import BlogPost, HeroBanner, SupportTicket
 
 class Command(BaseCommand):

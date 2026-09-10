@@ -556,21 +556,5 @@ export interface NewsletterSubscribeResponse {
   emailError?: string;
 }
 
-export interface AffiliateProduct {
-  id: string;
-  name: string;
-  merchant: string;
-  description: string;
-  price: number;
-  commissionRate: number;
-  affiliateUrl: string;
-  imageUrl: string;
-  category: string;
-  clicks?: number;
-  conversions?: number;
-  rating?: number;
-  reviewsCount?: number;
-}
-
 
 

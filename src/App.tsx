@@ -74,8 +74,7 @@ import {
   Review,
   InventoryAuditLog,
   ReturnRequest,
-  CouponItem,
-  AffiliateProduct
+  CouponItem
 } from './types';
 
 import {
@@ -83,8 +82,7 @@ import {
   INITIAL_BLOGS,
   INITIAL_ORDERS,
   COUPONS,
-  INITIAL_AUDIT_LOGS,
-  INITIAL_AFFILIATE_PRODUCTS
+  INITIAL_AUDIT_LOGS
 } from './data';
 import api, { fetchProducts, productService, pushOrderToBackend, orderService, mapBackendProductToFrontend } from './services/api';
 import { mapBackendOrderToFrontend } from './api/orders';

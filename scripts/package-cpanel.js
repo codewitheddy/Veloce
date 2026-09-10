@@ -79,13 +79,21 @@ async function run() {
   console.log('======================================================\n');
 
   // Step 1: Run Production Build
-  log('Running production build (npm run build)...');
+  log('Running production frontend build (vite build)...');
   try {
-    execSync('npm run build', { cwd: ROOT_DIR, stdio: 'inherit' });
-    success('Production build completed successfully.');
+    execSync('npx vite build', { cwd: ROOT_DIR, stdio: 'inherit', shell: true });
+    success('Frontend build completed successfully.');
   } catch (err) {
-    error('Build failed. Aborting packaging.');
+    error(`Frontend build failed: ${err.message}`);
     process.exit(1);
+  }
+
+  log('Building server bundle (esbuild)...');
+  try {
+    execSync('npx esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs', { cwd: ROOT_DIR, stdio: 'inherit', shell: true });
+    success('Server bundle built successfully.');
+  } catch (err) {
+    warn(`Server bundle note: ${err.message}`);
   }
 
   // Step 2: Ensure cpanel_deploy directory exists and is clean

@@ -131,31 +131,7 @@ async function initializeDatabaseSchema() {
       await dbPool.query("ALTER TABLE products ADD COLUMN whatsInTheBox TEXT NULL");
     } catch (_) {}
 
-    // 2. Affiliates Table
-    await dbPool.query(`
-      CREATE TABLE IF NOT EXISTS affiliates (
-        id VARCHAR(255) PRIMARY KEY,
-        name VARCHAR(255) NOT NULL,
-        merchant VARCHAR(255) NULL,
-        description TEXT NULL,
-        commissionRate DECIMAL(5, 2) NOT NULL,
-        price DECIMAL(15, 2) NOT NULL,
-        category VARCHAR(255) NULL,
-        imageUrl TEXT NULL,
-        affiliateUrl TEXT NULL,
-        clicks INT DEFAULT 0,
-        conversions INT DEFAULT 0,
-        revenueEarned DECIMAL(15, 2) DEFAULT 0,
-        affiliateNotes TEXT NULL
-      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-    `);
-
-    // Safe column addition for affiliate notes (if table already existed)
-    try {
-      await dbPool.query("ALTER TABLE affiliates ADD COLUMN affiliateNotes TEXT NULL");
-    } catch (_) {}
-
-    // 3. Orders Table
+    // 2. Orders Table
     await dbPool.query(`
       CREATE TABLE IF NOT EXISTS orders (
         id VARCHAR(255) PRIMARY KEY,
@@ -267,8 +243,6 @@ export async function getDbStatus(): Promise<{
     // Query counts
     const [prodCount]: any = await pool.query("SELECT COUNT(*) as count FROM products");
     const [orderCount]: any = await pool.query("SELECT COUNT(*) as count FROM orders");
-    const [affCount]: any = await pool.query("SELECT COUNT(*) as count FROM affiliates");
-    const [campCount]: any = await pool.query("SELECT COUNT(*) as count FROM campaigns");
 
     return {
       configured: true,
@@ -277,8 +251,6 @@ export async function getDbStatus(): Promise<{
       stats: {
         products: prodCount[0]?.count || 0,
         orders: orderCount[0]?.count || 0,
-        affiliates: affCount[0]?.count || 0,
-        campaigns: campCount[0]?.count || 0,
       },
     };
   } catch (error: any) {
@@ -345,35 +317,7 @@ export async function pushSyncData(payload: Record<string, any>): Promise<void> 
       }
     }
 
-    // 2. Sync Affiliates
-    if (Array.isArray(payload.veloce_affiliates)) {
-      await connection.query("DELETE FROM affiliates");
-      for (const a of payload.veloce_affiliates) {
-        if (!a.id || !a.name) continue;
-        await connection.query(
-          `INSERT INTO affiliates 
-           (id, name, merchant, description, commissionRate, price, category, imageUrl, affiliateUrl, clicks, conversions, revenueEarned, affiliateNotes)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          [
-            a.id,
-            a.name,
-            a.merchant || null,
-            a.description || null,
-            a.commissionRate || 0,
-            a.price || 0,
-            a.category || null,
-            a.imageUrl || null,
-            a.affiliateUrl || null,
-            a.clicks || 0,
-            a.conversions || 0,
-            a.revenueEarned || 0,
-            a.affiliateNotes ? JSON.stringify(a.affiliateNotes) : null,
-          ]
-        );
-      }
-    }
-
-    // 3. Sync Orders
+    // 2. Sync Orders
     if (Array.isArray(payload.veloce_orders)) {
       await connection.query("DELETE FROM orders");
       for (const o of payload.veloce_orders) {
@@ -402,7 +346,7 @@ export async function pushSyncData(payload: Record<string, any>): Promise<void> 
       }
     }
 
-    // 4. Sync Campaigns
+    // 3. Sync Campaigns
     if (Array.isArray(payload.veloce_campaigns)) {
       await connection.query("DELETE FROM campaigns");
       for (const c of payload.veloce_campaigns) {
@@ -424,7 +368,7 @@ export async function pushSyncData(payload: Record<string, any>): Promise<void> 
       }
     }
 
-    // 5. Sync Click Logs
+    // 4. Sync Click Logs
     if (Array.isArray(payload.veloce_clicklogs)) {
       await connection.query("DELETE FROM click_logs");
       for (const cl of payload.veloce_clicklogs) {
@@ -448,7 +392,7 @@ export async function pushSyncData(payload: Record<string, any>): Promise<void> 
       }
     }
 
-    // 6. Sync Inventory Audit Logs
+    // 5. Sync Inventory Audit Logs
     if (Array.isArray(payload.veloce_inventory_audit_logs)) {
       await connection.query("DELETE FROM inventory_audit_logs");
       for (const il of payload.veloce_inventory_audit_logs) {
@@ -472,7 +416,7 @@ export async function pushSyncData(payload: Record<string, any>): Promise<void> 
       }
     }
 
-    // 7. Store global app settings (coupons, loyalty, earnings, promo_banner, support_tickets, payout_logs)
+    // 6. Store global app settings (coupons, loyalty, earnings, promo_banner, support_tickets, payout_logs)
     const settingsKeys = [
       'veloce_cart',
       'veloce_wishlist',
@@ -553,25 +497,7 @@ export async function pullSyncData(): Promise<Record<string, any>> {
       whatsInTheBox: p.whatsInTheBox || undefined,
     }));
 
-    // 2. Get Affiliates
-    const [affiliatesRows]: any = await pool.query("SELECT * FROM affiliates");
-    result.veloce_affiliates = affiliatesRows.map((a: any) => ({
-      id: a.id,
-      name: a.name,
-      merchant: a.merchant || "",
-      description: a.description || "",
-      commissionRate: Number(a.commissionRate),
-      price: Number(a.price),
-      category: a.category || "",
-      imageUrl: a.imageUrl || "",
-      affiliateUrl: a.affiliateUrl || "",
-      clicks: Number(a.clicks),
-      conversions: Number(a.conversions),
-      revenueEarned: Number(a.revenueEarned),
-      affiliateNotes: a.affiliateNotes ? JSON.parse(a.affiliateNotes) : undefined,
-    }));
-
-    // 3. Get Orders
+    // 2. Get Orders
     const [ordersRows]: any = await pool.query("SELECT * FROM orders");
     result.veloce_orders = ordersRows.map((o: any) => ({
       id: o.id,

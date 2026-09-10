@@ -1,6 +1,6 @@
 # Django REST Framework Backend
 
-This directory contains the full Django REST Framework (DRF) backend for the Veloce eCommerce & Partner Portal application. It is updated with all current production features including Shipping & Delivery, Affiliates, Orders, Products, Payments, and Security.
+This directory contains the full Django REST Framework (DRF) backend for the Veloce eCommerce application. It is updated with all current production features including Shipping & Delivery, Orders, Products, Payments, and Security.
 
 ## 🚀 Quick Setup & Execution
 
@@ -53,10 +53,6 @@ The API server will run at `http://127.0.0.1:8000/api/`.
 | | `/api/products/bulk_action/` | `POST` | Batch operations (`archive`, `delete`, `update_status`) |
 | **Shipping & Delivery** | `/api/shipping/zones/` | `GET`, `POST`, `PUT`, `DELETE` | Manage distance zones, base fees, and regions |
 | | `/api/shipping/happy-hours/` | `GET`, `POST`, `PUT`, `DELETE` | Manage Happy Hour discount schedules |
-| | `/api/shipping/calculate-fee/` | `POST` | Live delivery fee engine (distance matrix, express, happy hour) |
-| **Affiliate Program** | `/api/affiliates/profiles/` | `GET`, `POST`, `PUT` | Manage affiliate profiles and tracking codes |
-| | `/api/affiliates/commissions/` | `GET`, `POST` | Commission tracking entries per order item |
-| | `/api/affiliates/authorize-payout/` | `POST` | Authorize B2C M-Pesa/Bank payout requests |
 | **Orders & Logistics** | `/api/orders/` | `GET`, `POST` | Create orders and view order history |
 | | `/api/orders/track/<order_id>` | `GET` | Retrieve real-time Fargo/G4S courier tracking checkpoints |
 | **Payments & Security** | `/api/payments/validate` | `POST` | Validate M-Pesa, Card, or COD transactions |

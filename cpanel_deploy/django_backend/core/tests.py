@@ -6,14 +6,12 @@ from django.core import mail
 from core.celery import app as celery_app
 from products.models import Product, ProductCategory
 from apps.orders.models import Order, OrderItem
-from apps.affiliates.models import AffiliateProfile, CommissionEntry
 from apps.users.models import UserProfile, UserNotification
 
 # Tasks to test
 from apps.orders.tasks import send_order_confirmation_email_task, send_order_status_notification_task
 from apps.users.tasks import send_welcome_email_task
 from apps.products.tasks import check_low_stock_threshold_task, process_product_bulk_update_task
-from apps.affiliates.tasks import process_affiliate_commission_task
 from core.tasks import generate_sales_report_task, generate_inventory_health_report_task
 
 
@@ -63,7 +61,6 @@ class CeleryArchitectureTestSuite(TestCase):
         self.assertIn('apps.orders.tasks.send_order_status_notification_task', registered_tasks)
         self.assertIn('apps.users.tasks.send_welcome_email_task', registered_tasks)
         self.assertIn('apps.products.tasks.check_low_stock_threshold_task', registered_tasks)
-        self.assertIn('apps.affiliates.tasks.process_affiliate_commission_task', registered_tasks)
         self.assertIn('core.tasks.generate_sales_report_task', registered_tasks)
 
     def test_send_order_confirmation_email_task(self):
@@ -120,34 +117,6 @@ class CeleryArchitectureTestSuite(TestCase):
         self.assertEqual(result['products'][0]['sku'], 'TEST-HOODIE-01')
         self.assertEqual(len(mail.outbox), 1)
         self.assertIn("[INVENTORY ALERT]", mail.outbox[0].subject)
-
-    def test_process_affiliate_commission_task(self):
-        """Verify affiliate commission processing, tier rate calculation and notification."""
-        affiliate = AffiliateProfile.objects.create(
-            user=self.user,
-            name='Edwin Partner',
-            email='partner@example.com',
-            affiliate_code='EDWIN254',
-            partner_tier='Gold',  # 12%
-            status='approved'
-        )
-
-        order_id = 'order-test-uuid-999'
-        order_total = 10000.00
-        result = process_affiliate_commission_task.delay(order_id, 'EDWIN254', order_total).get()
-
-        self.assertEqual(result['status'], 'success')
-        self.assertEqual(result['amount'], 1200.00)  # 12% of 10,000
-
-        # Check DB records
-        comm = CommissionEntry.objects.get(affiliate=affiliate, order_id=order_id)
-        self.assertEqual(comm.commission_amount, Decimal('1200.00'))
-        self.assertEqual(comm.status, 'pending')
-
-        # Check affiliate balance update
-        affiliate.refresh_from_db()
-        self.assertEqual(affiliate.pending_balance, Decimal('1200.00'))
-        self.assertEqual(affiliate.total_earned, Decimal('1200.00'))
 
     def test_generate_sales_report_task(self):
         """Verify aggregation of metrics for sales report."""

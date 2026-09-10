@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { Product, BlogPost, Order, InventoryAuditLog, CouponItem, AffiliateProduct } from './types';
+import { Product, BlogPost, Order, InventoryAuditLog, CouponItem } from './types';
 
 export const INITIAL_PRODUCTS: Product[] = [];
 
@@ -86,6 +86,4 @@ export function formatCouponExpiry(expiryDate?: string): string {
 }
 
 export const INITIAL_AUDIT_LOGS: InventoryAuditLog[] = [];
-
-export const INITIAL_AFFILIATE_PRODUCTS: AffiliateProduct[] = [];
 

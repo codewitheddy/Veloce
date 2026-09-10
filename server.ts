@@ -5,12 +5,14 @@
 
 import express from "express";
 import path from "path";
+import fs from "fs";
 import crypto from "crypto";
 import dotenv from "dotenv";
 import nodemailer from "nodemailer";
 import dns from "dns";
 import { getDbStatus, pushSyncData, pullSyncData } from "./src/lib/mysql-db";
 import { getSqliteDbStatus, pushSyncDataSqlite, pullSyncDataSqlite, purgeAllSqliteData, getSqliteDb, saveSqliteDb, getAllSqliteCategories, saveSqliteCategories, getAllSqliteHeroBanners, saveSqliteHeroBanners } from "./src/lib/sqlite-db";
+import { getPostgresDbStatus, initPostgresTables, pushSyncDataPostgres, pullSyncDataPostgres } from "./src/lib/postgres-db";
 
 dotenv.config();
 
@@ -3057,8 +3059,6 @@ app.delete(['/api/services/custom-clothing/:id', '/api/services/custom-clothing/
 // ==========================================
 // cPanel SMTP Email Service & Unsubscribe Management Endpoints
 // ==========================================
-import fs from "fs";
-
 const UNSUBSCRIBED_FILE = path.join(process.cwd(), ".unsubscribed_emails.json");
 let unsubscribedEmailsStore = new Set<string>();
 
@@ -4536,10 +4536,66 @@ async function startServer() {
     console.error("[SQLite Startup] Error initializing SQLite database:", err);
   }
 
+  // Initialize PostgreSQL connection and tables if configured
+  initPostgresTables().catch((err) => {
+    console.warn("[PostgreSQL Startup] Notice:", err?.message || err);
+  });
+
   // Execute background expiry check on application initialization
   performExpiryBackgroundCheck().catch((err) => {
     console.error("[Expiry Check] Startup execution error:", err);
   });
+
+  // Vite dev middleware setup in dev mode (dynamically loaded so production bundle does not require Vite)
+  // Helper function to resolve dist directory across various deployment environments (cPanel Passenger, local, Docker)
+  const resolveDistPath = (): string => {
+    const candidates = [
+      path.resolve(__dirname), // When running inside dist/ (e.g., dist/server.cjs)
+      path.resolve(__dirname, "dist"), // When running from project root
+      path.resolve(process.cwd(), "dist"),
+      path.resolve(process.cwd()),
+    ];
+    for (const candidate of candidates) {
+      if (fs.existsSync(path.join(candidate, "index.html"))) {
+        return candidate;
+      }
+    }
+    return path.resolve(process.cwd(), "dist");
+  };
+
+  const serveStaticProductionAssets = () => {
+    const distPath = resolveDistPath();
+    const assetsPath = path.join(distPath, "assets");
+    if (fs.existsSync(assetsPath)) {
+      app.use(
+        "/assets",
+        express.static(assetsPath, {
+          maxAge: "1y",
+          immutable: true,
+        })
+      );
+    }
+    app.use(express.static(distPath, { maxAge: "1h" }));
+    app.get("*", (req, res) => {
+      res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+      const indexPath = path.join(distPath, "index.html");
+      if (fs.existsSync(indexPath)) {
+        res.sendFile(indexPath);
+      } else {
+        res.status(404).send(`
+          <!DOCTYPE html>
+          <html>
+            <head><title>Veloce Hub - 404 Build Asset Missing</title></head>
+            <body style="font-family: sans-serif; padding: 40px; background: #0f172a; color: #f8fafc;">
+              <h1 style="color: #38bdf8;">Veloce Hub - Production Assets Not Found</h1>
+              <p>The server is running, but <code>index.html</code> was not found at: <code>${indexPath}</code>.</p>
+              <p>Please make sure you ran <code>npm run package:cpanel</code> and uploaded the complete bundle.</p>
+            </body>
+          </html>
+        `);
+      }
+    });
+  };
 
   // Vite dev middleware setup in dev mode (dynamically loaded so production bundle does not require Vite)
   if (process.env.NODE_ENV !== "production") {
@@ -4553,29 +4609,11 @@ async function startServer() {
       app.use(vite.middlewares);
     } catch (viteErr) {
       console.warn("[Vite Middleware] Vite dev server not initialized, falling back to production static assets:", viteErr);
-      const distPath = path.join(process.cwd(), "dist");
-      app.use("/assets", express.static(path.join(distPath, "assets"), { maxAge: "1y", immutable: true }));
-      app.use(express.static(distPath, { maxAge: "1h" }));
-      app.get("*", (req, res) => {
-        res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
-        res.sendFile(path.join(distPath, "index.html"));
-      });
+      serveStaticProductionAssets();
     }
   } else {
     // Serve production static assets from dist with caching policies
-    const distPath = path.join(process.cwd(), "dist");
-    app.use(
-      "/assets",
-      express.static(path.join(distPath, "assets"), {
-        maxAge: "1y",
-        immutable: true,
-      })
-    );
-    app.use(express.static(distPath, { maxAge: "1h" }));
-    app.get("*", (req, res) => {
-      res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
-      res.sendFile(path.join(distPath, "index.html"));
-    });
+    serveStaticProductionAssets();
   }
 
   // Global error handler middleware
@@ -4591,13 +4629,22 @@ async function startServer() {
     });
   });
 
-  const server = typeof PORT === "number"
-    ? app.listen(PORT, "0.0.0.0", () => {
-        console.log(`[Veloce Server] Running on http://localhost:${PORT}`);
-      })
-    : app.listen(PORT, () => {
-        console.log(`[Veloce Server] Running on Passenger socket/custom port: ${PORT}`);
-      });
+  let server: any;
+  if (typeof (global as any).PhusionPassenger !== "undefined") {
+    (global as any).PhusionPassenger?.configure?.({ autoInstall: false });
+    server = app.listen("passenger", () => {
+      console.log("[Veloce Server] Running on Phusion Passenger internal socket");
+    });
+  } else if (process.env.PORT === "passenger" || (process.env.PORT && isNaN(Number(process.env.PORT)))) {
+    server = app.listen(process.env.PORT, () => {
+      console.log(`[Veloce Server] Running on custom / Passenger socket: ${process.env.PORT}`);
+    });
+  } else {
+    const port = Number(process.env.PORT) || 3000;
+    server = app.listen(port, () => {
+      console.log(`[Veloce Server] Running on http://localhost:${port}`);
+    });
+  }
 
   const gracefulShutdown = (signal: string) => {
     console.log(`[Veloce Server] Received ${signal}. Shutting down gracefully...`);

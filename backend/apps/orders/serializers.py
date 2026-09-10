@@ -138,16 +138,5 @@ class OrderSerializer(serializers.ModelSerializer):
 
             # Note: Order creation & status lifecycle emails are now authoritatively handled
             # by the post_save signal in apps.orders.signals.
-            
-            # Process affiliate commissions if applicable
-            order_id = str(order.id)
-            affiliate_code = order.affiliate_code
-            total_val = float(order.total)
-
-            if affiliate_code:
-                from apps.affiliates.tasks import process_affiliate_commission_task
-                transaction.on_commit(
-                    lambda: process_affiliate_commission_task.delay(order_id, affiliate_code, total_val)
-                )
 
         return order

@@ -137,22 +137,6 @@ function initializeSqliteSchema(db: Database): void {
       verified INTEGER DEFAULT 1
     );
 
-    CREATE TABLE IF NOT EXISTS affiliates (
-      id TEXT PRIMARY KEY,
-      name TEXT NOT NULL,
-      merchant TEXT,
-      description TEXT,
-      commissionRate REAL NOT NULL,
-      price REAL NOT NULL,
-      category TEXT,
-      imageUrl TEXT,
-      affiliateUrl TEXT,
-      clicks INTEGER DEFAULT 0,
-      conversions INTEGER DEFAULT 0,
-      revenueEarned REAL DEFAULT 0,
-      affiliateNotes TEXT
-    );
-
     CREATE TABLE IF NOT EXISTS campaigns (
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
@@ -269,9 +253,6 @@ export async function getSqliteDbStatus(): Promise<{
     const orderRes = db.exec("SELECT COUNT(*) as count FROM orders;");
     const orderCount = orderRes.length > 0 ? (orderRes[0].values[0][0] as number) : 0;
 
-    const affRes = db.exec("SELECT COUNT(*) as count FROM affiliates;");
-    const affCount = affRes.length > 0 ? (affRes[0].values[0][0] as number) : 0;
-
     const revRes = db.exec("SELECT COUNT(*) as count FROM reviews;");
     const revCount = revRes.length > 0 ? (revRes[0].values[0][0] as number) : 0;
 
@@ -285,7 +266,6 @@ export async function getSqliteDbStatus(): Promise<{
       stats: {
         products: prodCount,
         orders: orderCount,
-        affiliates: affCount,
         reviews: revCount,
       },
     };
@@ -388,38 +368,7 @@ export async function pushSyncDataSqlite(payload: Record<string, any>): Promise<
     stmt.free();
   }
 
-  // 3. Sync Affiliates
-  if (Array.isArray(payload.veloce_affiliates)) {
-    db.run("DELETE FROM affiliates;");
-    const stmt = db.prepare(`
-      INSERT INTO affiliates (
-        id, name, merchant, description, commissionRate, price, category, imageUrl,
-        affiliateUrl, clicks, conversions, revenueEarned, affiliateNotes
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-
-    for (const a of payload.veloce_affiliates) {
-      if (!a.id || !a.name) continue;
-      stmt.run([
-        a.id,
-        a.name,
-        a.merchant || null,
-        a.description || null,
-        a.commissionRate || 0,
-        a.price || 0,
-        a.category || null,
-        a.imageUrl || null,
-        a.affiliateUrl || null,
-        a.clicks || 0,
-        a.conversions || 0,
-        a.revenueEarned || 0,
-        a.affiliateNotes ? JSON.stringify(a.affiliateNotes) : null,
-      ]);
-    }
-    stmt.free();
-  }
-
-  // 4. Sync Categories
+  // 3. Sync Categories
   if (Array.isArray(payload.veloce_categories) || Array.isArray(payload.categories)) {
     const catList = payload.veloce_categories || payload.categories;
     db.run("DELETE FROM categories;");
@@ -533,30 +482,7 @@ export async function pullSyncDataSqlite(): Promise<Record<string, any>> {
     result.veloce_orders = [];
   }
 
-  // 3. Pull Affiliates
-  const affRes = db.exec("SELECT * FROM affiliates;");
-  if (affRes.length > 0) {
-    const cols = affRes[0].columns;
-    result.veloce_affiliates = affRes[0].values.map((row) => {
-      const obj: any = {};
-      cols.forEach((col, idx) => {
-        obj[col] = row[idx];
-      });
-      return {
-        ...obj,
-        commissionRate: Number(obj.commissionRate),
-        price: Number(obj.price),
-        clicks: Number(obj.clicks),
-        conversions: Number(obj.conversions),
-        revenueEarned: Number(obj.revenueEarned),
-        affiliateNotes: obj.affiliateNotes ? JSON.parse(obj.affiliateNotes) : undefined,
-      };
-    });
-  } else {
-    result.veloce_affiliates = [];
-  }
-
-  // 4. Pull Categories
+  // 3. Pull Categories
   const catRes = db.exec("SELECT * FROM categories ORDER BY displayOrder ASC, name ASC;");
   if (catRes.length > 0) {
     const cols = catRes[0].columns;
@@ -683,7 +609,6 @@ export async function purgeAllSqliteData(): Promise<void> {
   db.run("DELETE FROM products;");
   db.run("DELETE FROM orders;");
   db.run("DELETE FROM categories;");
-  db.run("DELETE FROM affiliates;");
   db.run("DELETE FROM campaigns;");
   db.run("DELETE FROM click_logs;");
   db.run("DELETE FROM inventory_audit_logs;");
