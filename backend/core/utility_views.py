@@ -7,6 +7,26 @@ from django.conf import settings
 from core.permissions import IsStaffOrSuperuser
 
 
+class RootApiStatusView(APIView):
+    """Health check and service status for the root URL of Django API."""
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request):
+        return Response({
+            'status': 'online',
+            'service': 'Ropenix Collections & Veloce Hub Django API',
+            'version': '1.0.0',
+            'endpoints': {
+                'admin': '/admin/',
+                'django_admin': '/django-admin/',
+                'auth': '/api/auth/login/',
+                'products': '/api/products/',
+                'orders': '/api/orders/',
+                'settings': '/api/settings/',
+            }
+        }, status=status.HTTP_200_OK)
+
+
 class ValidatePaymentView(APIView):
     permission_classes = [permissions.AllowAny]
     throttle_scope = 'checkout'

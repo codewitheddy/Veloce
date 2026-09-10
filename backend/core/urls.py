@@ -12,6 +12,7 @@ from apps.users.views import (
 )
 from core.contact_views import ContactMessageView
 from core.utility_views import (
+    RootApiStatusView,
     ValidatePaymentView,
     OrderTrackingView,
     VerifyPromoView,
@@ -26,6 +27,9 @@ from core.utility_views import (
 )
 
 urlpatterns = [
+    # Root Health Check & API Directory
+    path('', RootApiStatusView.as_view(), name='root_status'),
+
     # Contact Form API Endpoint (Public)
     path('api/contact/', ContactMessageView.as_view(), name='contact_message'),
     path('api/contact', ContactMessageView.as_view(), name='contact_message_no_slash'),
