@@ -1,14 +1,11 @@
 import os
 import sys
 
-# Ensure backend directory is first in sys.path
 app_dir = os.path.dirname(os.path.abspath(__file__))
 if app_dir not in sys.path:
     sys.path.insert(0, app_dir)
 
-# Set Django settings module
-os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'backend_project.settings')
+os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'core.settings')
 
-# Import Django WSGI Application entrypoint
 from django.core.wsgi import get_wsgi_application
 application = get_wsgi_application()
