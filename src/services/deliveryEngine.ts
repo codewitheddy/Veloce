@@ -15,9 +15,9 @@ export interface DeliveryCalculationParams {
   orderTime?: Date | string;
   isExpress?: boolean;
   freeDeliveryThreshold?: number; // Default: 5000 KES
-  baseDistanceKm?: number;        // Default: 5 km
-  baseFee?: number;               // Default: 200 KES
-  perKmRate?: number;             // Default: 30 KES/km after base distance
+  baseDistanceKm?: number;        // Default: 0 km
+  baseFee?: number;               // Default: 0 KES
+  perKmRate?: number;             // Default: 25 KES/km
   maxDistanceKm?: number;         // Default: 50 km
   expressSurcharge?: number;      // Default: 150 KES
   zones?: ShippingZone[];
@@ -130,9 +130,9 @@ export function calculate_delivery_fee(params: DeliveryCalculationParams): Deliv
     distanceKm,
     isExpress = false,
     freeDeliveryThreshold = 5000,
-    baseDistanceKm = 5,
-    baseFee = 200,
-    perKmRate = 30,
+    baseDistanceKm = 0,
+    baseFee = 0,
+    perKmRate = 25,
     maxDistanceKm = 50,
     expressSurcharge = 150,
     zones,

@@ -195,8 +195,8 @@ function resolveProductForItem(
     type: item.type === 'digital' || item.type === 'service' ? item.type : 'physical',
     imageUrl: productsList[0]?.imageUrl || 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=600',
     stock: 10,
-    rating: 5,
-    reviewsCount: 1,
+    rating: 0,
+    reviewsCount: 0,
     reviews: []
   };
 }

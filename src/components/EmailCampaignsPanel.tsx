@@ -155,17 +155,17 @@ export const TEMPLATE_VARIABLES: TemplateVariable[] = [
   { tag: 'product_price', label: 'Product Unit Price', category: 'product', description: 'Formatted single item unit price', sample: 'KES 45,000' },
   { tag: 'discount_code', label: 'Promotional Coupon Code', category: 'product', description: 'Active coupon discount code', sample: 'SUMMER15' },
   { tag: 'coupon_expiry', label: 'Coupon Expiration Date', category: 'product', description: 'Valid-until date for promotional discount', sample: '31 Aug 2026' },
-  { tag: 'product_link', label: 'Direct Product / Store Link', category: 'product', description: 'Direct URL to store or product page', sample: 'https://marid.co.ke/store' },
+  { tag: 'product_link', label: 'Direct Product / Store Link', category: 'product', description: 'Direct URL to store or product page', sample: 'https://ropenix.co.ke/store' },
 
   // Account & Security
   { tag: 'otp_code', label: '2FA One-Time Passcode', category: 'security', description: '6-digit secure verification passcode', sample: '849201' },
-  { tag: 'reset_password_link', label: 'Password Reset URL', category: 'security', description: 'Secure tokenized link to reset password', sample: 'https://marid.co.ke/reset-password' },
-  { tag: 'login_url', label: 'Customer Login Portal URL', category: 'security', description: 'Direct link to customer account portal', sample: 'https://marid.co.ke/login' },
+  { tag: 'reset_password_link', label: 'Password Reset URL', category: 'security', description: 'Secure tokenized link to reset password', sample: 'https://ropenix.co.ke/reset-password' },
+  { tag: 'login_url', label: 'Customer Login Portal URL', category: 'security', description: 'Direct link to customer account portal', sample: 'https://ropenix.co.ke/login' },
 
   // Store & Branding
-  { tag: 'store_name', label: 'Merchant Brand Name', category: 'store', description: 'Official merchant store name', sample: 'Veloce Kenya' },
-  { tag: 'support_email', label: 'Customer Support Email', category: 'store', description: 'Helpdesk support contact email', sample: 'support@marid.co.ke' },
-  { tag: 'unsubscribe_link', label: 'Unsubscribe Link', category: 'store', description: 'CAN-SPAM compliant unsubscribe URL', sample: 'https://marid.co.ke/unsubscribe' },
+  { tag: 'store_name', label: 'Merchant Brand Name', category: 'store', description: 'Official merchant store name', sample: 'Ropenix Collections' },
+  { tag: 'support_email', label: 'Customer Support Email', category: 'store', description: 'Helpdesk support contact email', sample: 'admin@ropenix.co.ke' },
+  { tag: 'unsubscribe_link', label: 'Unsubscribe Link', category: 'store', description: 'CAN-SPAM compliant unsubscribe URL', sample: 'https://ropenix.co.ke/unsubscribe' },
 ];
 
 export const renderSampleTemplate = (text: string, productsList: Product[]) => {
@@ -186,13 +186,13 @@ export const renderSampleTemplate = (text: string, productsList: Product[]) => {
     .replace(/\{\{product_price\}\}/g, prodPrice)
     .replace(/\{\{discount_code\}\}/g, 'SUMMER15')
     .replace(/\{\{coupon_expiry\}\}/g, '31 Aug 2026')
-    .replace(/\{\{product_link\}\}/g, 'https://marid.co.ke/store')
+    .replace(/\{\{product_link\}\}/g, 'https://ropenix.co.ke/store')
     .replace(/\{\{otp_code\}\}/g, '849201')
-    .replace(/\{\{reset_password_link\}\}/g, 'https://marid.co.ke/reset-password?token=xyz123')
-    .replace(/\{\{login_url\}\}/g, 'https://marid.co.ke/login')
-    .replace(/\{\{store_name\}\}/g, 'Veloce Kenya')
-    .replace(/\{\{support_email\}\}/g, 'support@marid.co.ke')
-    .replace(/\{\{unsubscribe_link\}\}/g, 'https://marid.co.ke/unsubscribe');
+    .replace(/\{\{reset_password_link\}\}/g, 'https://ropenix.co.ke/reset-password?token=xyz123')
+    .replace(/\{\{login_url\}\}/g, 'https://ropenix.co.ke/login')
+    .replace(/\{\{store_name\}\}/g, 'Ropenix Collections')
+    .replace(/\{\{support_email\}\}/g, 'admin@ropenix.co.ke')
+    .replace(/\{\{unsubscribe_link\}\}/g, 'https://ropenix.co.ke/unsubscribe');
 };
 
 export default function EmailCampaignsPanel({
@@ -271,7 +271,7 @@ export default function EmailCampaignsPanel({
         timestamp: '23 Jul 2026, 09:15 AM',
         name: '🧾 Order Confirmation & Receipt',
         subject: 'Order Confirmed #10042 • Receipt & Breakdown for {{customer_name}}',
-        body: `Hi {{customer_name}},\n\nThank you for shopping with Veloce Kenya! We have received your payment and are preparing your order for immediate dispatch.\n\n==============================================\nORDER RECEIPT & BREAKDOWN\n==============================================\nOrder ID: #10042\nCustomer: {{customer_name}}\n\nITEMS:\n• {{product_name}} x 1 — KSh {{product_price}}\n\nSubtotal: KSh {{product_price}}\nVAT (16%): Included\nShipping: KSh 0 (Free Express Delivery)\n----------------------------------------------\nTOTAL PAID: KSh {{product_price}}\n==============================================\n\nYou can track your shipment status live inside your user account dashboard.\n\nQuestions? Reply to this email or contact support at orders@marid.co.ke.\n\nWarm regards,\nVeloce Express Logistics Team`,
+        body: `Hi {{customer_name}},\n\nThank you for shopping with Ropenix Collections! We have received your payment and are preparing your order for immediate dispatch.\n\n==============================================\nORDER RECEIPT & BREAKDOWN\n==============================================\nOrder ID: #10042\nCustomer: {{customer_name}}\n\nITEMS:\n• {{product_name}} x 1 — KSh {{product_price}}\n\nSubtotal: KSh {{product_price}}\nVAT (16%): Included\nShipping: KSh 0 (Free Express Delivery)\n----------------------------------------------\nTOTAL PAID: KSh {{product_price}}\n==============================================\n\nYou can track your shipment status live inside your user account dashboard.\n\nQuestions? Reply to this email or contact support at admin@ropenix.co.ke.\n\nWarm regards,\nRopenix Collections Logistics Team`,
         category: 'transactional',
         note: 'Added M-PESA & detailed receipt item breakdown',
         savedBy: 'Admin (edwinmuliro64@gmail.com)'
@@ -480,7 +480,7 @@ export default function EmailCampaignsPanel({
         .replace(/\{\{product_name\}\}/g, products[0]?.name || 'Veloce Desk Pad')
         .replace(/\{\{product_price\}\}/g, products[0]?.price.toLocaleString() || '45,000')
         .replace(/\{\{discount_code\}\}/g, 'SUMMER15')
-        .replace(/\{\{product_link\}\}/g, 'https://marid.co.ke/store');
+        .replace(/\{\{product_link\}\}/g, 'https://ropenix.co.ke/store');
 
       const htmlContent = `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; border: 1px solid #e2e8f0; border-radius: 12px; background-color: #ffffff;">
@@ -617,7 +617,7 @@ export default function EmailCampaignsPanel({
         .replace(/\{\{product_name\}\}/g, products[0]?.name || 'Veloce Desk Pad')
         .replace(/\{\{product_price\}\}/g, products[0]?.price.toLocaleString() || '45,000')
         .replace(/\{\{discount_code\}\}/g, 'SUMMER15')
-        .replace(/\{\{product_link\}\}/g, 'https://marid.co.ke/store');
+        .replace(/\{\{product_link\}\}/g, 'https://ropenix.co.ke/store');
 
       const htmlContent = `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; border: 1px solid #e2e8f0; border-radius: 12px; background-color: #ffffff;">
@@ -1343,7 +1343,7 @@ export default function EmailCampaignsPanel({
               .replace(/\{\{product_name\}\}/g, activeProduct?.name || 'Veloce Hardware')
               .replace(/\{\{product_price\}\}/g, activeProduct?.price.toLocaleString() || '0')
               .replace(/\{\{discount_code\}\}/g, selectedCouponCode || 'SUMMER15')
-              .replace(/\{\{product_link\}\}/g, `https://marid.co.ke/store`);
+              .replace(/\{\{product_link\}\}/g, `https://ropenix.co.ke/store`);
 
             const htmlContent = `
               <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; border: 1px solid #e2e8f0; border-radius: 12px; background-color: #ffffff;">
@@ -1559,7 +1559,7 @@ export default function EmailCampaignsPanel({
                 Email Center & Deliverability Hub <span className="text-[9px] font-mono font-black text-indigo-650 bg-indigo-50 px-1.5 py-0.5 rounded-full">v2.5 PRO</span>
               </h3>
               <p className="text-[10px] font-light text-gray-400 mt-0.5">
-                Manage e-commerce email templates, configure SPF/DKIM/DMARC DNS records for marid.co.ke, and monitor SMTP deliverability.
+                Manage e-commerce email templates, configure SPF/DKIM/DMARC DNS records for ropenix.co.ke, and monitor SMTP deliverability.
               </p>
             </div>
           </div>
@@ -1640,7 +1640,7 @@ export default function EmailCampaignsPanel({
             }`}
           >
             <ShieldCheck className="w-4 h-4" />
-            <span>DNS Authentication (marid.co.ke)</span>
+            <span>DNS Authentication (ropenix.co.ke)</span>
             <span className="px-1.5 py-0.5 rounded-full bg-white/20 text-[9px] font-mono">
               SPF • DKIM • DMARC
             </span>
@@ -3063,7 +3063,7 @@ export default function EmailCampaignsPanel({
               </div>
               <div className="grid grid-cols-12 gap-1">
                 <span className="col-span-2 text-gray-400 text-[10px] uppercase font-bold font-sans">From:</span>
-                <span className="col-span-10 font-bold text-indigo-700 truncate font-sans">Veloce Hub &lt;noreply@marid.co.ke&gt;</span>
+                <span className="col-span-10 font-bold text-indigo-700 truncate font-sans">Ropenix Collections &lt;admin@ropenix.co.ke&gt;</span>
               </div>
               <div className="grid grid-cols-12 gap-1">
                 <span className="col-span-2 text-gray-400 text-[10px] uppercase font-bold font-sans">Subject:</span>
@@ -3133,7 +3133,7 @@ export default function EmailCampaignsPanel({
             <div className="grid grid-cols-2 gap-2 text-[10.5px]">
               <div className="p-2 rounded bg-gray-50 dark:bg-gray-900 border border-gray-100 dark:border-gray-800">
                 <span className="font-bold text-gray-700 dark:text-gray-300 block">Sender Address:</span>
-                <span className="font-mono text-emerald-600 font-semibold">orders@marid.co.ke</span>
+                <span className="font-mono text-emerald-600 font-semibold">admin@ropenix.co.ke</span>
               </div>
               <div className="p-2 rounded bg-gray-50 dark:bg-gray-900 border border-gray-100 dark:border-gray-800">
                 <span className="font-bold text-gray-700 dark:text-gray-300 block">Authentication:</span>
@@ -3574,7 +3574,7 @@ export default function EmailCampaignsPanel({
                       <span className="text-[10px] font-mono text-slate-400">09:41 AM (Just now)</span>
                     </div>
                     <div className="text-slate-500 text-[11px] flex items-center gap-2">
-                      <span className="font-semibold text-slate-700">From:</span> Veloce Hub Kenya &lt;noreply@marid.co.ke&gt;
+                      <span className="font-semibold text-slate-700">From:</span> Ropenix Collections &lt;admin@ropenix.co.ke&gt;
                     </div>
                   </div>
 
@@ -3585,7 +3585,7 @@ export default function EmailCampaignsPanel({
                       .replace(/\{\{product_name\}\}/g, products[0]?.name || 'Veloce Desk Pad')
                       .replace(/\{\{product_price\}\}/g, products[0]?.price.toLocaleString() || '45,000')
                       .replace(/\{\{discount_code\}\}/g, 'SUMMER15')
-                      .replace(/\{\{product_link\}\}/g, 'https://marid.co.ke/store')
+                      .replace(/\{\{product_link\}\}/g, 'https://ropenix.co.ke/store')
                       .replace(/\{\{otp_code\}\}/g, '849201')
                       .replace(/\{\{order_id\}\}/g, 'VEL-94021')
                       .replace(/\{\{mpesa_ref\}\}/g, 'RKT892KL')}
@@ -3629,7 +3629,7 @@ export default function EmailCampaignsPanel({
                           .replace(/\{\{discount_code\}\}/g, 'SUMMER15')}
                       </h4>
                       <p className="text-[10px] text-slate-500 mt-1">
-                        Veloce Kenya &lt;noreply@marid.co.ke&gt;
+                        Ropenix Collections &lt;admin@ropenix.co.ke&gt;
                       </p>
                     </div>
 
@@ -3640,7 +3640,7 @@ export default function EmailCampaignsPanel({
                         .replace(/\{\{product_name\}\}/g, products[0]?.name || 'Veloce Desk Pad')
                         .replace(/\{\{product_price\}\}/g, products[0]?.price.toLocaleString() || '45,000')
                         .replace(/\{\{discount_code\}\}/g, 'SUMMER15')
-                        .replace(/\{\{product_link\}\}/g, 'https://marid.co.ke/store')
+                        .replace(/\{\{product_link\}\}/g, 'https://ropenix.co.ke/store')
                         .replace(/\{\{otp_code\}\}/g, '849201')
                         .replace(/\{\{order_id\}\}/g, 'VEL-94021')
                         .replace(/\{\{mpesa_ref\}\}/g, 'RKT892KL')}

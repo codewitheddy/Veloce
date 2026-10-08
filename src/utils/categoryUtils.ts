@@ -92,8 +92,7 @@ const STORAGE_KEY_AUDIT_LOGS = 'veloce_category_audit_logs';
 export async function fetchCategoriesFromBackend(): Promise<Category[]> {
   try {
     const backendCategories = await categoriesApi.getCategories();
-    // Only cache if backend returns a valid non-empty array
-    if (backendCategories !== null && Array.isArray(backendCategories) && backendCategories.length > 0) {
+    if (backendCategories !== null && Array.isArray(backendCategories)) {
       const normalized: Category[] = backendCategories.map((c: any) => ({
         id: String(c.id),
         name: c.name,
@@ -113,7 +112,11 @@ export async function fetchCategoriesFromBackend(): Promise<Category[]> {
         localStorage.setItem(STORAGE_KEY_CATEGORIES, JSON.stringify(normalized));
         const uniqueNames = Array.from(new Set(normalized.map((c) => c.name)));
         localStorage.setItem('veloce_custom_categories', JSON.stringify(uniqueNames));
-        localStorage.removeItem('veloce_categories_cleared');
+        if (normalized.length === 0) {
+          localStorage.setItem('veloce_categories_cleared', 'true');
+        } else {
+          localStorage.removeItem('veloce_categories_cleared');
+        }
       } catch {}
 
       return normalized;
@@ -129,18 +132,26 @@ export async function fetchCategoriesFromBackend(): Promise<Category[]> {
  */
 export function loadCategoriesFromStorage(): Category[] {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY_CATEGORIES);
-
-    if (raw !== null) {
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        return parsed;
-      }
+    const isCleared = typeof window !== 'undefined' && localStorage.getItem('veloce_categories_cleared') === 'true';
+    if (isCleared) {
+      return [];
     }
 
-    // Auto-Recovery 1: Recover from custom categories string array if present
-    const customCatsRaw = localStorage.getItem('veloce_custom_categories');
-    if (customCatsRaw) {
+    const raw = typeof window !== 'undefined' ? localStorage.getItem(STORAGE_KEY_CATEGORIES) : null;
+
+    if (raw !== null) {
+      try {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) {
+          if (parsed.length === 0 && isCleared) return [];
+          if (parsed.length > 0) return parsed;
+        }
+      } catch {}
+    }
+
+    // Auto-Recovery 1: Recover from custom categories string array if present and not intentionally cleared
+    const customCatsRaw = typeof window !== 'undefined' ? localStorage.getItem('veloce_custom_categories') : null;
+    if (customCatsRaw && !isCleared) {
       try {
         const customCats = JSON.parse(customCatsRaw);
         if (Array.isArray(customCats) && customCats.length > 0) {
@@ -165,9 +176,9 @@ export function loadCategoriesFromStorage(): Category[] {
       } catch {}
     }
 
-    // Auto-Recovery 2: Recover from existing product catalog in localStorage
-    const productsRaw = localStorage.getItem('veloce_products');
-    if (productsRaw) {
+    // Auto-Recovery 2: Recover from existing product catalog in localStorage if not intentionally cleared
+    const productsRaw = typeof window !== 'undefined' ? localStorage.getItem('veloce_products') : null;
+    if (productsRaw && !isCleared) {
       try {
         const prods = JSON.parse(productsRaw);
         if (Array.isArray(prods) && prods.length > 0) {
@@ -198,7 +209,7 @@ export function loadCategoriesFromStorage(): Category[] {
   } catch (err) {
     console.warn('[CategoryUtils] Failed to load categories from storage:', err);
   }
-  return DEFAULT_CATEGORY_OBJECTS;
+  return typeof window !== 'undefined' && localStorage.getItem('veloce_categories_cleared') === 'true' ? [] : DEFAULT_CATEGORY_OBJECTS;
 }
 
 /**

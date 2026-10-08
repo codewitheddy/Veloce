@@ -455,6 +455,8 @@ export function applyAppearanceToDom(appearance: AppearanceSettings) {
   );
 }
 
+import { getStoredAuthToken } from '../utils/authTokens';
+
 // Fetch with built-in timeout helper.
 // Uses a plain fetch with Promise.race timeout for all operations.
 // No AbortController signal is attached — this prevents React StrictMode and
@@ -467,8 +469,20 @@ async function fetchWithTimeout(url: string, options: RequestInit = {}, timeoutM
     timerId = setTimeout(() => reject(new Error(`Fetch timed out after ${timeout}ms: ${url}`)), timeout);
   });
 
+  const token = getStoredAuthToken();
+  const headers = new Headers(options.headers || {});
+  if (token && !headers.has('Authorization')) {
+    headers.set('Authorization', `Bearer ${token}`);
+  }
+
+  const mergedOptions: RequestInit = {
+    ...options,
+    headers,
+    credentials: options.credentials || 'include',
+  };
+
   try {
-    const result = await Promise.race([fetch(url, options), timeoutPromise]);
+    const result = await Promise.race([fetch(url, mergedOptions), timeoutPromise]);
     clearTimeout(timerId);
     return result as Response;
   } catch (err) {
@@ -480,34 +494,51 @@ async function fetchWithTimeout(url: string, options: RequestInit = {}, timeoutM
 // API Service Functions
 export const siteSettingsApi = {
   async getSettings(): Promise<FullSiteSettings> {
+    let rawData: any = null;
     try {
       const res = await fetchWithTimeout(`${API_BASE}/`);
       if (res.ok) {
-        const data = await res.json();
-        localStorage.setItem(DEFAULT_SETTINGS_STORAGE_KEY, JSON.stringify(data));
-        localStorage.setItem('veloce_site_settings_cache', JSON.stringify(data));
-        applyAppearanceToDom(data.appearance);
-        return data;
+        rawData = await res.json();
       }
     } catch (err) {
       console.warn('Backend settings unavailable, reading local cache:', err);
     }
 
-    const cached = localStorage.getItem('ropenix_site_settings_cache') || localStorage.getItem('veloce_site_settings_cache');
-    const settings: FullSiteSettings = cached ? JSON.parse(cached) : INITIAL_DEFAULT_SETTINGS;
-    if (settings) {
-      if (settings.general && (settings.general.support_phone === '+254 700 000 000' || settings.general.support_phone === '+254 717 147 007')) {
-        settings.general.support_phone = '+254 182 180 965';
-      }
-      if (settings.receipts && (settings.receipts.contact_phone === '+254 712 345 678' || settings.receipts.contact_phone === '+254 700 000 000')) {
-        settings.receipts.contact_phone = '+254 182 180 965';
-      }
-      if (settings.payments && (!settings.payments.whatsapp_number || settings.payments.whatsapp_number === '0717147007' || settings.payments.whatsapp_number === '0700000000')) {
-        settings.payments.whatsapp_number = '0182180965';
+    if (!rawData) {
+      const cached = localStorage.getItem('ropenix_site_settings_cache') || localStorage.getItem('veloce_site_settings_cache');
+      if (cached) {
+        try {
+          rawData = JSON.parse(cached);
+        } catch (_) {}
       }
     }
-    applyAppearanceToDom(settings.appearance);
-    return settings;
+
+    const merged: FullSiteSettings = {
+      general: { ...INITIAL_DEFAULT_SETTINGS.general, ...(rawData?.general || {}) },
+      appearance: { ...INITIAL_DEFAULT_SETTINGS.appearance, ...(rawData?.appearance || {}) },
+      tax: { ...INITIAL_DEFAULT_SETTINGS.tax, ...(rawData?.tax || {}) },
+      receipts: { ...INITIAL_DEFAULT_SETTINGS.receipts, ...(rawData?.receipts || {}) },
+      backup: { ...INITIAL_DEFAULT_SETTINGS.backup, ...(rawData?.backup || {}) },
+      payments: { ...INITIAL_DEFAULT_SETTINGS.payments, ...(rawData?.payments || {}) },
+      notifications: { ...INITIAL_DEFAULT_SETTINGS.notifications, ...(rawData?.notifications || {}) },
+      seo: { ...INITIAL_DEFAULT_SETTINGS.seo, ...(rawData?.seo || {}) },
+      access_control: { ...INITIAL_DEFAULT_SETTINGS.access_control, ...(rawData?.access_control || {}) },
+    };
+
+    if (merged.general && (merged.general.support_phone === '+254 700 000 000' || merged.general.support_phone === '+254 717 147 007')) {
+      merged.general.support_phone = '+254 182 180 965';
+    }
+    if (merged.receipts && (merged.receipts.contact_phone === '+254 712 345 678' || merged.receipts.contact_phone === '+254 700 000 000')) {
+      merged.receipts.contact_phone = '+254 182 180 965';
+    }
+    if (merged.payments && (!merged.payments.whatsapp_number || merged.payments.whatsapp_number === '0717147007' || merged.payments.whatsapp_number === '0700000000')) {
+      merged.payments.whatsapp_number = '0182180965';
+    }
+
+    localStorage.setItem(DEFAULT_SETTINGS_STORAGE_KEY, JSON.stringify(merged));
+    localStorage.setItem('veloce_site_settings_cache', JSON.stringify(merged));
+    applyAppearanceToDom(merged.appearance);
+    return merged;
   },
 
   async updateSection<K extends keyof FullSiteSettings>(

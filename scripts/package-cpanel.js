@@ -113,10 +113,7 @@ async function run() {
   copyRecursive(path.join(ROOT_DIR, 'dist'), path.join(nodeDir, 'dist'));
   // Copy public
   copyRecursive(path.join(ROOT_DIR, 'public'), path.join(nodeDir, 'public'));
-  // Copy app.js & app.cjs
-  if (fs.existsSync(path.join(ROOT_DIR, 'app.js'))) {
-    fs.copyFileSync(path.join(ROOT_DIR, 'app.js'), path.join(nodeDir, 'app.js'));
-  }
+  // Copy app.cjs (cPanel Passenger startup file)
   if (fs.existsSync(path.join(ROOT_DIR, 'app.cjs'))) {
     fs.copyFileSync(path.join(ROOT_DIR, 'app.cjs'), path.join(nodeDir, 'app.cjs'));
   }
@@ -157,27 +154,6 @@ async function run() {
 
   zipDirectory(staticDir, path.join(OUTPUT_DIR, 'veloce_static_spa.zip'));
 
-  // ---------------------------------------------------------------------------
-  // Bundle 3: Django Python Backend (For cPanel "Setup Python App")
-  // ---------------------------------------------------------------------------
-  log('Packaging Bundle 3: Django REST Framework Backend...');
-  const djangoDir = path.join(OUTPUT_DIR, 'django_backend');
-  fs.mkdirSync(djangoDir, { recursive: true });
-
-  copyRecursive(path.join(ROOT_DIR, 'backend'), djangoDir, [
-    '__pycache__',
-    'venv',
-    '.venv',
-    'staticfiles',
-    '.git',
-  ]);
-
-  if (fs.existsSync(path.join(ROOT_DIR, 'passenger_wsgi.py'))) {
-    fs.copyFileSync(path.join(ROOT_DIR, 'passenger_wsgi.py'), path.join(djangoDir, 'passenger_wsgi.py'));
-  }
-
-  zipDirectory(djangoDir, path.join(OUTPUT_DIR, 'veloce_django_backend.zip'));
-
   // Copy deployment documentation into cpanel_deploy
   if (fs.existsSync(path.join(ROOT_DIR, 'CPANEL_DEPLOYMENT.md'))) {
     fs.copyFileSync(path.join(ROOT_DIR, 'CPANEL_DEPLOYMENT.md'), path.join(OUTPUT_DIR, 'DEPLOYMENT_GUIDE.md'));
@@ -186,10 +162,9 @@ async function run() {
   console.log('\n======================================================');
   console.log('🎉 cPanel Deployment Packages Ready in cpanel_deploy/');
   console.log('======================================================\n');
-  console.log('📁 Generated Archives:');
-  console.log('  1. veloce_node_fullstack.zip  -> Full Node.js App (cPanel Setup Node.js App)');
+  console.log('📁 Generated Archives (100% Unified Node.js Stack):');
+  console.log('  1. veloce_node_fullstack.zip  -> Full Node.js Fullstack App (cPanel Setup Node.js App)');
   console.log('  2. veloce_static_spa.zip       -> Pure Static SPA (Drop into public_html)');
-  console.log('  3. veloce_django_backend.zip   -> Django Backend (cPanel Setup Python App)');
   console.log('\n📖 Refer to CPANEL_DEPLOYMENT.md for step-by-step instructions.\n');
 }
 

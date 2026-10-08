@@ -7,6 +7,7 @@ import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { X, Copy, Check, Twitter, Facebook, Linkedin, Mail, Link, Share2, QrCode, Download, Sparkles } from 'lucide-react';
 import { Product } from '../types';
+import { cleanDescriptionExcerpt } from '../utils/formatDescription';
 import QRCode from 'qrcode';
 
 interface ProductShareModalProps {
@@ -174,7 +175,7 @@ export default function ProductShareModal({ product, onClose }: ProductShareModa
       name: 'Twitter',
       icon: Twitter,
       color: 'bg-[#1DA1F2] hover:bg-[#1a91da] text-white',
-      url: `https://twitter.com/intent/tweet?text=${encodeURIComponent(`Check out this incredible workspace item: ${product.name} — ${product.description.substring(0, 100)}...`)}&url=${encodeURIComponent(shareUrl)}`,
+      url: `https://twitter.com/intent/tweet?text=${encodeURIComponent(`Check out this incredible workspace item: ${product.name} — ${cleanDescriptionExcerpt(product.shortDescription || product.description, 100)}...`)}&url=${encodeURIComponent(shareUrl)}`,
     },
     {
       name: 'Facebook',
@@ -192,7 +193,7 @@ export default function ProductShareModal({ product, onClose }: ProductShareModa
       name: 'Email',
       icon: Mail,
       color: 'bg-gray-700 hover:bg-gray-800 text-white',
-      url: `mailto:?subject=${encodeURIComponent(`Aesthetic Workspace Objects: ${product.name}`)}&body=${encodeURIComponent(`Hi!\n\nI thought you'd love to see this exquisite workspace design artifact on Ropenix Collections:\n\n${product.name}\n${product.description}\n\nView details: ${shareUrl}`)}`,
+      url: `mailto:?subject=${encodeURIComponent(`Aesthetic Workspace Objects: ${product.name}`)}&body=${encodeURIComponent(`Hi!\n\nI thought you'd love to see this exquisite workspace design artifact on Ropenix Collections:\n\n${product.name}\n${cleanDescriptionExcerpt(product.shortDescription || product.description, 300)}\n\nView details: ${shareUrl}`)}`,
     },
   ];
 
@@ -239,7 +240,7 @@ export default function ProductShareModal({ product, onClose }: ProductShareModa
               {product.name}
             </h4>
             <p className="text-[10.5px] text-gray-500 font-extralight mt-0.5 line-clamp-2 leading-relaxed">
-              {product.description}
+              {cleanDescriptionExcerpt(product.shortDescription || product.description, 120)}
             </p>
           </div>
         </div>

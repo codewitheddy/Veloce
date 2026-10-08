@@ -20,6 +20,7 @@ import {
 import { Order, Review, ReviewRequestLog, ReviewRequestSettings } from '../types';
 import { processReviewRequestAutomation } from '../lib/reviewRequestScheduler';
 import { EmailNotification } from './EmailToaster';
+import { getAuthHeaders } from '../utils/authTokens';
 
 interface ReviewRequestAutomationPanelProps {
   orders: Order[];
@@ -62,7 +63,9 @@ export default function ReviewRequestAutomationPanel({
   const fetchAutomationData = async () => {
     setIsLoading(true);
     try {
-      const res = await fetch('/api/admin/review-requests/logs');
+      const res = await fetch('/api/admin/review-requests/logs', {
+        headers: getAuthHeaders(),
+      });
       if (res.ok) {
         const data = await res.json();
         setLogs(data.logs || []);
@@ -114,7 +117,7 @@ export default function ReviewRequestAutomationPanel({
     try {
       const res = await fetch('/api/admin/review-requests/settings', {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({
           enabled: enabledInput,
           delayDays: Number(delayDaysInput),

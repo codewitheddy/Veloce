@@ -5,7 +5,6 @@
 
 import React from 'react';
 import { Product, Order, CartItem } from '../types';
-import { HeroBannerSlider } from './HeroBannerSlider';
 import DailyOffersSection from './DailyOffersSection';
 import BestSellersNewArrivalsCarousel from './BestSellersNewArrivalsCarousel';
 import BestSellingByCategory from './BestSellingByCategory';
@@ -48,20 +47,7 @@ export default function LandingHome({
 }: LandingHomeProps) {
 
   return (
-    <div className="bg-[#f8faff] min-h-screen">
-      {/* Dynamic Hero Section Banner */}
-      <HeroBannerSlider
-        onNavigateTab={setCurrentTab}
-        onSelectCategory={onSelectCategory}
-        onSelectSale={onSelectSale}
-        onProductClick={(prodId) => {
-          const matched = featuredProducts.find((p) => p.id === prodId || p.slug === prodId);
-          if (matched) {
-            onProductClick(matched);
-          }
-        }}
-      />
-
+    <div className="bg-slate-50 dark:bg-[#090D16] text-slate-900 dark:text-slate-100 min-h-screen transition-colors duration-200">
       {/* Daily Offers Carousel Section */}
       <DailyOffersSection
         products={featuredProducts}

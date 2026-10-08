@@ -85,9 +85,9 @@ export default function SmtpDiagnosticsModal({
 
   // Interactive SMTP Edit Form state
   const [isEditingConfig, setIsEditingConfig] = useState(false);
-  const [formHost, setFormHost] = useState('mail.marid.co.ke');
+  const [formHost, setFormHost] = useState('smtppro.zoho.com');
   const [formPort, setFormPort] = useState<number>(465);
-  const [formUser, setFormUser] = useState('noreply@marid.co.ke');
+  const [formUser, setFormUser] = useState('admin@ropenix.co.ke');
   const [formPassword, setFormPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [isSavingConfig, setIsSavingConfig] = useState(false);
@@ -180,12 +180,12 @@ export default function SmtpDiagnosticsModal({
         success: false,
         recipient,
         config: {
-          host: 'mail.marid.co.ke',
+          host: 'smtppro.zoho.com',
           port: 465,
-          user: 'noreply@marid.co.ke',
-          defaultFrom: 'Ropenix Collections <noreply@marid.co.ke>',
+          user: 'admin@ropenix.co.ke',
+          defaultFrom: 'Ropenix Collections <admin@ropenix.co.ke>',
           useSsl: true,
-          backend: 'django.core.mail.backends.smtp.EmailBackend'
+          backend: 'nodemailer.zoho.smtp'
         },
         timestamp: new Date().toISOString(),
         steps: [
@@ -364,7 +364,7 @@ export default function SmtpDiagnosticsModal({
                       value={formHost}
                       onChange={(e) => setFormHost(e.target.value)}
                       className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg font-mono text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      placeholder="mail.marid.co.ke"
+                      placeholder="smtppro.zoho.com"
                     />
                   </div>
 
@@ -390,7 +390,7 @@ export default function SmtpDiagnosticsModal({
                       value={formUser}
                       onChange={(e) => setFormUser(e.target.value)}
                       className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg font-mono text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      placeholder="noreply@marid.co.ke"
+                      placeholder="admin@ropenix.co.ke"
                     />
                   </div>
 
@@ -678,7 +678,7 @@ export default function SmtpDiagnosticsModal({
         <div className="px-6 py-4 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between">
           <div className="flex items-center space-x-2 text-xs text-slate-500 dark:text-slate-400">
             <ShieldCheck className="w-4 h-4 text-emerald-500" />
-            <span>Active Server Domain: <strong>mail.marid.co.ke</strong> (SSL Port 465)</span>
+            <span>Active Server Domain: <strong>smtppro.zoho.com</strong> (SSL Port 465)</span>
           </div>
 
           <button

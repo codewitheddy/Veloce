@@ -38,7 +38,22 @@ export const errorResponseInterceptor = (
 
     // Handle 401 Unauthorized: token expired, invalid token, or not logged in
     if (status === 401) {
-      // Clear persistent and in-memory auth tokens
+      const url = error.config?.url || '';
+      const isAuthEndpoint = 
+        url.includes('/auth/login') ||
+        url.includes('/auth/superuser-login') ||
+        url.includes('/auth/register') ||
+        url.includes('/auth/verify-otp') ||
+        url.includes('/auth/resend-otp') ||
+        url.includes('/auth/token') ||
+        url.includes('/auth/reset-password');
+
+      // If it's a login or authentication attempt, the 401 is an invalid credential error handled directly in the UI form
+      if (isAuthEndpoint) {
+        return Promise.reject(error);
+      }
+
+      // Clear persistent and in-memory auth tokens for protected API endpoints
       clearAuthTokens();
 
       const message = extractMessage(

@@ -37,7 +37,7 @@ export const LazyImage: React.FC<LazyImageProps> = ({
 
   return (
     <div
-      className={`relative overflow-hidden ${aspectRatioClassName} ${containerClassName}`}
+      className={`relative overflow-hidden w-full h-full flex items-center justify-center ${aspectRatioClassName} ${containerClassName}`}
     >
       {/* Skeleton / Blur-up background placeholder */}
       {!isLoaded && !hasError && (
@@ -62,7 +62,7 @@ export const LazyImage: React.FC<LazyImageProps> = ({
           decoding="async"
           onLoad={handleLoad}
           onError={handleError}
-          className={`transition-all duration-500 ease-out ${
+          className={`transition-all duration-500 ease-out object-contain object-center ${
             isLoaded
               ? 'blur-0 scale-100 opacity-100'
               : 'blur-md scale-105 opacity-0'

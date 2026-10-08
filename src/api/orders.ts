@@ -17,6 +17,14 @@ export interface PaginatedOrdersResponse {
 
 export const mapBackendOrderToFrontend = (ord: any): Order => {
   if (!ord) return {} as Order;
+  const rawStatus = String(ord.payment_status || ord.paymentStatus || '').toLowerCase();
+  const rawRef = String(ord.payment_reference || ord.paymentReference || '').trim();
+  const isPaid =
+    rawStatus === 'paid' ||
+    (rawRef !== '' && !rawRef.toUpperCase().includes('PENDING') && !rawRef.toUpperCase().includes('UNPAID'));
+
+  const paymentStatus = isPaid ? 'paid' : (rawStatus === 'partial' ? 'partial' : 'unpaid');
+
   return {
     id: String(ord.id || ''),
     customerName: ord.customer_name || ord.customerName || 'Customer',
@@ -28,6 +36,9 @@ export const mapBackendOrderToFrontend = (ord: any): Order => {
     tax: ord.tax_amount ? parseFloat(ord.tax_amount) : undefined,
     discount: ord.discount ? parseFloat(ord.discount) : undefined,
     status: (ord.status ? ord.status.toLowerCase() : 'pending') as Order['status'],
+    paymentStatus: paymentStatus as any,
+    paidAt: ord.paid_at || ord.paidAt || ord.payment_confirmed_at || (isPaid ? (ord.updated_at || ord.created_at) : undefined),
+    paymentReference: rawRef || undefined,
     date: ord.created_at ? ord.created_at.split('T')[0] : new Date().toISOString().split('T')[0],
     shippingAddress: ord.shipping_address || '',
     paymentMethod: ord.payment_method === 'Cash on Delivery' ? 'cod' : 'mpesa',
@@ -125,12 +136,84 @@ export const ordersApi = {
   /**
    * Updates status of an existing order
    */
-  updateOrderStatus: async (orderId: string, status: string, trackingNumber?: string): Promise<Order> => {
-    const response = await api.patch(`/orders/${orderId}/`, {
+  updateOrderStatus: async (
+    orderId: string,
+    status: string,
+    options?: string | {
+      trackingNumber?: string;
+      courierName?: string;
+      notes?: string;
+      deliveryPerson?: string;
+      deliveryNote?: string;
+      isDeliveryConfirmed?: boolean;
+    }
+  ): Promise<Order> => {
+    const opts = typeof options === 'string' ? { trackingNumber: options } : (options || {});
+    const response = await api.put(`/orders/${orderId}/`, {
       status,
-      tracking_number: trackingNumber,
+      trackingNumber: opts.trackingNumber,
+      courierName: opts.courierName,
+      notes: opts.notes,
+      deliveryPerson: opts.deliveryPerson,
+      deliveryNote: opts.deliveryNote,
+      isDeliveryConfirmed: opts.isDeliveryConfirmed,
     });
-    return mapBackendOrderToFrontend(response.data);
+    return mapBackendOrderToFrontend(response.data.order || response.data);
+  },
+
+  /**
+   * Admin confirms payment for an order (automatically moves order to Processing and emails customer)
+   */
+  confirmPayment: async (orderId: string, options?: { paymentReference?: string; paymentAmount?: number; adminNotes?: string }): Promise<Order> => {
+    const response = await api.post(`/orders/${orderId}/confirm-payment`, options || {});
+    return mapBackendOrderToFrontend(response.data.order || response.data);
+  },
+
+  /**
+   * Admin marks order as Shipped (with optional tracking and courier details)
+   */
+  markShipped: async (orderId: string, options?: { trackingNumber?: string; courierName?: string; notes?: string }): Promise<Order> => {
+    const response = await api.put(`/orders/${orderId}/`, {
+      status: 'shipped',
+      trackingNumber: options?.trackingNumber,
+      courierName: options?.courierName,
+      notes: options?.notes,
+    });
+    return mapBackendOrderToFrontend(response.data.order || response.data);
+  },
+
+  /**
+   * Admin marks delivery confirmation from courier
+   */
+  confirmDelivery: async (orderId: string, data: { deliveryPerson?: string; deliveryNote?: string }): Promise<Order> => {
+    const response = await api.post(`/orders/${orderId}/confirm-delivery`, data);
+    return mapBackendOrderToFrontend(response.data.order || response.data);
+  },
+
+  /**
+   * Admin marks order as Completed (allowed only after delivery is confirmed)
+   */
+  markCompleted: async (orderId: string, notes?: string): Promise<Order> => {
+    const response = await api.put(`/orders/${orderId}/`, {
+      status: 'completed',
+      notes,
+    });
+    return mapBackendOrderToFrontend(response.data.order || response.data);
+  },
+
+  /**
+   * Updates payment status of an existing order
+   */
+  updateOrderPaymentStatus: async (orderId: string, paymentStatus: 'unpaid' | 'paid', paidNote?: string): Promise<Order> => {
+    if (paymentStatus === 'paid') {
+      return ordersApi.confirmPayment(orderId, { adminNotes: paidNote });
+    }
+    const response = await api.patch(`/orders/${orderId}/`, {
+      payment_status: paymentStatus,
+      paymentStatus: paymentStatus,
+      notes: paidNote || `Payment marked as ${paymentStatus.toUpperCase()} by admin.`,
+    });
+    return mapBackendOrderToFrontend(response.data.order || response.data);
   },
 
   /**

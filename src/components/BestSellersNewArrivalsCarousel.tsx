@@ -23,6 +23,7 @@ import {
 import { Product, CartItem } from '../types';
 import LazyImage from './LazyImage';
 import { getProductDiscountInfo } from '../utils/productUtils';
+import { cleanDescriptionExcerpt } from '../utils/formatDescription';
 import { CurrencyType, formatPrice } from '../lib/currency';
 
 interface BestSellersNewArrivalsCarouselProps {
@@ -62,8 +63,8 @@ export default function BestSellersNewArrivalsCarousel({
     return [...products]
       .filter(p => p.status !== 'Draft' && p.status !== 'Archived')
       .sort((a, b) => {
-        const scoreA = (a.rating || 4.5) * 20 + (a.reviewsCount || 0) * 3;
-        const scoreB = (b.rating || 4.5) * 20 + (b.reviewsCount || 0) * 3;
+        const scoreA = (a.rating || 0) * 20 + (a.reviewsCount || 0) * 3;
+        const scoreB = (b.rating || 0) * 20 + (b.reviewsCount || 0) * 3;
         return scoreB - scoreA;
       })
       .slice(0, 8);
@@ -117,19 +118,25 @@ export default function BestSellersNewArrivalsCarousel({
   };
 
   const isItemInCart = (prodId: string) => {
-    return (
-      addedProductIds.has(prodId) ||
-      Boolean(
-        cart &&
-        cart.some(
-          (item) => item.product?.id === prodId || (item as any).productId === prodId
-        )
+    return Boolean(
+      cart &&
+      cart.some(
+        (item) => item.product?.id === prodId || (item as any).productId === prodId
       )
     );
   };
 
   const handleActionClick = (e: React.MouseEvent, product: Product) => {
     e.stopPropagation();
+    if (
+      product.type === 'physical' &&
+      product.stock !== null &&
+      product.stock !== undefined &&
+      product.stock <= 0
+    ) {
+      return;
+    }
+
     const isInCart = isItemInCart(product.id);
 
     // If already in cart and not in brief 'Added!' success flash, navigate directly to cart
@@ -202,55 +209,55 @@ export default function BestSellersNewArrivalsCarousel({
         </div>
 
         {/* Tab Controls & Slide Chevron Nav */}
-        <div className="flex items-center justify-between sm:justify-end gap-3 flex-wrap">
+        <div className="flex items-center justify-between sm:justify-end gap-2 sm:gap-3 w-full sm:w-auto">
           
           {/* Tabs Selector */}
-          <div className="flex items-center gap-1 bg-gray-100/80 dark:bg-gray-800/90 p-1 rounded-xl text-xs border border-gray-200/60 dark:border-gray-700">
+          <div className="flex items-center gap-1 bg-gray-100/80 dark:bg-gray-800/90 p-1 rounded-xl text-xs border border-gray-200/60 dark:border-gray-700 overflow-x-auto scrollbar-none max-w-full">
             <button
               type="button"
               onClick={() => setActiveTab('bestsellers')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-semibold transition-all cursor-pointer ${
+              className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-lg font-semibold transition-all cursor-pointer whitespace-nowrap text-[11px] sm:text-xs ${
                 activeTab === 'bestsellers'
                   ? 'bg-white dark:bg-indigo-600 text-indigo-700 dark:text-white shadow-xs'
                   : 'text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white'
               }`}
               id="btn-tab-best-sellers"
             >
-              <Flame className="h-3.5 w-3.5 text-amber-500" />
+              <Flame className="h-3.5 w-3.5 text-amber-500 shrink-0" />
               <span>Best Sellers</span>
             </button>
 
             <button
               type="button"
               onClick={() => setActiveTab('newarrivals')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-semibold transition-all cursor-pointer ${
+              className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-lg font-semibold transition-all cursor-pointer whitespace-nowrap text-[11px] sm:text-xs ${
                 activeTab === 'newarrivals'
                   ? 'bg-white dark:bg-indigo-600 text-indigo-700 dark:text-white shadow-xs'
                   : 'text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white'
               }`}
               id="btn-tab-new-arrivals"
             >
-              <Sparkles className="h-3.5 w-3.5 text-indigo-500 dark:text-indigo-300" />
+              <Sparkles className="h-3.5 w-3.5 text-indigo-500 dark:text-indigo-300 shrink-0" />
               <span>New Arrivals</span>
             </button>
 
             <button
               type="button"
               onClick={() => setActiveTab('all')}
-              className={`hidden md:flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-semibold transition-all cursor-pointer ${
+              className={`hidden md:flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-semibold transition-all cursor-pointer whitespace-nowrap ${
                 activeTab === 'all'
                   ? 'bg-white dark:bg-indigo-600 text-indigo-700 dark:text-white shadow-xs'
                   : 'text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white'
               }`}
               id="btn-tab-all-featured"
             >
-              <TrendingUp className="h-3.5 w-3.5 text-emerald-500" />
+              <TrendingUp className="h-3.5 w-3.5 text-emerald-500 shrink-0" />
               <span>All Featured</span>
             </button>
           </div>
 
           {/* Left / Right Chevron Controls */}
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-1.5 shrink-0">
             <button
               type="button"
               onClick={() => handleScroll('left')}
@@ -286,6 +293,7 @@ export default function BestSellersNewArrivalsCarousel({
             const isSaved = wishlist.includes(p.id);
             const isBestSeller = bestSellers.some(bs => bs.id === p.id);
             const isNewArrival = newArrivals.some(na => na.id === p.id);
+            const isOutOfStock = p.type === 'physical' && p.stock !== null && p.stock !== undefined && p.stock <= 0;
             const isJustAdded = addedToastId === p.id;
             const isInCart = isItemInCart(p.id);
             const showViewCart = isInCart && !isJustAdded;
@@ -302,11 +310,11 @@ export default function BestSellersNewArrivalsCarousel({
               >
                 <div>
                   {/* Top Image Box */}
-                  <div className="relative aspect-4/3 w-full overflow-hidden rounded-lg bg-gray-50 dark:bg-gray-950">
+                  <div className="relative aspect-4/3 w-full overflow-hidden rounded-lg bg-gray-50 dark:bg-gray-950 flex items-center justify-center p-2">
                     <LazyImage
                       src={p.imageUrl}
                       alt={p.name}
-                      className="h-full w-full object-cover object-center transition-transform duration-500 group-hover:scale-105"
+                      className="h-full w-full object-contain object-center transition-transform duration-500 group-hover:scale-105"
                     />
 
                     {/* Badge Overlay */}
@@ -359,11 +367,15 @@ export default function BestSellersNewArrivalsCarousel({
                       </span>
                       
                       {/* Rating Stars */}
-                      <div className="flex items-center gap-1 text-amber-500 text-xs font-bold">
-                        <Star className="h-3 w-3 fill-current" />
-                        <span>{p.rating.toFixed(1)}</span>
-                        <span className="text-[9px] text-gray-400 font-normal">({p.reviewsCount})</span>
-                      </div>
+                      {p.reviewsCount > 0 && p.rating > 0 ? (
+                        <div className="flex items-center gap-1 text-amber-500 text-xs font-bold">
+                          <Star className="h-3 w-3 fill-current" />
+                          <span>{p.rating.toFixed(1)}</span>
+                          <span className="text-[9px] text-gray-400 dark:text-gray-500 font-normal">({p.reviewsCount})</span>
+                        </div>
+                      ) : (
+                        <span className="text-[9px] text-gray-400 dark:text-gray-500 font-medium">Unrated</span>
+                      )}
                     </div>
 
                     <h3 className="font-display font-bold text-sm text-gray-900 dark:text-white mt-1 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors line-clamp-1">
@@ -371,7 +383,7 @@ export default function BestSellersNewArrivalsCarousel({
                     </h3>
                     
                     <p className="mt-1 text-[11px] text-gray-500 dark:text-gray-400 line-clamp-2 leading-relaxed font-light">
-                      {p.description}
+                      {cleanDescriptionExcerpt(p.shortDescription || p.description, 120)}
                     </p>
                   </div>
                 </div>
@@ -389,32 +401,47 @@ export default function BestSellersNewArrivalsCarousel({
                     </span>
                   </div>
 
-                  <button
-                    type="button"
-                    onClick={(e) => handleActionClick(e, p)}
-                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer shadow-3xs active:scale-95 ${
-                      isJustAdded
-                        ? 'bg-emerald-600 text-white animate-pulse'
-                        : showViewCart
-                        ? 'bg-emerald-600 hover:bg-emerald-700 dark:bg-emerald-500 dark:hover:bg-emerald-600 text-white ring-1 ring-emerald-500/50'
-                        : 'bg-indigo-600 hover:bg-indigo-700 dark:bg-indigo-500 dark:hover:bg-indigo-600 text-white'
-                    }`}
-                    title={isJustAdded ? 'Item added to cart!' : showViewCart ? 'View item in your cart' : 'Add to cart'}
-                  >
-                    {isJustAdded ? (
-                      <>
-                        <Check className="h-3.5 w-3.5" /> Added!
-                      </>
-                    ) : showViewCart ? (
-                      <>
-                        <ShoppingBag className="h-3.5 w-3.5" /> View Cart &rarr;
-                      </>
-                    ) : (
-                      <>
-                        <ShoppingBag className="h-3.5 w-3.5" /> Add
-                      </>
-                    )}
-                  </button>
+                  {isOutOfStock ? (
+                    <button
+                      type="button"
+                      disabled
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500 cursor-not-allowed border border-slate-200/60 dark:border-slate-700/60 shadow-none whitespace-nowrap"
+                      title="This item is currently out of stock"
+                    >
+                      <ShoppingBag className="h-3.5 w-3.5 opacity-50" />
+                      <span>Out of Stock</span>
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={(e) => handleActionClick(e, p)}
+                      className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer shadow-3xs active:scale-95 whitespace-nowrap ${
+                        isJustAdded
+                          ? 'bg-emerald-600 text-white animate-pulse'
+                          : showViewCart
+                          ? 'bg-emerald-600 hover:bg-emerald-700 dark:bg-emerald-500 dark:hover:bg-emerald-600 text-white ring-1 ring-emerald-500/50'
+                          : 'bg-indigo-600 hover:bg-indigo-700 dark:bg-indigo-500 dark:hover:bg-indigo-600 text-white'
+                      }`}
+                      title={isJustAdded ? 'Item added to cart!' : showViewCart ? 'View item in your cart' : 'Add to cart'}
+                    >
+                      {isJustAdded ? (
+                        <>
+                          <Check className="h-3.5 w-3.5" />
+                          <span>Added!</span>
+                        </>
+                      ) : showViewCart ? (
+                        <>
+                          <ShoppingBag className="h-3.5 w-3.5" />
+                          <span>View Cart &rarr;</span>
+                        </>
+                      ) : (
+                        <>
+                          <ShoppingBag className="h-3.5 w-3.5" />
+                          <span>Add</span>
+                        </>
+                      )}
+                    </button>
+                  )}
                 </div>
               </motion.div>
             );

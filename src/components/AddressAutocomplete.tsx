@@ -2,18 +2,10 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   MapPin,
   Search,
-  Navigation,
-  CheckCircle2,
-  AlertTriangle,
   Building,
-  Crosshair,
-  Loader2,
-  Info,
   X,
   Compass,
-  ChevronDown,
-  Sparkles,
-  Map
+  Sparkles
 } from 'lucide-react';
 import { calculateDrivingDistance, DEFAULT_STORE_LOCATION, Coordinates, DistanceResult } from '../services/maps';
 
@@ -275,12 +267,9 @@ export function AddressAutocomplete({
     typeof value === 'object' && value ? value.longitude : 36.817223
   );
 
-  const [isLocatingGPS, setIsLocatingGPS] = useState<boolean>(false);
   const [isGeocoding, setIsGeocoding] = useState<boolean>(false);
   const [isOpen, setIsOpen] = useState<boolean>(false);
   const [distanceInfo, setDistanceInfo] = useState<DistanceResult | null>(null);
-  const [gpsError, setGpsError] = useState<string>('');
-  const [manualCoordMode, setManualCoordMode] = useState<boolean>(false);
 
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -421,62 +410,7 @@ export function AddressAutocomplete({
     }
   };
 
-  // GPS Current Location Detection
-  const handleDetectGPSLocation = () => {
-    setGpsError('');
-    if (!navigator.geolocation) {
-      setGpsError('Geolocation is not supported by your browser.');
-      return;
-    }
 
-    setIsLocatingGPS(true);
-    navigator.geolocation.getCurrentPosition(
-      async (position) => {
-        const userLat = position.coords.latitude;
-        const userLng = position.coords.longitude;
-
-        setLat(userLat);
-        setLng(userLng);
-
-        // Find closest preset landmark for naming
-        let closestPreset = GEOCODED_PRESETS[0];
-        let minDiff = 9999;
-
-        for (const p of GEOCODED_PRESETS) {
-          const diff = Math.abs(p.lat - userLat) + Math.abs(p.lng - userLng);
-          if (diff < minDiff) {
-            minDiff = diff;
-            closestPreset = p;
-          }
-        }
-
-        const formatted = `GPS Pin: Near ${closestPreset.landmark}, ${closestPreset.city}`;
-        setInputText(formatted);
-        setIsOpen(false);
-
-        const distRes = await calculateDrivingDistance({ lat: userLat, lng: userLng }, storeLocation);
-
-        const details: AddressDetails = {
-          formattedAddress: formatted,
-          buildingOrLandmark: buildingLandmark || `Current GPS Location (${userLat.toFixed(4)}, ${userLng.toFixed(4)})`,
-          city: closestPreset.city,
-          region: closestPreset.region,
-          latitude: userLat,
-          longitude: userLng,
-          distanceKm: distRes.distanceKm,
-          isVerified: true
-        };
-
-        handleNotifySelect(details);
-        setIsLocatingGPS(false);
-      },
-      (error) => {
-        setIsLocatingGPS(false);
-        setGpsError(error.message || 'Unable to retrieve your current location.');
-      },
-      { timeout: 10000, enableHighAccuracy: true }
-    );
-  };
 
   return (
     <div ref={containerRef} className={`relative space-y-2.5 ${className}`}>
@@ -546,20 +480,6 @@ export function AddressAutocomplete({
               </button>
             )}
 
-            <button
-              type="button"
-              onClick={handleDetectGPSLocation}
-              disabled={isLocatingGPS}
-              className="inline-flex items-center gap-1 h-7 px-2 rounded-lg bg-indigo-50 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100 border border-indigo-200 dark:border-indigo-800 text-[10.5px] font-bold transition-all cursor-pointer disabled:opacity-50"
-              title="Use current device GPS location"
-            >
-              {isLocatingGPS ? (
-                <Loader2 className="h-3 w-3 animate-spin" />
-              ) : (
-                <Crosshair className="h-3 w-3 text-indigo-600 dark:text-indigo-400" />
-              )}
-              <span className="hidden sm:inline">GPS</span>
-            </button>
           </div>
         </div>
 
@@ -571,29 +491,6 @@ export function AddressAutocomplete({
               <span>Geocoded Location Suggestions</span>
               <span className="text-indigo-600 dark:text-indigo-400">Kenya Hub Matrix</span>
             </div>
-
-            {/* Quick GPS Location Bar inside dropdown */}
-            <button
-              type="button"
-              onClick={handleDetectGPSLocation}
-              disabled={isLocatingGPS}
-              className="w-full p-2.5 rounded-xl bg-indigo-50/70 dark:bg-indigo-950/50 hover:bg-indigo-100 border border-indigo-100 dark:border-indigo-900/40 text-left flex items-center justify-between gap-2 cursor-pointer transition-colors"
-            >
-              <div className="flex items-center gap-2">
-                <div className="p-1.5 rounded-lg bg-indigo-600 text-white">
-                  <Navigation className={`h-3.5 w-3.5 ${isLocatingGPS ? 'animate-spin' : ''}`} />
-                </div>
-                <div>
-                  <span className="font-bold text-indigo-950 dark:text-indigo-200 block text-xs">
-                    Use Device GPS Pin
-                  </span>
-                  <span className="text-[10px] text-indigo-700 dark:text-indigo-300 font-light">
-                    Auto-detect latitude & longitude from device sensors
-                  </span>
-                </div>
-              </div>
-              <ChevronDown className="h-4 w-4 text-indigo-500 -rotate-90" />
-            </button>
 
             {/* Suggestions List */}
             {suggestions.length > 0 ? (
@@ -638,22 +535,6 @@ export function AddressAutocomplete({
         )}
       </div>
 
-      {/* GPS Error Notification */}
-      {gpsError && (
-        <div className="p-2.5 rounded-xl bg-rose-50 dark:bg-rose-950/60 border border-rose-200 dark:border-rose-800 text-rose-700 dark:text-rose-300 text-xs flex items-center justify-between gap-2">
-          <div className="flex items-center gap-1.5">
-            <AlertTriangle className="h-4 w-4 shrink-0 text-rose-500" />
-            <span>{gpsError}</span>
-          </div>
-          <button
-            type="button"
-            onClick={() => setGpsError('')}
-            className="p-1 hover:bg-rose-100 rounded"
-          >
-            <X className="h-3 w-3" />
-          </button>
-        </div>
-      )}
 
       {/* Building / Apartment Landmark Field */}
       <div>
@@ -674,75 +555,6 @@ export function AddressAutocomplete({
           className="h-8 w-full rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-3 text-xs text-gray-900 dark:text-white placeholder-gray-400 focus:ring-1 focus:ring-indigo-500 focus:outline-none"
         />
       </div>
-
-      {/* Geocoded Verified Badge & Coordinates Fine-Tuning */}
-      {showCoordinatesPicker && (
-        <div className="rounded-xl border border-gray-150 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-900/50 p-3 space-y-2 text-xs">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-1.5">
-              <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />
-              <span className="font-bold text-gray-800 dark:text-gray-200 text-[11px]">
-                Engine Geocoding Verified
-              </span>
-            </div>
-
-            <button
-              type="button"
-              onClick={() => setManualCoordMode(!manualCoordMode)}
-              className="text-[10px] font-mono text-indigo-600 dark:text-indigo-400 hover:underline cursor-pointer"
-            >
-              {manualCoordMode ? 'Hide Coordinates' : 'Edit Coordinates'}
-            </button>
-          </div>
-
-          {manualCoordMode ? (
-            <div className="grid grid-cols-2 gap-2 pt-1 font-mono text-[11px]">
-              <div>
-                <span className="block text-[9px] text-gray-400 uppercase">Latitude</span>
-                <input
-                  type="number"
-                  step={0.0001}
-                  value={lat}
-                  onChange={(e) => {
-                    const newLat = Number(e.target.value);
-                    setLat(newLat);
-                    if (selectedAddress) {
-                      handleNotifySelect({ ...selectedAddress, latitude: newLat });
-                    }
-                  }}
-                  className="h-7 w-full rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-2 font-bold"
-                />
-              </div>
-
-              <div>
-                <span className="block text-[9px] text-gray-400 uppercase">Longitude</span>
-                <input
-                  type="number"
-                  step={0.0001}
-                  value={lng}
-                  onChange={(e) => {
-                    const newLng = Number(e.target.value);
-                    setLng(newLng);
-                    if (selectedAddress) {
-                      handleNotifySelect({ ...selectedAddress, longitude: newLng });
-                    }
-                  }}
-                  className="h-7 w-full rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-2 font-bold"
-                />
-              </div>
-            </div>
-          ) : (
-            <div className="flex items-center justify-between text-[10.5px] font-mono text-gray-500 dark:text-gray-400">
-              <span>Pin Coordinates: {lat.toFixed(4)}, {lng.toFixed(4)}</span>
-              {distanceInfo && (
-                <span className="font-bold text-indigo-600 dark:text-indigo-300">
-                  {distanceInfo.durationMinutes} mins est. drive
-                </span>
-              )}
-            </div>
-          )}
-        </div>
-      )}
     </div>
   );
 }

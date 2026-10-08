@@ -38,7 +38,64 @@ export const COMMON_COUNTRIES = [
   'Canada',
   'Australia',
   'Netherlands',
+  'Vietnam',
+  'Tanzania',
+  'Uganda',
+  'Rwanda',
+  'Ethiopia',
 ];
+
+export const COUNTRY_FLAG_MAP: Record<string, string> = {
+  'Kenya': '🇰🇪',
+  'United Kingdom': '🇬🇧',
+  'United States': '🇺🇸',
+  'Germany': '🇩🇪',
+  'France': '🇫🇷',
+  'Italy': '🇮🇹',
+  'Switzerland': '🇨🇭',
+  'China': '🇨🇳',
+  'Japan': '🇯🇵',
+  'South Korea': '🇰🇷',
+  'India': '🇮🇳',
+  'South Africa': '🇿🇦',
+  'United Arab Emirates': '🇦🇪',
+  'Turkey': '🇹🇷',
+  'Brazil': '🇧🇷',
+  'Canada': '🇨🇦',
+  'Australia': '🇦🇺',
+  'Netherlands': '🇳🇱',
+  'Vietnam': '🇻🇳',
+  'Tanzania': '🇹🇿',
+  'Uganda': '🇺🇬',
+  'Rwanda': '🇷🇼',
+  'Ethiopia': '🇪🇹',
+};
+
+export const COMMON_BRANDS = [
+  'Veloce Kenya',
+  'Ropenix Atelier',
+  'Kilifi Crafts',
+  'Nairobi Artisan',
+  'Apple',
+  'Samsung',
+  'Sony',
+  'Dell',
+  'HP',
+  'Lenovo',
+  'Nike',
+  'Adidas',
+  'Puma',
+  'Zara',
+  'Gucci',
+  'L\'Oréal',
+  'Nivea',
+  'Generic / Unbranded',
+];
+
+export const getCountryFlag = (countryName?: string): string => {
+  if (!countryName) return '🌐';
+  return COUNTRY_FLAG_MAP[countryName.trim()] || '🌐';
+};
 
 export const COMMON_SIZES = [
   'XS',
@@ -469,5 +526,215 @@ export const getProductDiscountInfo = (product: Product | any): ProductDiscountI
     discountPercent,
     isOnSale,
   };
+};
+
+/**
+ * Find matching variant from product's variantMatrix or variants array
+ */
+export const resolveProductVariant = (product: Product | null | undefined, selectedVars: Record<string, string> = {}) => {
+  if (!product) return null;
+  const matrix = product.variantMatrix || product.variants || [];
+  if (matrix.length === 0) return null;
+
+  const exact = matrix.find((v) => {
+    if (!v.attributes) return false;
+    return Object.entries(selectedVars).every(([k, val]) => {
+      const vVal = v.attributes[k] || v.attributes[k.toLowerCase()] || v.attributes[k.toUpperCase()];
+      return !vVal || vVal.toLowerCase() === val.toLowerCase();
+    });
+  });
+
+  return exact || matrix[0];
+};
+
+/**
+ * Resolve color-specific image gallery with fallback to general product images
+ */
+export const getProductColorImages = (product: Product | null | undefined, colorName?: string): string[] => {
+  if (!product) return [];
+  const colorMap = product.colorImages || (product as any).color_images || {};
+  if (colorName) {
+    // Try exact match and case-insensitive match
+    const foundKey = Object.keys(colorMap).find(k => k.toLowerCase() === colorName.toLowerCase());
+    if (foundKey && colorMap[foundKey] && colorMap[foundKey].length > 0) {
+      const sorted = [...colorMap[foundKey]].sort((a, b) => {
+        if (a.is_primary) return -1;
+        if (b.is_primary) return 1;
+        return (a.position ?? 0) - (b.position ?? 0);
+      });
+      return sorted.map((img) => img.url).filter(Boolean);
+    }
+  }
+  if (product.images && product.images.length > 0) {
+    return product.images;
+  }
+  return product.imageUrl ? [product.imageUrl] : [];
+};
+
+export const COLOR_HEX_MAP: Record<string, string> = {
+  // Whites & Off-whites
+  'white': '#FFFFFF',
+  'snow white': '#FFFFFF',
+  'crisp white': '#FFFFFF',
+  'off white': '#F8FAFC',
+  'off-white': '#F8FAFC',
+  'ivory': '#FFFFF0',
+  'cream': '#FFFDD0',
+  'vanilla': '#F3E5AB',
+
+  // Blacks & Darks
+  'black': '#111827',
+  'jet black': '#000000',
+  'onyx': '#0F172A',
+  'matte black': '#18181B',
+  'midnight': '#0B0F19',
+  'charcoal': '#334155',
+  'dark charcoal': '#1E293B',
+  'anthracite': '#27272A',
+
+  // Blues
+  'navy': '#1E3A8A',
+  'navy blue': '#1E3A8A',
+  'midnight navy': '#0F172A',
+  'royal blue': '#2563EB',
+  'blue': '#3B82F6',
+  'sky blue': '#38BDF8',
+  'light blue': '#93C5FD',
+  'baby blue': '#BAE6FD',
+  'denim': '#1D4ED8',
+  'indigo': '#4F46E5',
+  'cobalt': '#1D4ED8',
+  'cyan': '#06B6D4',
+  'teal': '#0D9488',
+  'dark teal': '#115E59',
+  'turquoise': '#14B8A6',
+  'aqua': '#06B6D4',
+  'ocean blue': '#0284C7',
+
+  // Reds & Pinks
+  'crimson red': '#DC2626',
+  'crimson': '#DC2626',
+  'red': '#EF4444',
+  'dark red': '#991B1B',
+  'ruby': '#BE123C',
+  'ruby red': '#BE123C',
+  'scarlet': '#DC2626',
+  'burgundy': '#881337',
+  'maroon': '#800000',
+  'wine': '#722F37',
+  'rose': '#F43F5E',
+  'rose red': '#E11D48',
+  'pink': '#EC4899',
+  'light pink': '#FBCFE8',
+  'hot pink': '#DB2777',
+  'blush': '#FDA4AF',
+  'salmon': '#FA8072',
+  'coral': '#FB7185',
+  'coral red': '#F43F5E',
+  'magenta': '#D946EF',
+  'fuchsia': '#C026D3',
+
+  // Greens
+  'green': '#16A34A',
+  'dark green': '#14532D',
+  'forest green': '#059669',
+  'emerald': '#10B981',
+  'emerald green': '#059669',
+  'olive': '#65A30D',
+  'olive green': '#4D7C0F',
+  'army green': '#3F6212',
+  'sage': '#9CA3AF',
+  'sage green': '#84A98C',
+  'mint': '#6EE7B7',
+  'mint green': '#34D399',
+  'lime': '#84CC16',
+  'lime green': '#65A30D',
+  'pine green': '#064E3B',
+  'moss green': '#4B5320',
+
+  // Yellows & Golds
+  'yellow': '#EAB308',
+  'mustard': '#CA8A04',
+  'gold': '#D97706',
+  'amber gold': '#D97706',
+  'amber': '#F59E0B',
+  'lemon': '#FDE047',
+  'honey': '#EAB308',
+
+  // Oranges & Browns
+  'orange': '#F97316',
+  'burnt orange': '#C2410C',
+  'rust': '#9A3412',
+  'terracotta': '#E07A5F',
+  'peach': '#FDBA74',
+  'brown': '#78350F',
+  'dark brown': '#451A03',
+  'chocolate': '#3E2723',
+  'coffee': '#6F4E37',
+  'mocha': '#795548',
+  'tan': '#D2B48C',
+  'beige': '#D4B996',
+  'khaki': '#C3B091',
+  'sand': '#E6C280',
+  'camel': '#C19A6B',
+  'nude': '#E8BEAC',
+
+  // Purples
+  'purple': '#9333EA',
+  'dark purple': '#581C87',
+  'violet': '#7C3AED',
+  'lavender': '#C4B5FD',
+  'plum': '#6B21A8',
+  'lilac': '#DDD6FE',
+
+  // Greys
+  'grey': '#6B7280',
+  'gray': '#6B7280',
+  'light grey': '#D1D5DB',
+  'light gray': '#D1D5DB',
+  'dark grey': '#374151',
+  'dark gray': '#374151',
+  'heather grey': '#9CA3AF',
+  'heather gray': '#9CA3AF',
+  'slate': '#64748B',
+  'silver': '#E2E8F0',
+  'ash': '#94A3B8',
+  'gunmetal': '#2A3439',
+  'rose gold': '#FB7185',
+};
+
+/**
+ * Resolves accurate Hex color string from an OptionValue object, hexCode, or color name string.
+ */
+export const resolveColorHex = (colorValueOrName: any): string => {
+  if (!colorValueOrName) return '#1E3A8A';
+  
+  if (typeof colorValueOrName === 'object') {
+    const rawHex = colorValueOrName.hexColor || colorValueOrName.hexCode || colorValueOrName.hex_code || colorValueOrName.hex;
+    const name = (colorValueOrName.name || colorValueOrName.value || '').trim().toLowerCase();
+
+    // If explicit custom hex is given and it's not the generic fallback
+    if (rawHex && rawHex.trim() && rawHex.trim() !== '#6366f1' && rawHex.trim() !== '#1E3A8A') {
+      return rawHex.trim();
+    }
+
+    if (COLOR_HEX_MAP[name]) return COLOR_HEX_MAP[name];
+    for (const [key, hex] of Object.entries(COLOR_HEX_MAP)) {
+      if (name.includes(key) || key.includes(name)) return hex;
+    }
+    if (rawHex && rawHex.trim()) return rawHex.trim();
+    return '#1E3A8A';
+  }
+
+  const str = String(colorValueOrName).trim();
+  if (/^#([0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i.test(str)) {
+    return str;
+  }
+  const lower = str.toLowerCase();
+  if (COLOR_HEX_MAP[lower]) return COLOR_HEX_MAP[lower];
+  for (const [key, hex] of Object.entries(COLOR_HEX_MAP)) {
+    if (lower.includes(key) || key.includes(lower)) return hex;
+  }
+  return '#1E3A8A';
 };
 

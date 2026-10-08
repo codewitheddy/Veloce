@@ -4,14 +4,15 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "node ./node_modules/tsx/dist/cli.mjs watch server.ts",
+    "dev": "node ./node_modules/tsx/dist/cli.mjs watch --exclude \"veloce.sqlite*\" --exclude \".notified_expiry_products.json\" --exclude \"dist/**\" server.ts",
     "build": "vite build && npx esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
     "build:cpanel": "vite build && npx esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
     "build:server": "npx esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
     "start": "node dist/server.cjs",
     "clean": "node -e \"const fs=require('fs'); fs.rmSync('dist', {recursive:true, force:true}); try { fs.unlinkSync('server.js'); } catch {}\"",
     "lint": "node ./node_modules/typescript/bin/tsc --noEmit",
-    "package:cpanel": "node scripts/package-cpanel.js"
+    "package:cpanel": "node scripts/package-cpanel.js",
+    "set-admin": "node ./node_modules/tsx/dist/cli.mjs scripts/set-admin.ts"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.1.14",
@@ -23,6 +24,7 @@
     "@types/nodemailer": "^8.0.1",
     "@vitejs/plugin-react": "^5.0.4",
     "axios": "^1.18.1",
+    "compression": "^1.8.2",
     "d3": "^7.9.0",
     "dompurify": "^3.4.14",
     "dotenv": "^17.2.3",
@@ -43,6 +45,7 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@types/compression": "^1.8.1",
     "@types/express": "^4.17.21",
     "@types/node": "^22.14.0",
     "@types/pg": "^8.23.1",

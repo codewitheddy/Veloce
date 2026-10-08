@@ -52,9 +52,9 @@ if (!serverPath) {
     res.writeHead(500, { 'Content-Type': 'text/html; charset=utf-8' });
     res.end(`
       <div style="font-family: sans-serif; padding: 40px; background: #0f172a; color: #f8fafc; min-height: 100vh;">
-        <h2 style="color: #ef4444;">Veloce Hub - Production Server Bundle Not Found</h2>
+        <h2 style="color: #ef4444;">Ropenix Collections - Production Server Bundle Not Found</h2>
         <p>Could not find <code>dist/server.cjs</code> in your application root.</p>
-        <p>Please make sure you uploaded the complete <code>veloce_node_fullstack.zip</code> and extracted all files.</p>
+        <p>Please make sure you uploaded the complete deployment bundle and extracted all files.</p>
       </div>
     `);
   });
@@ -68,7 +68,7 @@ if (!serverPath) {
       res.writeHead(500, { 'Content-Type': 'text/html; charset=utf-8' });
       res.end(`
         <div style="font-family: sans-serif; padding: 40px; background: #0f172a; color: #f8fafc; min-height: 100vh;">
-          <h2 style="color: #ef4444;">Veloce Hub - Startup Configuration Error</h2>
+          <h2 style="color: #ef4444;">Ropenix Collections - Startup Configuration Error</h2>
           <p>The Node.js server encountered an error while launching:</p>
           <pre style="background: #1e293b; padding: 16px; border-radius: 8px; color: #fca5a5; overflow-x: auto;">${err.stack || err.message || err}</pre>
           <p><strong>Next Step:</strong> In cPanel <em>Setup Node.js App</em>, click <strong>Run JS Install</strong> (or run <code>npm install --omit=dev</code> in terminal) to ensure all dependencies are installed.</p>

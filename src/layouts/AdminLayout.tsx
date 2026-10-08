@@ -11,6 +11,7 @@ import DashboardAnalytics from '../components/DashboardAnalytics';
 import { ErrorBoundary } from '../components/ErrorBoundary';
 import { Product, Order, InventoryAuditLog, ReturnRequest, CouponItem } from '../types';
 import { CurrencyType } from '../lib/currency';
+import { hasValidAdminSession } from '../utils/authTokens';
 
 interface AdminLayoutProps {
   userRole: 'customer' | 'admin';
@@ -34,6 +35,7 @@ interface AdminLayoutProps {
   onUpdateOrderStatus: (orderId: string, status: Order['status'], trackingNumber?: string) => void;
   onUpdateOrderPaymentStatus?: (orderId: string, paymentStatus: 'unpaid' | 'paid', paidNote?: string) => void;
   onDeleteProduct: (productId: string) => void;
+  onBulkDeleteProducts?: (productIds: string[]) => void;
   onUpdateProductStock: (productId: string, newStock: number, reason?: string, details?: string) => void;
   onUpdateProductSku: (productId: string, newSku: string) => void;
   onUpdateProductThreshold: (productId: string, newThreshold: number) => void;
@@ -49,6 +51,7 @@ interface AdminLayoutProps {
   onAddOrder: (order: Order) => void;
   onUpdateReturnRequestStatus: (requestId: string, newStatus: ReturnRequest['status'], adminNotes?: string) => void;
   initialEditingProduct?: Product | null;
+  initialAdminSubTab?: string;
 }
 
 export default function AdminLayout({
@@ -73,6 +76,7 @@ export default function AdminLayout({
   onUpdateOrderStatus,
   onUpdateOrderPaymentStatus,
   onDeleteProduct,
+  onBulkDeleteProducts,
   onUpdateProductStock,
   onUpdateProductSku,
   onUpdateProductThreshold,
@@ -88,8 +92,28 @@ export default function AdminLayout({
   onAddOrder,
   onUpdateReturnRequestStatus,
   initialEditingProduct,
+  initialAdminSubTab,
 }: AdminLayoutProps) {
   const [showLogoutConfirmModal, setShowLogoutConfirmModal] = useState<boolean>(false);
+  const [isSessionExpired, setIsSessionExpired] = useState<boolean>(() => !hasValidAdminSession());
+
+  useEffect(() => {
+    const handleAuthRequired = () => {
+      setIsSessionExpired(true);
+    };
+    const handleAuthRestored = () => {
+      setIsSessionExpired(false);
+    };
+
+    window.addEventListener('veloce_require_admin_login', handleAuthRequired);
+    window.addEventListener('veloce_auth_expired', handleAuthRequired);
+    window.addEventListener('veloce_admin_session_restored', handleAuthRestored);
+    return () => {
+      window.removeEventListener('veloce_require_admin_login', handleAuthRequired);
+      window.removeEventListener('veloce_auth_expired', handleAuthRequired);
+      window.removeEventListener('veloce_admin_session_restored', handleAuthRestored);
+    };
+  }, []);
 
   useEffect(() => {
     if (!showLogoutConfirmModal) return;
@@ -102,12 +126,13 @@ export default function AdminLayout({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [showLogoutConfirmModal]);
 
-  // If not logged in as admin, present the dedicated Django Superuser Login view
-  if (userRole !== 'admin') {
+  // If not logged in as admin or session has expired, present the dedicated Django Superuser Login view
+  if (userRole !== 'admin' || isSessionExpired || !hasValidAdminSession()) {
     return (
       <div className={`min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white font-sans ${darkMode ? 'dark' : ''}`}>
         <DjangoAdminLogin
           onLoginSuccess={() => {
+            setIsSessionExpired(false);
             setUserRole('admin');
             if (typeof window !== 'undefined' && window.history.pushState) {
               window.history.pushState({}, '', '/admin');
@@ -145,6 +170,7 @@ export default function AdminLayout({
             onUpdateOrderStatus={onUpdateOrderStatus}
             onUpdateOrderPaymentStatus={onUpdateOrderPaymentStatus}
             onDeleteProduct={onDeleteProduct}
+            onBulkDeleteProducts={onBulkDeleteProducts}
             onUpdateProductStock={onUpdateProductStock}
             onUpdateProductSku={onUpdateProductSku}
             onUpdateProductThreshold={onUpdateProductThreshold}
@@ -173,6 +199,7 @@ export default function AdminLayout({
             onNavigateToSite={onNavigateToSite}
             onLogout={() => setShowLogoutConfirmModal(true)}
             initialEditingProduct={initialEditingProduct}
+            initialAdminSubTab={initialAdminSubTab}
           />
         </ErrorBoundary>
       </div>

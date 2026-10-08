@@ -41,4 +41,12 @@ Thumbs.db
 .idea/
 .vscode/
 .gemini/
+scratch/
+
+# Archives & Other Lockfiles
+*.zip
+cpanel_deploy/
+bun.lock
+yarn.lock
+pnpm-lock.yaml
 

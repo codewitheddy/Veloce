@@ -202,7 +202,9 @@ export default function TaxInvoiceModal({ order, products, onClose, autoPrint = 
                 <p className="text-[10px] text-gray-500 font-bold font-mono mt-1 text-right">
                   INV-NO: {order.id.toUpperCase()}<br />
                   DATE: {order.date}<br />
-                  STATUS: <span className="text-emerald-700 font-black">PAID (SETTLED)</span>
+                  STATUS: <span className={order.paymentStatus === 'paid' ? "text-emerald-700 font-black" : "text-amber-700 font-black"}>
+                    {order.paymentStatus === 'paid' ? 'PAID (CONFIRMED BY ADMIN)' : 'PENDING ADMIN CONFIRMATION'}
+                  </span>
                 </p>
               </div>
             </div>
@@ -222,16 +224,23 @@ export default function TaxInvoiceModal({ order, products, onClose, autoPrint = 
                 )}
               </div>
               <div className="md:text-right flex flex-col md:items-end">
-                <span className="block text-[9px] font-bold text-gray-400 font-mono uppercase tracking-wider mb-1.5">PAYMENT INFORMATION</span>
-                <p className="font-medium text-gray-800">
-                  <span className="font-bold">Method:</span> M-PESA Paybill <span className="font-mono font-bold text-emerald-700">{settings.payments.mpesa_paybill || '303030'}</span>
+                <span className="block text-[9px] font-bold text-gray-400 font-mono uppercase tracking-wider mb-1.5">SETTLEMENT & CHANNEL</span>
+                <p className="text-[11px] text-gray-800">
+                  <span className="font-bold">Channel:</span> {(order.checkoutChannel === 'whatsapp' || order.checkoutMode === 'whatsapp' || order.orderSource === 'whatsapp' || order.paymentMethod === 'whatsapp') ? '📱 WhatsApp Checkout' : '🌐 Web Storefront'}
                 </p>
-                <p className="text-[10px] text-gray-700 font-mono mt-0.5">
-                  <span className="text-gray-400">Account No:</span> <strong className="text-emerald-700 font-bold">{settings.payments.mpesa_account_number || '2047728455'}</strong> ({settings.payments.mpesa_account_name || 'ROPENIX INVESTMENTS LTD'})
+                <p className="text-[11px] text-gray-800 mt-0.5">
+                  <span className="font-bold">Payment Method:</span> {order.paymentMethod === 'cod' ? '🚚 Cash on Delivery' : <>📲 M-PESA Paybill <span className="font-mono font-bold text-emerald-700">{settings.payments.mpesa_paybill || '303030'}</span></>}
                 </p>
-                <p className="text-indigo-700 font-bold font-mono text-[11px] mt-0.5">
-                  <span className="text-gray-400 font-normal">M-Pesa Txn Ref:</span> {order.paymentReference || mpesaCode}
-                </p>
+                {order.paymentMethod !== 'cod' && (
+                  <p className="text-[10px] text-gray-700 font-mono mt-0.5">
+                    <span className="text-gray-400">Account No:</span> <strong className="text-emerald-700 font-bold">{settings.payments.mpesa_account_number || '2047728455'}</strong> ({settings.payments.mpesa_account_name || 'ROPENIX INVESTMENTS LTD'})
+                  </p>
+                )}
+                {order.paymentReference && (
+                  <p className="text-indigo-700 font-bold font-mono text-[11px] mt-0.5">
+                    <span className="text-gray-400 font-normal">M-Pesa Txn Ref:</span> {order.paymentReference}
+                  </p>
+                )}
                 {(order.mpesaPhone || (order.paymentMethod === 'mpesa' && order.phone)) && (
                   <p className="text-[10px] text-gray-700 font-mono mt-0.5">
                     <span className="text-gray-400 font-normal">Payer Mobile:</span> <strong className="text-gray-900 font-bold">{order.mpesaPhone || order.phone}</strong>

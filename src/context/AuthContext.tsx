@@ -5,6 +5,8 @@
 
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { purgeUserQueriesOnLogout } from '../providers/QueryProvider';
+import { clearAllStoredAuthTokens } from '../utils/authTokens';
+import api from '../services/api';
 
 export interface UserProfile {
   name: string;
@@ -19,7 +21,7 @@ interface AuthContextType {
   user: UserProfile | null;
   isAuthenticated: boolean;
   isAdmin: boolean;
-  login: (email: string, role?: 'customer' | 'admin') => void;
+  login: (email: string, role?: 'customer' | 'admin', extra?: { name?: string; phone?: string; address?: string }) => void;
   logout: () => void;
   updateProfile: (updated: Partial<UserProfile>) => void;
 }
@@ -31,19 +33,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const saved = localStorage.getItem('veloce_user');
     if (saved) {
       try {
-        return JSON.parse(saved);
+        const parsed = JSON.parse(saved);
+        if (parsed && parsed.email) return parsed;
       } catch {
         // Fallback
       }
     }
-    return {
-      name: 'Sarah Jenkins',
-      email: 'sarah.j@example.com',
-      role: 'customer',
-      phone: '+254 712 345 678',
-      shippingAddress: '42 Westlands Expressway, Nairobi, Kenya',
-      avatarUrl: ''
-    };
+    return null;
   });
 
   useEffect(() => {
@@ -54,21 +50,57 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, [user]);
 
-  const login = (email: string, role: 'customer' | 'admin' = 'customer') => {
-    setUser({
-      name: email.split('@')[0],
-      email,
-      role
-    });
+  const login = (email: string, role: 'customer' | 'admin' = 'customer', extra?: { name?: string; phone?: string; address?: string }) => {
+    const cleanEmail = email.trim();
+    const profile: UserProfile = {
+      name: extra?.name || cleanEmail.split('@')[0],
+      email: cleanEmail,
+      role,
+      phone: extra?.phone || '',
+      shippingAddress: extra?.address || '',
+      avatarUrl: ''
+    };
+    setUser(profile);
+    localStorage.setItem('veloce_user', JSON.stringify(profile));
+    localStorage.setItem('veloce_login_email', cleanEmail);
+    if (extra?.name) localStorage.setItem('veloce_login_name', extra.name);
+    if (extra?.phone) localStorage.setItem('veloce_login_phone', extra.phone);
+    if (extra?.address) localStorage.setItem('veloce_login_address', extra.address);
+    window.dispatchEvent(new CustomEvent('veloce_auth_changed', { detail: { action: 'login', user: profile } }));
   };
 
   const logout = () => {
     setUser(null);
+    clearAllStoredAuthTokens();
+    localStorage.removeItem('veloce_user');
+    localStorage.removeItem('veloce_login_email');
+    localStorage.removeItem('veloce_login_name');
+    localStorage.removeItem('veloce_login_phone');
+    localStorage.removeItem('veloce_login_address');
+    localStorage.removeItem('veloce_auth_token');
+    localStorage.removeItem('veloce_pending_wishlist_product_id');
+    localStorage.removeItem('veloce_open_auth_mode');
+    localStorage.removeItem('ropenix_login_email');
+    localStorage.removeItem('customer_support_tickets');
+    try {
+      api.post('/auth/logout/').catch(() => {});
+    } catch {}
     purgeUserQueriesOnLogout();
+    window.dispatchEvent(new CustomEvent('veloce_auth_changed', { detail: { action: 'logout' } }));
   };
 
   const updateProfile = (updated: Partial<UserProfile>) => {
-    setUser((prev) => (prev ? { ...prev, ...updated } : null));
+    setUser((prev) => {
+      if (!prev) return null;
+      const next = { ...prev, ...updated };
+      localStorage.setItem('veloce_user', JSON.stringify(next));
+      if (updated.email) localStorage.setItem('veloce_login_email', updated.email);
+      if (updated.name) localStorage.setItem('veloce_login_name', updated.name);
+      if (updated.phone) localStorage.setItem('veloce_login_phone', updated.phone);
+      if (updated.shippingAddress) localStorage.setItem('veloce_login_address', updated.shippingAddress);
+      window.dispatchEvent(new CustomEvent('veloce_auth_changed', { detail: { action: 'update', user: next } }));
+      return next;
+    });
   };
 
   return (

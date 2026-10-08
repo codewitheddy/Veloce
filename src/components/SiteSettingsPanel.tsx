@@ -702,14 +702,31 @@ export function SiteSettingsPanel() {
                 <label className="relative inline-flex items-center cursor-pointer">
                   <input
                     type="checkbox"
-                    checked={settings.general.maintenance_mode}
-                    onChange={(e) =>
+                    checked={Boolean(settings.general.maintenance_mode)}
+                    onChange={async (e) => {
+                      const isChecked = e.target.checked;
+                      const updatedGeneral = {
+                        ...settings.general,
+                        maintenance_mode: isChecked
+                      };
                       setSettings((p) => ({
                         ...p,
-                        general: { ...p.general, maintenance_mode: e.target.checked }
-                      }))
-                    }
+                        general: updatedGeneral
+                      }));
+                      try {
+                        await siteSettingsApi.updateSection('general', updatedGeneral);
+                        setSaveStatus('success');
+                        setStatusMessage(isChecked ? 'Storefront maintenance mode activated.' : 'Storefront maintenance mode deactivated.');
+                        setTimeout(() => setSaveStatus('idle'), 3000);
+                      } catch (err) {
+                        console.error('Failed to auto-save maintenance mode:', err);
+                        setSaveStatus('error');
+                        setStatusMessage('Failed to persist maintenance mode state.');
+                        setTimeout(() => setSaveStatus('idle'), 3500);
+                      }
+                    }}
                     className="sr-only peer"
+                    id="toggle-maintenance-mode"
                   />
                   <div className="w-11 h-6 bg-gray-200 peer-focus:outline-hidden rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-amber-600" />
                 </label>
@@ -2562,11 +2579,11 @@ export function SiteSettingsPanel() {
                 </label>
                 <input
                   type="text"
-                  value={settings.seo.meta_title}
+                  value={settings?.seo?.meta_title || ''}
                   onChange={(e) =>
                     setSettings((p) => ({
                       ...p,
-                      seo: { ...p.seo, meta_title: e.target.value }
+                      seo: { ...(p.seo || INITIAL_DEFAULT_SETTINGS.seo), meta_title: e.target.value }
                     }))
                   }
                   className="h-9 w-full rounded-xl border border-gray-250 dark:border-gray-700 px-3 text-xs bg-white dark:bg-gray-900 font-medium"
@@ -2579,11 +2596,11 @@ export function SiteSettingsPanel() {
                 </label>
                 <textarea
                   rows={3}
-                  value={settings.seo.meta_description}
+                  value={settings?.seo?.meta_description || ''}
                   onChange={(e) =>
                     setSettings((p) => ({
                       ...p,
-                      seo: { ...p.seo, meta_description: e.target.value }
+                      seo: { ...(p.seo || INITIAL_DEFAULT_SETTINGS.seo), meta_description: e.target.value }
                     }))
                   }
                   className="w-full rounded-xl border border-gray-250 dark:border-gray-700 p-3 text-xs bg-white dark:bg-gray-900 text-gray-950 dark:text-white"
@@ -2598,11 +2615,11 @@ export function SiteSettingsPanel() {
                   <input
                     type="text"
                     placeholder="G-XXXXXXXXXX"
-                    value={settings.seo.google_analytics_id}
+                    value={settings?.seo?.google_analytics_id || ''}
                     onChange={(e) =>
                       setSettings((p) => ({
                         ...p,
-                        seo: { ...p.seo, google_analytics_id: e.target.value }
+                        seo: { ...(p.seo || INITIAL_DEFAULT_SETTINGS.seo), google_analytics_id: e.target.value }
                       }))
                     }
                     className="h-9 w-full rounded-xl border border-gray-250 dark:border-gray-700 px-3 text-xs bg-white dark:bg-gray-900 font-mono"
@@ -2615,11 +2632,11 @@ export function SiteSettingsPanel() {
                   </label>
                   <input
                     type="url"
-                    value={settings.seo.canonical_base_url}
+                    value={settings?.seo?.canonical_base_url || ''}
                     onChange={(e) =>
                       setSettings((p) => ({
                         ...p,
-                        seo: { ...p.seo, canonical_base_url: e.target.value }
+                        seo: { ...(p.seo || INITIAL_DEFAULT_SETTINGS.seo), canonical_base_url: e.target.value }
                       }))
                     }
                     className="h-9 w-full rounded-xl border border-gray-250 dark:border-gray-700 px-3 text-xs bg-white dark:bg-gray-900 font-mono"

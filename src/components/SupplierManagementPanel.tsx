@@ -43,7 +43,15 @@ import {
   ShieldCheck,
   Smartphone,
   Wallet,
-  Coins
+  Coins,
+  LayoutList,
+  LayoutGrid,
+  MapPin,
+  ArrowUpDown,
+  ChevronDown,
+  ChevronUp,
+  User,
+  SlidersHorizontal
 } from 'lucide-react';
 import {
   Supplier,
@@ -79,7 +87,7 @@ export default function SupplierManagementPanel({
   currency = 'KSh',
   onNavigateToProduct
 }: SupplierManagementPanelProps) {
-  const [activeTab, setActiveTab] = useState<PanelTab>('dashboard');
+  const [activeTab, setActiveTab] = useState<PanelTab>('suppliers');
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
   const [statusMessage, setStatusMessage] = useState<string>('');
@@ -90,6 +98,15 @@ export default function SupplierManagementPanel({
   const [intakes, setIntakes] = useState<SupplierIntakeBatch[]>([]);
   const [payments, setPayments] = useState<SupplierPayment[]>([]);
   const [dashboardMetrics, setDashboardMetrics] = useState<SupplierDashboardMetrics | null>(null);
+
+  // Suppliers Directory View, Sorting & Filtering State
+  const [supplierViewMode, setSupplierViewMode] = useState<'list' | 'grid'>('list');
+  const [supplierSortBy, setSupplierSortBy] = useState<
+    'name' | 'company' | 'code' | 'balance' | 'cost' | 'paid' | 'profit' | 'products' | 'created'
+  >('balance');
+  const [supplierSortOrder, setSupplierSortOrder] = useState<'asc' | 'desc'>('desc');
+  const [selectedTermsFilter, setSelectedTermsFilter] = useState<string>('all');
+  const [expandedSupplierId, setExpandedSupplierId] = useState<string | null>(null);
 
   // Filters
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -377,22 +394,101 @@ export default function SupplierManagementPanel({
     setShowIntakeModal(true);
   };
 
-  // Filtered Suppliers List
+  // Helper for Supplier Initials & Badge Color
+  const getSupplierInitials = (name: string, company?: string) => {
+    const target = company || name || 'S';
+    const words = target.trim().split(/\s+/);
+    if (words.length >= 2 && words[0] && words[1]) {
+      return (words[0][0] + words[1][0]).toUpperCase();
+    }
+    return target.slice(0, 2).toUpperCase();
+  };
+
+  const getAvatarColor = (name: string) => {
+    const colors = [
+      'bg-indigo-100 text-indigo-700 dark:bg-indigo-950/80 dark:text-indigo-300 border-indigo-200 dark:border-indigo-800',
+      'bg-purple-100 text-purple-700 dark:bg-purple-950/80 dark:text-purple-300 border-purple-200 dark:border-purple-800',
+      'bg-blue-100 text-blue-700 dark:bg-blue-950/80 dark:text-blue-300 border-blue-200 dark:border-blue-800',
+      'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/80 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800',
+      'bg-amber-100 text-amber-700 dark:bg-amber-950/80 dark:text-amber-300 border-amber-200 dark:border-amber-800',
+      'bg-rose-100 text-rose-700 dark:bg-rose-950/80 dark:text-rose-300 border-rose-200 dark:border-rose-800',
+      'bg-teal-100 text-teal-700 dark:bg-teal-950/80 dark:text-teal-300 border-teal-200 dark:border-teal-800'
+    ];
+    let hash = 0;
+    const str = name || 'Supplier';
+    for (let i = 0; i < str.length; i++) {
+      hash = str.charCodeAt(i) + ((hash << 5) - hash);
+    }
+    const idx = Math.abs(hash) % colors.length;
+    return colors[idx];
+  };
+
+  const handleSort = (column: typeof supplierSortBy) => {
+    if (supplierSortBy === column) {
+      setSupplierSortOrder((prev) => (prev === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setSupplierSortBy(column);
+      setSupplierSortOrder('desc');
+    }
+  };
+
+  // Filtered & Sorted Suppliers List
   const filteredSuppliers = useMemo(() => {
-    return suppliers.filter((s) => {
+    const q = searchQuery.toLowerCase().trim();
+    const result = suppliers.filter((s) => {
       const matchesSearch =
-        s.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        s.company_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        s.code.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        s.tax_pin.toLowerCase().includes(searchQuery.toLowerCase());
+        !q ||
+        (s.name && s.name.toLowerCase().includes(q)) ||
+        (s.company_name && s.company_name.toLowerCase().includes(q)) ||
+        (s.code && s.code.toLowerCase().includes(q)) ||
+        (s.tax_pin && s.tax_pin.toLowerCase().includes(q)) ||
+        (s.phone && s.phone.toLowerCase().includes(q)) ||
+        (s.email && s.email.toLowerCase().includes(q)) ||
+        (s.physical_address && s.physical_address.toLowerCase().includes(q));
 
       const matchesStatus =
         selectedPaymentStatusFilter === 'all' ||
         s.payment_status === selectedPaymentStatusFilter;
 
-      return matchesSearch && matchesStatus;
+      const matchesTerms =
+        selectedTermsFilter === 'all' ||
+        s.payment_terms === selectedTermsFilter;
+
+      return matchesSearch && matchesStatus && matchesTerms;
     });
-  }, [suppliers, searchQuery, selectedPaymentStatusFilter]);
+
+    return result.sort((a, b) => {
+      let comparison = 0;
+      if (supplierSortBy === 'name') {
+        comparison = (a.name || '').localeCompare(b.name || '');
+      } else if (supplierSortBy === 'company') {
+        comparison = (a.company_name || '').localeCompare(b.company_name || '');
+      } else if (supplierSortBy === 'code') {
+        comparison = (a.code || '').localeCompare(b.code || '');
+      } else if (supplierSortBy === 'balance') {
+        comparison = (a.outstanding_balance || 0) - (b.outstanding_balance || 0);
+      } else if (supplierSortBy === 'cost') {
+        comparison = (a.total_cost_owed || 0) - (b.total_cost_owed || 0);
+      } else if (supplierSortBy === 'paid') {
+        comparison = (a.total_amount_paid || 0) - (b.total_amount_paid || 0);
+      } else if (supplierSortBy === 'profit') {
+        comparison = (a.gross_profit || 0) - (b.gross_profit || 0);
+      } else if (supplierSortBy === 'products') {
+        comparison = (a.active_products_count || 0) - (b.active_products_count || 0);
+      } else if (supplierSortBy === 'created') {
+        comparison = new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime();
+      }
+
+      return supplierSortOrder === 'asc' ? comparison : -comparison;
+    });
+  }, [
+    suppliers,
+    searchQuery,
+    selectedPaymentStatusFilter,
+    selectedTermsFilter,
+    supplierSortBy,
+    supplierSortOrder
+  ]);
 
   // Filtered Sourced Products
   const filteredProducts = useMemo(() => {
@@ -893,181 +989,844 @@ export default function SupplierManagementPanel({
         {/* ========================================================================= */}
         {activeTab === 'suppliers' && (
           <div className="space-y-5 animate-in fade-in duration-150">
-            {/* Search and Filters Bar */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-              <div className="relative flex-1 max-w-md">
-                <Search className="h-4 w-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-                <input
-                  type="text"
-                  placeholder="Search suppliers by name, code, company, PIN..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="h-9 w-full rounded-xl border border-gray-250 dark:border-gray-700 bg-white dark:bg-gray-900 pl-9 pr-4 text-xs font-medium text-gray-950 dark:text-white placeholder:text-gray-400"
-                />
+            {/* Top KPI Metrics Strip for Directory */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <div className="p-3.5 rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 shadow-2xs">
+                <div className="flex items-center justify-between text-gray-500 dark:text-gray-400">
+                  <span className="text-[11px] font-semibold">Total Suppliers</span>
+                  <Briefcase className="h-4 w-4 text-indigo-600" />
+                </div>
+                <div className="text-xl font-black font-mono text-gray-950 dark:text-white mt-1 flex items-baseline gap-1.5">
+                  <span>{filteredSuppliers.length}</span>
+                  <span className="text-xs font-medium text-gray-400 font-sans">
+                    / {suppliers.length} active
+                  </span>
+                </div>
               </div>
 
-              <div className="flex items-center gap-2">
+              <div className="p-3.5 rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 shadow-2xs">
+                <div className="flex items-center justify-between text-gray-500 dark:text-gray-400">
+                  <span className="text-[11px] font-semibold">Sales Cost Owed (COGS)</span>
+                  <Layers className="h-4 w-4 text-amber-600" />
+                </div>
+                <div className="text-xl font-black font-mono text-gray-950 dark:text-white mt-1">
+                  {currency} {filteredSuppliers.reduce((sum, s) => sum + (s.total_cost_owed || 0), 0).toLocaleString()}
+                </div>
+              </div>
+
+              <div className="p-3.5 rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 shadow-2xs">
+                <div className="flex items-center justify-between text-gray-500 dark:text-gray-400">
+                  <span className="text-[11px] font-semibold">Disbursed to Suppliers</span>
+                  <DollarSign className="h-4 w-4 text-emerald-600" />
+                </div>
+                <div className="text-xl font-black font-mono text-emerald-600 dark:text-emerald-400 mt-1">
+                  {currency} {filteredSuppliers.reduce((sum, s) => sum + (s.total_amount_paid || 0), 0).toLocaleString()}
+                </div>
+              </div>
+
+              <div className="p-3.5 rounded-2xl border border-rose-200/80 dark:border-rose-900/60 bg-rose-50/40 dark:bg-rose-950/20 shadow-2xs">
+                <div className="flex items-center justify-between text-rose-700 dark:text-rose-400">
+                  <span className="text-[11px] font-bold">Outstanding to Settle</span>
+                  <Coins className="h-4 w-4 text-rose-600" />
+                </div>
+                <div className="text-xl font-black font-mono text-rose-600 dark:text-rose-400 mt-1">
+                  {currency} {filteredSuppliers.reduce((sum, s) => sum + (s.outstanding_balance || 0), 0).toLocaleString()}
+                </div>
+              </div>
+            </div>
+
+            {/* Search, Filter, Sort & View Mode Switcher Bar */}
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 bg-white dark:bg-gray-900 p-3.5 rounded-2xl border border-gray-200 dark:border-gray-800 shadow-2xs">
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 flex-1">
+                {/* Search Input */}
+                <div className="relative flex-1 min-w-[240px]">
+                  <Search className="h-4 w-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                  <input
+                    type="text"
+                    placeholder="Search by supplier name, company, code, PIN, phone..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="h-9 w-full rounded-xl border border-gray-250 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800/60 pl-9 pr-8 text-xs font-medium text-gray-950 dark:text-white placeholder:text-gray-400 focus:bg-white dark:focus:bg-gray-900 transition-colors"
+                  />
+                  {searchQuery && (
+                    <button
+                      type="button"
+                      onClick={() => setSearchQuery('')}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 cursor-pointer p-0.5"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  )}
+                </div>
+
+                {/* Status Filter */}
                 <select
                   value={selectedPaymentStatusFilter}
                   onChange={(e) => setSelectedPaymentStatusFilter(e.target.value)}
-                  className="h-9 rounded-xl border border-gray-250 dark:border-gray-700 bg-white dark:bg-gray-900 px-3 text-xs font-semibold text-gray-700 dark:text-gray-300"
+                  className="h-9 rounded-xl border border-gray-250 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800/60 px-3 text-xs font-semibold text-gray-700 dark:text-gray-300 cursor-pointer"
                 >
                   <option value="all">All Payment Statuses</option>
                   <option value="Pending">Pending / Unpaid</option>
                   <option value="Partially Paid">Partially Paid</option>
                   <option value="Paid">Fully Paid / Clear</option>
                 </select>
+
+                {/* Terms Filter */}
+                <select
+                  value={selectedTermsFilter}
+                  onChange={(e) => setSelectedTermsFilter(e.target.value)}
+                  className="h-9 rounded-xl border border-gray-250 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800/60 px-3 text-xs font-semibold text-gray-700 dark:text-gray-300 cursor-pointer"
+                >
+                  <option value="all">All Payment Terms</option>
+                  <option value="Consignment Sale">Consignment Sale</option>
+                  <option value="Immediate">Immediate / COD</option>
+                  <option value="Net 15">Net 15 Days</option>
+                  <option value="Net 30">Net 30 Days</option>
+                  <option value="Bi-weekly">Bi-weekly</option>
+                  <option value="Monthly">Monthly</option>
+                </select>
+              </div>
+
+              {/* Sort & View Mode Switcher */}
+              <div className="flex items-center gap-2 justify-between sm:justify-end">
+                {/* Sort dropdown */}
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[11px] text-gray-400 font-medium hidden sm:inline">Sort:</span>
+                  <select
+                    value={supplierSortBy}
+                    onChange={(e) => setSupplierSortBy(e.target.value as any)}
+                    className="h-9 rounded-xl border border-gray-250 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800/60 px-2.5 text-xs font-semibold text-gray-700 dark:text-gray-300 cursor-pointer"
+                  >
+                    <option value="balance">Outstanding Balance</option>
+                    <option value="name">Supplier Name</option>
+                    <option value="company">Company Name</option>
+                    <option value="code">Supplier Code</option>
+                    <option value="cost">Sales Cost Owed</option>
+                    <option value="paid">Amount Paid</option>
+                    <option value="profit">Gross Profit</option>
+                    <option value="products">Products Count</option>
+                    <option value="created">Recently Added</option>
+                  </select>
+
+                  <button
+                    type="button"
+                    onClick={() => setSupplierSortOrder((prev) => (prev === 'asc' ? 'desc' : 'asc'))}
+                    className="h-9 px-2.5 rounded-xl border border-gray-250 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800/60 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 text-xs font-bold transition-colors flex items-center gap-1 cursor-pointer"
+                    title={supplierSortOrder === 'asc' ? 'Ascending Order' : 'Descending Order'}
+                  >
+                    <ArrowUpDown className="h-3.5 w-3.5" />
+                    <span className="text-[10px] font-mono">{supplierSortOrder.toUpperCase()}</span>
+                  </button>
+                </div>
+
+                {/* View Mode Toggle */}
+                <div className="flex items-center rounded-xl border border-gray-250 dark:border-gray-700 p-0.5 bg-gray-100 dark:bg-gray-800">
+                  <button
+                    type="button"
+                    onClick={() => setSupplierViewMode('list')}
+                    className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                      supplierViewMode === 'list'
+                        ? 'bg-white dark:bg-gray-900 text-indigo-600 dark:text-indigo-400 shadow-2xs'
+                        : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
+                    }`}
+                    title="List View (Admin Table)"
+                  >
+                    <LayoutList className="h-4 w-4" />
+                    <span className="text-xs font-bold">List</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setSupplierViewMode('grid')}
+                    className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                      supplierViewMode === 'grid'
+                        ? 'bg-white dark:bg-gray-900 text-indigo-600 dark:text-indigo-400 shadow-2xs'
+                        : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
+                    }`}
+                    title="Grid View (Cards)"
+                  >
+                    <LayoutGrid className="h-4 w-4" />
+                    <span className="text-xs font-bold">Grid</span>
+                  </button>
+                </div>
               </div>
             </div>
 
-            {/* Suppliers Cards Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {filteredSuppliers.map((supplier) => {
-                const isPaid = supplier.payment_status === 'Paid';
-                const isPartial = supplier.payment_status === 'Partially Paid';
-                const isPending = supplier.payment_status === 'Pending';
-
-                return (
-                  <div
-                    key={supplier.id}
-                    className="p-5 rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 shadow-2xs hover:shadow-md transition-all flex flex-col justify-between gap-4"
-                  >
-                    <div>
-                      {/* Supplier Card Header */}
-                      <div className="flex items-start justify-between gap-2 mb-2">
-                        <div>
-                          <h4 className="text-sm font-bold text-gray-950 dark:text-white leading-tight">
-                            {supplier.name}
-                          </h4>
-                          <span className="text-[11px] text-gray-500 dark:text-gray-400 block font-light">
-                            {supplier.company_name || 'Individual Supplier'}
-                          </span>
-                        </div>
-                        <span
-                          className={`px-2.5 py-0.5 rounded-full text-[9px] font-mono font-bold shrink-0 ${
-                            isPaid
-                              ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
-                              : isPartial
-                              ? 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300'
-                              : 'bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300'
-                          }`}
+            {/* ========================================================================= */}
+            {/* VIEW MODE 1: SUPPLIER DIRECTORY LIST VIEW (ADMIN TABLE) */}
+            {/* ========================================================================= */}
+            {supplierViewMode === 'list' && (
+              <div className="border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 rounded-2xl shadow-2xs overflow-hidden">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left border-collapse text-xs">
+                    <thead>
+                      <tr className="border-b border-gray-200 dark:border-gray-800 bg-gray-50/80 dark:bg-gray-800/80 text-gray-500 dark:text-gray-400 font-semibold uppercase tracking-wider text-[10px]">
+                        <th
+                          className="py-3 px-3.5 cursor-pointer hover:text-indigo-600 transition-colors"
+                          onClick={() => handleSort('name')}
                         >
-                          {supplier.payment_status.toUpperCase()}
-                        </span>
-                      </div>
-
-                      {/* Contact & Terms Info */}
-                      <div className="text-[11px] text-gray-500 dark:text-gray-400 space-y-1 mb-3">
-                        <div className="flex items-center gap-1.5">
-                          <Building className="h-3.5 w-3.5 text-gray-400" />
-                          <span>KRA PIN: {supplier.tax_pin || 'Not Set'}</span>
-                        </div>
-                        <div className="flex items-center gap-1.5">
-                          <CreditCard className="h-3.5 w-3.5 text-gray-400" />
-                          <span>Terms: {supplier.payment_terms}</span>
-                        </div>
-                        {supplier.phone && (
-                          <div className="flex items-center gap-1.5 font-mono text-[10.5px]">
-                            <Phone className="h-3.5 w-3.5 text-gray-400" />
-                            <span>{supplier.phone}</span>
+                          <div className="flex items-center gap-1">
+                            <span>Supplier &amp; Entity</span>
+                            {supplierSortBy === 'name' && (
+                              <span className="text-indigo-600">{supplierSortOrder === 'asc' ? '↑' : '↓'}</span>
+                            )}
                           </div>
-                        )}
-                      </div>
+                        </th>
+                        <th className="py-3 px-3.5">Contact &amp; Workshop</th>
+                        <th className="py-3 px-3.5">Terms &amp; Settlement</th>
+                        <th
+                          className="py-3 px-3 text-center cursor-pointer hover:text-indigo-600 transition-colors"
+                          onClick={() => handleSort('products')}
+                        >
+                          <div className="flex items-center justify-center gap-1">
+                            <span>Products</span>
+                            {supplierSortBy === 'products' && (
+                              <span className="text-indigo-600">{supplierSortOrder === 'asc' ? '↑' : '↓'}</span>
+                            )}
+                          </div>
+                        </th>
+                        <th
+                          className="py-3 px-3.5 cursor-pointer hover:text-indigo-600 transition-colors"
+                          onClick={() => handleSort('cost')}
+                        >
+                          <div className="flex items-center gap-1">
+                            <span>Cost Owed (COGS)</span>
+                            {supplierSortBy === 'cost' && (
+                              <span className="text-indigo-600">{supplierSortOrder === 'asc' ? '↑' : '↓'}</span>
+                            )}
+                          </div>
+                        </th>
+                        <th
+                          className="py-3 px-3.5 cursor-pointer hover:text-indigo-600 transition-colors"
+                          onClick={() => handleSort('paid')}
+                        >
+                          <div className="flex items-center gap-1">
+                            <span>Disbursed (Paid)</span>
+                            {supplierSortBy === 'paid' && (
+                              <span className="text-indigo-600">{supplierSortOrder === 'asc' ? '↑' : '↓'}</span>
+                            )}
+                          </div>
+                        </th>
+                        <th
+                          className="py-3 px-3.5 cursor-pointer hover:text-indigo-600 transition-colors"
+                          onClick={() => handleSort('balance')}
+                        >
+                          <div className="flex items-center gap-1">
+                            <span>Outstanding Balance</span>
+                            {supplierSortBy === 'balance' && (
+                              <span className="text-indigo-600">{supplierSortOrder === 'asc' ? '↑' : '↓'}</span>
+                            )}
+                          </div>
+                        </th>
+                        <th
+                          className="py-3 px-3.5 cursor-pointer hover:text-indigo-600 transition-colors"
+                          onClick={() => handleSort('profit')}
+                        >
+                          <div className="flex items-center gap-1">
+                            <span>Gross Margin</span>
+                            {supplierSortBy === 'profit' && (
+                              <span className="text-indigo-600">{supplierSortOrder === 'asc' ? '↑' : '↓'}</span>
+                            )}
+                          </div>
+                        </th>
+                        <th className="py-3 px-3.5 text-center">Settlement Status</th>
+                        <th className="py-3 px-3.5 text-right">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100 dark:divide-gray-800 font-medium">
+                      {filteredSuppliers.map((supplier) => {
+                        const isPaid = supplier.payment_status === 'Paid';
+                        const isPartial = supplier.payment_status === 'Partially Paid';
+                        const isPending = supplier.payment_status === 'Pending';
+                        const isExpanded = expandedSupplierId === supplier.id;
+                        const avatarClass = getAvatarColor(supplier.name);
+                        const initials = getSupplierInitials(supplier.name, supplier.company_name);
+                        const hasBalance = (supplier.outstanding_balance || 0) > 0;
 
-                      {/* Financial Balance Summary Strip */}
-                      <div className="p-3 rounded-xl bg-gray-50 dark:bg-gray-800/70 border border-gray-150 dark:border-gray-700/60 space-y-1.5">
-                        <div className="flex justify-between text-[11px]">
-                          <span className="text-gray-500">Sales Cost Owed:</span>
-                          <span className="font-mono font-bold text-gray-900 dark:text-white">
-                            {currency} {supplier.total_cost_owed.toLocaleString()}
-                          </span>
-                        </div>
-                        <div className="flex justify-between text-[11px]">
-                          <span className="text-gray-500">Amount Paid:</span>
-                          <span className="font-mono font-bold text-emerald-600 dark:text-emerald-400">
-                            {currency} {supplier.total_amount_paid.toLocaleString()}
-                          </span>
-                        </div>
-                        <div className="flex justify-between text-xs pt-1 border-t border-gray-200 dark:border-gray-700">
-                          <span className="font-bold text-gray-800 dark:text-gray-200">Outstanding Owed:</span>
+                        return (
+                          <React.Fragment key={supplier.id}>
+                            <tr
+                              className={`hover:bg-indigo-50/40 dark:hover:bg-indigo-950/20 transition-colors ${
+                                isExpanded ? 'bg-indigo-50/30 dark:bg-indigo-950/15' : ''
+                              }`}
+                            >
+                              {/* 1. Supplier & Entity Name */}
+                              <td className="py-3 px-3.5">
+                                <div className="flex items-start gap-3">
+                                  <div
+                                    className={`h-9 w-9 rounded-xl flex items-center justify-center font-bold text-xs shrink-0 border ${avatarClass} shadow-2xs`}
+                                  >
+                                    {initials}
+                                  </div>
+                                  <div>
+                                    <div className="flex items-center gap-1.5 flex-wrap">
+                                      <span className="font-bold text-gray-950 dark:text-white text-xs">
+                                        {supplier.name}
+                                      </span>
+                                      <span className="px-1.5 py-0.2 rounded-md font-mono text-[9.5px] font-bold bg-indigo-50 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800">
+                                        {supplier.code}
+                                      </span>
+                                    </div>
+                                    <div className="text-[11px] text-gray-500 dark:text-gray-400 font-light flex items-center gap-1.5 mt-0.5">
+                                      <span>{supplier.company_name || 'Individual Supplier'}</span>
+                                      {supplier.tax_pin && (
+                                        <span className="font-mono text-[10px] text-gray-400">
+                                          • PIN: {supplier.tax_pin}
+                                        </span>
+                                      )}
+                                    </div>
+                                  </div>
+                                </div>
+                              </td>
+
+                              {/* 2. Contact & Workshop */}
+                              <td className="py-3 px-3.5">
+                                <div className="space-y-0.5 text-[11px] text-gray-600 dark:text-gray-300">
+                                  {supplier.phone ? (
+                                    <div className="flex items-center gap-1.5 font-mono text-[11px]">
+                                      <Phone className="h-3 w-3 text-gray-400 shrink-0" />
+                                      <span>{supplier.phone}</span>
+                                    </div>
+                                  ) : (
+                                    <span className="text-gray-400">-</span>
+                                  )}
+                                  {supplier.email && (
+                                    <div className="flex items-center gap-1.5 text-gray-500 dark:text-gray-400 text-[10.5px]">
+                                      <Mail className="h-3 w-3 text-gray-400 shrink-0" />
+                                      <span className="truncate max-w-[140px]" title={supplier.email}>
+                                        {supplier.email}
+                                      </span>
+                                    </div>
+                                  )}
+                                  {supplier.physical_address && (
+                                    <div className="flex items-center gap-1.5 text-gray-400 text-[10px]">
+                                      <MapPin className="h-3 w-3 text-gray-400 shrink-0" />
+                                      <span className="truncate max-w-[150px]" title={supplier.physical_address}>
+                                        {supplier.physical_address}
+                                      </span>
+                                    </div>
+                                  )}
+                                </div>
+                              </td>
+
+                              {/* 3. Terms & Settlement Channel */}
+                              <td className="py-3 px-3.5">
+                                <div className="space-y-1">
+                                  <span className="inline-block px-2 py-0.5 rounded-lg text-[10px] font-semibold bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 border border-gray-200/60 dark:border-gray-700">
+                                    {supplier.payment_terms}
+                                  </span>
+                                  {supplier.mpesa_number ? (
+                                    <div className="flex items-center gap-1 text-[10px] font-mono text-emerald-700 dark:text-emerald-400">
+                                      <Smartphone className="h-3 w-3 text-emerald-600 shrink-0" />
+                                      <span>M-PESA: {supplier.mpesa_number}</span>
+                                    </div>
+                                  ) : supplier.bank_name ? (
+                                    <div className="flex items-center gap-1 text-[10px] text-indigo-700 dark:text-indigo-400">
+                                      <Building className="h-3 w-3 text-indigo-600 shrink-0" />
+                                      <span className="truncate max-w-[120px]" title={`${supplier.bank_name} ${supplier.bank_account_number || ''}`}>
+                                        {supplier.bank_name}
+                                      </span>
+                                    </div>
+                                  ) : null}
+                                </div>
+                              </td>
+
+                              {/* 4. Sourced Products Count */}
+                              <td className="py-3 px-3 text-center">
+                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-mono font-bold bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 border border-gray-250 dark:border-gray-700">
+                                  <Package className="h-3 w-3 text-indigo-600" />
+                                  <span>{supplier.active_products_count || 0}</span>
+                                </span>
+                              </td>
+
+                              {/* 5. Cost Owed (COGS) */}
+                              <td className="py-3 px-3.5 font-mono text-gray-900 dark:text-gray-200">
+                                <span className="text-[10px] text-gray-400 mr-0.5">{currency}</span>
+                                <span className="font-bold">{(supplier.total_cost_owed || 0).toLocaleString()}</span>
+                              </td>
+
+                              {/* 6. Disbursed (Paid) */}
+                              <td className="py-3 px-3.5 font-mono text-emerald-600 dark:text-emerald-400">
+                                <span className="text-[10px] text-emerald-500/70 mr-0.5">{currency}</span>
+                                <span className="font-bold">{(supplier.total_amount_paid || 0).toLocaleString()}</span>
+                              </td>
+
+                              {/* 7. Outstanding Balance */}
+                              <td className="py-3 px-3.5">
+                                {hasBalance ? (
+                                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl text-xs font-mono font-black bg-rose-50 dark:bg-rose-950/50 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-900 shadow-2xs">
+                                    <span className="h-1.5 w-1.5 rounded-full bg-rose-500 animate-pulse" />
+                                    <span>{currency} {supplier.outstanding_balance.toLocaleString()}</span>
+                                  </span>
+                                ) : (
+                                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl text-xs font-mono font-bold bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800">
+                                    <CheckCircle2 className="h-3 w-3 text-emerald-500" />
+                                    <span>{currency} 0 (Clear)</span>
+                                  </span>
+                                )}
+                              </td>
+
+                              {/* 8. Gross Margin & Profit */}
+                              <td className="py-3 px-3.5 font-mono">
+                                <div className="text-xs font-black text-emerald-600 dark:text-emerald-400">
+                                  {currency} {(supplier.gross_profit || 0).toLocaleString()}
+                                </div>
+                                <div className="text-[10px] font-bold text-gray-500 dark:text-gray-400">
+                                  {supplier.profit_margin_percent}% margin
+                                </div>
+                              </td>
+
+                              {/* 9. Payment Status Badge */}
+                              <td className="py-3 px-3.5 text-center">
+                                <span
+                                  className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[9.5px] font-mono font-bold ${
+                                    isPaid
+                                      ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800'
+                                      : isPartial
+                                      ? 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 border border-amber-200 dark:border-amber-800'
+                                      : 'bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300 border border-rose-200 dark:border-rose-800'
+                                  }`}
+                                >
+                                  {isPaid && <CheckCircle2 className="h-2.5 w-2.5" />}
+                                  {isPartial && <Clock className="h-2.5 w-2.5" />}
+                                  {isPending && <AlertTriangle className="h-2.5 w-2.5" />}
+                                  <span>{supplier.payment_status.toUpperCase()}</span>
+                                </span>
+                              </td>
+
+                              {/* 10. Actions Toolbar */}
+                              <td className="py-3 px-3.5 text-right">
+                                <div className="flex items-center justify-end gap-1.5">
+                                  {/* View Ledger Statement */}
+                                  <button
+                                    type="button"
+                                    onClick={() => handleOpenStatement(supplier)}
+                                    className="px-2 py-1 rounded-lg border border-gray-250 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 text-[11px] font-bold hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors flex items-center gap-1 cursor-pointer shadow-2xs"
+                                    title="View Full Ledger Statement"
+                                  >
+                                    <FileText className="h-3 w-3 text-indigo-600" />
+                                    <span className="hidden sm:inline">Statement</span>
+                                  </button>
+
+                                  {/* Record Goods Intake */}
+                                  <button
+                                    type="button"
+                                    onClick={() => handleQuickIntake(supplier)}
+                                    className="p-1.5 rounded-lg border border-gray-250 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 text-xs transition-colors cursor-pointer shadow-2xs"
+                                    title="Record Goods Intake (GRN) for this supplier"
+                                  >
+                                    <Package className="h-3.5 w-3.5 text-indigo-600" />
+                                  </button>
+
+                                  {/* Quick Pay / Disburse */}
+                                  <button
+                                    type="button"
+                                    onClick={() => handleQuickPay(supplier)}
+                                    className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all flex items-center gap-1 cursor-pointer shadow-2xs ${
+                                      hasBalance
+                                        ? 'bg-emerald-600 hover:bg-emerald-700 text-white font-bold ring-1 ring-emerald-500/30'
+                                        : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-200'
+                                    }`}
+                                    title={hasBalance ? `Disburse payout of ${currency} ${supplier.outstanding_balance.toLocaleString()}` : 'Record custom payment'}
+                                  >
+                                    <Coins className="h-3 w-3" />
+                                    <span>Pay</span>
+                                  </button>
+
+                                  {/* Edit Supplier Profile */}
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setEditingSupplier(supplier);
+                                      setSupplierFormData(supplier);
+                                      setShowAddSupplierModal(true);
+                                    }}
+                                    className="p-1.5 rounded-lg border border-gray-250 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-500 hover:text-gray-700 text-xs transition-colors cursor-pointer shadow-2xs"
+                                    title="Edit Supplier Profile"
+                                  >
+                                    <Edit2 className="h-3 w-3" />
+                                  </button>
+
+                                  {/* Delete Supplier */}
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDeleteSupplier(supplier)}
+                                    className="p-1.5 rounded-lg border border-rose-200 dark:border-rose-900/50 bg-rose-50 dark:bg-rose-950/30 text-rose-600 hover:text-rose-700 text-xs transition-colors cursor-pointer shadow-2xs"
+                                    title="Delete Supplier"
+                                  >
+                                    <Trash2 className="h-3 w-3" />
+                                  </button>
+
+                                  {/* Expand / Details toggle */}
+                                  <button
+                                    type="button"
+                                    onClick={() => setExpandedSupplierId(isExpanded ? null : supplier.id)}
+                                    className="p-1 rounded-lg text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-colors cursor-pointer ml-0.5"
+                                    title={isExpanded ? 'Collapse Details' : 'Expand Details'}
+                                  >
+                                    {isExpanded ? (
+                                      <ChevronUp className="h-3.5 w-3.5" />
+                                    ) : (
+                                      <ChevronDown className="h-3.5 w-3.5" />
+                                    )}
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+
+                            {/* Expandable Details Drawer Row */}
+                            {isExpanded && (
+                              <tr className="bg-gray-50/70 dark:bg-gray-800/40 border-b border-gray-200 dark:border-gray-800 animate-in fade-in duration-150">
+                                <td colSpan={10} className="p-4">
+                                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
+                                    {/* Column 1: Identity & Settlement Details */}
+                                    <div className="p-3.5 rounded-xl bg-white dark:bg-gray-900 border border-gray-200/80 dark:border-gray-700/80 space-y-2">
+                                      <h5 className="font-bold text-gray-900 dark:text-white flex items-center gap-1.5 text-[11px] uppercase tracking-wider">
+                                        <Building className="h-3.5 w-3.5 text-indigo-600" />
+                                        Entity &amp; Settlement Account
+                                      </h5>
+                                      <div className="space-y-1.5 text-[11px] text-gray-600 dark:text-gray-300">
+                                        <div>
+                                          <span className="text-gray-400">Legal Name: </span>
+                                          <span className="font-semibold text-gray-900 dark:text-white">{supplier.name}</span>
+                                        </div>
+                                        <div>
+                                          <span className="text-gray-400">Company: </span>
+                                          <span>{supplier.company_name || 'Individual Sourcing'}</span>
+                                        </div>
+                                        <div>
+                                          <span className="text-gray-400">KRA Tax PIN: </span>
+                                          <span className="font-mono font-bold text-gray-900 dark:text-white">
+                                            {supplier.tax_pin || 'Not specified'}
+                                          </span>
+                                        </div>
+                                        <div>
+                                          <span className="text-gray-400">M-PESA Account: </span>
+                                          <span className="font-mono font-semibold text-emerald-600">
+                                            {supplier.mpesa_number || 'None'} {supplier.mpesa_account_name ? `(${supplier.mpesa_account_name})` : ''}
+                                          </span>
+                                        </div>
+                                        <div>
+                                          <span className="text-gray-400">Bank Account: </span>
+                                          <span className="font-medium text-gray-800 dark:text-gray-200">
+                                            {supplier.bank_name ? `${supplier.bank_name} - ${supplier.bank_account_number || ''}` : 'None'}
+                                          </span>
+                                        </div>
+                                      </div>
+                                    </div>
+
+                                    {/* Column 2: Workshop & Contact */}
+                                    <div className="p-3.5 rounded-xl bg-white dark:bg-gray-900 border border-gray-200/80 dark:border-gray-700/80 space-y-2">
+                                      <h5 className="font-bold text-gray-900 dark:text-white flex items-center gap-1.5 text-[11px] uppercase tracking-wider">
+                                        <MapPin className="h-3.5 w-3.5 text-indigo-600" />
+                                        Workshop &amp; Logistics Address
+                                      </h5>
+                                      <div className="space-y-1.5 text-[11px] text-gray-600 dark:text-gray-300">
+                                        <div>
+                                          <span className="text-gray-400">Dispatch Location: </span>
+                                          <p className="font-medium text-gray-800 dark:text-gray-200 mt-0.5">
+                                            {supplier.physical_address || 'No physical workshop address registered.'}
+                                          </p>
+                                        </div>
+                                        <div>
+                                          <span className="text-gray-400">Internal Notes: </span>
+                                          <p className="font-light italic text-gray-500 mt-0.5">
+                                            {supplier.notes || 'No administrative notes on record.'}
+                                          </p>
+                                        </div>
+                                      </div>
+                                    </div>
+
+                                    {/* Column 3: Sourced Products Summary */}
+                                    <div className="p-3.5 rounded-xl bg-white dark:bg-gray-900 border border-gray-200/80 dark:border-gray-700/80 space-y-2">
+                                      <div className="flex items-center justify-between">
+                                        <h5 className="font-bold text-gray-900 dark:text-white flex items-center gap-1.5 text-[11px] uppercase tracking-wider">
+                                          <Layers className="h-3.5 w-3.5 text-indigo-600" />
+                                          Sourced Catalog ({supplierProducts.filter((p) => p.supplier === supplier.id).length})
+                                        </h5>
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            setSelectedSupplierFilter(supplier.id);
+                                            setActiveTab('products');
+                                          }}
+                                          className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-0.5 cursor-pointer"
+                                        >
+                                          View in matrix <ChevronRight className="h-2.5 w-2.5" />
+                                        </button>
+                                      </div>
+
+                                      <div className="space-y-1.5 max-h-28 overflow-y-auto pr-1">
+                                        {supplierProducts.filter((p) => p.supplier === supplier.id).length > 0 ? (
+                                          supplierProducts
+                                            .filter((p) => p.supplier === supplier.id)
+                                            .slice(0, 3)
+                                            .map((p) => (
+                                              <div
+                                                key={p.id}
+                                                className="p-1.5 rounded-lg bg-gray-50 dark:bg-gray-800/80 flex items-center justify-between text-[10.5px]"
+                                              >
+                                                <div className="truncate max-w-[150px]">
+                                                  <span className="font-bold text-gray-900 dark:text-white">{p.product_name}</span>
+                                                  <span className="font-mono text-[9.5px] text-gray-400 block">{p.product_sku}</span>
+                                                </div>
+                                                <div className="text-right font-mono text-[10px]">
+                                                  <span className="text-gray-500">Cost: {currency} {p.agreed_cost_price.toLocaleString()}</span>
+                                                </div>
+                                              </div>
+                                            ))
+                                        ) : (
+                                          <div className="text-gray-400 text-[11px] italic py-2">
+                                            No active products linked yet. Record a GRN intake to connect products.
+                                          </div>
+                                        )}
+                                      </div>
+                                    </div>
+                                  </div>
+                                </td>
+                              </tr>
+                            )}
+                          </React.Fragment>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {/* ========================================================================= */}
+            {/* VIEW MODE 2: SUPPLIER DIRECTORY GRID VIEW (CARDS) */}
+            {/* ========================================================================= */}
+            {supplierViewMode === 'grid' && (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {filteredSuppliers.map((supplier) => {
+                  const isPaid = supplier.payment_status === 'Paid';
+                  const isPartial = supplier.payment_status === 'Partially Paid';
+                  const isPending = supplier.payment_status === 'Pending';
+                  const avatarClass = getAvatarColor(supplier.name);
+                  const initials = getSupplierInitials(supplier.name, supplier.company_name);
+                  const hasBalance = (supplier.outstanding_balance || 0) > 0;
+
+                  return (
+                    <div
+                      key={supplier.id}
+                      className="p-5 rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 shadow-2xs hover:shadow-md transition-all flex flex-col justify-between gap-4"
+                    >
+                      <div>
+                        {/* Supplier Card Header */}
+                        <div className="flex items-start justify-between gap-2 mb-3">
+                          <div className="flex items-center gap-2.5">
+                            <div
+                              className={`h-10 w-10 rounded-xl flex items-center justify-center font-bold text-xs shrink-0 border ${avatarClass} shadow-2xs`}
+                            >
+                              {initials}
+                            </div>
+                            <div>
+                              <div className="flex items-center gap-1.5">
+                                <h4 className="text-sm font-bold text-gray-950 dark:text-white leading-tight">
+                                  {supplier.name}
+                                </h4>
+                                <span className="px-1.5 py-0.2 rounded font-mono text-[9px] font-bold bg-indigo-50 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800">
+                                  {supplier.code}
+                                </span>
+                              </div>
+                              <span className="text-[11px] text-gray-500 dark:text-gray-400 block font-light">
+                                {supplier.company_name || 'Individual Supplier'}
+                              </span>
+                            </div>
+                          </div>
+
                           <span
-                            className={`font-mono font-black ${
-                              supplier.outstanding_balance > 0
-                                ? 'text-rose-600 dark:text-rose-400'
-                                : 'text-emerald-600 dark:text-emerald-400'
+                            className={`px-2.5 py-0.5 rounded-full text-[9px] font-mono font-bold shrink-0 ${
+                              isPaid
+                                ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 border border-emerald-200'
+                                : isPartial
+                                ? 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 border border-amber-200'
+                                : 'bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300 border border-rose-200'
                             }`}
                           >
-                            {currency} {supplier.outstanding_balance.toLocaleString()}
+                            {supplier.payment_status.toUpperCase()}
+                          </span>
+                        </div>
+
+                        {/* Contact & Terms Info */}
+                        <div className="text-[11px] text-gray-500 dark:text-gray-400 space-y-1 mb-3">
+                          <div className="flex items-center gap-1.5">
+                            <Building className="h-3.5 w-3.5 text-gray-400 shrink-0" />
+                            <span>KRA PIN: {supplier.tax_pin || 'Not Set'}</span>
+                          </div>
+                          <div className="flex items-center gap-1.5">
+                            <CreditCard className="h-3.5 w-3.5 text-gray-400 shrink-0" />
+                            <span>Terms: {supplier.payment_terms}</span>
+                          </div>
+                          {supplier.phone && (
+                            <div className="flex items-center gap-1.5 font-mono text-[10.5px]">
+                              <Phone className="h-3.5 w-3.5 text-gray-400 shrink-0" />
+                              <span>{supplier.phone}</span>
+                            </div>
+                          )}
+                          {supplier.mpesa_number && (
+                            <div className="flex items-center gap-1.5 font-mono text-[10.5px] text-emerald-700 dark:text-emerald-400">
+                              <Smartphone className="h-3.5 w-3.5 text-emerald-600 shrink-0" />
+                              <span>M-PESA: {supplier.mpesa_number}</span>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Financial Balance Summary Strip */}
+                        <div className="p-3 rounded-xl bg-gray-50 dark:bg-gray-800/70 border border-gray-150 dark:border-gray-700/60 space-y-1.5">
+                          <div className="flex justify-between text-[11px]">
+                            <span className="text-gray-500">Sales Cost Owed:</span>
+                            <span className="font-mono font-bold text-gray-900 dark:text-white">
+                              {currency} {supplier.total_cost_owed.toLocaleString()}
+                            </span>
+                          </div>
+                          <div className="flex justify-between text-[11px]">
+                            <span className="text-gray-500">Amount Paid:</span>
+                            <span className="font-mono font-bold text-emerald-600 dark:text-emerald-400">
+                              {currency} {supplier.total_amount_paid.toLocaleString()}
+                            </span>
+                          </div>
+                          <div className="flex justify-between text-xs pt-1 border-t border-gray-200 dark:border-gray-700">
+                            <span className="font-bold text-gray-800 dark:text-gray-200">Outstanding Owed:</span>
+                            <span
+                              className={`font-mono font-black ${
+                                hasBalance
+                                  ? 'text-rose-600 dark:text-rose-400'
+                                  : 'text-emerald-600 dark:text-emerald-400'
+                              }`}
+                            >
+                              {currency} {supplier.outstanding_balance.toLocaleString()}
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Profitability metric */}
+                        <div className="mt-2 flex items-center justify-between text-[11px] font-mono px-1">
+                          <span className="text-gray-400">Gross Profit:</span>
+                          <span className="font-bold text-emerald-600">
+                            {currency} {supplier.gross_profit.toLocaleString()} ({supplier.profit_margin_percent}%)
                           </span>
                         </div>
                       </div>
 
-                      {/* Profitability metric */}
-                      <div className="mt-2 flex items-center justify-between text-[11px] font-mono px-1">
-                        <span className="text-gray-400">Gross Profit Contribution:</span>
-                        <span className="font-bold text-emerald-600">
-                          {currency} {supplier.gross_profit.toLocaleString()} ({supplier.profit_margin_percent}%)
-                        </span>
+                      {/* Action Buttons */}
+                      <div className="flex items-center gap-1.5 pt-3 border-t border-gray-150 dark:border-gray-800">
+                        <button
+                          type="button"
+                          onClick={() => handleOpenStatement(supplier)}
+                          className="flex-1 py-1.5 rounded-xl border border-gray-250 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 text-xs font-bold hover:bg-gray-50 transition-colors flex items-center justify-center gap-1 cursor-pointer shadow-2xs"
+                          title="View Full Ledger Statement"
+                        >
+                          <FileText className="h-3 w-3 text-indigo-600" />
+                          <span>Statement</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => handleQuickIntake(supplier)}
+                          className="p-1.5 rounded-xl border border-gray-250 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-50 text-xs font-bold transition-colors cursor-pointer shadow-2xs"
+                          title="Record Stock Intake for this supplier"
+                        >
+                          <Package className="h-3.5 w-3.5 text-indigo-600" />
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => handleQuickPay(supplier)}
+                          className={`px-2.5 py-1.5 rounded-xl text-xs font-bold transition-colors flex items-center gap-1 cursor-pointer shadow-2xs ${
+                            hasBalance
+                              ? 'bg-emerald-600 hover:bg-emerald-700 text-white'
+                              : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400'
+                          }`}
+                          title="Disburse payment"
+                        >
+                          <Coins className="h-3 w-3" />
+                          <span>Pay</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditingSupplier(supplier);
+                            setSupplierFormData(supplier);
+                            setShowAddSupplierModal(true);
+                          }}
+                          className="p-1.5 rounded-xl border border-gray-250 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-500 hover:text-gray-700 text-xs transition-colors cursor-pointer shadow-2xs"
+                          title="Edit Supplier"
+                        >
+                          <Edit2 className="h-3.5 w-3.5" />
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteSupplier(supplier)}
+                          className="p-1.5 rounded-xl border border-rose-200 dark:border-rose-900/50 bg-rose-50 dark:bg-rose-950/30 text-rose-600 hover:text-rose-700 text-xs transition-colors cursor-pointer shadow-2xs"
+                          title="Delete Supplier"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
                       </div>
                     </div>
+                  );
+                })}
+              </div>
+            )}
 
-                    {/* Action Buttons */}
-                    <div className="flex items-center gap-1.5 pt-3 border-t border-gray-150 dark:border-gray-800">
-                      <button
-                        type="button"
-                        onClick={() => handleOpenStatement(supplier)}
-                        className="flex-1 py-1.5 rounded-xl border border-gray-250 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 text-xs font-bold hover:bg-gray-50 transition-colors flex items-center justify-center gap-1 cursor-pointer"
-                        title="View Full Ledger Statement"
-                      >
-                        <FileText className="h-3 w-3 text-indigo-600" />
-                        <span>Statement</span>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => handleQuickIntake(supplier)}
-                        className="p-1.5 rounded-xl border border-gray-250 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-50 text-xs font-bold transition-colors cursor-pointer"
-                        title="Record Stock Intake for this supplier"
-                      >
-                        <Package className="h-3.5 w-3.5 text-indigo-600" />
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => handleQuickPay(supplier)}
-                        className="px-2.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-colors flex items-center gap-1 cursor-pointer"
-                        title="Disburse payment"
-                      >
-                        <Coins className="h-3 w-3" />
-                        <span>Pay</span>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setEditingSupplier(supplier);
-                          setSupplierFormData(supplier);
-                          setShowAddSupplierModal(true);
-                        }}
-                        className="p-1.5 rounded-xl border border-gray-250 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-500 hover:text-gray-700 text-xs transition-colors cursor-pointer"
-                        title="Edit Supplier"
-                      >
-                        <Edit2 className="h-3.5 w-3.5" />
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => handleDeleteSupplier(supplier)}
-                        className="p-1.5 rounded-xl border border-rose-200 dark:border-rose-900/50 bg-rose-50 dark:bg-rose-950/30 text-rose-600 hover:text-rose-700 text-xs transition-colors cursor-pointer"
-                        title="Delete Supplier"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </button>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
+            {/* Empty State */}
+            {filteredSuppliers.length === 0 && (
+              <div className="p-12 text-center border border-dashed border-gray-300 dark:border-gray-700 rounded-2xl bg-white dark:bg-gray-900 space-y-3">
+                <div className="h-12 w-12 rounded-2xl bg-gray-100 dark:bg-gray-800 text-gray-400 flex items-center justify-center mx-auto">
+                  <Briefcase className="h-6 w-6 text-gray-400" />
+                </div>
+                <h4 className="text-sm font-bold text-gray-950 dark:text-white">
+                  No suppliers found matching your criteria
+                </h4>
+                <p className="text-xs text-gray-500 max-w-sm mx-auto font-light">
+                  Try adjusting your search keywords, payment status filters, or payment terms.
+                </p>
+                <div className="flex items-center justify-center gap-2 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSearchQuery('');
+                      setSelectedPaymentStatusFilter('all');
+                      setSelectedTermsFilter('all');
+                    }}
+                    className="px-3 py-1.5 rounded-xl border border-gray-250 dark:border-gray-700 text-xs font-bold text-gray-700 dark:text-gray-300 hover:bg-gray-50 cursor-pointer"
+                  >
+                    Clear All Filters
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEditingSupplier(null);
+                      setSupplierFormData({
+                        name: '',
+                        company_name: '',
+                        email: '',
+                        phone: '',
+                        physical_address: '',
+                        tax_pin: '',
+                        payment_terms: 'Consignment Sale',
+                        bank_name: '',
+                        bank_account_number: '',
+                        mpesa_number: '',
+                        mpesa_account_name: '',
+                        status: 'Active',
+                        notes: ''
+                      });
+                      setShowAddSupplierModal(true);
+                    }}
+                    className="px-3.5 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold cursor-pointer flex items-center gap-1.5"
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                    <span>Add New Supplier</span>
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         )}
 

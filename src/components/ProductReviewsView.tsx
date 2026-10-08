@@ -23,6 +23,7 @@ import { Product, Review, ReviewEligibilityCheck } from '../types';
 import { CurrencyType } from '../lib/currency';
 import { buildAdminNewReviewEmail } from '../lib/emailNotifier';
 import { EmailNotification } from './EmailToaster';
+import { getAuthHeaders } from '../utils/authTokens';
 
 interface ProductReviewsViewProps {
   product: Product;
@@ -60,7 +61,7 @@ export default function ProductReviewsView({
     totalCount: number;
     distribution: Record<number, number>;
   }>({
-    average: product.rating || 5.0,
+    average: product.rating || 0,
     totalCount: product.reviewsCount || 0,
     distribution: { 5: 0, 4: 0, 3: 0, 2: 0, 1: 0 },
   });
@@ -132,7 +133,7 @@ export default function ProductReviewsView({
     try {
       const res = await fetch('/api/reviews/check-eligibility', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({
           userEmail,
           userId,
@@ -171,7 +172,7 @@ export default function ProductReviewsView({
         // Track click on review request email
         fetch('/api/review-requests/track-click', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
           body: JSON.stringify({ orderId: initialOrderId, productId: product.id }),
         }).catch(() => {});
       }
@@ -204,7 +205,7 @@ export default function ProductReviewsView({
 
       const res = await fetch(url, {
         method,
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({
           userEmail,
           userId,
@@ -267,6 +268,7 @@ export default function ProductReviewsView({
     try {
       const res = await fetch(`/api/reviews/${reviewId}?userEmail=${encodeURIComponent(userEmail)}`, {
         method: 'DELETE',
+        headers: getAuthHeaders(),
       });
       if (res.ok) {
         fetchReviews();
@@ -282,7 +284,7 @@ export default function ProductReviewsView({
     try {
       const res = await fetch(`/api/reviews/${reviewId}/helpful`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({ userEmail, userId }),
       });
       if (res.ok) {

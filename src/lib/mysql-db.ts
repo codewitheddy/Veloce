@@ -147,13 +147,41 @@ async function initializeDatabaseSchema() {
         notesHistory TEXT NULL,
         statusHistory TEXT NULL,
         isGuest TINYINT(1) DEFAULT 0,
-        paymentMethod VARCHAR(50) DEFAULT 'cod'
+        paymentMethod VARCHAR(50) DEFAULT 'cod',
+        checkoutChannel VARCHAR(50) DEFAULT 'web'
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
     `);
 
-    // Safe column addition for payment method (if table already existed)
+    // Safe column addition for payment method and checkout channel (if table already existed)
     try {
       await dbPool.query("ALTER TABLE orders ADD COLUMN paymentMethod VARCHAR(50) DEFAULT 'cod'");
+    } catch (_) {}
+    try {
+      await dbPool.query("ALTER TABLE orders ADD COLUMN checkoutChannel VARCHAR(50) DEFAULT 'web'");
+    } catch (_) {}
+    try {
+      await dbPool.query("ALTER TABLE orders ADD COLUMN paymentStatus VARCHAR(50) DEFAULT 'pending'");
+    } catch (_) {}
+    try {
+      await dbPool.query("ALTER TABLE orders ADD COLUMN isPaid TINYINT(1) DEFAULT 0");
+    } catch (_) {}
+    try {
+      await dbPool.query("ALTER TABLE orders ADD COLUMN paidAt VARCHAR(100) NULL");
+    } catch (_) {}
+    try {
+      await dbPool.query("ALTER TABLE orders ADD COLUMN deliveryConfirmed TINYINT(1) DEFAULT 0");
+    } catch (_) {}
+    try {
+      await dbPool.query("ALTER TABLE orders ADD COLUMN deliveredAt VARCHAR(100) NULL");
+    } catch (_) {}
+    try {
+      await dbPool.query("ALTER TABLE orders ADD COLUMN deliveryPerson VARCHAR(255) NULL");
+    } catch (_) {}
+    try {
+      await dbPool.query("ALTER TABLE orders ADD COLUMN deliveryNote TEXT NULL");
+    } catch (_) {}
+    try {
+      await dbPool.query("ALTER TABLE orders ADD COLUMN trackingNumber VARCHAR(255) NULL");
     } catch (_) {}
 
     // 4. Campaigns Table
@@ -204,6 +232,43 @@ async function initializeDatabaseSchema() {
       CREATE TABLE IF NOT EXISTS app_settings (
         setting_key VARCHAR(255) PRIMARY KEY,
         setting_value LONGTEXT NULL
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    `);
+
+    // 8. Users Table
+    await dbPool.query(`
+      CREATE TABLE IF NOT EXISTS users (
+        id VARCHAR(255) PRIMARY KEY,
+        email VARCHAR(255) NOT NULL UNIQUE,
+        username VARCHAR(255) NULL,
+        password_hash VARCHAR(255) NOT NULL,
+        first_name VARCHAR(255) NULL,
+        last_name VARCHAR(255) NULL,
+        phone VARCHAR(100) NULL,
+        role VARCHAR(50) DEFAULT 'customer',
+        is_staff TINYINT(1) DEFAULT 0,
+        is_superuser TINYINT(1) DEFAULT 0,
+        email_verified TINYINT(1) DEFAULT 1,
+        created_at VARCHAR(100) NOT NULL,
+        updated_at VARCHAR(100) NOT NULL
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    `);
+
+    // 9. Password Reset Tokens Table
+    await dbPool.query(`
+      CREATE TABLE IF NOT EXISTS password_reset_tokens (
+        id VARCHAR(255) PRIMARY KEY,
+        user_id VARCHAR(255) NOT NULL,
+        token_hash VARCHAR(64) NOT NULL UNIQUE,
+        expires_at VARCHAR(100) NOT NULL,
+        used_at VARCHAR(100) NULL,
+        created_at VARCHAR(100) NOT NULL,
+        user_email VARCHAR(255) NULL,
+        ip_address VARCHAR(100) NULL,
+        INDEX idx_prt_user_id (user_id),
+        INDEX idx_prt_expires_at (expires_at),
+        INDEX idx_prt_token_hash (token_hash),
+        CONSTRAINT fk_mysql_prt_user_id FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
     `);
 
@@ -303,7 +368,11 @@ export async function pushSyncData(payload: Record<string, any>): Promise<void> 
             p.digitalFileUrl || null,
             p.previousPrice !== undefined ? p.previousPrice : null,
             p.backInStockAlert ? 1 : 0,
-            p.costPrice !== undefined ? p.costPrice : null,
+            (p.costPrice !== undefined && p.costPrice !== null && p.costPrice !== '')
+              ? Number(p.costPrice)
+              : (p.cost_price !== undefined && p.cost_price !== null && p.cost_price !== '')
+              ? Number(p.cost_price)
+              : null,
             p.taxId || null,
             p.status || "Active",
             p.paymentRestriction || 'both',
@@ -324,8 +393,8 @@ export async function pushSyncData(payload: Record<string, any>): Promise<void> 
         if (!o.id) continue;
         await connection.query(
           `INSERT INTO orders 
-           (id, customerName, customerEmail, items, total, status, date, couponCode, customNote, shippingAddress, notesHistory, statusHistory, isGuest, paymentMethod)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           (id, customerName, customerEmail, items, total, status, date, couponCode, customNote, shippingAddress, notesHistory, statusHistory, isGuest, paymentMethod, checkoutChannel)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [
             o.id,
             o.customerName || "Guest Customer",
@@ -340,7 +409,8 @@ export async function pushSyncData(payload: Record<string, any>): Promise<void> 
             o.notesHistory ? JSON.stringify(o.notesHistory) : null,
             o.statusHistory ? JSON.stringify(o.statusHistory) : null,
             o.isGuest ? 1 : 0,
-            o.paymentMethod || 'cod',
+            o.paymentMethod === 'whatsapp' ? 'mpesa' : (o.paymentMethod || 'cod'),
+            o.checkoutChannel || (o.checkoutMode === 'whatsapp' || o.paymentMethod === 'whatsapp' ? 'whatsapp' : 'web'),
           ]
         );
       }
@@ -486,7 +556,8 @@ export async function pullSyncData(): Promise<Record<string, any>> {
       digitalFileUrl: p.digitalFileUrl || undefined,
       previousPrice: p.previousPrice !== null ? Number(p.previousPrice) : undefined,
       backInStockAlert: !!p.backInStockAlert,
-      costPrice: p.costPrice !== null ? Number(p.costPrice) : undefined,
+      costPrice: p.costPrice !== null && p.costPrice !== undefined ? Number(p.costPrice) : undefined,
+      cost_price: p.costPrice !== null && p.costPrice !== undefined ? Number(p.costPrice) : undefined,
       taxId: p.taxId || undefined,
       status: p.status || "Active",
       paymentRestriction: p.paymentRestriction || 'both',
@@ -513,7 +584,8 @@ export async function pullSyncData(): Promise<Record<string, any>> {
       notesHistory: o.notesHistory ? JSON.parse(o.notesHistory) : [],
       statusHistory: o.statusHistory ? JSON.parse(o.statusHistory) : [],
       isGuest: !!o.isGuest,
-      paymentMethod: o.paymentMethod || 'cod',
+      checkoutChannel: o.checkoutChannel || (o.paymentMethod === 'whatsapp' ? 'whatsapp' : 'web'),
+      paymentMethod: o.paymentMethod === 'whatsapp' ? 'mpesa' : (o.paymentMethod || 'cod'),
     }));
 
     // 4. Get Campaigns
@@ -576,3 +648,158 @@ export async function pullSyncData(): Promise<Record<string, any>> {
     throw error;
   }
 }
+
+// ---------------------------------------------------------------------------
+// User & Password Reset Helpers (MySQL)
+// ---------------------------------------------------------------------------
+
+export async function getMysqlUserByEmail(email: string): Promise<any | null> {
+  const pool = await getDbPool();
+  if (!pool || !email) return null;
+  const normalized = email.trim().toLowerCase();
+  const [rows]: any = await pool.query('SELECT * FROM users WHERE email = ? LIMIT 1', [normalized]);
+  if (!rows || rows.length === 0) return null;
+  return rows[0];
+}
+
+export async function getMysqlUserById(userId: string): Promise<any | null> {
+  const pool = await getDbPool();
+  if (!pool || !userId) return null;
+  const [rows]: any = await pool.query('SELECT * FROM users WHERE id = ? LIMIT 1', [userId]);
+  if (!rows || rows.length === 0) return null;
+  return rows[0];
+}
+
+export async function updateMysqlUserPasswordById(
+  userId: string,
+  newPasswordHash: string,
+  nowIso: string = new Date().toISOString()
+): Promise<boolean> {
+  const pool = await getDbPool();
+  if (!pool || !userId) return false;
+  const [res]: any = await pool.query(
+    'UPDATE users SET password_hash = ?, updated_at = ? WHERE id = ?',
+    [newPasswordHash, nowIso, userId]
+  );
+  return (res?.affectedRows || 0) > 0;
+}
+
+export async function createMysqlPasswordResetToken(data: {
+  id?: string;
+  userId: string;
+  tokenHash: string;
+  expiresAt: string;
+  userEmail?: string;
+  ipAddress?: string;
+  createdAt?: string;
+}): Promise<any> {
+  const pool = await getDbPool();
+  if (!pool) throw new Error('MySQL pool not available');
+
+  const id = data.id || `prt-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+  const nowIso = data.createdAt || new Date().toISOString();
+
+  // Invalidate previous active tokens for this user
+  await pool.query(
+    'UPDATE password_reset_tokens SET used_at = ? WHERE user_id = ? AND used_at IS NULL',
+    [nowIso, data.userId]
+  );
+
+  await pool.query(
+    `INSERT INTO password_reset_tokens (id, user_id, token_hash, expires_at, used_at, created_at, user_email, ip_address)
+     VALUES (?, ?, ?, ?, NULL, ?, ?, ?)`,
+    [id, data.userId, data.tokenHash, data.expiresAt, nowIso, data.userEmail || null, data.ipAddress || null]
+  );
+
+  return {
+    id,
+    user_id: data.userId,
+    token_hash: data.tokenHash,
+    expires_at: data.expiresAt,
+    used_at: null,
+    created_at: nowIso,
+    user_email: data.userEmail,
+    ip_address: data.ipAddress,
+  };
+}
+
+export async function invalidatePreviousMysqlUserTokens(userId: string): Promise<void> {
+  const pool = await getDbPool();
+  if (!pool || !userId) return;
+  const nowIso = new Date().toISOString();
+  await pool.query(
+    'UPDATE password_reset_tokens SET used_at = ? WHERE user_id = ? AND used_at IS NULL',
+    [nowIso, userId]
+  );
+}
+
+export async function getMysqlPasswordResetToken(tokenHash: string): Promise<any | null> {
+  const pool = await getDbPool();
+  if (!pool || !tokenHash) return null;
+  const [rows]: any = await pool.query('SELECT * FROM password_reset_tokens WHERE token_hash = ? LIMIT 1', [tokenHash]);
+  if (!rows || rows.length === 0) return null;
+  return rows[0];
+}
+
+export async function consumeMysqlPasswordResetToken(
+  tokenHash: string,
+  newPasswordHash: string,
+  nowIso: string = new Date().toISOString()
+): Promise<{ success: boolean; userId?: string; error?: string }> {
+  const pool = await getDbPool();
+  if (!pool) throw new Error('MySQL pool not available');
+
+  const connection = await pool.getConnection();
+  try {
+    await connection.beginTransaction();
+
+    // 1. Verify token exists and is valid
+    const [tokenRows]: any = await connection.query(
+      'SELECT id, user_id FROM password_reset_tokens WHERE token_hash = ? AND used_at IS NULL AND expires_at > ? LIMIT 1',
+      [tokenHash, nowIso]
+    );
+
+    if (!tokenRows || tokenRows.length === 0) {
+      await connection.rollback();
+      return { success: false, error: 'INVALID_OR_EXPIRED_TOKEN' };
+    }
+
+    const userId = String(tokenRows[0].user_id);
+
+    // 2. Conditional atomic update on the token
+    const [updateRes]: any = await connection.query(
+      'UPDATE password_reset_tokens SET used_at = ? WHERE token_hash = ? AND used_at IS NULL AND expires_at > ?',
+      [nowIso, tokenHash, nowIso]
+    );
+
+    if (updateRes?.affectedRows !== 1) {
+      await connection.rollback();
+      return { success: false, error: 'TOKEN_ALREADY_USED_OR_CONCURRENT_UPDATE' };
+    }
+
+    // 3. Update password in users table
+    await connection.query(
+      'UPDATE users SET password_hash = ?, updated_at = ? WHERE id = ?',
+      [newPasswordHash, nowIso, userId]
+    );
+
+    await connection.commit();
+    return { success: true, userId };
+  } catch (err) {
+    await connection.rollback();
+    throw err;
+  } finally {
+    connection.release();
+  }
+}
+
+export async function cleanupExpiredMysqlResetTokens(nowIso: string = new Date().toISOString()): Promise<number> {
+  const pool = await getDbPool();
+  if (!pool) return 0;
+  const [res]: any = await pool.query(
+    'DELETE FROM password_reset_tokens WHERE expires_at < ? OR used_at IS NOT NULL',
+    [nowIso]
+  );
+  return res?.affectedRows || 0;
+}
+

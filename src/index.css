@@ -157,14 +157,52 @@
 
   --background: #F8FAFC;
   --surface: #FFFFFF;
+  --surface-card: #FFFFFF;
+  --surface-subtle: #F8FAFC;
   --surface-muted: #F1F5F9;
+  --surface-elevated: #FFFFFF;
 
   --text-primary: #0F172A;
   --text-secondary: #475569;
   --text-muted: #94A3B8;
 
   --border: #E2E8F0;
+  --border-subtle: #F1F5F9;
   --border-strong: #CBD5E1;
+}
+
+.dark, :root.dark {
+  --primary: #6366F1;
+  --primary-hover: #818CF8;
+  --primary-soft: #1E1B4B;
+
+  --accent: #F59E0B;
+  --accent-hover: #FBBF24;
+  --accent-soft: #451A03;
+
+  --success: #10B981;
+  --success-soft: #064E3B;
+
+  --error: #F87171;
+  --error-soft: #450A0A;
+
+  --warning: #FB923C;
+  --warning-soft: #431407;
+
+  --background: #090D16;
+  --surface: #0F172A;
+  --surface-card: #111827;
+  --surface-subtle: #162032;
+  --surface-muted: #1E293B;
+  --surface-elevated: #1E293B;
+
+  --text-primary: #F8FAFC;
+  --text-secondary: #CBD5E1;
+  --text-muted: #94A3B8;
+
+  --border: #1E293B;
+  --border-subtle: #162032;
+  --border-strong: #334155;
 }
 
 /* Base Typographic Standards */
@@ -403,71 +441,134 @@
 }
 
 /* ==========================================================================
-   Automated Elegant Dark Mode Mapping for unannotated light-mode utility classes
+   Automated Elegant Dark Mode Mapping & Surface Elevation
    ========================================================================== */
-.dark, .dark * {
-  /* Automatically map light backgrounds to slate/gray-900 palettes */
-  &.bg-white, &.bg-white\/80, &.bg-white\/90 {
-    background-color: #0f172a !important; /* Deep rich slate-900 */
-    border-color: #1e293b !important; /* slate-800 border */
-  }
-  
-  &.bg-gray-50, &.bg-\[\#f8faff\], &.bg-slate-50, &.bg-\[\#F9FAFB\], &.bg-indigo-50\/30 {
-    background-color: #030712 !important; /* Deep black space background */
-  }
-  
-  &.bg-\[\#EEF2F6\]\/55 {
-    background-color: #0f172a !important;
-  }
-
-  &.bg-indigo-50, &.bg-indigo-50\/25, &.bg-indigo-50\/50, &.bg-indigo-100\/60 {
-    background-color: var(--color-indigo-950) !important;
-    border-color: var(--color-indigo-900) !important;
-    color: var(--color-indigo-200) !important;
-  }
-
-  /* Automatically map high-contrast text colors */
-  &.text-gray-950, &.text-gray-900, &.text-gray-805, &.text-gray-800, &.text-gray-750, &.text-gray-700 {
-    color: #f8fafc !important; /* Crisp slate-50 */
-  }
-
-  &.text-gray-600, &.text-gray-550, &.text-gray-500 {
-    color: #94a3b8 !important; /* Slate-400 */
-  }
-  
-  &.text-gray-400 {
-    color: #64748b !important; /* Slate-500 */
-  }
-
-  &.text-indigo-805, &.text-indigo-800, &.text-indigo-900 {
-    color: var(--color-indigo-200) !important;
-  }
-
-  /* Automatically map border colors */
-  &.border-gray-50, &.border-gray-100, &.border-gray-150, &.border-gray-200, &.border-indigo-50, &.border-indigo-100, &.border-indigo-50\/65 {
-    border-color: #1e293b !important; /* slate-800 */
-  }
-
-  /* Map inputs, forms, textareas, etc. (excluding native checkboxes and radios) */
-  &.bg-white input:not([type="checkbox"]):not([type="radio"]),
-  &.bg-white textarea,
-  &.bg-white select,
-  &.bg-\[\#F9FAFB\] input:not([type="checkbox"]):not([type="radio"]),
-  &.bg-\[\#F9FAFB\] textarea {
-    background-color: #0f172a !important;
-    color: #f8fafc !important;
-    border-color: #334155 !important;
-  }
-
-  &::placeholder {
-    color: #475569 !important;
-  }
+html.dark, html.dark body {
+  background-color: #090d16 !important;
+  color: #f8fafc !important;
 }
 
-/* Base override for body when dark mode is enabled */
-html.dark, html.dark body {
-  background-color: #030712 !important;
-  color: #cbd5e1 !important;
+.dark {
+  /* Scrollbars in dark mode */
+  ::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.15);
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.28);
+  }
+  ::-webkit-scrollbar-track {
+    background: rgba(0, 0, 0, 0.2);
+  }
+
+  /* Custom tab & table scrollbars in dark mode */
+  .custom-tab-scroll {
+    scrollbar-color: rgba(99, 102, 241, 0.6) rgba(15, 23, 42, 0.5);
+  }
+  .custom-tab-scroll::-webkit-scrollbar-track {
+    background: rgba(15, 23, 42, 0.6);
+  }
+  .custom-tab-scroll::-webkit-scrollbar-thumb {
+    background: rgba(99, 102, 241, 0.5);
+  }
+  .custom-tab-scroll::-webkit-scrollbar-thumb:hover {
+    background: rgba(99, 102, 241, 0.8);
+  }
+
+  .custom-table-scroll {
+    scrollbar-color: rgba(255, 255, 255, 0.15) rgba(15, 23, 42, 0.5);
+  }
+  .custom-table-scroll::-webkit-scrollbar-track {
+    background: rgba(15, 23, 42, 0.6);
+  }
+  .custom-table-scroll::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.15);
+  }
+  .custom-table-scroll::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.28);
+  }
+
+  /* Universal Unannotated Light Surface Fallbacks (Non-destructive) */
+  .bg-white:not([class*="dark:bg-"]) {
+    background-color: #0f172a;
+    border-color: #1e293b;
+  }
+  
+  .bg-gray-50:not([class*="dark:bg-"]),
+  .bg-slate-50:not([class*="dark:bg-"]),
+  .bg-\[\#f8faff\]:not([class*="dark:bg-"]),
+  .bg-\[\#F9FAFB\]:not([class*="dark:bg-"]),
+  .bg-\[\#f8fafc\]:not([class*="dark:bg-"]),
+  .bg-\[\#fbfcfd\]\/40:not([class*="dark:bg-"]) {
+    background-color: #090d16;
+  }
+
+  .bg-gray-100:not([class*="dark:bg-"]),
+  .bg-slate-100:not([class*="dark:bg-"]) {
+    background-color: #1e293b;
+    border-color: #334155;
+  }
+
+  .bg-\[\#EEF2F6\]\/55:not([class*="dark:bg-"]) {
+    background-color: #0f172a;
+  }
+
+  /* High-Contrast Typography Mapping for unannotated dark text */
+  .text-gray-950:not([class*="dark:text-"]),
+  .text-gray-900:not([class*="dark:text-"]),
+  .text-slate-950:not([class*="dark:text-"]),
+  .text-slate-900:not([class*="dark:text-"]),
+  .text-gray-850:not([class*="dark:text-"]),
+  .text-gray-800:not([class*="dark:text-"]) {
+    color: #f8fafc;
+  }
+
+  .text-gray-700:not([class*="dark:text-"]),
+  .text-slate-700:not([class*="dark:text-"]),
+  .text-gray-650:not([class*="dark:text-"]),
+  .text-gray-600:not([class*="dark:text-"]),
+  .text-slate-600:not([class*="dark:text-"]) {
+    color: #cbd5e1;
+  }
+
+  .text-gray-500:not([class*="dark:text-"]),
+  .text-gray-400:not([class*="dark:text-"]),
+  .text-slate-500:not([class*="dark:text-"]),
+  .text-slate-400:not([class*="dark:text-"]) {
+    color: #94a3b8;
+  }
+
+  /* Borders fallback for unannotated light borders */
+  .border-gray-50:not([class*="dark:border-"]),
+  .border-gray-100:not([class*="dark:border-"]),
+  .border-gray-150:not([class*="dark:border-"]),
+  .border-gray-200:not([class*="dark:border-"]),
+  .border-slate-100:not([class*="dark:border-"]),
+  .border-slate-200:not([class*="dark:border-"]),
+  .border-indigo-50:not([class*="dark:border-"]),
+  .border-indigo-100:not([class*="dark:border-"]) {
+    border-color: #1e293b;
+  }
+
+  /* Crisp Inputs, Forms, Textareas, Selects */
+  input:not([type="checkbox"]):not([type="radio"]):not([type="button"]):not([type="submit"]):not([class*="dark:bg-"]),
+  textarea:not([class*="dark:bg-"]),
+  select:not([class*="dark:bg-"]) {
+    background-color: #0f172a;
+    color: #f8fafc;
+    border-color: #334155;
+  }
+
+  input:not([type="checkbox"]):not([type="radio"]):focus-visible,
+  textarea:focus-visible,
+  select:focus-visible {
+    border-color: #6366f1;
+    outline: none;
+    box-shadow: 0 0 0 1px #6366f1, 0 0 12px rgba(99, 102, 241, 0.25);
+  }
+
+  ::placeholder {
+    color: #64748b;
+  }
 }
 
 /* ==============================================================================
@@ -504,5 +605,40 @@ body {
   background-color: transparent !important;
   box-shadow: none !important;
   border: none !important;
+}
+
+/* ==============================================================================
+   Mobile & Tablet First Ergonomics & Touch Optimizations
+   ============================================================================== */
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
+html, body {
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: none;
+}
+
+/* Safe area inset helpers for modern edge-to-edge mobile screens */
+.pb-safe {
+  padding-bottom: max(1rem, env(safe-area-inset-bottom, 1rem));
+}
+
+.pt-safe {
+  padding-top: max(1rem, env(safe-area-inset-top, 1rem));
+}
+
+/* Prevent auto-zooming on focus in iOS Mobile Safari */
+@media screen and (max-width: 768px) {
+  input[type="text"],
+  input[type="number"],
+  input[type="email"],
+  input[type="tel"],
+  input[type="search"],
+  input[type="password"],
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
 }
 

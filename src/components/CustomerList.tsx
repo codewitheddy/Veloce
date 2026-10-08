@@ -369,9 +369,38 @@ export const CustomerList: React.FC<CustomerListProps> = ({ initialCustomerId, l
       {/* Customer Directory Table Card */}
       <div className="overflow-hidden rounded-2xl border border-gray-150 dark:border-gray-850 bg-white dark:bg-gray-950 shadow-3xs">
         {error && (
-          <div className="p-4 bg-rose-50 dark:bg-rose-950/40 border-b border-rose-100 dark:border-rose-900/40 text-rose-700 dark:text-rose-400 text-xs flex items-center gap-2 font-medium">
-            <AlertCircle className="w-4 h-4 shrink-0" />
-            <span>{error}</span>
+          <div className="p-4 bg-rose-50 dark:bg-rose-950/40 border-b border-rose-100 dark:border-rose-900/40 text-rose-700 dark:text-rose-400 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3 font-medium">
+            <div className="flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
+              <span>
+                {error.includes('INVALID_TOKEN') || error.includes('expired') || error.includes('session token') || error.includes('Administrative') || error.includes('Authentication')
+                  ? 'Your administrative session has expired or is invalid. Please sign in to refresh your admin session.'
+                  : error}
+              </span>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={() => fetchCustomers()}
+                className="px-3 py-1.5 rounded-xl border border-rose-200 dark:border-rose-900 bg-white dark:bg-gray-900 text-rose-700 dark:text-rose-300 text-xs font-bold hover:bg-rose-100 dark:hover:bg-rose-950/80 transition-all cursor-pointer shadow-2xs"
+              >
+                Retry
+              </button>
+              {(error.includes('INVALID_TOKEN') || error.includes('expired') || error.includes('session token') || error.includes('Authentication') || error.includes('Administrative')) && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    localStorage.removeItem('veloce_admin_token');
+                    localStorage.removeItem('access_token');
+                    localStorage.removeItem('veloce_auth_token');
+                    window.dispatchEvent(new CustomEvent('veloce_require_admin_login'));
+                  }}
+                  className="px-3.5 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold transition-all shadow-2xs cursor-pointer"
+                >
+                  Admin Sign In
+                </button>
+              )}
+            </div>
           </div>
         )}
 

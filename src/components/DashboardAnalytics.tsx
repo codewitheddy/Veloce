@@ -5,7 +5,7 @@
 
 import React, { useState, useEffect, useRef, Suspense, lazy } from 'react';
 import DOMPurify from 'dompurify';
-import { LineChart, TrendingUp, TrendingDown, DollarSign, MousePointer, Activity, Settings, UserCheck, Inbox, Plus, Check, Trash2, X, AlertCircle, Tag, Percent, Sparkles, AlertTriangle, Edit2, Search, QrCode, Printer, Download, ArrowLeft, PackagePlus, Image as ImageIcon, Layers, Mail, Calendar, Shield, Database, Upload, Lock, Unlock, RotateCcw, FileJson, HardDrive, RefreshCw, CheckCircle2, Eye, EyeOff, ShieldCheck, ShieldAlert, AlertOctagon, Truck, MapPin, History, User, Copy, ExternalLink, FileText, CheckCircle, ShoppingBag, Navigation, ChevronDown, ChevronLeft, ChevronRight, ArrowUpDown, ArrowUp, ArrowDown, Package, Loader2, Archive, BarChart3, FolderTree, CreditCard, Users, Zap, Scissors, Menu, SlidersHorizontal, Type, Edit3, LogOut } from 'lucide-react';
+import { LineChart, TrendingUp, TrendingDown, DollarSign, MousePointer, Activity, Settings, UserCheck, Inbox, Plus, Check, Trash2, X, AlertCircle, Tag, Percent, Sparkles, AlertTriangle, Edit2, Search, QrCode, Printer, Download, ArrowLeft, PackagePlus, Image as ImageIcon, Layers, Mail, Calendar, Shield, Database, Upload, Lock, Unlock, RotateCcw, FileJson, HardDrive, RefreshCw, CheckCircle2, Eye, EyeOff, ShieldCheck, ShieldAlert, AlertOctagon, Truck, MapPin, History, User, Copy, ExternalLink, FileText, CheckCircle, ShoppingBag, Navigation, ChevronDown, ChevronLeft, ChevronRight, ArrowUpDown, ArrowUp, ArrowDown, Package, Loader2, Archive, BarChart3, FolderTree, CreditCard, Users, Zap, Scissors, Menu, SlidersHorizontal, Type, Edit3, LogOut, Send, Clock, Calculator } from 'lucide-react';
 import {
   ResponsiveContainer as RechartsResponsiveContainer,
   AreaChart as RechartsAreaChart,
@@ -40,21 +40,26 @@ import { sqliteService, fetchProducts } from '../services/api';
 import InventoryProductsTable from './InventoryProductsTable';
 import ProductEditHub from './ProductEditHub';
 import { CustomerList } from './CustomerList';
+import { getAuthHeaders } from '../utils/authTokens';
+import { ordersApi } from '../api/orders';
 
-// Lazy-loaded analytics and modal sub-components for code splitting
-const ComparativeD3Chart = lazy(() => import('./ComparativeD3Chart'));
-const RechartsAnalytics = lazy(() => import('./RechartsAnalytics'));
-const DailyRevenueConversionChart = lazy(() => import('./DailyRevenueConversionChart'));
-const Monthly6MonthTrends = lazy(() => import('./Monthly6MonthTrends'));
-const StockThresholdChart = lazy(() => import('./StockThresholdChart'));
-const SuggestRestockModal = lazy(() => import('./SuggestRestockModal'));
-const EmailCampaignsPanel = lazy(() => import('./EmailCampaignsPanel'));
-const BulkCatalogPriceAdjustmentPage = lazy(() => import('./BulkCatalogPriceAdjustmentPage'));
-const ReturnsCenterDashboard = lazy(() => import('./ReturnsCenterDashboard'));
-const BulkProductUploadModal = lazy(() => import('./BulkProductUploadModal'));
-const OrderReceiptModal = lazy(() => import('./OrderReceiptModal'));
-const ReviewFunnelAnalytics = lazy(() => import('./ReviewFunnelAnalytics'));
-const SupplierManagementPanel = lazy(() => import('./SupplierManagementPanel'));
+import { lazyWithRetry } from '../lib/lazyWithRetry';
+
+// Lazy-loaded analytics and modal sub-components for code splitting with auto-retry resilience
+const ComparativeD3Chart = lazyWithRetry(() => import('./ComparativeD3Chart'), 'ComparativeD3Chart');
+const RechartsAnalytics = lazyWithRetry(() => import('./RechartsAnalytics'), 'RechartsAnalytics');
+const DailyRevenueConversionChart = lazyWithRetry(() => import('./DailyRevenueConversionChart'), 'DailyRevenueConversionChart');
+const Monthly6MonthTrends = lazyWithRetry(() => import('./Monthly6MonthTrends'), 'Monthly6MonthTrends');
+const StockThresholdChart = lazyWithRetry(() => import('./StockThresholdChart'), 'StockThresholdChart');
+const SuggestRestockModal = lazyWithRetry(() => import('./SuggestRestockModal'), 'SuggestRestockModal');
+const EmailCampaignsPanel = lazyWithRetry(() => import('./EmailCampaignsPanel'), 'EmailCampaignsPanel');
+const BulkCatalogPriceAdjustmentPage = lazyWithRetry(() => import('./BulkCatalogPriceAdjustmentPage'), 'BulkCatalogPriceAdjustmentPage');
+const ReturnsCenterDashboard = lazyWithRetry(() => import('./ReturnsCenterDashboard'), 'ReturnsCenterDashboard');
+const BulkProductUploadModal = lazyWithRetry(() => import('./BulkProductUploadModal'), 'BulkProductUploadModal');
+const OrderReceiptModal = lazyWithRetry(() => import('./OrderReceiptModal'), 'OrderReceiptModal');
+const ReviewFunnelAnalytics = lazyWithRetry(() => import('./ReviewFunnelAnalytics'), 'ReviewFunnelAnalytics');
+const SupplierManagementPanel = lazyWithRetry(() => import('./SupplierManagementPanel'), 'SupplierManagementPanel');
+const AdminPaymentVerificationModal = lazyWithRetry(() => import('./AdminPaymentVerificationModal'), 'AdminPaymentVerificationModal');
 
 const ChartLoaderFallback = () => (
   <div className="p-8 my-4 rounded-xl border border-gray-150 dark:border-gray-850 bg-white dark:bg-gray-950 flex flex-col items-center justify-center gap-2 text-center">
@@ -70,6 +75,49 @@ const cleanDecimals = (val: number | string, maxDecimals: number = 2): string =>
   return formatted.replace(/\.0+$/, '').replace(/(\.\d*?[1-9])0+$/, '$1');
 };
 
+export type AdminSubTabId =
+  | 'analytics'
+  | 'products'
+  | 'orders'
+  | 'customers'
+  | 'custom-clothing'
+  | 'email'
+  | 'promotions'
+  | 'inventory-logs'
+  | 'inventory-alerts'
+  | 'backup'
+  | 'order-lookup'
+  | 'categories'
+  | 'bulk-price'
+  | 'returns'
+  | 'shipping'
+  | 'hero-slider'
+  | 'edit-product'
+  | 'site-settings'
+  | 'suppliers';
+
+export const VALID_ADMIN_SUB_TABS: AdminSubTabId[] = [
+  'analytics',
+  'products',
+  'orders',
+  'customers',
+  'custom-clothing',
+  'email',
+  'promotions',
+  'inventory-logs',
+  'inventory-alerts',
+  'backup',
+  'order-lookup',
+  'categories',
+  'bulk-price',
+  'returns',
+  'shipping',
+  'hero-slider',
+  'edit-product',
+  'site-settings',
+  'suppliers',
+];
+
 interface DashboardAnalyticsProps {
   products: Product[];
   orders: Order[];
@@ -77,6 +125,7 @@ interface DashboardAnalyticsProps {
   onUpdateOrderStatus: (orderId: string, status: Order['status']) => void;
   onUpdateOrderPaymentStatus?: (orderId: string, paymentStatus: 'unpaid' | 'paid', paidNote?: string) => void;
   onDeleteProduct: (id: string, type?: 'proprietary' | 'affiliate', skipConfirm?: boolean) => void;
+  onBulkDeleteProducts?: (ids: string[]) => void;
   onUpdateProductStock: (id: string, newStock: number) => void;
   onUpdateProductSku: (id: string, newSku: string) => void;
   onUpdateProductThreshold: (id: string, newThreshold: number) => void;
@@ -117,6 +166,7 @@ export default function DashboardAnalytics({
   onUpdateOrderStatus,
   onUpdateOrderPaymentStatus,
   onDeleteProduct,
+  onBulkDeleteProducts,
   onUpdateProductStock,
   onUpdateProductSku,
   onUpdateProductThreshold,
@@ -160,11 +210,31 @@ export default function DashboardAnalytics({
 
   const isBackupOverdue = !lastBackupTime || (Date.now() - lastBackupTime) >= 7 * 24 * 60 * 60 * 1000;
 
-  // Tabs within Admin Panel
-  const [adminSubTab, setAdminSubTab] = useState<'analytics' | 'products' | 'orders' | 'customers' | 'custom-clothing' | 'email' | 'promotions' | 'inventory-logs' | 'inventory-alerts' | 'backup' | 'order-lookup' | 'categories' | 'bulk-price' | 'returns' | 'shipping' | 'hero-slider' | 'edit-product' | 'site-settings' | 'suppliers'>((initialAdminSubTab as any) || (initialEditingProduct ? 'edit-product' : 'analytics'));
+  // Tabs within Admin Panel with persistence
+  const [adminSubTab, setAdminSubTab] = useState<AdminSubTabId>(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const urlTab = (params.get('subtab') || params.get('tab') || params.get('section')) as AdminSubTabId | null;
+      if (urlTab && VALID_ADMIN_SUB_TABS.includes(urlTab)) {
+        return urlTab;
+      }
+      const savedTab = localStorage.getItem('veloce_admin_subtab') as AdminSubTabId | null;
+      if (savedTab && VALID_ADMIN_SUB_TABS.includes(savedTab)) {
+        return savedTab;
+      }
+    }
+    if (initialAdminSubTab && VALID_ADMIN_SUB_TABS.includes(initialAdminSubTab as AdminSubTabId)) {
+      return initialAdminSubTab as AdminSubTabId;
+    }
+    if (initialEditingProduct) {
+      return 'edit-product';
+    }
+    return 'analytics';
+  });
   
   const [isMobileAdminNavOpen, setIsMobileAdminNavOpen] = useState<boolean>(false);
   const [adminMenuFilter, setAdminMenuFilter] = useState<string>('');
+  const [isPaymentVerifyModalOpen, setIsPaymentVerifyModalOpen] = useState<boolean>(false);
   const adminNavTabsRef = React.useRef<HTMLDivElement>(null);
 
   // Admin Global Search State & Keyboard Navigation
@@ -333,20 +403,17 @@ export default function DashboardAnalytics({
         });
       }
 
-      const syncRes = await fetch('/api/sqlite/sync-pull');
-      if (syncRes.ok) {
-        const syncData = await syncRes.json();
-        if (syncData.success && syncData.data) {
-          const d = syncData.data;
-          if (Array.isArray(d.veloce_orders)) {
-            setLiveDbOrders(d.veloce_orders);
-          }
-          if (Array.isArray(d.veloce_products)) {
-            setLiveDbProducts(d.veloce_products);
-          }
-
-          setLastLiveDbSyncTime(new Date().toLocaleTimeString());
+      const syncData = await sqliteService.syncPull().catch(() => null);
+      if (syncData && syncData.success && syncData.data) {
+        const d = syncData.data;
+        if (Array.isArray(d.veloce_orders)) {
+          setLiveDbOrders(d.veloce_orders);
         }
+        if (Array.isArray(d.veloce_products)) {
+          setLiveDbProducts(d.veloce_products);
+        }
+
+        setLastLiveDbSyncTime(new Date().toLocaleTimeString());
       }
     } catch (err) {
       console.warn('[DashboardAnalytics] Live database fetch fallback:', err);
@@ -390,18 +457,14 @@ export default function DashboardAnalytics({
       }
 
       // 2. Fetch from backend SQLite sync-pull API
-      const syncRes = await fetch('/api/sqlite/sync-pull');
-      if (syncRes.ok) {
-        const syncData = await syncRes.json();
-        if (syncData.success && syncData.data) {
-          const d = syncData.data;
-          if (!fetchedProducts && Array.isArray(d.veloce_products)) {
-            fetchedProducts = d.veloce_products;
-          }
-          if (!fetchedOrders && Array.isArray(d.veloce_orders)) {
-            fetchedOrders = d.veloce_orders;
-          }
-
+      const syncData = await sqliteService.syncPull().catch(() => null);
+      if (syncData && syncData.success && syncData.data) {
+        const d = syncData.data;
+        if (!fetchedProducts && Array.isArray(d.veloce_products)) {
+          fetchedProducts = d.veloce_products;
+        }
+        if (!fetchedOrders && Array.isArray(d.veloce_orders)) {
+          fetchedOrders = d.veloce_orders;
         }
       }
 
@@ -547,10 +610,159 @@ export default function DashboardAnalytics({
   const [selectedAdminDetailOrder, setSelectedAdminDetailOrder] = useState<Order | null>(null);
   const [autoPrintOnce, setAutoPrintOnce] = useState(false);
   const [unpaidPromptOrder, setUnpaidPromptOrder] = useState<Order | null>(null);
+  const [sendingFollowupOrderId, setSendingFollowupOrderId] = useState<string | null>(null);
+  const [followupSuccessMessage, setFollowupSuccessMessage] = useState<string | null>(null);
+
+  const handleSendPaymentFollowup = async (orderId: string, customerEmail?: string) => {
+    setSendingFollowupOrderId(orderId);
+    try {
+      const res = await fetch(`/api/payments/admin/orders/${encodeURIComponent(orderId)}/resend-paybill`, {
+        method: 'POST',
+        headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setFollowupSuccessMessage(`Payment follow-up email sent to ${customerEmail || 'customer'}! (Follow-up #${data.reminderCount || 1})`);
+        setTimeout(() => setFollowupSuccessMessage(null), 6000);
+      } else {
+        alert(data.error || 'Failed to send payment follow-up email');
+      }
+    } catch (err: any) {
+      alert(err?.message || 'Network error sending payment follow-up email');
+    } finally {
+      setSendingFollowupOrderId(null);
+    }
+  };
 
   const isOrderPaid = (ord: Order) => {
-    const isCod = ord.paymentMethod === 'cod';
-    return ord.paymentStatus === 'paid' || (!isCod && ord.paymentStatus !== 'unpaid');
+    return Boolean(ord.isPaid || ord.paymentStatus === 'paid');
+  };
+
+  // Strict Order Workflow Dialog State & Handlers
+  const [workflowDialog, setWorkflowDialog] = useState<{
+    isOpen: boolean;
+    order: Order | null;
+    actionType: 'confirm-payment' | 'mark-shipped' | 'confirm-delivery' | 'mark-completed' | 'cancel' | 'view-timeline' | 'quote-delivery' | null;
+    trackingNumber: string;
+    courierName: string;
+    deliveryPerson: string;
+    deliveryNote: string;
+    deliveryFeeInput: string;
+    quotedCourier: string;
+    notes: string;
+    isLoading: boolean;
+    error: string | null;
+  }>({
+    isOpen: false,
+    order: null,
+    actionType: null,
+    trackingNumber: '',
+    courierName: 'Ropenix Express Courier',
+    deliveryPerson: 'Assigned Courier Rider',
+    deliveryNote: 'Package confirmed received by customer',
+    deliveryFeeInput: '',
+    quotedCourier: 'uber',
+    notes: '',
+    isLoading: false,
+    error: null,
+  });
+
+  const openWorkflowDialog = (order: Order, actionType: 'confirm-payment' | 'mark-shipped' | 'confirm-delivery' | 'mark-completed' | 'cancel' | 'view-timeline' | 'quote-delivery') => {
+    const defaultCourier = order.preferredCourier && order.preferredCourier !== 'any' ? order.preferredCourier : 'uber';
+    setWorkflowDialog({
+      isOpen: true,
+      order,
+      actionType,
+      trackingNumber: order.trackingNumber || `ROP-TRK-${String(order.id).slice(-6).toUpperCase()}`,
+      courierName: order.quotedCourier || 'Uber Package',
+      deliveryPerson: order.deliveryPerson || 'Assigned Courier Rider',
+      deliveryNote: order.deliveryNote || 'Package confirmed received by customer',
+      deliveryFeeInput: order.quotedDeliveryFee ? String(order.quotedDeliveryFee) : (order.shippingFee ? String(order.shippingFee) : '250'),
+      quotedCourier: defaultCourier,
+      notes: order.deliveryQuoteNotes || '',
+      isLoading: false,
+      error: null,
+    });
+  };
+
+  const handleExecuteWorkflow = async () => {
+    if (!workflowDialog.order || !workflowDialog.actionType) return;
+    const ord = workflowDialog.order;
+    setWorkflowDialog(prev => ({ ...prev, isLoading: true, error: null }));
+
+    try {
+      let updated: Order;
+      if (workflowDialog.actionType === 'quote-delivery') {
+        const fee = parseFloat(workflowDialog.deliveryFeeInput) || 0;
+        const courier = workflowDialog.quotedCourier || 'uber';
+        const sub = ord.subtotal ?? (ord.total - (ord.shippingFee || 0));
+        const tax = ord.taxTotal ?? 0;
+        const discount = ord.discountAmount ?? 0;
+        const newTotal = sub + tax + fee - discount;
+
+        updated = await ordersApi.updateOrderStatus(ord.id, 'delivery_quoted', {
+          notes: `Delivery fee quoted: KSh ${fee.toLocaleString('en-KE')} via ${courier.toUpperCase()}. ${workflowDialog.notes ? `Note: ${workflowDialog.notes}` : ''}`,
+        });
+
+        // Enrich updated order properties
+        updated.shippingFee = fee;
+        updated.quotedDeliveryFee = fee;
+        updated.quotedCourier = courier;
+        updated.deliveryFeeStatus = 'quoted';
+        updated.deliveryQuoteNotes = workflowDialog.notes || undefined;
+        updated.total = newTotal;
+        updated.status = 'delivery_quoted';
+      } else if (workflowDialog.actionType === 'confirm-payment') {
+        updated = await ordersApi.confirmPayment(ord.id, {
+          paymentReference: workflowDialog.notes || 'CONFIRMED-BY-ADMIN',
+          adminNotes: workflowDialog.notes || 'Payment confirmed by administrator',
+        });
+        if (onUpdateOrderPaymentStatus) {
+          onUpdateOrderPaymentStatus(ord.id, 'paid');
+        }
+      } else if (workflowDialog.actionType === 'mark-shipped') {
+        updated = await ordersApi.markShipped(ord.id, {
+          trackingNumber: workflowDialog.trackingNumber || `ROP-TRK-${String(ord.id).slice(-6).toUpperCase()}`,
+          courierName: workflowDialog.courierName || 'Ropenix Express Courier',
+          notes: workflowDialog.notes,
+        });
+      } else if (workflowDialog.actionType === 'confirm-delivery') {
+        updated = await ordersApi.confirmDelivery(ord.id, {
+          deliveryPerson: workflowDialog.deliveryPerson || 'Assigned Courier Rider',
+          deliveryNote: workflowDialog.deliveryNote || 'Package confirmed received by customer',
+        });
+      } else if (workflowDialog.actionType === 'mark-completed') {
+        updated = await ordersApi.markCompleted(ord.id, workflowDialog.notes);
+      } else if (workflowDialog.actionType === 'cancel') {
+        updated = await ordersApi.updateOrderStatus(ord.id, 'cancelled', {
+          notes: workflowDialog.notes || 'Cancelled by administrator',
+        });
+      } else {
+        return;
+      }
+
+      if (onUpdateOrderStatus) {
+        onUpdateOrderStatus(ord.id, updated.status);
+      }
+
+      setWorkflowDialog({
+        isOpen: false,
+        order: null,
+        actionType: null,
+        trackingNumber: '',
+        courierName: 'Ropenix Express Courier',
+        deliveryPerson: 'Assigned Courier Rider',
+        deliveryNote: 'Package confirmed received by customer',
+        deliveryFeeInput: '',
+        quotedCourier: 'uber',
+        notes: '',
+        isLoading: false,
+        error: null,
+      });
+    } catch (err: any) {
+      const errorMsg = err?.response?.data?.error || err?.message || 'Workflow action failed.';
+      setWorkflowDialog(prev => ({ ...prev, isLoading: false, error: errorMsg }));
+    }
   };
 
   // New proprietary product form state
@@ -574,7 +786,21 @@ export default function DashboardAnalytics({
   const [newProdFeatures, setNewProdFeatures] = useState('');
   const [newProdSpecs, setNewProdSpecs] = useState('');
   const [newProdWhatsInTheBox, setNewProdWhatsInTheBox] = useState('');
-  const [showAddProdPage, setShowAddProdPage] = useState(false);
+  const [showAddProdPage, setShowAddProdPage] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const action = params.get('action');
+      const create = params.get('create');
+      if (action === 'create' || action === 'add' || action === 'add-product' || create === 'true') {
+        return true;
+      }
+      const saved = localStorage.getItem('veloce_admin_show_add_prod');
+      if (saved === 'true') {
+        return true;
+      }
+    }
+    return false;
+  });
 
   // Returns Management Admin States
   const [returnFilter, setReturnFilter] = useState<'all' | 'pending' | 'approved' | 'resolved' | 'rejected'>('all');
@@ -664,7 +890,19 @@ export default function DashboardAnalytics({
   const [newProdGallery, setNewProdGallery] = useState<string[]>([]);
 
   // Dedicated Product Editing States
-  const [editingProduct, setEditingProduct] = useState<Product | null>(initialEditingProduct || null);
+  const [editingProduct, setEditingProduct] = useState<Product | null>(() => {
+    if (initialEditingProduct) return initialEditingProduct;
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const prodId = params.get('productId') || params.get('editProduct') || params.get('edit_product');
+      const savedProdId = prodId || localStorage.getItem('veloce_admin_editing_product_id');
+      if (savedProdId) {
+        const found = (products || []).find((p) => String(p.id) === String(savedProdId));
+        if (found) return found;
+      }
+    }
+    return null;
+  });
   const [editProdName, setEditProdName] = useState('');
   const [editProdSku, setEditProdSku] = useState('');
   const [editProdDesc, setEditProdDesc] = useState('');
@@ -833,6 +1071,9 @@ export default function DashboardAnalytics({
   const [promoToast, setPromoToast] = useState('');
   const [orderSearchQuery, setOrderSearchQuery] = useState('');
   const [orderStatusFilter, setOrderStatusFilter] = useState<'all' | 'pending' | 'processing' | 'shipped' | 'completed' | 'cancelled' | 'pending-cancellation'>('all');
+  const [orderChannelFilter, setOrderChannelFilter] = useState<'all' | 'whatsapp' | 'web'>('all');
+  const [orderPaymentFilter, setOrderPaymentFilter] = useState<'all' | 'mpesa' | 'cod'>('all');
+  const [orderSettlementFilter, setOrderSettlementFilter] = useState<'all' | 'unpaid' | 'paid'>('all');
   const [orderSortField, setOrderSortField] = useState<'date' | 'customerName' | 'total'>('date');
   const [orderSortDirection, setOrderSortDirection] = useState<'asc' | 'desc'>('desc');
   const [selectedOrderIds, setSelectedOrderIds] = useState<string[]>([]);
@@ -868,6 +1109,91 @@ export default function DashboardAnalytics({
       window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
       document.documentElement.scrollTop = 0;
       document.body.scrollTop = 0;
+    }
+  }, [adminSubTab, showAddProdPage, editingProduct, selectedAdminDetailOrder]);
+
+  // Resolve editing product or selected order once liveDb / products / orders load asynchronously
+  React.useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const params = new URLSearchParams(window.location.search);
+    const targetProdId = params.get('productId') || params.get('editProduct') || localStorage.getItem('veloce_admin_editing_product_id');
+    if (targetProdId && !editingProduct) {
+      const allAvailable = (liveDbProducts && liveDbProducts.length > 0) ? liveDbProducts : products;
+      const matched = (allAvailable || []).find((p) => String(p.id) === String(targetProdId));
+      if (matched) {
+        setEditingProduct(matched);
+      }
+    }
+  }, [products, liveDbProducts, editingProduct]);
+
+  React.useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const params = new URLSearchParams(window.location.search);
+    const targetOrderId = params.get('orderId') || params.get('order_id') || params.get('selectedOrder');
+    if (targetOrderId && !selectedAdminDetailOrder) {
+      const allAvailable = (liveDbOrders && liveDbOrders.length > 0) ? liveDbOrders : orders;
+      const matched = (allAvailable || []).find((o) => String(o.id).toLowerCase() === String(targetOrderId).toLowerCase());
+      if (matched) {
+        setSelectedAdminDetailOrder(matched);
+      }
+    }
+  }, [orders, liveDbOrders, selectedAdminDetailOrder]);
+
+  // Synchronize admin section, product creation/editing, and order selection to URL & localStorage
+  React.useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    try {
+      localStorage.setItem('veloce_admin_subtab', adminSubTab);
+    } catch {
+      // ignore
+    }
+
+    try {
+      if (showAddProdPage) {
+        localStorage.setItem('veloce_admin_show_add_prod', 'true');
+        localStorage.removeItem('veloce_admin_editing_product_id');
+      } else if (editingProduct) {
+        localStorage.removeItem('veloce_admin_show_add_prod');
+        localStorage.setItem('veloce_admin_editing_product_id', String(editingProduct.id));
+      } else {
+        localStorage.removeItem('veloce_admin_show_add_prod');
+        localStorage.removeItem('veloce_admin_editing_product_id');
+      }
+    } catch {
+      // ignore
+    }
+
+    if (window.history.replaceState && window.location.pathname.startsWith('/admin')) {
+      const url = new URL(window.location.href);
+      url.searchParams.set('subtab', adminSubTab);
+      url.searchParams.delete('tab');
+      url.searchParams.delete('section');
+
+      if (showAddProdPage) {
+        url.searchParams.set('action', 'create');
+        url.searchParams.delete('productId');
+        url.searchParams.delete('editProduct');
+      } else if (editingProduct) {
+        url.searchParams.set('action', 'edit');
+        url.searchParams.set('productId', String(editingProduct.id));
+        url.searchParams.delete('editProduct');
+      } else {
+        url.searchParams.delete('action');
+        url.searchParams.delete('create');
+        url.searchParams.delete('productId');
+        url.searchParams.delete('editProduct');
+      }
+
+      if (selectedAdminDetailOrder && adminSubTab === 'orders') {
+        url.searchParams.set('orderId', selectedAdminDetailOrder.id);
+      } else {
+        url.searchParams.delete('orderId');
+        url.searchParams.delete('order_id');
+        url.searchParams.delete('selectedOrder');
+      }
+
+      window.history.replaceState({}, '', url.toString());
     }
   }, [adminSubTab, showAddProdPage, editingProduct, selectedAdminDetailOrder]);
 
@@ -1224,38 +1550,57 @@ admin@ropenix.co.ke`;
       (o) => o.status === 'completed' || o.status === 'processing' || o.status === 'shipped'
     );
 
-    const grossSales = activeOrders.reduce((sum, o) => sum + (o.total || 0), 0);
+    const grossSales = activeOrders.reduce((sum, o) => {
+      const orderTotal = typeof o.total === 'number' ? o.total : parseFloat(String(o.total || '0'));
+      return sum + (isNaN(orderTotal) ? 0 : orderTotal);
+    }, 0);
 
     const totalTaxLiabilities = activeOrders.reduce((sum, o) => {
-      if (typeof o.taxTotal === 'number') return sum + o.taxTotal;
-      const lineTaxes = o.items.reduce((itemSum, item) => {
-        if (typeof item.lineTax === 'number') return itemSum + item.lineTax;
+      const taxVal = typeof o.taxTotal === 'number' ? o.taxTotal : (o.taxTotal ? parseFloat(String(o.taxTotal)) : NaN);
+      if (!isNaN(taxVal)) return sum + taxVal;
+
+      const items = Array.isArray(o.items) ? o.items : [];
+      const lineTaxes = items.reduce((itemSum, item) => {
+        if (!item) return itemSum;
+        const lineTaxVal = typeof item.lineTax === 'number' ? item.lineTax : (item.lineTax ? parseFloat(String(item.lineTax)) : NaN);
+        if (!isNaN(lineTaxVal)) return itemSum + lineTaxVal;
         if (item.taxStatus === 'zero_rated' || item.taxStatus === 'exempt') return itemSum;
-        const ratePercent = item.taxRate ?? 16;
-        const rate = ratePercent / 100;
-        const itemTotal = item.price * item.quantity;
-        return itemSum + (rate > 0 ? (itemTotal * (rate / (1 + rate))) : 0);
+
+        const ratePercent = typeof item.taxRate === 'number' ? item.taxRate : parseFloat(String(item.taxRate ?? 16));
+        const rate = (isNaN(ratePercent) ? 16 : ratePercent) / 100;
+        const price = typeof item.price === 'number' ? item.price : parseFloat(String(item.price || '0'));
+        const qty = typeof item.quantity === 'number' ? item.quantity : parseInt(String(item.quantity || '1'), 10);
+        const itemTotal = (isNaN(price) ? 0 : price) * (isNaN(qty) ? 1 : qty);
+        const computedTax = rate > 0 ? (itemTotal * (rate / (1 + rate))) : 0;
+        return itemSum + (isNaN(computedTax) ? 0 : computedTax);
       }, 0);
-      return sum + lineTaxes;
+      return sum + (isNaN(lineTaxes) ? 0 : lineTaxes);
     }, 0);
 
     const totalCommissions = filteredClickLogsForAnalytics
       .filter((c) => c.converted)
-      .reduce((sum, c) => sum + (c.commission || 0), 0);
+      .reduce((sum, c) => {
+        const comm = typeof c.commission === 'number' ? c.commission : parseFloat(String(c.commission || '0'));
+        return sum + (isNaN(comm) ? 0 : comm);
+      }, 0);
 
-    const netRevenue = Math.max(0, grossSales - totalTaxLiabilities - totalCommissions);
-    const netMarginPercent = grossSales > 0 ? (netRevenue / grossSales) * 100 : 0;
-    const taxSharePercent = grossSales > 0 ? (totalTaxLiabilities / grossSales) * 100 : 0;
-    const commissionSharePercent = grossSales > 0 ? (totalCommissions / grossSales) * 100 : 0;
+    const safeGross = isNaN(grossSales) ? 0 : grossSales;
+    const safeTax = isNaN(totalTaxLiabilities) ? 0 : totalTaxLiabilities;
+    const safeComm = isNaN(totalCommissions) ? 0 : totalCommissions;
+
+    const netRevenue = Math.max(0, safeGross - safeTax - safeComm);
+    const netMarginPercent = safeGross > 0 ? (netRevenue / safeGross) * 100 : 0;
+    const taxSharePercent = safeGross > 0 ? (safeTax / safeGross) * 100 : 0;
+    const commissionSharePercent = safeGross > 0 ? (safeComm / safeGross) * 100 : 0;
 
     return {
-      grossSales,
-      totalTaxLiabilities,
-      totalCommissions,
-      netRevenue,
-      netMarginPercent,
-      taxSharePercent,
-      commissionSharePercent,
+      grossSales: safeGross,
+      totalTaxLiabilities: safeTax,
+      totalCommissions: safeComm,
+      netRevenue: isNaN(netRevenue) ? 0 : netRevenue,
+      netMarginPercent: isNaN(netMarginPercent) ? 0 : netMarginPercent,
+      taxSharePercent: isNaN(taxSharePercent) ? 0 : taxSharePercent,
+      commissionSharePercent: isNaN(commissionSharePercent) ? 0 : commissionSharePercent,
       completedOrderCount: activeOrders.length,
       convertedAffiliateCount: filteredClickLogsForAnalytics.filter((c) => c.converted).length,
     };
@@ -1325,19 +1670,24 @@ admin@ropenix.co.ke`;
     );
 
     const rows = activeOrders.map((o) => {
-      const gross = o.total || 0;
-      const tax = typeof o.taxTotal === 'number' ? o.taxTotal : o.items.reduce((sum, i) => sum + (i.lineTax || 0), 0);
+      const gross = typeof o.total === 'number' ? o.total : (parseFloat(String(o.total || '0')) || 0);
+      const taxVal = typeof o.taxTotal === 'number' ? o.taxTotal : (o.taxTotal ? parseFloat(String(o.taxTotal)) : NaN);
+      const tax = !isNaN(taxVal) ? taxVal : (Array.isArray(o.items) ? o.items.reduce((sum, i) => {
+        const itemTax = typeof i.lineTax === 'number' ? i.lineTax : (i.lineTax ? parseFloat(String(i.lineTax)) : 0);
+        return sum + (isNaN(itemTax) ? 0 : itemTax);
+      }, 0) : 0);
       const matchingClick = filteredClickLogsForAnalytics.find((c) => c.orderId === o.id);
-      const commission = matchingClick ? matchingClick.commission : 0;
-      const net = gross - tax - commission;
+      const commissionVal = matchingClick ? (typeof matchingClick.commission === 'number' ? matchingClick.commission : parseFloat(String(matchingClick.commission || '0'))) : 0;
+      const commission = isNaN(commissionVal) ? 0 : commissionVal;
+      const net = Math.max(0, (isNaN(gross) ? 0 : gross) - (isNaN(tax) ? 0 : tax) - commission);
 
       return [
         `"${o.id}"`,
         `"${o.date}"`,
         `"${o.customerName}"`,
         `"${o.status}"`,
-        gross.toFixed(2),
-        tax.toFixed(2),
+        (isNaN(gross) ? 0 : gross).toFixed(2),
+        (isNaN(tax) ? 0 : tax).toFixed(2),
         commission.toFixed(2),
         net.toFixed(2)
       ].join(',');
@@ -1718,7 +2068,13 @@ admin@ropenix.co.ke`;
     setEditProdSpecs(product.specifications ? product.specifications.map(s => `${s.key}: ${s.value}`).join('\n') : '');
     setEditProdWhatsInTheBox(product.whatsInTheBox || '');
     setEditProdPrice(product.price || 0);
-    setEditProdCostPrice(product.costPrice || 0);
+    setEditProdCostPrice(
+      product.costPrice !== undefined && product.costPrice !== null
+        ? product.costPrice
+        : (product as any)?.cost_price !== undefined && (product as any)?.cost_price !== null
+        ? (product as any).cost_price
+        : 0
+    );
     if (product.previousPrice && product.previousPrice > product.price) {
       setEditProdDiscountType('manual');
       setEditProdPreviousPrice(product.previousPrice);
@@ -1809,6 +2165,7 @@ admin@ropenix.co.ke`;
       price: finalPrice,
       previousPrice: previousPriceValue,
       costPrice: Number(editProdCostPrice),
+      cost_price: Number(editProdCostPrice),
       taxId: editProdTaxId,
       category: editProdCategory,
       type: editProdType,
@@ -1892,6 +2249,10 @@ admin@ropenix.co.ke`;
         "Date",
         "Customer Name",
         "Customer Email",
+        "Checkout Channel",
+        "Payment Method",
+        "Payment Status",
+        "Payment Reference",
         "Workflow Status",
         "Coupon Redeemed",
         "Custom Note Attached",
@@ -1900,11 +2261,18 @@ admin@ropenix.co.ke`;
       ];
       const orderRowsList = orders.map(o => {
         const itemsSummary = (o.items || []).map(itm => `${itm.name} (x${itm.quantity})`).join('; ');
+        const ch = (o.checkoutChannel === 'whatsapp' || o.checkoutMode === 'whatsapp' || o.paymentMethod === 'whatsapp') ? 'WhatsApp Checkout' : 'Web Storefront';
+        const pm = (o.paymentMethod === 'cod') ? 'Cash on Delivery' : (o.paymentMethod === 'card' ? 'Credit Card' : 'Lipa na M-Pesa');
+        const ps = (o.paymentStatus === 'paid') ? 'CONFIRMED PAID' : 'AWAITING ADMIN CONFIRMATION';
         return [
           o.id.toUpperCase(),
           o.date,
           o.customerName,
           o.customerEmail,
+          ch,
+          pm,
+          ps,
+          o.paymentReference || 'None',
           o.status.toUpperCase(),
           o.couponCode || 'None',
           o.customNote || 'None',
@@ -2455,6 +2823,7 @@ admin@ropenix.co.ke`;
     return (
       <div className="w-full h-full flex-1 min-h-0 overflow-y-auto overflow-x-hidden bg-slate-50/50" id="product-form-scroll-viewport">
         <ProductFormEditor
+        key={editingProduct ? `edit-prod-${editingProduct.id}` : 'add-prod-new'}
         initialProduct={editingProduct}
         allProducts={products}
         categories={customCategories.map((c, i) => ({ id: String(i + 1), name: c }))}
@@ -2485,14 +2854,26 @@ admin@ropenix.co.ke`;
                 );
             }
             setEditingProduct(null);
+            try {
+              localStorage.removeItem('veloce_admin_editing_product_id');
+            } catch {}
           } else {
             onAddProduct(savedProduct);
             setShowAddProdPage(false);
+            try {
+              localStorage.removeItem('veloce_admin_show_add_prod');
+              localStorage.removeItem('veloce_new_product_draft');
+            } catch {}
           }
         }}
         onCancel={() => {
           setEditingProduct(null);
           setShowAddProdPage(false);
+          try {
+            localStorage.removeItem('veloce_admin_show_add_prod');
+            localStorage.removeItem('veloce_admin_editing_product_id');
+            localStorage.removeItem('veloce_new_product_draft');
+          } catch {}
         }}
         onSwitchProductToEdit={(prod) => setEditingProduct(prod)}
         onDuplicateProduct={(prod) => {
@@ -6444,6 +6825,7 @@ admin@ropenix.co.ke`;
               onAddProduct(duplicated);
             }}
             onDeleteProduct={onDeleteProduct}
+            onBulkDeleteProducts={onBulkDeleteProducts}
             onUpdateProductStock={onUpdateProductStock}
             onUpdateProductSku={onUpdateProductSku}
             onUpdateProductThreshold={onUpdateProductThreshold}
@@ -6475,13 +6857,28 @@ admin@ropenix.co.ke`;
           const matchesStatus = orderStatusFilter === 'all' || ord.status === orderStatusFilter;
           if (!matchesStatus) return false;
 
+          const isWhatsAppChannel = ord.checkoutChannel === 'whatsapp' || ord.checkoutMode === 'whatsapp' || ord.orderSource === 'whatsapp' || ord.paymentMethod === 'whatsapp';
+          const ordChannel = isWhatsAppChannel ? 'whatsapp' : 'web';
+          const matchesChannel = orderChannelFilter === 'all' || ordChannel === orderChannelFilter;
+          if (!matchesChannel) return false;
+
+          const effectivePayment = (ord.paymentMethod === 'whatsapp' || ord.paymentMethod === 'mpesa' || !ord.paymentMethod) ? 'mpesa' : ord.paymentMethod;
+          const matchesPayment = orderPaymentFilter === 'all' || effectivePayment === orderPaymentFilter;
+          if (!matchesPayment) return false;
+
+          const isOrdPaid = ord.paymentStatus === 'paid';
+          const matchesSettlement = orderSettlementFilter === 'all' || (orderSettlementFilter === 'paid' ? isOrdPaid : !isOrdPaid);
+          if (!matchesSettlement) return false;
+
           if (!orderSearchQuery.trim()) return true;
           const q = orderSearchQuery.toLowerCase();
           return (
             ord.customerName.toLowerCase().includes(q) ||
             (ord.customerEmail && ord.customerEmail.toLowerCase().includes(q)) ||
             ord.id.toLowerCase().includes(q) ||
-            ord.status.toLowerCase().includes(q)
+            ord.status.toLowerCase().includes(q) ||
+            (isWhatsAppChannel && 'whatsapp'.includes(q)) ||
+            effectivePayment.toLowerCase().includes(q)
           );
         });
 
@@ -6500,88 +6897,199 @@ admin@ropenix.co.ke`;
         });
 
         return (
-          <div className="mt-8 rounded-xl border border-gray-100 bg-white p-5 shadow-2xs">
-            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 mb-4 pb-3 border-b border-gray-100">
-              <h3 className="font-display text-sm font-semibold text-gray-900">
-                Internal Orders Pipeline
-              </h3>
-              <div className="flex flex-wrap items-center gap-2">
+          <div className="mt-8 rounded-2xl border border-gray-200/80 dark:border-gray-800 bg-white dark:bg-gray-900 p-5 sm:p-6 shadow-xs">
+            {/* Header Section: Title, Badges & Action Buttons */}
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-5 border-b border-gray-150 dark:border-gray-800">
+              <div className="flex items-center gap-3.5">
+                <div className="h-10 w-10 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-150 dark:border-indigo-800 flex items-center justify-center text-indigo-600 dark:text-indigo-400 shrink-0 shadow-xs">
+                  <ShoppingBag className="h-5 w-5" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2.5">
+                    <h3 className="text-base font-bold text-gray-900 dark:text-white tracking-tight">
+                      Orders Pipeline
+                    </h3>
+                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-bold font-mono bg-indigo-50 dark:bg-indigo-950/80 text-indigo-700 dark:text-indigo-300 border border-indigo-200/60 dark:border-indigo-800/60">
+                      {orders.length} Total
+                    </span>
+                    <span className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10.5px] font-semibold bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-400 border border-emerald-200/60 dark:border-emerald-800/60">
+                      <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" /> Live DB Sync
+                    </span>
+                  </div>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 font-normal mt-0.5">
+                    Monitor fulfillment, verify payments, and manage order lifecycles across all sales channels.
+                  </p>
+                </div>
+              </div>
+
+              {/* Top Primary Actions */}
+              <div className="flex flex-wrap items-center gap-2 sm:gap-2.5 self-start lg:self-center">
+                {/* M-Pesa Payment Verification Desk */}
+                <button
+                  type="button"
+                  onClick={() => setIsPaymentVerifyModalOpen(true)}
+                  className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-emerald-500/30 bg-emerald-50/80 dark:bg-emerald-950/50 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 px-3.5 text-xs font-bold transition-all cursor-pointer shadow-xs active:scale-95"
+                  title="Open M-Pesa Payment Verification Desk"
+                >
+                  <ShieldCheck className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+                  <span>M-Pesa Verification Desk</span>
+                </button>
+
+                {/* Export Orders CSV */}
                 <button
                   onClick={handleDownloadOrdersCSV}
-                  className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white px-4 text-xs font-bold transition-all cursor-pointer shadow-xs shrink-0"
+                  className="inline-flex h-9 items-center justify-center gap-1.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-750 text-gray-700 dark:text-gray-200 px-3.5 text-xs font-bold transition-all cursor-pointer shadow-xs active:scale-95"
                   id="btn-export-orders-csv"
                   title="Export all historical order logs to CSV spreadsheet"
                 >
-                  <Download className="h-4 w-4" /> Export Orders CSV
+                  <Download className="h-4 w-4 text-gray-500 dark:text-gray-400" />
+                  <span>Export CSV</span>
                 </button>
+
+                {/* Create Direct Order */}
                 <button
                   onClick={() => setShowCreateOrderModal(true)}
-                  className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white px-4 text-xs font-bold transition-all cursor-pointer shadow-xs shrink-0"
+                  className="inline-flex h-9 items-center justify-center gap-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white px-4 text-xs font-bold transition-all cursor-pointer shadow-sm hover:shadow-emerald-500/20 active:scale-95 shrink-0"
                   id="btn-create-manual-order"
+                  title="Create new direct or phone order"
                 >
-                  <Plus className="h-4 w-4" /> Create Direct/Phone Order
+                  <Plus className="h-4 w-4" />
+                  <span>Create Direct/Phone Order</span>
                 </button>
-                {orders.length > 0 && (
-                  <div className="flex flex-wrap items-center gap-2">
-                    {/* Select All Pending Quick Button */}
-                    {orders.filter((o) => o.status === 'pending').length > 0 && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const pendingIds = orders.filter((o) => o.status === 'pending').map((o) => o.id);
-                          setSelectedOrderIds(pendingIds);
-                          setOrderStatusFilter('pending');
-                        }}
-                        className="inline-flex h-9 items-center gap-1.5 px-3 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 text-amber-800 dark:text-amber-300 border border-amber-300/60 text-xs font-bold transition-all cursor-pointer shadow-2xs shrink-0 active:scale-95"
-                        title="Select all pending orders for single-click batch update"
-                      >
-                        <AlertCircle className="h-3.5 w-3.5 text-amber-600 animate-pulse" />
-                        <span>Select Pending ({orders.filter((o) => o.status === 'pending').length})</span>
-                      </button>
-                    )}
-
-                    {/* Status Filter Dropdown */}
-                    <div className="flex h-9 items-center gap-1.5 rounded-lg border border-gray-200 bg-gray-50 px-3 text-xs font-semibold text-gray-850">
-                      <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider font-mono">Status:</span>
-                      <select
-                        value={orderStatusFilter}
-                        onChange={(e) => setOrderStatusFilter(e.target.value as any)}
-                        className="h-full bg-transparent border-0 outline-none pr-1 text-xs font-semibold cursor-pointer focus:ring-0 focus:ring-offset-0 text-gray-700"
-                        id="select-order-status-filter"
-                      >
-                        <option value="all">All</option>
-                        <option value="pending">Pending</option>
-                        <option value="processing">Processing</option>
-                        <option value="shipped">Shipped</option>
-                        <option value="completed">Completed</option>
-                        <option value="pending-cancellation">Pending Cancel</option>
-                        <option value="cancelled">Cancelled</option>
-                      </select>
-                    </div>
-
-                    <div className="relative w-full sm:w-72">
-                      <Search className="absolute left-3 top-2.5 h-4 w-4 text-gray-400" />
-                      <input
-                        type="text"
-                        placeholder="Search by customer name, order ID..."
-                        value={orderSearchQuery}
-                        onChange={(e) => setOrderSearchQuery(e.target.value)}
-                        className="w-full h-9 rounded-lg border border-gray-200 pl-9 pr-8 text-xs font-semibold focus:outline-hidden focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 text-gray-850 bg-gray-50"
-                      />
-                      {orderSearchQuery && (
-                        <button
-                          onClick={() => setOrderSearchQuery('')}
-                          className="absolute right-2.5 top-2.5 text-gray-400 hover:text-gray-600 focus:outline-hidden"
-                          title="Clear filter"
-                        >
-                          <X className="h-4 w-4" />
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                )}
               </div>
             </div>
+
+            {/* Filter & Search Command Toolbar */}
+            {orders.length > 0 && (
+              <div className="mt-4 mb-5 p-3 rounded-xl bg-slate-50 dark:bg-slate-900/70 border border-slate-200/80 dark:border-slate-800 flex flex-col xl:flex-row items-stretch xl:items-center justify-between gap-3">
+                {/* Search Box */}
+                <div className="relative flex-1 min-w-[240px]">
+                  <Search className="absolute left-3.5 top-2.5 h-4 w-4 text-gray-400 pointer-events-none" />
+                  <input
+                    type="text"
+                    placeholder="Search by customer name, email, order ID, phone..."
+                    value={orderSearchQuery}
+                    onChange={(e) => setOrderSearchQuery(e.target.value)}
+                    className="w-full h-9 rounded-lg border border-gray-200 dark:border-gray-700/80 bg-white dark:bg-gray-950 pl-9 pr-8 text-xs font-medium focus:outline-hidden focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 text-gray-900 dark:text-gray-100 placeholder-gray-400 transition-all shadow-2xs"
+                  />
+                  {orderSearchQuery && (
+                    <button
+                      onClick={() => setOrderSearchQuery('')}
+                      className="absolute right-2.5 top-2.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 focus:outline-hidden cursor-pointer"
+                      title="Clear search"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  )}
+                </div>
+
+                {/* Filter Dropdowns & Quick Selectors */}
+                <div className="flex flex-wrap items-center gap-2">
+                  {/* Quick Select Pending Filter / Action */}
+                  {orders.filter((o) => o.status === 'pending').length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const pendingIds = orders.filter((o) => o.status === 'pending').map((o) => o.id);
+                        setSelectedOrderIds(pendingIds);
+                        setOrderStatusFilter('pending');
+                      }}
+                      className="inline-flex h-9 items-center gap-1.5 px-3 rounded-lg bg-amber-50 dark:bg-amber-950/40 hover:bg-amber-100 dark:hover:bg-amber-900/50 text-amber-800 dark:text-amber-300 border border-amber-300/80 dark:border-amber-700/60 text-xs font-bold transition-all cursor-pointer shadow-2xs shrink-0 active:scale-95"
+                      title="Select all pending orders for batch operations"
+                    >
+                      <span className="relative flex h-2 w-2">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75" />
+                        <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500" />
+                      </span>
+                      <span>Select Pending ({orders.filter((o) => o.status === 'pending').length})</span>
+                    </button>
+                  )}
+
+                  {/* Status Filter */}
+                  <div className="flex h-9 items-center gap-1 rounded-lg border border-gray-200 dark:border-gray-700/80 bg-white dark:bg-gray-950 px-2.5 text-xs text-gray-800 dark:text-gray-200 shadow-2xs">
+                    <span className="text-[10px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-wider font-mono">Status:</span>
+                    <select
+                      value={orderStatusFilter}
+                      onChange={(e) => setOrderStatusFilter(e.target.value as any)}
+                      className="h-full bg-transparent border-0 outline-none pr-1 text-xs font-bold cursor-pointer text-gray-800 dark:text-gray-200 focus:ring-0"
+                      id="select-order-status-filter"
+                    >
+                      <option value="all">All</option>
+                      <option value="pending">Pending</option>
+                      <option value="processing">Processing</option>
+                      <option value="shipped">Shipped</option>
+                      <option value="completed">Completed</option>
+                      <option value="pending-cancellation">Pending Cancel</option>
+                      <option value="cancelled">Cancelled</option>
+                    </select>
+                  </div>
+
+                  {/* Channel Filter */}
+                  <div className="flex h-9 items-center gap-1 rounded-lg border border-gray-200 dark:border-gray-700/80 bg-white dark:bg-gray-950 px-2.5 text-xs text-gray-800 dark:text-gray-200 shadow-2xs">
+                    <span className="text-[10px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-wider font-mono">Channel:</span>
+                    <select
+                      value={orderChannelFilter}
+                      onChange={(e) => setOrderChannelFilter(e.target.value as any)}
+                      className="h-full bg-transparent border-0 outline-none pr-1 text-xs font-bold cursor-pointer text-gray-800 dark:text-gray-200 focus:ring-0"
+                      id="select-order-channel-filter"
+                    >
+                      <option value="all">All Channels</option>
+                      <option value="whatsapp">📱 WhatsApp</option>
+                      <option value="web">🌐 Web Store</option>
+                    </select>
+                  </div>
+
+                  {/* Payment Method Filter */}
+                  <div className="flex h-9 items-center gap-1 rounded-lg border border-gray-200 dark:border-gray-700/80 bg-white dark:bg-gray-950 px-2.5 text-xs text-gray-800 dark:text-gray-200 shadow-2xs">
+                    <span className="text-[10px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-wider font-mono">Payment:</span>
+                    <select
+                      value={orderPaymentFilter}
+                      onChange={(e) => setOrderPaymentFilter(e.target.value as any)}
+                      className="h-full bg-transparent border-0 outline-none pr-1 text-xs font-bold cursor-pointer text-gray-800 dark:text-gray-200 focus:ring-0"
+                      id="select-order-payment-filter"
+                    >
+                      <option value="all">All Payments</option>
+                      <option value="mpesa">📲 M-Pesa</option>
+                      <option value="cod">🚚 Cash on Delivery</option>
+                    </select>
+                  </div>
+
+                  {/* Settlement Status Filter */}
+                  <div className="flex h-9 items-center gap-1 rounded-lg border border-gray-200 dark:border-gray-700/80 bg-white dark:bg-gray-950 px-2.5 text-xs text-gray-800 dark:text-gray-200 shadow-2xs">
+                    <span className="text-[10px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-wider font-mono">Settlement:</span>
+                    <select
+                      value={orderSettlementFilter}
+                      onChange={(e) => setOrderSettlementFilter(e.target.value as any)}
+                      className="h-full bg-transparent border-0 outline-none pr-1 text-xs font-bold cursor-pointer text-gray-800 dark:text-gray-200 focus:ring-0"
+                      id="select-order-settlement-filter"
+                    >
+                      <option value="all">All Settlements</option>
+                      <option value="unpaid">⏳ Awaiting Confirmation</option>
+                      <option value="paid">✅ Confirmed Paid</option>
+                    </select>
+                  </div>
+
+                  {/* Reset Filters Quick Button if active */}
+                  {(orderStatusFilter !== 'all' || orderChannelFilter !== 'all' || orderPaymentFilter !== 'all' || orderSettlementFilter !== 'all' || orderSearchQuery) && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setOrderStatusFilter('all');
+                        setOrderChannelFilter('all');
+                        setOrderPaymentFilter('all');
+                        setOrderSettlementFilter('all');
+                        setOrderSearchQuery('');
+                      }}
+                      className="inline-flex h-9 items-center gap-1 px-3 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-750 text-gray-600 dark:text-gray-300 text-xs font-bold transition-all cursor-pointer shadow-2xs"
+                      title="Reset all active filters"
+                    >
+                      <RotateCcw className="h-3.5 w-3.5" />
+                      <span>Reset</span>
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
 
             {selectedOrderIds.length > 0 && (
               <div className="mb-6 rounded-xl border border-indigo-200 bg-indigo-50/40 dark:bg-slate-900 p-5 flex flex-col gap-4 animate-in fade-in slide-in-from-top-2 duration-200 shadow-sm">
@@ -6600,8 +7108,28 @@ admin@ropenix.co.ke`;
                     </div>
                   </div>
 
-                  {/* Direct 1-Click Action Buttons & Menu */}
                   <div className="relative self-start md:self-center flex flex-wrap items-center gap-2">
+                    {/* Batch Confirm Paid */}
+                    {onUpdateOrderPaymentStatus && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const count = selectedOrderIds.length;
+                          selectedOrderIds.forEach((id) =>
+                            onUpdateOrderPaymentStatus(id, 'paid', 'Bulk payment confirmed by administrator')
+                          );
+                          setFollowupSuccessMessage(`Payment status confirmed as PAID for ${count} selected order(s).`);
+                          setSelectedOrderIds([]);
+                        }}
+                        className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-3.5 cursor-pointer shadow-xs active:scale-95 transition-all"
+                        id="btn-batch-confirm-paid"
+                        title="Confirm and mark payment as PAID for all selected orders"
+                      >
+                        <CheckCircle2 className="h-3.5 w-3.5" />
+                        <span>Confirm ({selectedOrderIds.length}) Paid ✓</span>
+                      </button>
+                    )}
+
                     {/* Batch Update to Processing */}
                     <button
                       type="button"
@@ -6752,6 +7280,48 @@ admin@ropenix.co.ke`;
                             <AlertTriangle className="h-3.5 w-3.5 text-orange-600" />
                             <span>Mark as Pending Cancellation</span>
                           </button>
+
+                          {onUpdateOrderPaymentStatus && (
+                            <>
+                              <div className="px-2.5 py-1.5 text-[9px] font-black font-mono text-emerald-600 uppercase tracking-widest border-b border-gray-100 mb-1 mt-2">
+                                Payment Verification
+                              </div>
+
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const count = selectedOrderIds.length;
+                                  selectedOrderIds.forEach((id) =>
+                                    onUpdateOrderPaymentStatus(id, 'paid', 'Bulk payment confirmed by administrator')
+                                  );
+                                  setFollowupSuccessMessage(`Payment confirmed as PAID for ${count} order(s).`);
+                                  setSelectedOrderIds([]);
+                                  setIsOrderBulkActionMenuOpen(false);
+                                }}
+                                className="w-full flex items-center gap-2 px-3 py-2 text-xs font-bold text-emerald-700 hover:bg-emerald-50 rounded-lg transition-colors cursor-pointer text-left"
+                              >
+                                <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
+                                <span>Mark Payment as PAID ✓</span>
+                              </button>
+
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const count = selectedOrderIds.length;
+                                  selectedOrderIds.forEach((id) =>
+                                    onUpdateOrderPaymentStatus(id, 'unpaid', 'Bulk payment reverted to unpaid by administrator')
+                                  );
+                                  setFollowupSuccessMessage(`Payment status reverted to UNPAID for ${count} order(s).`);
+                                  setSelectedOrderIds([]);
+                                  setIsOrderBulkActionMenuOpen(false);
+                                }}
+                                className="w-full flex items-center gap-2 px-3 py-2 text-xs font-bold text-amber-700 hover:bg-amber-50 rounded-lg transition-colors cursor-pointer text-left"
+                              >
+                                <AlertCircle className="h-3.5 w-3.5 text-amber-600" />
+                                <span>Revert Payment to UNPAID</span>
+                              </button>
+                            </>
+                          )}
                         </div>
                       </>
                     )}
@@ -6760,12 +7330,27 @@ admin@ropenix.co.ke`;
               </div>
             )}
 
+            {followupSuccessMessage && (
+              <div className="mb-4 p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl text-xs font-semibold flex items-center justify-between shadow-3xs animate-in fade-in">
+                <div className="flex items-center gap-2">
+                  <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0" />
+                  <span>{followupSuccessMessage}</span>
+                </div>
+                <button
+                  onClick={() => setFollowupSuccessMessage(null)}
+                  className="text-emerald-700 hover:text-emerald-900 font-bold p-1"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            )}
+
             {orders.length === 0 ? (
               <p className="py-8 text-center text-xs text-gray-400 italic">No Orders logged in Database ledger.</p>
             ) : (
               <div>
                 {/* Search metadata count banner */}
-                {(orderSearchQuery.trim() !== '' || orderStatusFilter !== 'all') && (
+                {(orderSearchQuery.trim() !== '' || orderStatusFilter !== 'all' || orderChannelFilter !== 'all' || orderPaymentFilter !== 'all') && (
                   <div className="mb-3 text-[11px] font-semibold text-indigo-950 font-mono flex items-center justify-between">
                     <span>
                       SHOWING {filteredOrders.length} OF {orders.length} TOTAL TRANSACTION ENTRIES
@@ -6774,6 +7359,8 @@ admin@ropenix.co.ke`;
                       onClick={() => {
                         setOrderSearchQuery('');
                         setOrderStatusFilter('all');
+                        setOrderChannelFilter('all');
+                        setOrderPaymentFilter('all');
                       }}
                       className="text-[10px] font-bold text-indigo-600 hover:text-indigo-700 font-mono transition-colors cursor-pointer"
                     >
@@ -6789,6 +7376,8 @@ admin@ropenix.co.ke`;
                       onClick={() => {
                         setOrderSearchQuery('');
                         setOrderStatusFilter('all');
+                        setOrderChannelFilter('all');
+                        setOrderPaymentFilter('all');
                       }}
                       className="mt-2.5 text-xs text-indigo-600 hover:text-indigo-700 font-bold transition-colors cursor-pointer"
                     >
@@ -6797,7 +7386,7 @@ admin@ropenix.co.ke`;
                   </div>
                 ) : (
                   <div className="overflow-x-auto custom-table-scroll">
-                    <table className="w-full text-left text-xs font-light min-w-[700px]">
+                    <table className="w-full text-left text-xs font-light min-w-[800px]">
                       <thead>
                         <tr className="border-b border-gray-100 text-gray-400 uppercase font-bold text-[9px] font-mono tracking-wider">
                           <th className="py-2.5 w-8 pl-1">
@@ -6855,7 +7444,8 @@ admin@ropenix.co.ke`;
                               )}
                             </button>
                           </th>
-                          <th className="py-2.5 text-gray-400">Payment Method</th>
+                          <th className="py-2.5 text-gray-400">Channel</th>
+                          <th className="py-2.5 text-gray-400">Payment Mode</th>
                           <th className="py-2.5 text-gray-400">Payment Status</th>
                           <th className="py-2.5 text-gray-400">Order Status</th>
                           <th className="py-2.5 text-right text-gray-400">Operations & Audits</th>
@@ -6864,6 +7454,10 @@ admin@ropenix.co.ke`;
                       <tbody>
                         {sortedOrders.map((ord) => {
                           const isRowChecked = selectedOrderIds.includes(ord.id);
+                          const isWaChannel = ord.checkoutChannel === 'whatsapp' || ord.checkoutMode === 'whatsapp' || ord.orderSource === 'whatsapp' || ord.paymentMethod === 'whatsapp';
+                          const isCod = ord.paymentMethod === 'cod';
+                          const isCard = ord.paymentMethod === 'card';
+
                           return (
                             <tr key={ord.id} className={`border-b border-gray-50 text-gray-600 hover:bg-gray-50/20 ${isRowChecked ? 'bg-indigo-50/15' : ''}`}>
                               <td className="py-3 pl-1">
@@ -6888,33 +7482,47 @@ admin@ropenix.co.ke`;
                               <td className="py-3 font-mono text-[10px]">{ord.date}</td>
                               <td className="py-3 font-mono font-bold text-indigo-650">KSh {ord.total.toLocaleString('en-KE')}</td>
                               <td className="py-3">
-                                {ord.paymentMethod === 'cod' ? (
-                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-slate-100 border border-slate-200 text-[9px] font-black text-slate-800 uppercase font-mono shadow-3xs">
-                                    🚚 COD Delivery
+                                {isWaChannel ? (
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-300 dark:border-emerald-800 text-[9px] font-black text-emerald-800 dark:text-emerald-300 uppercase font-mono shadow-3xs">
+                                    📱 WhatsApp
                                   </span>
                                 ) : (
-                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-emerald-50 border border-emerald-200 text-[9px] font-black text-emerald-800 uppercase font-mono shadow-3xs">
-                                    📲 M-Pesa STK
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-[9px] font-bold text-slate-700 dark:text-slate-300 uppercase font-mono shadow-3xs">
+                                    🌐 Web Store
+                                  </span>
+                                )}
+                              </td>
+                              <td className="py-3">
+                                {isCod ? (
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-amber-50 dark:bg-amber-950/60 border border-amber-300 dark:border-amber-800 text-[9px] font-black text-amber-900 dark:text-amber-300 uppercase font-mono shadow-3xs">
+                                    🚚 COD
+                                  </span>
+                                ) : isCard ? (
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-blue-50 dark:bg-blue-950/60 border border-blue-300 dark:border-blue-800 text-[9px] font-black text-blue-900 dark:text-blue-300 uppercase font-mono shadow-3xs">
+                                    💳 Card
+                                  </span>
+                                ) : (
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200 dark:border-indigo-800 text-[9px] font-black text-indigo-900 dark:text-indigo-300 uppercase font-mono shadow-3xs">
+                                    📲 M-Pesa
                                   </span>
                                 )}
                               </td>
                               <td className="py-3">
                                 {(() => {
-                                  const isCod = ord.paymentMethod === 'cod';
-                                  const isPaid = ord.paymentStatus === 'paid' || (!isCod && ord.paymentStatus !== 'unpaid');
+                                  const isPaid = ord.paymentStatus === 'paid';
 
                                   if (isPaid) {
                                     return (
                                       <div className="inline-flex items-center gap-1.5">
-                                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-emerald-50 border border-emerald-200/80 text-emerald-800 text-[9.5px] font-black font-mono shadow-3xs">
-                                          <CheckCircle2 className="h-3 w-3 text-emerald-600 shrink-0" />
-                                          <span>PAID</span>
+                                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200/80 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300 text-[9.5px] font-black font-mono shadow-3xs">
+                                          <CheckCircle2 className="h-3 w-3 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                                          <span>PAID ✓</span>
                                         </span>
-                                        {isCod && onUpdateOrderPaymentStatus && (
+                                        {onUpdateOrderPaymentStatus && (
                                           <button
                                             type="button"
                                             onClick={() => onUpdateOrderPaymentStatus(ord.id, 'unpaid', 'Payment status reverted to unpaid by admin')}
-                                            className="text-[9px] text-gray-400 hover:text-amber-700 underline font-mono cursor-pointer transition-colors"
+                                            className="text-[9px] text-gray-400 hover:text-amber-700 dark:hover:text-amber-400 underline font-mono cursor-pointer transition-colors"
                                             title="Click to revert payment status to Unpaid"
                                           >
                                             Revert
@@ -6928,14 +7536,14 @@ admin@ropenix.co.ke`;
                                     <div className="inline-flex items-center gap-1.5">
                                       <button
                                         type="button"
-                                        onClick={() => onUpdateOrderPaymentStatus && onUpdateOrderPaymentStatus(ord.id, 'paid', 'Cash on Delivery payment received & confirmed by admin')}
-                                        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-amber-50 hover:bg-emerald-50 border border-amber-300 hover:border-emerald-400 text-amber-900 hover:text-emerald-800 text-[9.5px] font-black font-mono transition-all cursor-pointer shadow-3xs group"
-                                        title="Click to confirm receipt of Cash on Delivery and toggle to PAID"
+                                        onClick={() => onUpdateOrderPaymentStatus && onUpdateOrderPaymentStatus(ord.id, 'paid', 'Payment received & confirmed by admin')}
+                                        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-amber-50 hover:bg-emerald-50 dark:bg-amber-950/40 dark:hover:bg-emerald-950/50 border border-amber-300 hover:border-emerald-400 dark:border-amber-700 dark:hover:border-emerald-600 text-amber-900 hover:text-emerald-800 dark:text-amber-300 dark:hover:text-emerald-200 text-[9.5px] font-black font-mono transition-all cursor-pointer shadow-3xs group"
+                                        title="Click to confirm receipt of payment and toggle to PAID"
                                       >
                                         <span className="h-1.5 w-1.5 rounded-full bg-amber-500 group-hover:bg-emerald-500 animate-pulse shrink-0" />
-                                        <span>UNPAID (COD)</span>
-                                        <span className="text-[8.5px] text-amber-700 group-hover:text-emerald-700 underline font-sans ml-0.5 font-bold">
-                                          Mark Paid ✓
+                                        <span>UNPAID</span>
+                                        <span className="text-[8.5px] text-amber-700 group-hover:text-emerald-700 dark:text-amber-400 dark:group-hover:text-emerald-300 underline font-sans ml-0.5 font-bold">
+                                          Confirm Paid ✓
                                         </span>
                                       </button>
                                     </div>
@@ -6943,6 +7551,18 @@ admin@ropenix.co.ke`;
                                 })()}
                               </td>
                               <td className="py-3">
+                                {ord.status === 'awaiting_delivery_quote' && (
+                                  <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-50 dark:bg-amber-950/50 text-amber-800 dark:text-amber-300 border border-amber-200/80 dark:border-amber-800 px-2.5 py-1 text-[10px] font-bold uppercase font-mono shadow-3xs animate-pulse">
+                                    <Truck className="h-3 w-3 text-amber-600 dark:text-amber-400 shrink-0" />
+                                    Awaiting Quote
+                                  </span>
+                                )}
+                                {ord.status === 'delivery_quoted' && (
+                                  <span className="inline-flex items-center gap-1.5 rounded-full bg-sky-50 dark:bg-sky-950/50 text-sky-800 dark:text-sky-300 border border-sky-200/80 dark:border-sky-800 px-2.5 py-1 text-[10px] font-bold uppercase font-mono shadow-3xs">
+                                    <Calculator className="h-3 w-3 text-sky-600 dark:text-sky-400 shrink-0" />
+                                    Delivery Quoted
+                                  </span>
+                                )}
                                 {ord.status === 'completed' && (
                                   <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200/60 px-2.5 py-1 text-[10px] font-bold uppercase font-mono shadow-3xs">
                                     <CheckCircle2 className="h-3 w-3 text-emerald-600 shrink-0" />
@@ -6950,21 +7570,34 @@ admin@ropenix.co.ke`;
                                   </span>
                                 )}
                                 {ord.status === 'shipped' && (
-                                  <span className="inline-flex items-center gap-1.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200/60 px-2.5 py-1 text-[10px] font-bold uppercase font-mono shadow-3xs">
-                                    <Truck className="h-3 w-3 text-blue-600 shrink-0" />
-                                    Shipped
+                                  <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-bold uppercase font-mono shadow-3xs ${
+                                    ord.deliveryConfirmed
+                                      ? 'bg-emerald-50 text-emerald-700 border border-emerald-200/60'
+                                      : 'bg-blue-50 text-blue-700 border border-blue-200/60'
+                                  }`}>
+                                    {ord.deliveryConfirmed ? (
+                                      <>
+                                        <Check className="h-3 w-3 text-emerald-600 shrink-0" />
+                                        Delivered (Pending Close)
+                                      </>
+                                    ) : (
+                                      <>
+                                        <Truck className="h-3 w-3 text-blue-600 shrink-0" />
+                                        In Transit
+                                      </>
+                                    )}
                                   </span>
                                 )}
-                                {ord.status === 'processing' && (
+                                {((ord.status === 'pending' && isOrderPaid(ord)) || ord.status === 'processing') && (
                                   <span className="inline-flex items-center gap-1.5 rounded-full bg-purple-50 text-purple-700 border border-purple-200/60 px-2.5 py-1 text-[10px] font-bold uppercase font-mono shadow-3xs">
                                     <RefreshCw className="h-3 w-3 text-purple-600 shrink-0 animate-spin" />
-                                    Processing
+                                    Paid & Processing
                                   </span>
                                 )}
-                                {ord.status === 'pending' && (
+                                {ord.status === 'pending' && !isOrderPaid(ord) && (
                                   <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-50 text-amber-800 border border-amber-200/60 px-2.5 py-1 text-[10px] font-bold uppercase font-mono shadow-3xs">
                                     <AlertCircle className="h-3 w-3 text-amber-600 shrink-0 animate-pulse" />
-                                    Pending
+                                    Awaiting Payment
                                   </span>
                                 )}
                                 {ord.status === 'pending-cancellation' && (
@@ -6981,14 +7614,113 @@ admin@ropenix.co.ke`;
                                 )}
                               </td>
                               <td className="py-3 text-right">
-                                <div className="flex justify-end gap-1">
+                                <div className="flex items-center justify-end gap-1.5">
+                                  {/* Strict Single Next Action Button */}
+                                  {ord.status === 'awaiting_delivery_quote' && (
+                                    <button
+                                      type="button"
+                                      onClick={() => openWorkflowDialog(ord, 'quote-delivery')}
+                                      className="rounded-lg bg-amber-600 hover:bg-amber-700 text-white px-2.5 py-1 text-[11px] font-bold cursor-pointer flex items-center gap-1 shadow-xs transition-all shrink-0"
+                                      title="Calculate courier quote (Uber/Bolt/PickUp Mtaani) and send to customer"
+                                    >
+                                      <Calculator className="h-3.5 w-3.5" />
+                                      <span>Quote Delivery</span>
+                                    </button>
+                                  )}
+
+                                  {ord.status === 'delivery_quoted' && !isOrderPaid(ord) && (
+                                    <div className="flex items-center gap-1 shrink-0">
+                                      <button
+                                        type="button"
+                                        onClick={() => openWorkflowDialog(ord, 'quote-delivery')}
+                                        className="rounded-lg bg-sky-600 hover:bg-sky-700 text-white px-2 py-1 text-[10px] font-bold cursor-pointer flex items-center gap-1 shadow-xs transition-all shrink-0"
+                                        title="Revise quoted courier fee or re-notify customer"
+                                      >
+                                        <Truck className="h-3 w-3" />
+                                        <span>Update Quote</span>
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => openWorkflowDialog(ord, 'confirm-payment')}
+                                        className="rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white px-2.5 py-1 text-[11px] font-bold cursor-pointer flex items-center gap-1 shadow-xs transition-all shrink-0"
+                                        title="Confirm customer payment"
+                                      >
+                                        <CreditCard className="h-3.5 w-3.5" />
+                                        <span>Confirm Paid</span>
+                                      </button>
+                                    </div>
+                                  )}
+
+                                  {ord.status === 'pending' && !isOrderPaid(ord) && (
+                                    <button
+                                      type="button"
+                                      onClick={() => openWorkflowDialog(ord, 'confirm-payment')}
+                                      className="rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white px-2.5 py-1 text-[11px] font-bold cursor-pointer flex items-center gap-1 shadow-xs transition-all shrink-0"
+                                      title="Confirm customer payment and automatically advance to Processing"
+                                    >
+                                      <CreditCard className="h-3.5 w-3.5" />
+                                      <span>Confirm Payment</span>
+                                    </button>
+                                  )}
+
+                                  {(ord.status === 'processing' || (ord.status === 'pending' && isOrderPaid(ord))) && (
+                                    <button
+                                      type="button"
+                                      onClick={() => openWorkflowDialog(ord, 'mark-shipped')}
+                                      className="rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white px-2.5 py-1 text-[11px] font-bold cursor-pointer flex items-center gap-1 shadow-xs transition-all shrink-0"
+                                      title="Mark order as Dispatched with courier partner"
+                                    >
+                                      <Truck className="h-3.5 w-3.5" />
+                                      <span>Mark as Shipped</span>
+                                    </button>
+                                  )}
+
+                                  {ord.status === 'shipped' && !ord.deliveryConfirmed && (
+                                    <button
+                                      type="button"
+                                      onClick={() => openWorkflowDialog(ord, 'confirm-delivery')}
+                                      className="rounded-lg bg-amber-500 hover:bg-amber-600 text-white px-2.5 py-1 text-[11px] font-bold cursor-pointer flex items-center gap-1 shadow-xs transition-all shrink-0"
+                                      title="Confirm courier delivery before completing order"
+                                    >
+                                      <MapPin className="h-3.5 w-3.5" />
+                                      <span>Mark as Delivered</span>
+                                    </button>
+                                  )}
+
+                                  {ord.status === 'shipped' && ord.deliveryConfirmed && (
+                                    <button
+                                      type="button"
+                                      onClick={() => openWorkflowDialog(ord, 'mark-completed')}
+                                      className="rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white px-2.5 py-1 text-[11px] font-bold cursor-pointer flex items-center gap-1 shadow-xs transition-all shrink-0"
+                                      title="Complete Order Lifecycle"
+                                    >
+                                      <CheckCircle2 className="h-3.5 w-3.5" />
+                                      <span>Mark Completed</span>
+                                    </button>
+                                  )}
+
+                                  {ord.status === 'completed' && (
+                                    <span className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-1 px-1.5 py-1">
+                                      <CheckCircle className="h-3.5 w-3.5" />
+                                      <span>Finished</span>
+                                    </span>
+                                  )}
+
+                                  {/* Utility Actions: Timeline, Search, Print, Cancel */}
+                                  <button
+                                    onClick={() => openWorkflowDialog(ord, 'view-timeline')}
+                                    className="rounded bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 p-1 text-slate-700 dark:text-slate-200 cursor-pointer flex items-center justify-center transition-colors"
+                                    title="View Strict Workflow Timeline & Audit Log"
+                                  >
+                                    <Clock className="h-3.5 w-3.5" />
+                                  </button>
                                   <button
                                     onClick={() => {
                                       setLookupQuery(ord.id);
                                       setSelectedLookupOrder(ord);
                                       setAdminSubTab('order-lookup');
                                     }}
-                                    className="rounded bg-indigo-50 border border-indigo-150 p-1 text-indigo-700 hover:bg-indigo-100 cursor-pointer flex items-center justify-center"
+                                    className="rounded bg-indigo-50 border border-indigo-150 dark:bg-indigo-950/40 dark:border-indigo-900/50 p-1 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100 cursor-pointer flex items-center justify-center transition-colors"
                                     title="Track & Audit Order Status"
                                   >
                                     <Search className="h-3.5 w-3.5" />
@@ -6998,49 +7730,20 @@ admin@ropenix.co.ke`;
                                       setSelectedAdminDetailOrder(ord);
                                       setAutoPrintOnce(false);
                                     }}
-                                    className="rounded bg-indigo-50 border border-indigo-150 p-1 text-indigo-700 hover:bg-indigo-100 cursor-pointer flex items-center justify-center"
+                                    className="rounded bg-indigo-50 border border-indigo-150 dark:bg-indigo-950/40 dark:border-indigo-900/50 p-1 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100 cursor-pointer flex items-center justify-center transition-colors"
                                     title="View Order Details & Print Receipt"
                                   >
                                     <Printer className="h-3.5 w-3.5" />
                                   </button>
-                                  <button
-                                    onClick={() => onUpdateOrderStatus(ord.id, 'processing')}
-                                    className="rounded bg-purple-50 border border-purple-100 p-1 text-purple-700 hover:bg-purple-100 cursor-pointer flex items-center justify-center"
-                                    title="Mark as Processing"
-                                  >
-                                    <RefreshCw className="h-3.5 w-3.5" />
-                                  </button>
-                                  <button
-                                    onClick={() => onUpdateOrderStatus(ord.id, 'shipped')}
-                                    className="rounded bg-blue-50 border border-blue-100 p-1 text-blue-700 hover:bg-blue-100 cursor-pointer flex items-center justify-center"
-                                    title="Mark as Shipped"
-                                  >
-                                    <Truck className="h-3.5 w-3.5" />
-                                  </button>
-                                  <button
-                                    onClick={() => {
-                                      if (!isOrderPaid(ord)) {
-                                        setUnpaidPromptOrder(ord);
-                                        return;
-                                      }
-                                      onUpdateOrderStatus(ord.id, 'completed');
-                                    }}
-                                    className={`rounded p-1 cursor-pointer flex items-center justify-center transition-all ${
-                                      !isOrderPaid(ord)
-                                        ? 'bg-amber-50 border border-amber-200 text-amber-800 hover:bg-amber-100 shadow-3xs'
-                                        : 'bg-emerald-50 border border-emerald-100 text-emerald-700 hover:bg-emerald-100'
-                                    }`}
-                                    title={!isOrderPaid(ord) ? 'Payment Unconfirmed: Payment must be confirmed before completing this order' : 'Mark Completed'}
-                                  >
-                                    <Check className="h-3.5 w-3.5" />
-                                  </button>
-                                  <button
-                                    onClick={() => onUpdateOrderStatus(ord.id, 'cancelled')}
-                                    className="rounded bg-red-50 border border-red-100 p-1 text-red-700 hover:bg-red-100 cursor-pointer flex items-center justify-center"
-                                    title="Cancel Order"
-                                  >
-                                    <X className="h-3.5 w-3.5" />
-                                  </button>
+                                  {ord.status !== 'completed' && ord.status !== 'cancelled' && (
+                                    <button
+                                      onClick={() => openWorkflowDialog(ord, 'cancel')}
+                                      className="rounded bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 dark:hover:bg-rose-900/50 border border-rose-200 dark:border-rose-900 p-1 text-rose-700 dark:text-rose-300 cursor-pointer flex items-center justify-center transition-colors"
+                                      title="Cancel Order"
+                                    >
+                                      <X className="h-3.5 w-3.5" />
+                                    </button>
+                                  )}
                                 </div>
                               </td>
                             </tr>
@@ -9145,6 +9848,44 @@ admin@ropenix.co.ke`;
                           <strong className="text-gray-800 font-mono">{selectedLookupOrder.date}</strong>
                         </div>
                         <div className="flex justify-between">
+                          <span className="text-gray-400">Order Channel</span>
+                          {(() => {
+                            const isWhatsApp = selectedLookupOrder.checkoutChannel === 'whatsapp' || selectedLookupOrder.checkoutMode === 'whatsapp' || selectedLookupOrder.orderSource === 'whatsapp' || selectedLookupOrder.paymentMethod === 'whatsapp';
+                            return (
+                              <span className={`px-1.5 py-0.2 rounded-sm font-bold text-[9px] font-mono ${
+                                isWhatsApp
+                                  ? 'bg-emerald-100 text-[#128C7E] border border-emerald-300'
+                                  : 'bg-slate-100 text-slate-800 border border-slate-200'
+                              }`}>
+                                {isWhatsApp ? '📱 WHATSAPP ORDER' : '🌐 WEB STOREFRONT'}
+                              </span>
+                            );
+                          })()}
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-gray-400">Payment Method</span>
+                          <span className="font-bold text-[10px] font-mono text-gray-800">
+                            {selectedLookupOrder.paymentMethod === 'cod' ? '🚚 Cash on Delivery' : (selectedLookupOrder.paymentMethod === 'card' ? '💳 Card' : '📲 Lipa na M-Pesa')}
+                          </span>
+                        </div>
+                        {selectedLookupOrder.phone && (
+                          <div className="flex justify-between items-center">
+                            <span className="text-gray-400">Customer Phone</span>
+                            <div className="flex items-center gap-1.5">
+                              <span className="font-mono text-gray-800 text-[10px]">{selectedLookupOrder.phone}</span>
+                              <a
+                                href={`https://wa.me/${selectedLookupOrder.phone.replace(/\D/g, '').replace(/^0/, '254')}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-emerald-500 hover:bg-emerald-600 text-white text-[9px] font-bold transition-all shadow-3xs"
+                                title="Open WhatsApp Chat with Customer"
+                              >
+                                💬 WhatsApp Chat
+                              </a>
+                            </div>
+                          </div>
+                        )}
+                        <div className="flex justify-between">
                           <span className="text-gray-400">Billing Profile</span>
                           <span className={`px-1.5 py-0.2 rounded-sm font-bold text-[9px] font-mono ${
                             selectedLookupOrder.isGuest 
@@ -9157,21 +9898,20 @@ admin@ropenix.co.ke`;
                         <div className="flex justify-between items-center pt-2 border-t border-gray-100">
                           <span className="text-gray-400">Payment Status</span>
                           {(() => {
-                            const isCod = selectedLookupOrder.paymentMethod === 'cod';
-                            const isPaid = selectedLookupOrder.paymentStatus === 'paid' || (!isCod && selectedLookupOrder.paymentStatus !== 'unpaid');
+                            const isPaid = selectedLookupOrder.paymentStatus === 'paid';
                             return (
                               <div className="flex items-center gap-1.5">
                                 <span className={`px-2 py-0.5 rounded font-extrabold text-[9px] font-mono ${
                                   isPaid ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' : 'bg-amber-100 text-amber-900 border border-amber-300 animate-pulse'
                                 }`}>
-                                  {isPaid ? '✓ VERIFIED PAID' : '⚠️ UNPAID (COD)'}
+                                  {isPaid ? '✓ CONFIRMED PAID' : '⏳ AWAITING ADMIN CONFIRMATION'}
                                 </span>
                                 {onUpdateOrderPaymentStatus && (
                                   <button
                                     type="button"
                                     onClick={() => {
                                       const nextStatus = isPaid ? 'unpaid' : 'paid';
-                                      onUpdateOrderPaymentStatus(selectedLookupOrder.id, nextStatus, nextStatus === 'paid' ? 'COD Payment confirmed by admin' : 'Reverted to unpaid');
+                                      onUpdateOrderPaymentStatus(selectedLookupOrder.id, nextStatus, nextStatus === 'paid' ? 'Payment confirmed by admin' : 'Reverted to unpaid');
                                       setSelectedLookupOrder(prev => prev ? { ...prev, paymentStatus: nextStatus } : null);
                                     }}
                                     className={`px-2 py-0.5 rounded text-[9px] font-bold font-mono border transition-all cursor-pointer ${
@@ -9180,7 +9920,7 @@ admin@ropenix.co.ke`;
                                         : 'bg-emerald-600 hover:bg-emerald-700 text-white border-emerald-700 shadow-3xs'
                                     }`}
                                   >
-                                    {isPaid ? 'Revert to Unpaid' : 'Mark as Paid ✓'}
+                                    {isPaid ? 'Revert to Unpaid' : 'Confirm Paid ✓'}
                                   </button>
                                 )}
                               </div>
@@ -9478,6 +10218,22 @@ admin@ropenix.co.ke`;
         </Suspense>
       )}
 
+      {isPaymentVerifyModalOpen && (
+        <Suspense fallback={<ChartLoaderFallback />}>
+          <AdminPaymentVerificationModal
+            isOpen={isPaymentVerifyModalOpen}
+            onClose={() => setIsPaymentVerifyModalOpen(false)}
+            currency={currency}
+            onPaymentVerified={(verifiedOrderId, status) => {
+              if (verifiedOrderId && onUpdateOrderPaymentStatus) {
+                onUpdateOrderPaymentStatus(verifiedOrderId, status === 'paid' ? 'paid' : 'unpaid');
+              }
+              if (onOrdersUpdated) onOrdersUpdated(orders);
+            }}
+          />
+        </Suspense>
+      )}
+
       {/* Payment Confirmation Required Modal for Unpaid Orders */}
       {unpaidPromptOrder && (
         <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-xs animate-in fade-in duration-150 font-sans">
@@ -9535,6 +10291,635 @@ admin@ropenix.co.ke`;
                 <CheckCircle2 className="h-4 w-4" />
                 Confirm Payment & Complete Order
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Strict Order Workflow Confirmation & Timeline Modal */}
+      {workflowDialog.isOpen && workflowDialog.order && (
+        <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-slate-950/75 backdrop-blur-xs animate-in fade-in duration-150 font-sans">
+          <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xl max-w-lg w-full p-6 text-slate-900 dark:text-slate-100 space-y-5 animate-in zoom-in-95 duration-150 max-h-[90vh] overflow-y-auto">
+            {/* Modal Header */}
+            <div className="flex items-start justify-between gap-3 border-b border-slate-100 dark:border-slate-800 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className={`h-10 w-10 rounded-xl flex items-center justify-center shrink-0 ${
+                  workflowDialog.actionType === 'quote-delivery' ? 'bg-amber-100 dark:bg-amber-950/60 text-amber-600' :
+                  workflowDialog.actionType === 'confirm-payment' ? 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-600' :
+                  workflowDialog.actionType === 'mark-shipped' ? 'bg-indigo-100 dark:bg-indigo-950/60 text-indigo-600' :
+                  workflowDialog.actionType === 'confirm-delivery' ? 'bg-amber-100 dark:bg-amber-950/60 text-amber-600' :
+                  workflowDialog.actionType === 'mark-completed' ? 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-600' :
+                  workflowDialog.actionType === 'cancel' ? 'bg-rose-100 dark:bg-rose-950/60 text-rose-600' :
+                  'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300'
+                }`}>
+                  {workflowDialog.actionType === 'quote-delivery' && <Calculator className="h-5 w-5" />}
+                  {workflowDialog.actionType === 'confirm-payment' && <CreditCard className="h-5 w-5" />}
+                  {workflowDialog.actionType === 'mark-shipped' && <Truck className="h-5 w-5" />}
+                  {workflowDialog.actionType === 'confirm-delivery' && <MapPin className="h-5 w-5" />}
+                  {workflowDialog.actionType === 'mark-completed' && <CheckCircle2 className="h-5 w-5" />}
+                  {workflowDialog.actionType === 'cancel' && <AlertOctagon className="h-5 w-5" />}
+                  {workflowDialog.actionType === 'view-timeline' && <Clock className="h-5 w-5" />}
+                </div>
+                <div>
+                  <h3 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-wide">
+                    {workflowDialog.actionType === 'quote-delivery' && 'Calculate & Send Courier Delivery Quote'}
+                    {workflowDialog.actionType === 'confirm-payment' && 'Confirm Payment & Move to Processing'}
+                    {workflowDialog.actionType === 'mark-shipped' && 'Dispatch Order (Mark as Shipped)'}
+                    {workflowDialog.actionType === 'confirm-delivery' && 'Confirm Courier Delivery Handover'}
+                    {workflowDialog.actionType === 'mark-completed' && 'Complete Order Lifecycle'}
+                    {workflowDialog.actionType === 'cancel' && 'Cancel Order'}
+                    {workflowDialog.actionType === 'view-timeline' && `Order #${workflowDialog.order.id} Lifecycle & Audit Trail`}
+                  </h3>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                    Order ID: <span className="font-mono font-bold text-slate-800 dark:text-slate-200">#{workflowDialog.order.id}</span> • Customer: <span className="font-semibold text-slate-700 dark:text-slate-300">{workflowDialog.order.customerName}</span>
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setWorkflowDialog(prev => ({ ...prev, isOpen: false, order: null, actionType: null, error: null }))}
+                className="p-1 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            {/* Error Message Toast in Dialog */}
+            {workflowDialog.error && (
+              <div className="bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/60 rounded-xl p-3.5 text-xs text-rose-800 dark:text-rose-300 flex items-start gap-2.5 animate-in shake duration-200">
+                <AlertCircle className="h-4 w-4 text-rose-600 shrink-0 mt-0.5" />
+                <div className="space-y-0.5">
+                  <div className="font-bold">Action Blocked by Workflow Engine</div>
+                  <div>{workflowDialog.error}</div>
+                </div>
+              </div>
+            )}
+
+            {/* Content: Quote Delivery */}
+            {workflowDialog.actionType === 'quote-delivery' && (
+              <div className="space-y-4 text-xs">
+                <div className="bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/50 rounded-xl p-3.5 text-amber-900 dark:text-amber-300 space-y-1">
+                  <div className="font-bold flex items-center gap-1.5">
+                    <Truck className="h-4 w-4 text-amber-600" />
+                    Courier Rate Calculation & Customer Notification
+                  </div>
+                  <p className="text-[11px] text-amber-800 dark:text-amber-400 leading-relaxed font-light">
+                    Review customer location details, check actual live courier pricing (Uber / Bolt / PickUp Mtaani), input the delivery fee in KES below, and notify the customer to confirm dispatch.
+                  </p>
+                </div>
+
+                {/* Customer Delivery Details Card */}
+                <div className="bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/60 rounded-xl p-3 space-y-2">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px]">
+                    <div>
+                      <span className="text-slate-500 dark:text-slate-400 block">Recipient Phone:</span>
+                      <strong className="text-slate-800 dark:text-slate-200 font-mono text-xs">{workflowDialog.order.phone || 'No phone provided'}</strong>
+                    </div>
+                    <div>
+                      <span className="text-slate-500 dark:text-slate-400 block">Goods Subtotal:</span>
+                      <strong className="text-slate-800 dark:text-slate-200 font-mono text-xs">
+                        KSh {(workflowDialog.order.subtotal ?? (workflowDialog.order.total - (workflowDialog.order.shippingFee || 0))).toLocaleString('en-KE')}
+                      </strong>
+                    </div>
+                    <div>
+                      <span className="text-slate-500 dark:text-slate-400 block">Area / Estate:</span>
+                      <strong className="text-slate-900 dark:text-white font-medium">{workflowDialog.order.areaEstate || 'Not specified'}</strong>
+                    </div>
+                    <div>
+                      <span className="text-slate-500 dark:text-slate-400 block">Landmark:</span>
+                      <strong className="text-slate-900 dark:text-white font-medium">{workflowDialog.order.landmark || 'None provided'}</strong>
+                    </div>
+                  </div>
+
+                  <div className="pt-2 border-t border-slate-200/80 dark:border-slate-700/60 text-[11px]">
+                    <span className="text-slate-500 dark:text-slate-400 block">Full Delivery Address:</span>
+                    <span className="font-semibold text-slate-800 dark:text-slate-200">{workflowDialog.order.shippingAddress || 'Nairobi'}</span>
+                  </div>
+
+                  {workflowDialog.order.preferredCourier && (
+                    <div className="pt-2 border-t border-slate-200/80 dark:border-slate-700/60 text-[11px] flex items-center justify-between">
+                      <span className="text-slate-500 dark:text-slate-400">Customer Preferred Courier:</span>
+                      <span className="px-2 py-0.5 rounded bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200 dark:border-indigo-800 text-indigo-700 dark:text-indigo-300 font-bold uppercase">
+                        {workflowDialog.order.preferredCourier === 'uber' ? 'Uber Package' :
+                         workflowDialog.order.preferredCourier === 'bolt' ? 'Bolt Send' :
+                         workflowDialog.order.preferredCourier === 'pickup_mtaani' ? 'PickUp Mtaani' :
+                         workflowDialog.order.preferredCourier.toUpperCase()}
+                      </span>
+                    </div>
+                  )}
+
+                  {workflowDialog.order.pickupMtaaniPoint && (
+                    <div className="pt-2 border-t border-slate-200/80 dark:border-slate-700/60 text-[11px] flex items-center justify-between">
+                      <span className="text-slate-500 dark:text-slate-400">PickUp Mtaani Location Point:</span>
+                      <strong className="text-amber-700 dark:text-amber-400 font-bold">{workflowDialog.order.pickupMtaaniPoint}</strong>
+                    </div>
+                  )}
+                </div>
+
+                {/* Courier Selection & Fee Input */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300">
+                      Assigned Courier Partner *
+                    </label>
+                    <select
+                      value={workflowDialog.quotedCourier}
+                      onChange={(e) => setWorkflowDialog(prev => ({ ...prev, quotedCourier: e.target.value }))}
+                      className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold focus:outline-hidden focus:ring-2 focus:ring-amber-500"
+                    >
+                      <option value="uber">🚗 Uber Package (Live App Quote)</option>
+                      <option value="bolt">🛵 Bolt Send (Motorbike / Boda)</option>
+                      <option value="pickup_mtaani">📦 PickUp Mtaani (Agent Dropoff)</option>
+                      <option value="fargo">🚛 Fargo Courier (Countrywide)</option>
+                      <option value="rider">🏍️ Dedicated Store Rider</option>
+                    </select>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300">
+                      Delivery Fee (KES) *
+                    </label>
+                    <div className="relative">
+                      <span className="absolute left-3 top-2 text-slate-400 font-bold text-xs">KSh</span>
+                      <input
+                        type="number"
+                        min="0"
+                        step="10"
+                        value={workflowDialog.deliveryFeeInput}
+                        onChange={(e) => setWorkflowDialog(prev => ({ ...prev, deliveryFeeInput: e.target.value }))}
+                        placeholder="e.g. 250"
+                        className="w-full pl-11 pr-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-mono font-bold text-slate-900 dark:text-white focus:outline-hidden focus:ring-2 focus:ring-amber-500"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Quick Fee Presets */}
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <span className="text-[10px] text-slate-400 font-mono">Quick Rates:</span>
+                  {[150, 200, 250, 300, 350, 450, 500].map(amt => (
+                    <button
+                      key={amt}
+                      type="button"
+                      onClick={() => setWorkflowDialog(prev => ({ ...prev, deliveryFeeInput: String(amt) }))}
+                      className="px-2 py-0.5 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-amber-100 dark:hover:bg-amber-950/60 text-slate-700 dark:text-slate-300 text-[10px] font-mono font-bold transition-colors cursor-pointer border border-slate-200 dark:border-slate-700"
+                    >
+                      KSh {amt}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Recalculated Order Summary Banner */}
+                {(() => {
+                  const fee = parseFloat(workflowDialog.deliveryFeeInput) || 0;
+                  const sub = workflowDialog.order.subtotal ?? (workflowDialog.order.total - (workflowDialog.order.shippingFee || 0));
+                  const tax = workflowDialog.order.taxTotal ?? 0;
+                  const discount = workflowDialog.order.discountAmount ?? 0;
+                  const newTotal = sub + tax + fee - discount;
+
+                  return (
+                    <div className="p-3 rounded-xl bg-sky-50/80 dark:bg-sky-950/30 border border-sky-200 dark:border-sky-800/50 flex items-center justify-between text-xs">
+                      <div>
+                        <span className="text-[10px] text-sky-800 dark:text-sky-400 font-bold uppercase block">Updated Grand Total (Goods + Delivery):</span>
+                        <span className="text-[11px] text-slate-600 dark:text-slate-300">
+                          Subtotal KSh {sub.toLocaleString()} + Delivery KSh {fee.toLocaleString()} {discount > 0 ? `- Discount KSh ${discount.toLocaleString()}` : ''}
+                        </span>
+                      </div>
+                      <div className="text-right">
+                        <span className="font-mono font-black text-sky-900 dark:text-sky-200 text-sm">
+                          KSh {newTotal.toLocaleString('en-KE')}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                {/* Quoting Notes / Instructions */}
+                <div className="space-y-1.5">
+                  <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300">
+                    Quote Notes / Tracking Reference (Optional)
+                  </label>
+                  <input
+                    type="text"
+                    value={workflowDialog.notes}
+                    onChange={(e) => setWorkflowDialog(prev => ({ ...prev, notes: e.target.value }))}
+                    placeholder="e.g. Uber Motorbike delivery estimated 45 mins after payment"
+                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs focus:outline-hidden focus:ring-2 focus:ring-amber-500"
+                  />
+                </div>
+
+                {/* Instant WhatsApp Quote Messenger Button */}
+                {workflowDialog.order.phone && (
+                  <div className="pt-1">
+                    {(() => {
+                      const fee = parseFloat(workflowDialog.deliveryFeeInput) || 0;
+                      const sub = workflowDialog.order.subtotal ?? (workflowDialog.order.total - (workflowDialog.order.shippingFee || 0));
+                      const newTotal = sub + (workflowDialog.order.taxTotal ?? 0) + fee - (workflowDialog.order.discountAmount ?? 0);
+                      const courierLabel = workflowDialog.quotedCourier === 'uber' ? 'Uber Package' :
+                        workflowDialog.quotedCourier === 'bolt' ? 'Bolt Send' :
+                        workflowDialog.quotedCourier === 'pickup_mtaani' ? 'PickUp Mtaani' :
+                        workflowDialog.quotedCourier === 'fargo' ? 'Fargo Courier' : 'Local Courier Rider';
+
+                      const rawPhone = (workflowDialog.order.phone || '').replace(/[^0-9]/g, '');
+                      const cleanPhone = rawPhone.startsWith('0') ? '254' + rawPhone.slice(1) : (rawPhone.startsWith('+') ? rawPhone.slice(1) : rawPhone);
+
+                      const msg = `Hi ${workflowDialog.order.customerName},\nThank you for placing order *#${workflowDialog.order.id}* on Ropenix!\n\n📦 *Delivery Quote Update:*\n• *Destination:* ${workflowDialog.order.shippingAddress || 'Nairobi'}${workflowDialog.order.areaEstate ? ` (${workflowDialog.order.areaEstate})` : ''}\n• *Courier Partner:* ${courierLabel}\n• *Quoted Delivery Fee:* KES ${fee.toLocaleString('en-KE')}\n• *Goods Subtotal:* KES ${sub.toLocaleString('en-KE')}\n• *Grand Total:* KES ${newTotal.toLocaleString('en-KE')}\n\n💳 *Payment Details:*\nLipa na M-PESA Paybill: *303030*\nAccount Number: *${workflowDialog.order.id.toUpperCase()}*\nAmount: *KES ${newTotal.toLocaleString('en-KE')}*\n\nPlease reply or share your M-Pesa confirmation code to approve and dispatch your order. Thank you!`;
+
+                      const waUrl = `https://wa.me/${cleanPhone}?text=${encodeURIComponent(msg)}`;
+
+                      return (
+                        <a
+                          href={waUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="w-full py-2 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-xs transition-colors"
+                        >
+                          <span>📱 Send Quoted Fee via WhatsApp to Customer ({workflowDialog.order.phone})</span>
+                        </a>
+                      );
+                    })()}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Content: Confirm Payment */}
+            {workflowDialog.actionType === 'confirm-payment' && (
+              <div className="space-y-4 text-xs">
+                <div className="bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800/50 rounded-xl p-3.5 text-emerald-900 dark:text-emerald-300 space-y-1">
+                  <div className="font-bold flex items-center gap-1.5">
+                    <ShieldCheck className="h-4 w-4 text-emerald-600" />
+                    Automated Action & Notification
+                  </div>
+                  <p className="text-[11px] text-emerald-800 dark:text-emerald-400 leading-relaxed font-light">
+                    Confirming payment sets <code className="font-mono font-bold">isPaid = true</code>, records <code className="font-mono font-bold">paidAt</code> timestamp, automatically moves status from <strong>Pending Payment</strong> to <strong>Processing</strong>, and triggers an official payment receipt email to <strong className="underline">{workflowDialog.order.customerEmail}</strong>.
+                  </p>
+                </div>
+
+                <div className="bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/60 rounded-xl p-3 space-y-2">
+                  <div className="flex justify-between items-center text-[11px]">
+                    <span className="text-slate-500 dark:text-slate-400">Order Total:</span>
+                    <span className="font-mono font-black text-slate-900 dark:text-white text-sm">KSh {workflowDialog.order.total.toLocaleString('en-KE')}</span>
+                  </div>
+                  <div className="flex justify-between items-center text-[11px]">
+                    <span className="text-slate-500 dark:text-slate-400">Recipient:</span>
+                    <span className="font-semibold text-slate-700 dark:text-slate-300">{workflowDialog.order.customerName} ({workflowDialog.order.phone || 'No phone'})</span>
+                  </div>
+                  <div className="flex justify-between items-center text-[11px]">
+                    <span className="text-slate-500 dark:text-slate-400">Destination:</span>
+                    <span className="font-medium text-slate-700 dark:text-slate-300 truncate max-w-[240px]">{workflowDialog.order.shippingAddress || 'Nairobi'}</span>
+                  </div>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300">
+                    Payment Reference / M-Pesa Code
+                  </label>
+                  <input
+                    type="text"
+                    value={workflowDialog.notes}
+                    onChange={(e) => setWorkflowDialog(prev => ({ ...prev, notes: e.target.value }))}
+                    placeholder="e.g. SGH7XYZ123 or SAFARICOM-VERIFIED"
+                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-mono focus:outline-hidden focus:ring-2 focus:ring-emerald-500"
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* Content: Mark Shipped */}
+            {workflowDialog.actionType === 'mark-shipped' && (
+              <div className="space-y-4 text-xs">
+                <div className="bg-indigo-50 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-800/50 rounded-xl p-3.5 text-indigo-900 dark:text-indigo-300 space-y-1">
+                  <div className="font-bold flex items-center gap-1.5">
+                    <Truck className="h-4 w-4 text-indigo-600" />
+                    Courier Dispatch & Tracking Notification
+                  </div>
+                  <p className="text-[11px] text-indigo-800 dark:text-indigo-400 leading-relaxed font-light">
+                    Transitions the order from <strong>Processing</strong> to <strong>Shipped</strong>. An automated dispatch email containing the tracking code and live tracking link will be sent to <strong className="underline">{workflowDialog.order.customerEmail}</strong>.
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300">
+                      Tracking Number
+                    </label>
+                    <input
+                      type="text"
+                      value={workflowDialog.trackingNumber}
+                      onChange={(e) => setWorkflowDialog(prev => ({ ...prev, trackingNumber: e.target.value }))}
+                      placeholder="e.g. ROP-TRK-123456"
+                      className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-mono font-bold text-indigo-600 dark:text-indigo-400 focus:outline-hidden focus:ring-2 focus:ring-indigo-500"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300">
+                      Courier Partner Name
+                    </label>
+                    <input
+                      type="text"
+                      value={workflowDialog.courierName}
+                      onChange={(e) => setWorkflowDialog(prev => ({ ...prev, courierName: e.target.value }))}
+                      placeholder="e.g. Ropenix Express Courier"
+                      className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs focus:outline-hidden focus:ring-2 focus:ring-indigo-500"
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300">
+                    Dispatch Note (Optional)
+                  </label>
+                  <input
+                    type="text"
+                    value={workflowDialog.notes}
+                    onChange={(e) => setWorkflowDialog(prev => ({ ...prev, notes: e.target.value }))}
+                    placeholder="e.g. Package handed over to motorbike rider"
+                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs focus:outline-hidden focus:ring-2 focus:ring-indigo-500"
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* Content: Confirm Delivery */}
+            {workflowDialog.actionType === 'confirm-delivery' && (
+              <div className="space-y-4 text-xs">
+                <div className="bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/50 rounded-xl p-3.5 text-amber-900 dark:text-amber-300 space-y-1">
+                  <div className="font-bold flex items-center gap-1.5">
+                    <MapPin className="h-4 w-4 text-amber-600" />
+                    Courier Delivery Verification Step
+                  </div>
+                  <p className="text-[11px] text-amber-800 dark:text-amber-400 leading-relaxed font-light">
+                    Per strict fulfillment rules, an in-transit order must be confirmed as delivered by the courier before it can be marked as Completed. Record the delivery person's confirmation below.
+                  </p>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300">
+                    Delivery Courier / Rider Name *
+                  </label>
+                  <input
+                    type="text"
+                    value={workflowDialog.deliveryPerson}
+                    onChange={(e) => setWorkflowDialog(prev => ({ ...prev, deliveryPerson: e.target.value }))}
+                    placeholder="e.g. John Kamau (Rider 04)"
+                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold focus:outline-hidden focus:ring-2 focus:ring-amber-500"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300">
+                    Delivery Note / Recipient Confirmation
+                  </label>
+                  <input
+                    type="text"
+                    value={workflowDialog.deliveryNote}
+                    onChange={(e) => setWorkflowDialog(prev => ({ ...prev, deliveryNote: e.target.value }))}
+                    placeholder="e.g. Package handed directly to customer at doorstep"
+                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs focus:outline-hidden focus:ring-2 focus:ring-amber-500"
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* Content: Mark Completed */}
+            {workflowDialog.actionType === 'mark-completed' && (
+              <div className="space-y-4 text-xs">
+                <div className="bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800/50 rounded-xl p-3.5 text-emerald-900 dark:text-emerald-300 space-y-1">
+                  <div className="font-bold flex items-center gap-1.5">
+                    <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+                    Final Order Completion
+                  </div>
+                  <p className="text-[11px] text-emerald-800 dark:text-emerald-400 leading-relaxed font-light">
+                    Delivery has been verified! Completing the order will close the lifecycle and send a final order delivered & completion email with feedback link to <strong className="underline">{workflowDialog.order.customerEmail}</strong>.
+                  </p>
+                </div>
+
+                <div className="bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/60 rounded-xl p-3 space-y-1.5 text-[11px]">
+                  <div className="flex justify-between">
+                    <span className="text-slate-500 dark:text-slate-400">Delivery Courier:</span>
+                    <span className="font-semibold text-slate-800 dark:text-slate-200">{workflowDialog.order.deliveryPerson || 'Verified Courier'}</span>
+                  </div>
+                  {workflowDialog.order.deliveryNote && (
+                    <div className="flex justify-between">
+                      <span className="text-slate-500 dark:text-slate-400">Delivery Note:</span>
+                      <span className="text-slate-700 dark:text-slate-300 italic">{workflowDialog.order.deliveryNote}</span>
+                    </div>
+                  )}
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300">
+                    Completion Notes (Optional)
+                  </label>
+                  <input
+                    type="text"
+                    value={workflowDialog.notes}
+                    onChange={(e) => setWorkflowDialog(prev => ({ ...prev, notes: e.target.value }))}
+                    placeholder="e.g. Order delivered smoothly, customer satisfied"
+                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs focus:outline-hidden focus:ring-2 focus:ring-emerald-500"
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* Content: Cancel Order */}
+            {workflowDialog.actionType === 'cancel' && (
+              <div className="space-y-4 text-xs">
+                <div className="bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-800/50 rounded-xl p-3.5 text-rose-900 dark:text-rose-300 space-y-1">
+                  <div className="font-bold flex items-center gap-1.5">
+                    <AlertOctagon className="h-4 w-4 text-rose-600" />
+                    Order Cancellation Notice
+                  </div>
+                  <p className="text-[11px] text-rose-800 dark:text-rose-400 leading-relaxed font-light">
+                    Cancelling this order will mark it as cancelled in the database and send a formal cancellation notification email to <strong className="underline">{workflowDialog.order.customerEmail}</strong>.
+                  </p>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300">
+                    Cancellation Reason
+                  </label>
+                  <textarea
+                    rows={2}
+                    value={workflowDialog.notes}
+                    onChange={(e) => setWorkflowDialog(prev => ({ ...prev, notes: e.target.value }))}
+                    placeholder="e.g. Out of stock / Customer requested cancellation / Invalid address"
+                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs focus:outline-hidden focus:ring-2 focus:ring-rose-500"
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* Content: View Lifecycle Timeline & Audit Trail */}
+            {workflowDialog.actionType === 'view-timeline' && (
+              <div className="space-y-5 text-xs">
+                {/* Visual Progress Stepper */}
+                <div className="bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/60 rounded-xl p-4">
+                  <div className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-3">
+                    Strict Lifecycle Progress
+                  </div>
+                  <div className="flex items-center justify-between relative">
+                    <div className="absolute left-0 top-1/2 -translate-y-1/2 h-0.5 w-full bg-slate-200 dark:bg-slate-700 -z-0" />
+                    
+                    {/* Step 1: Pending Payment */}
+                    <div className="relative z-10 flex flex-col items-center bg-white dark:bg-slate-900 px-1">
+                      <div className={`h-7 w-7 rounded-full flex items-center justify-center text-xs font-bold ${
+                        isOrderPaid(workflowDialog.order) || workflowDialog.order.status !== 'pending'
+                          ? 'bg-emerald-600 text-white'
+                          : 'bg-amber-500 text-white animate-pulse'
+                      }`}>
+                        {isOrderPaid(workflowDialog.order) || workflowDialog.order.status !== 'pending' ? <Check className="h-3.5 w-3.5" /> : '1'}
+                      </div>
+                      <span className="text-[10px] font-bold mt-1 text-slate-700 dark:text-slate-300">Payment</span>
+                    </div>
+
+                    {/* Step 2: Processing */}
+                    <div className="relative z-10 flex flex-col items-center bg-white dark:bg-slate-900 px-1">
+                      <div className={`h-7 w-7 rounded-full flex items-center justify-center text-xs font-bold ${
+                        ['processing', 'shipped', 'delivered', 'completed'].includes(workflowDialog.order.status)
+                          ? 'bg-emerald-600 text-white'
+                          : 'bg-slate-200 dark:bg-slate-700 text-slate-400'
+                      }`}>
+                        {['shipped', 'delivered', 'completed'].includes(workflowDialog.order.status) ? <Check className="h-3.5 w-3.5" /> : '2'}
+                      </div>
+                      <span className="text-[10px] font-bold mt-1 text-slate-700 dark:text-slate-300">Processing</span>
+                    </div>
+
+                    {/* Step 3: Shipped */}
+                    <div className="relative z-10 flex flex-col items-center bg-white dark:bg-slate-900 px-1">
+                      <div className={`h-7 w-7 rounded-full flex items-center justify-center text-xs font-bold ${
+                        ['shipped', 'delivered', 'completed'].includes(workflowDialog.order.status)
+                          ? 'bg-emerald-600 text-white'
+                          : 'bg-slate-200 dark:bg-slate-700 text-slate-400'
+                      }`}>
+                        {workflowDialog.order.status === 'completed' || workflowDialog.order.deliveryConfirmed ? <Check className="h-3.5 w-3.5" /> : '3'}
+                      </div>
+                      <span className="text-[10px] font-bold mt-1 text-slate-700 dark:text-slate-300">Shipped</span>
+                    </div>
+
+                    {/* Step 4: Delivery Confirmed */}
+                    <div className="relative z-10 flex flex-col items-center bg-white dark:bg-slate-900 px-1">
+                      <div className={`h-7 w-7 rounded-full flex items-center justify-center text-xs font-bold ${
+                        workflowDialog.order.deliveryConfirmed || workflowDialog.order.status === 'completed'
+                          ? 'bg-emerald-600 text-white'
+                          : 'bg-slate-200 dark:bg-slate-700 text-slate-400'
+                      }`}>
+                        {workflowDialog.order.deliveryConfirmed || workflowDialog.order.status === 'completed' ? <Check className="h-3.5 w-3.5" /> : '4'}
+                      </div>
+                      <span className="text-[10px] font-bold mt-1 text-slate-700 dark:text-slate-300">Delivered</span>
+                    </div>
+
+                    {/* Step 5: Completed */}
+                    <div className="relative z-10 flex flex-col items-center bg-white dark:bg-slate-900 px-1">
+                      <div className={`h-7 w-7 rounded-full flex items-center justify-center text-xs font-bold ${
+                        workflowDialog.order.status === 'completed'
+                          ? 'bg-emerald-600 text-white'
+                          : 'bg-slate-200 dark:bg-slate-700 text-slate-400'
+                      }`}>
+                        {workflowDialog.order.status === 'completed' ? <Check className="h-3.5 w-3.5" /> : '5'}
+                      </div>
+                      <span className="text-[10px] font-bold mt-1 text-slate-700 dark:text-slate-300">Completed</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Status History & Audit Log */}
+                <div className="space-y-2">
+                  <div className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                    Audit Log & Email Dispatch Status ({workflowDialog.order.statusHistory?.length || 0} events)
+                  </div>
+
+                  {Array.isArray(workflowDialog.order.statusHistory) && workflowDialog.order.statusHistory.length > 0 ? (
+                    <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
+                      {workflowDialog.order.statusHistory.map((item, idx) => (
+                        <div key={idx} className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200/80 dark:border-slate-700/50 flex items-start justify-between gap-2">
+                          <div className="space-y-1">
+                            <div className="flex items-center gap-2">
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold uppercase bg-slate-200 dark:bg-slate-700 text-slate-800 dark:text-slate-200">
+                                {item.status}
+                              </span>
+                              <span className="text-[10px] text-slate-400">
+                                by <strong className="text-slate-600 dark:text-slate-300">{item.changedBy || 'System'}</strong>
+                              </span>
+                            </div>
+                            {item.note && (
+                              <p className="text-[11px] text-slate-600 dark:text-slate-300">{item.note}</p>
+                            )}
+                            <div className="text-[10px] text-slate-400 font-mono">{item.timestamp}</div>
+                          </div>
+
+                          <div className="shrink-0 text-right">
+                            {item.emailSent === true ? (
+                              <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60 px-2 py-0.5 rounded-full">
+                                <Mail className="h-2.5 w-2.5" /> Email Sent
+                              </span>
+                            ) : item.emailSent === false ? (
+                              <span className="inline-flex items-center gap-1 text-[10px] font-medium text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-full">
+                                No email
+                              </span>
+                            ) : null}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="p-4 text-center text-slate-400 text-xs italic bg-slate-50 dark:bg-slate-800/30 rounded-xl border border-dashed border-slate-200 dark:border-slate-700">
+                      No status history records found for this order.
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Modal Actions Footer */}
+            <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-100 dark:border-slate-800">
+              <button
+                type="button"
+                onClick={() => setWorkflowDialog(prev => ({ ...prev, isOpen: false, order: null, actionType: null, error: null }))}
+                className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-700 cursor-pointer transition-colors"
+              >
+                {workflowDialog.actionType === 'view-timeline' ? 'Close' : 'Cancel'}
+              </button>
+
+              {workflowDialog.actionType !== 'view-timeline' && (
+                <button
+                  type="button"
+                  disabled={workflowDialog.isLoading}
+                  onClick={handleExecuteWorkflow}
+                  className={`px-4 py-2 rounded-xl text-xs font-black text-white shadow-md cursor-pointer transition-all flex items-center gap-1.5 disabled:opacity-50 ${
+                    workflowDialog.actionType === 'quote-delivery' ? 'bg-amber-600 hover:bg-amber-700 shadow-amber-600/20' :
+                    workflowDialog.actionType === 'confirm-payment' ? 'bg-emerald-600 hover:bg-emerald-700 shadow-emerald-600/20' :
+                    workflowDialog.actionType === 'mark-shipped' ? 'bg-indigo-600 hover:bg-indigo-700 shadow-indigo-600/20' :
+                    workflowDialog.actionType === 'confirm-delivery' ? 'bg-amber-600 hover:bg-amber-700 shadow-amber-600/20' :
+                    workflowDialog.actionType === 'mark-completed' ? 'bg-emerald-600 hover:bg-emerald-700 shadow-emerald-600/20' :
+                    'bg-rose-600 hover:bg-rose-700 shadow-rose-600/20'
+                  }`}
+                >
+                  {workflowDialog.isLoading ? (
+                    <>
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      <span>Updating...</span>
+                    </>
+                  ) : (
+                    <>
+                      {workflowDialog.actionType === 'quote-delivery' && <Calculator className="h-3.5 w-3.5" />}
+                      {workflowDialog.actionType === 'confirm-payment' && <CreditCard className="h-3.5 w-3.5" />}
+                      {workflowDialog.actionType === 'mark-shipped' && <Truck className="h-3.5 w-3.5" />}
+                      {workflowDialog.actionType === 'confirm-delivery' && <MapPin className="h-3.5 w-3.5" />}
+                      {workflowDialog.actionType === 'mark-completed' && <CheckCircle2 className="h-3.5 w-3.5" />}
+                      {workflowDialog.actionType === 'cancel' && <AlertOctagon className="h-3.5 w-3.5" />}
+                      <span>
+                        {workflowDialog.actionType === 'quote-delivery' && 'Save & Quote Delivery Fee'}
+                        {workflowDialog.actionType === 'confirm-payment' && 'Confirm Payment & Move to Processing'}
+                        {workflowDialog.actionType === 'mark-shipped' && 'Mark as Shipped'}
+                        {workflowDialog.actionType === 'confirm-delivery' && 'Confirm Delivery'}
+                        {workflowDialog.actionType === 'mark-completed' && 'Mark as Completed'}
+                        {workflowDialog.actionType === 'cancel' && 'Confirm Cancellation'}
+                      </span>
+                    </>
+                  )}
+                </button>
+              )}
             </div>
           </div>
         </div>

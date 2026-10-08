@@ -50,8 +50,6 @@ export default function SuggestRestockModal({
   orders,
   onUpdateProductStock
 }: SuggestRestockModalProps) {
-  if (!isOpen || !product) return null;
-
   // Horizon state
   const [horizon, setHorizon] = useState<HorizonType>('30');
   // Days of supply targets
@@ -72,7 +70,7 @@ export default function SuggestRestockModal({
 
     validOrders.forEach((order) => {
       order.items.forEach((item) => {
-        if (item.productId === product.id) {
+        if (product && item.productId === product.id) {
           sales.push({
             orderId: order.id,
             customer: order.customerName,
@@ -86,7 +84,7 @@ export default function SuggestRestockModal({
 
     // Sort sales newest first
     return sales.sort((a, b) => b.date.getTime() - a.date.getTime());
-  }, [orders, product.id]);
+  }, [orders, product?.id]);
 
   // 2. Filter sales based on calculation horizon
   const filteredSales = useMemo(() => {
@@ -125,8 +123,8 @@ export default function SuggestRestockModal({
 
     // Calculate Recommended Reorder Quantity
     // Reorder Quantity = (Daily consumption * (Target Days + Lead Time)) - Current Stock
-    const currentStock = product.stock ?? 0;
-    const safetyStockThreshold = product.lowStockThreshold ?? 5;
+    const currentStock = product?.stock ?? 0;
+    const safetyStockThreshold = product?.lowStockThreshold ?? 5;
     
     const requiredBuffer = averageDailyConsumption * (targetDaysOfSupply + leadTimeDays);
     const rawRecommended = Math.ceil(requiredBuffer - currentStock);
@@ -195,6 +193,7 @@ export default function SuggestRestockModal({
 
   // Handle Apply Restock
   const handleApplyRestock = () => {
+    if (!product) return;
     const qty = parseInt(manualQty, 10);
     if (isNaN(qty) || qty < 0) return;
 
@@ -209,6 +208,8 @@ export default function SuggestRestockModal({
       onClose();
     }, 2000);
   };
+
+  if (!isOpen || !product) return null;
 
   return (
     <div className="fixed inset-0 bg-gray-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-4 font-sans animate-fade-in">

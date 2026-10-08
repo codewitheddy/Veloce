@@ -37,8 +37,8 @@ const DEFAULT_SHIPPING_ZONES: ShippingZone[] = [
     description: 'Central Business District, Westlands, Kilimani, Parklands, Kileleshwa',
     minDistanceKm: 0,
     maxDistanceKm: 8,
-    baseFee: 150,
-    perKmRate: 20,
+    baseFee: 0,
+    perKmRate: 25,
     isActive: true,
     regions: ['CBD', 'Westlands', 'Kilimani', 'Parklands'],
     estimatedDeliveryTime: '20-35 mins'
@@ -49,8 +49,8 @@ const DEFAULT_SHIPPING_ZONES: ShippingZone[] = [
     description: 'Karen, Langata, Runda, Gigiri, Lavington, Kasarani, Embakasi',
     minDistanceKm: 8,
     maxDistanceKm: 20,
-    baseFee: 250,
-    perKmRate: 30,
+    baseFee: 200,
+    perKmRate: 25,
     isActive: true,
     regions: ['Karen', 'Langata', 'Runda', 'Gigiri', 'Embakasi'],
     estimatedDeliveryTime: '35-50 mins'
@@ -61,8 +61,8 @@ const DEFAULT_SHIPPING_ZONES: ShippingZone[] = [
     description: 'Thika, Ruiru, Kikuyu, Kitengela, Ngong, Machakos Junction',
     minDistanceKm: 20,
     maxDistanceKm: 50,
-    baseFee: 400,
-    perKmRate: 35,
+    baseFee: 500,
+    perKmRate: 25,
     isActive: true,
     regions: ['Thika', 'Ruiru', 'Kikuyu', 'Kitengela', 'Ngong'],
     estimatedDeliveryTime: '1-2 hours'
@@ -88,8 +88,8 @@ const DEFAULT_HAPPY_HOUR_WINDOWS: HappyHourWindow[] = [
     endTime: '12:00',
     daysOfWeek: [0, 6], // Sun, Sat
     discountPercentage: 30,
-    isActive: false,
-    description: '30% Off Delivery Fee for weekend morning coffee & goods orders.'
+    isActive: true,
+    description: '30% Off Delivery Fee on weekend mornings.'
   }
 ];
 
@@ -114,7 +114,7 @@ export function ShippingSettingsPanel() {
   // Global thresholds & rates
   const [freeThreshold, setFreeThreshold] = useState<number>(() => {
     try {
-      const saved = localStorage.getItem('veloce_free_delivery_threshold');
+      const saved = localStorage.getItem('veloce_free_shipping_threshold');
       if (saved) return Number(saved);
     } catch {}
     return 5000;
@@ -128,9 +128,9 @@ export function ShippingSettingsPanel() {
     return 150;
   });
 
-  const [defaultBaseDistance, setDefaultBaseDistance] = useState<number>(5);
-  const [defaultBaseFee, setDefaultBaseFee] = useState<number>(200);
-  const [defaultPerKmRate, setDefaultPerKmRate] = useState<number>(30);
+  const [defaultBaseDistance, setDefaultBaseDistance] = useState<number>(0);
+  const [defaultBaseFee, setDefaultBaseFee] = useState<number>(0);
+  const [defaultPerKmRate, setDefaultPerKmRate] = useState<number>(25);
   const [maxRadiusKm, setMaxRadiusKm] = useState<number>(50);
 
   // Active Sub View
@@ -291,6 +291,26 @@ export function ShippingSettingsPanel() {
           >
             <Save className="h-3.5 w-3.5" /> Save Configuration
           </button>
+        </div>
+      </div>
+
+      {/* Active Courier Policy Notice */}
+      <div className="bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/60 rounded-2xl p-4 flex items-start gap-3 shadow-3xs">
+        <div className="p-2 bg-amber-100 dark:bg-amber-900/50 rounded-xl text-amber-700 dark:text-amber-400 shrink-0 mt-0.5">
+          <Truck className="h-5 w-5" />
+        </div>
+        <div className="space-y-1">
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-bold text-amber-900 dark:text-amber-200 uppercase tracking-wider font-mono">
+              Active Store Policy: Post-Order Courier Quoting
+            </span>
+            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-200/80 dark:bg-amber-900/80 text-amber-900 dark:text-amber-200">
+              Checkout Rates Set to TBC
+            </span>
+          </div>
+          <p className="text-xs text-amber-800/90 dark:text-amber-300/90 leading-relaxed font-light">
+            Automated checkout rate calculation is currently disabled. Online store checkout displays delivery as <strong>&ldquo;To be confirmed (TBC)&rdquo;</strong>. Delivery fees are determined after order placement based on live partner charges from <strong>Uber Package</strong>, <strong>Bolt Send</strong>, and <strong>PickUp Mtaani</strong>, with quotes sent to customers for approval prior to dispatch.
+          </p>
         </div>
       </div>
 

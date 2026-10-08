@@ -132,8 +132,8 @@ export function ShippingZonesPanel({
             description: 'Central Business District, Westlands, Kilimani, Parklands',
             minDistanceKm: 0,
             maxDistanceKm: 8,
-            baseFee: 150,
-            perKmRate: 20,
+            baseFee: 0,
+            perKmRate: 25,
             isActive: true,
             regions: ['CBD', 'Westlands', 'Kilimani', 'Parklands'],
             estimatedDeliveryTime: '20-35 mins'
@@ -144,8 +144,8 @@ export function ShippingZonesPanel({
             description: 'Karen, Langata, Runda, Gigiri, Lavington, Kasarani, Embakasi',
             minDistanceKm: 8,
             maxDistanceKm: 20,
-            baseFee: 250,
-            perKmRate: 30,
+            baseFee: 200,
+            perKmRate: 25,
             isActive: true,
             regions: ['Karen', 'Langata', 'Runda', 'Gigiri', 'Embakasi'],
             estimatedDeliveryTime: '35-50 mins'
@@ -156,8 +156,8 @@ export function ShippingZonesPanel({
             description: 'Thika, Ruiru, Kikuyu, Kitengela, Ngong, Syokimau',
             minDistanceKm: 20,
             maxDistanceKm: 50,
-            baseFee: 400,
-            perKmRate: 35,
+            baseFee: 500,
+            perKmRate: 25,
             isActive: true,
             regions: ['Thika', 'Ruiru', 'Kikuyu', 'Kitengela', 'Ngong', 'Syokimau'],
             estimatedDeliveryTime: '1-2 hours'

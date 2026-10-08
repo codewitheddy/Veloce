@@ -212,25 +212,54 @@ export function safeLocalStorageSetItem(key: string, value: string): boolean {
     }
   }
 
-  // 2. Scalability Optimization: If payload is large (> 250 KB, e.g. 2,000+ products),
-  // store directly in high-capacity IndexedDB to preserve browser localStorage quota
-  if (value.length > 250000 || key === 'veloce_products') {
+  // 2. Critical Products Storage (Persist to both localStorage and IndexedDB)
+  if (key === 'veloce_products') {
     try {
       const parsed = JSON.parse(value);
       saveToIndexedDb('veloce_cache', key, parsed).catch(() => {});
     } catch {
       saveToIndexedDb('veloce_cache', key, value).catch(() => {});
     }
-    // Only store minimal stub in localStorage if needed
+
     try {
-      if (key === 'veloce_products') {
-        localStorage.removeItem('veloce_products');
+      localStorage.setItem(key, value);
+      return true;
+    } catch (err: unknown) {
+      if (isQuotaExceededError(err)) {
+        freeUpLocalStorageSpace(key);
+        try {
+          // If still tight, save sanitized version without huge base64 images to localStorage
+          const parsed = JSON.parse(value);
+          if (Array.isArray(parsed)) {
+            const lightweight = parsed.map((p: any) => ({
+              ...p,
+              image: (typeof p.image === 'string' && p.image.startsWith('data:'))
+                ? 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?auto=format&fit=crop&q=80&w=600'
+                : p.image,
+              images: Array.isArray(p.images)
+                ? p.images.map((img: string) => (typeof img === 'string' && img.startsWith('data:')) ? 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?auto=format&fit=crop&q=80&w=600' : img)
+                : p.images
+            }));
+            localStorage.setItem(key, JSON.stringify(lightweight));
+            return true;
+          }
+        } catch {}
       }
-    } catch {}
-    return true;
+      return false;
+    }
   }
 
-  // 3. General localStorage Write
+  // 3. Large payload (> 500 KB) IndexedDB handling
+  if (value.length > 500000) {
+    try {
+      const parsed = JSON.parse(value);
+      saveToIndexedDb('veloce_cache', key, parsed).catch(() => {});
+    } catch {
+      saveToIndexedDb('veloce_cache', key, value).catch(() => {});
+    }
+  }
+
+  // 4. General localStorage Write
   try {
     localStorage.setItem(key, value);
     return true;
@@ -238,7 +267,7 @@ export function safeLocalStorageSetItem(key: string, value: string): boolean {
     if (isQuotaExceededError(err)) {
       console.warn(`[Storage] QuotaExceededError writing "${key}" (${(value.length / 1024).toFixed(1)} KB). Attempting recovery...`);
       
-      // Step 1: Attempt progressive cleanup of transient keys
+      // Attempt progressive cleanup of transient keys
       freeUpLocalStorageSpace(key);
 
       try {
@@ -246,28 +275,6 @@ export function safeLocalStorageSetItem(key: string, value: string): boolean {
         console.info(`[Storage] Successfully recovered and saved "${key}" after storage cleanup.`);
         return true;
       } catch (retryErr) {
-        // Step 2: If it is veloce_products and still fails, create a sanitized lightweight version
-        if (key === 'veloce_products' || key.includes('products')) {
-          try {
-            const parsed = JSON.parse(value);
-            if (Array.isArray(parsed)) {
-              const lightweight = parsed.map((p: any) => ({
-                ...p,
-                image: (typeof p.image === 'string' && p.image.startsWith('data:'))
-                  ? 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?auto=format&fit=crop&q=80&w=600'
-                  : p.image,
-                images: Array.isArray(p.images)
-                  ? p.images.map((img: string) => (typeof img === 'string' && img.startsWith('data:')) ? 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?auto=format&fit=crop&q=80&w=600' : img)
-                  : p.images
-              }));
-              localStorage.setItem(key, JSON.stringify(lightweight));
-              console.info(`[Storage] Saved sanitized lightweight version of "${key}".`);
-              saveToIndexedDb('veloce_cache', key, parsed).catch(() => {});
-              return true;
-            }
-          } catch {}
-        }
-
         // Asynchronous IndexedDB fallback
         try {
           const parsed = JSON.parse(value);
@@ -276,7 +283,7 @@ export function safeLocalStorageSetItem(key: string, value: string): boolean {
           saveToIndexedDb('veloce_cache', key, value).catch(() => {});
         }
 
-        console.warn(`[Storage] Could not write "${key}" to localStorage due to quota limit. Persisted to IndexedDB fallback without crashing.`);
+        console.warn(`[Storage] Could not write "${key}" to localStorage due to quota limit. Persisted to IndexedDB fallback.`);
         return false;
       }
     } else {

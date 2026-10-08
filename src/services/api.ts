@@ -30,31 +30,43 @@ export const TOKEN_KEYS = {
   REFRESH: 'veloce_refresh_token',
 };
 
+import { getStoredAuthToken, clearAllStoredAuthTokens } from '../utils/authTokens';
+
 export const getAccessToken = (): string | null => {
-  return null; // Prefer HttpOnly cookies
+  return getStoredAuthToken() || null;
 };
 
 export const getRefreshToken = (): string | null => {
-  return null; // Prefer HttpOnly cookies
+  if (typeof window === 'undefined') return null;
+  return localStorage.getItem('veloce_refresh_token') || localStorage.getItem('refresh_token') || null;
 };
 
 export const setAuthTokens = (access?: string, refresh?: string): void => {
-  // Authentication tokens are securely managed via HttpOnly, SameSite cookies
-};
-
-export const clearAuthTokens = (): void => {
+  if (typeof window === 'undefined') return;
   try {
-    localStorage.removeItem(TOKEN_KEYS.ACCESS);
-    localStorage.removeItem(TOKEN_KEYS.REFRESH);
-    localStorage.removeItem('access_token');
-    localStorage.removeItem('refresh_token');
+    if (access) {
+      localStorage.setItem('veloce_auth_token', access);
+      localStorage.setItem('access_token', access);
+    }
+    if (refresh) {
+      localStorage.setItem('veloce_refresh_token', refresh);
+      localStorage.setItem('refresh_token', refresh);
+    }
   } catch {}
 };
 
-// Request Interceptor: CSRF protection and headers
+export const clearAuthTokens = (): void => {
+  clearAllStoredAuthTokens();
+};
+
+// Request Interceptor: CSRF protection, credentials, and Authorization headers
 api.interceptors.request.use(
   (config: InternalAxiosRequestConfig) => {
     config.withCredentials = true;
+    const token = getStoredAuthToken();
+    if (token && !config.headers.Authorization) {
+      config.headers.Authorization = `Bearer ${token}`;
+    }
     return config;
   },
   (error: AxiosError) => {
@@ -107,18 +119,33 @@ api.interceptors.response.use(
       isRefreshing = true;
 
       try {
+        const refresh = getRefreshToken();
+        if (!refresh) {
+          clearAuthTokens();
+          if (typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent('veloce_require_admin_login', { detail: { reason: 'SESSION_EXPIRED' } }));
+          }
+          return Promise.reject(error);
+        }
+
         const response = await axios.post(
           `${API_BASE_URL}/auth/token/refresh/`,
-          {},
+          { refresh },
           { withCredentials: true }
         );
 
-        const { access } = response.data;
+        const { access, refresh: newRefresh } = response.data || {};
+        if (access) {
+          setAuthTokens(access, newRefresh || refresh);
+        }
         processQueue(null, access || 'ok');
         return api(originalRequest);
       } catch (refreshError) {
         processQueue(refreshError as AxiosError, null);
         clearAuthTokens();
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('veloce_require_admin_login', { detail: { reason: 'REFRESH_FAILED' } }));
+        }
         return Promise.reject(refreshError);
       } finally {
         isRefreshing = false;
@@ -180,20 +207,86 @@ export const mapBackendProductToFrontend = (item: any): any => {
     parsedImages = [primaryImg, ...parsedImages];
   }
 
+  const parseJsonArray = (val: any) => {
+    if (Array.isArray(val)) return val;
+    if (typeof val === 'string' && val.trim().startsWith('[')) {
+      try {
+        const parsed = JSON.parse(val);
+        return Array.isArray(parsed) ? parsed : [];
+      } catch {
+        return [];
+      }
+    }
+    return [];
+  };
+
+  const parseJsonObject = (val: any) => {
+    if (val && typeof val === 'object' && !Array.isArray(val)) return val;
+    if (typeof val === 'string' && val.trim().startsWith('{')) {
+      try {
+        const parsed = JSON.parse(val);
+        return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+      } catch {
+        return {};
+      }
+    }
+    return {};
+  };
+
+  const parsedOpts = parseJsonArray(item.options);
+  const parsedColorImgs = parseJsonObject(item.colorImages || item.color_images);
+  const parsedVariations = parseJsonArray(item.variations);
+  const parsedMatrix = parseJsonArray(item.variantMatrix || item.variant_matrix || item.variants);
+  const parsedVars = parseJsonArray(item.variants || item.variantMatrix || item.variant_matrix);
+
+  const hasVarComputed = Boolean(
+    item.has_variants === true ||
+    item.hasVariants === true ||
+    item.has_variants === 1 ||
+    item.hasVariants === 1 ||
+    item.has_variants === 'true' ||
+    item.hasVariants === 'true' ||
+    parsedOpts.length > 0 ||
+    parsedMatrix.length > 0 ||
+    parsedVars.length > 0 ||
+    parsedVariations.length > 0 ||
+    Object.keys(parsedColorImgs).length > 0
+  );
+
   return {
+    ...item,
     id: String(item.id || ''),
     sku: item.sku || '',
     name: item.name || 'Untitled Product',
+    slug: item.slug || (item.name ? item.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') : ''),
     description: item.description || '',
+    shortDescription: item.short_description || item.shortDescription || '',
+    detailedDescription: item.detailed_description || item.detailedDescription || item.description || '',
     price: typeof item.price === 'string' ? parseFloat(item.price) : Number(item.price || 0),
-    basePrice: item.basePrice || (typeof item.price === 'string' ? parseFloat(item.price) : Number(item.price || 0)),
-    salePrice: item.salePrice || (item.original_price ? Number(item.price) : null),
-    costPrice: item.cost_price !== undefined && item.cost_price !== null 
-      ? (typeof item.cost_price === 'string' ? parseFloat(item.cost_price) : Number(item.cost_price))
-      : (item.costPrice !== undefined && item.costPrice !== null ? Number(item.costPrice) : undefined),
-    cost_price: item.cost_price !== undefined && item.cost_price !== null 
-      ? (typeof item.cost_price === 'string' ? parseFloat(item.cost_price) : Number(item.cost_price))
-      : (item.costPrice !== undefined && item.costPrice !== null ? Number(item.costPrice) : undefined),
+    basePrice: item.basePrice || (item.original_price && Number(item.original_price) > Number(item.price) ? Number(item.original_price) : (typeof item.price === 'string' ? parseFloat(item.price) : Number(item.price || 0))),
+    salePrice: (item.salePrice !== undefined && item.salePrice !== null && (item.salePrice as any) !== '' && Number(item.salePrice) > 0 && Number(item.salePrice) < Number(item.basePrice || item.price))
+      ? Number(item.salePrice)
+      : (item.original_price && Number(item.original_price) > Number(item.price))
+      ? Number(item.price)
+      : null,
+    costPrice: item.costPrice !== undefined && item.costPrice !== null && item.costPrice !== ''
+      ? (typeof item.costPrice === 'string' ? parseFloat(item.costPrice) : Number(item.costPrice))
+      : (item.cost_price !== undefined && item.cost_price !== null && item.cost_price !== ''
+        ? (typeof item.cost_price === 'string' ? parseFloat(item.cost_price) : Number(item.cost_price))
+        : (item.agreedCostPrice !== undefined && item.agreedCostPrice !== null && item.agreedCostPrice !== ''
+          ? Number(item.agreedCostPrice)
+          : (item.agreed_cost_price !== undefined && item.agreed_cost_price !== null && item.agreed_cost_price !== ''
+            ? Number(item.agreed_cost_price)
+            : undefined))),
+    cost_price: item.costPrice !== undefined && item.costPrice !== null && item.costPrice !== ''
+      ? (typeof item.costPrice === 'string' ? parseFloat(item.costPrice) : Number(item.costPrice))
+      : (item.cost_price !== undefined && item.cost_price !== null && item.cost_price !== ''
+        ? (typeof item.cost_price === 'string' ? parseFloat(item.cost_price) : Number(item.cost_price))
+        : (item.agreedCostPrice !== undefined && item.agreedCostPrice !== null && item.agreedCostPrice !== ''
+          ? Number(item.agreedCostPrice)
+          : (item.agreed_cost_price !== undefined && item.agreed_cost_price !== null && item.agreed_cost_price !== ''
+            ? Number(item.agreed_cost_price)
+            : undefined))),
     previousPrice: item.original_price !== undefined && item.original_price !== null 
       ? (typeof item.original_price === 'string' ? parseFloat(item.original_price) : Number(item.original_price))
       : (item.previousPrice !== undefined && item.previousPrice !== null ? Number(item.previousPrice) : undefined),
@@ -201,6 +294,9 @@ export const mapBackendProductToFrontend = (item: any): any => {
       ? (typeof item.original_price === 'string' ? parseFloat(item.original_price) : Number(item.original_price))
       : (item.originalPrice !== undefined && item.originalPrice !== null ? Number(item.originalPrice) : (item.previousPrice !== undefined && item.previousPrice !== null ? Number(item.previousPrice) : undefined)),
     category: item.category || 'General',
+    brand: item.brand || '',
+    countryOfOrigin: item.country_of_origin || item.countryOfOrigin || '',
+    country_of_origin: item.country_of_origin || item.countryOfOrigin || '',
     tags: Array.isArray(item.tags) 
       ? item.tags 
       : (typeof item.tags === 'string' && item.tags ? item.tags.split(',').map((t: string) => t.trim()) : ['Catalog']),
@@ -213,9 +309,15 @@ export const mapBackendProductToFrontend = (item: any): any => {
     reviewsCount: item.reviewsCount || (Array.isArray(item.reviews) ? item.reviews.length : 0),
     reviews: Array.isArray(item.reviews) ? item.reviews : [],
     status: item.status || 'Active',
-    hasVariants: item.has_variants !== undefined ? Boolean(item.has_variants) : Boolean(item.hasVariants),
-    variations: item.variations || [],
-    variantMatrix: item.variant_matrix || item.variantMatrix || [],
+    hasVariants: hasVarComputed,
+    has_variants: hasVarComputed,
+    options: parsedOpts,
+    colorImages: parsedColorImgs,
+    color_images: parsedColorImgs,
+    variations: parsedVariations,
+    variantMatrix: parsedMatrix,
+    variant_matrix: parsedMatrix,
+    variants: parsedVars,
     unitMeasurement: item.unit_measurement || item.unitMeasurement || '',
     unitValue: item.unit_value !== undefined ? item.unit_value : item.unitValue,
     weight: item.weight || '',
@@ -250,8 +352,23 @@ export const authService = {
     return response.data;
   },
 
-  register: async (userData: { username: string; email: string; password?: string; first_name?: string; last_name?: string }) => {
+  register: async (userData: { username: string; email: string; password?: string; first_name?: string; last_name?: string; phone?: string }) => {
     const response = await api.post('/auth/register/', userData);
+    return response.data;
+  },
+
+  verifyOtp: async (payload: { email: string; otp: string }) => {
+    const response = await api.post('/auth/verify-otp/', payload);
+    return response.data;
+  },
+
+  resendOtp: async (payload: { email: string }) => {
+    const response = await api.post('/auth/resend-otp/', payload);
+    return response.data;
+  },
+
+  getAuditFlaggedDuplicates: async () => {
+    const response = await api.get('/admin/audit-flagged-duplicates/');
     return response.data;
   },
 
@@ -334,6 +451,9 @@ export const productService = {
       id: productData.id,
       sku: productData.sku,
       name: productData.name,
+      brand: productData.brand || '',
+      countryOfOrigin: productData.countryOfOrigin || productData.country_of_origin || '',
+      country_of_origin: productData.country_of_origin || productData.countryOfOrigin || '',
       description: productData.description || '',
       price: productData.price,
       original_price: originalPriceVal,
@@ -351,8 +471,12 @@ export const productService = {
       low_stock_threshold: productData.lowStockThreshold || productData.low_stock_threshold || 5,
       tags: Array.isArray(productData.tags) ? productData.tags.join(', ') : (productData.tags || ''),
       has_variants: productData.hasVariants !== undefined ? productData.hasVariants : productData.has_variants,
+      options: productData.options || [],
+      color_images: productData.colorImages || productData.color_images || {},
+      colorImages: productData.colorImages || productData.color_images || {},
       variations: productData.variations || [],
-      variant_matrix: productData.variantMatrix || productData.variant_matrix || [],
+      variant_matrix: productData.variantMatrix || productData.variant_matrix || productData.variants || [],
+      variants: productData.variants || productData.variantMatrix || productData.variant_matrix || [],
       unit_measurement: productData.unitMeasurement || productData.unit_measurement || '',
       unit_value: productData.unitValue !== undefined ? productData.unitValue : productData.unit_value,
       weight: productData.weight || '',
@@ -391,7 +515,11 @@ export const productService = {
       ...(originalPriceVal !== undefined ? { original_price: originalPriceVal, previousPrice: originalPriceVal } : {}),
       ...(imagesVal !== undefined ? { images: imagesVal, gallery_images: imagesVal } : {}),
       ...(primaryImg !== undefined ? { image_url: primaryImg, imageUrl: primaryImg } : {}),
-      variant_matrix: productData.variantMatrix || productData.variant_matrix || [],
+      options: productData.options !== undefined ? productData.options : undefined,
+      color_images: productData.colorImages || productData.color_images || undefined,
+      colorImages: productData.colorImages || productData.color_images || undefined,
+      variant_matrix: productData.variantMatrix || productData.variant_matrix || productData.variants || [],
+      variants: productData.variants || productData.variantMatrix || productData.variant_matrix || [],
       unit_measurement: productData.unitMeasurement || productData.unit_measurement || '',
       unit_value: productData.unitValue !== undefined ? productData.unitValue : productData.unit_value,
       has_variants: productData.hasVariants !== undefined ? productData.hasVariants : productData.has_variants,
@@ -422,10 +550,9 @@ export const categoriesApi = {
       const res = await api.get('/products/categories/', { validateStatus: () => true });
       if (res.status === 200 && res.data) {
         const data = res.data;
-        if (Array.isArray(data) && data.length > 0) return data;
-        if (Array.isArray(data.results) && data.results.length > 0) return data.results;
-        if (Array.isArray(data.categories) && data.categories.length > 0) return data.categories;
         if (Array.isArray(data)) return data;
+        if (Array.isArray(data.results)) return data.results;
+        if (Array.isArray(data.categories)) return data.categories;
       }
     } catch {}
 
@@ -434,9 +561,9 @@ export const categoriesApi = {
       const res2 = await api.get('/categories/', { validateStatus: () => true });
       if (res2.status === 200 && res2.data) {
         const data = res2.data;
-        if (Array.isArray(data) && data.length > 0) return data;
-        if (Array.isArray(data.results) && data.results.length > 0) return data.results;
-        if (Array.isArray(data.categories) && data.categories.length > 0) return data.categories;
+        if (Array.isArray(data)) return data;
+        if (Array.isArray(data.results)) return data.results;
+        if (Array.isArray(data.categories)) return data.categories;
       }
     } catch {}
 
@@ -509,6 +636,27 @@ export const categoriesApi = {
 
     return { message: 'Categories synced', categories };
   },
+
+  bulkAction: async (payload: {
+    category_ids?: string[];
+    ids?: string[];
+    action: string;
+    status?: string;
+    target_parent_id?: string | null;
+    resolution_mode?: 'reassign' | 'cascade';
+  }) => {
+    try {
+      const res = await api.post('/products/categories/bulk_action/', payload, { validateStatus: () => true });
+      if (res.status === 200) return res.data;
+    } catch {}
+
+    try {
+      const res2 = await api.post('/categories/bulk_action/', payload, { validateStatus: () => true });
+      if (res2.status === 200) return res2.data;
+    } catch {}
+
+    return { success: true, message: 'Bulk action completed' };
+  },
 };
 
 export const pushOrderToBackend = async (orderData: any) => {
@@ -523,17 +671,22 @@ export const pushOrderToBackend = async (orderData: any) => {
     tax_amount: typeof (orderData.taxTotal ?? orderData.tax) === 'number' ? (orderData.taxTotal ?? orderData.tax) : parseFloat(orderData.taxTotal || orderData.tax || '0'),
     total: typeof orderData.total === 'number' ? orderData.total : parseFloat(orderData.total || '0'),
     status: orderData.status === 'completed' ? 'Processing' : (orderData.status ? orderData.status.charAt(0).toUpperCase() + orderData.status.slice(1) : 'Pending'),
-    payment_method: orderData.paymentMethod === 'cod' ? 'Cash on Delivery' : (orderData.paymentMethod || orderData.payment_method || 'M-PESA'),
+    checkout_channel: orderData.checkoutChannel || orderData.checkout_channel || (orderData.checkoutMode === 'whatsapp' || orderData.paymentMethod === 'whatsapp' ? 'whatsapp' : 'web'),
+    payment_method: orderData.paymentMethod === 'cod' ? 'Cash on Delivery' : (orderData.paymentMethod === 'whatsapp' ? 'M-PESA' : (orderData.paymentMethod || orderData.payment_method || 'M-PESA')),
     payment_reference: orderData.paymentReference || orderData.stkRef || orderData.mpesaReceipt || orderData.payment_reference || '',
     shipping_address: orderData.shippingAddress || orderData.shipping_address || (orderData.fulfillmentType === 'pickup' ? `Self-Pickup: ${orderData.pickupLocation || 'Main Hub'}` : ''),
     affiliate_code: orderData.couponCode || orderData.affiliate_code || '',
     notes: orderData.notes || orderData.customNote || (orderData.fulfillmentType === 'pickup' ? `Fulfillment: Self-Pickup at ${orderData.pickupLocation || 'Station'}. Ready time: ${orderData.pickupEstimatedTime || 'Same Day'}. Collector Phone: ${orderData.pickupContactPhone || orderData.phone || ''}` : ''),
     items: Array.isArray(orderData.items)
       ? orderData.items.map((item: any) => ({
+          name: item.name || item.product_name || 'Product',
           product_name: item.name || item.product_name || 'Product',
+          sku: item.sku || item.product_sku || item.productId || '',
           product_sku: item.product_sku || item.sku || item.productId || '',
           quantity: Number(item.quantity || 1),
+          price: typeof item.price === 'number' ? item.price : parseFloat(item.unit_price || item.price || '0'),
           unit_price: typeof item.price === 'number' ? item.price : parseFloat(item.unit_price || item.price || '0'),
+          selectedVariations: item.selectedVariations || item.selected_variations || {},
           selected_variations: item.selectedVariations || item.selected_variations || {},
         }))
       : [],

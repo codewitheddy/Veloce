@@ -28,11 +28,12 @@ import {
   ChevronLeft,
   ChevronRight,
   ShieldCheck,
-  Check
+  Check,
+  Globe
 } from 'lucide-react';
 import { Product } from '../types';
 import { formatPrice, CurrencyType } from '../lib/currency';
-import { getProductDiscountInfo } from '../utils/productUtils';
+import { getProductDiscountInfo, getCountryFlag } from '../utils/productUtils';
 
 interface ProductEditHubProps {
   products: Product[];
@@ -75,6 +76,9 @@ export default function ProductEditHub({
         product.name.toLowerCase().includes(searchQuery.toLowerCase().trim()) ||
         (product.sku && product.sku.toLowerCase().includes(searchQuery.toLowerCase().trim())) ||
         (product.category && product.category.toLowerCase().includes(searchQuery.toLowerCase().trim())) ||
+        (product.brand && product.brand.toLowerCase().includes(searchQuery.toLowerCase().trim())) ||
+        (product.countryOfOrigin && product.countryOfOrigin.toLowerCase().includes(searchQuery.toLowerCase().trim())) ||
+        ((product as any).country_of_origin && (product as any).country_of_origin.toLowerCase().includes(searchQuery.toLowerCase().trim())) ||
         (product.id && product.id.toLowerCase().includes(searchQuery.toLowerCase().trim()));
 
       const matchesCategory =
@@ -472,9 +476,18 @@ export default function ProductEditHub({
                             >
                               {product.name}
                             </h3>
-                            <div className="flex items-center gap-1.5 text-[10px] text-gray-400 font-mono mt-0.5">
+                            <div className="flex items-center gap-1.5 text-[10px] text-gray-400 font-mono mt-0.5 flex-wrap">
                               <span>ID: {product.id.slice(0, 10)}</span>
-                              {product.brand && <span>• {product.brand}</span>}
+                              {product.brand && (
+                                <span className="inline-flex items-center gap-0.5 text-indigo-600 dark:text-indigo-400 font-bold">
+                                  • {product.brand}
+                                </span>
+                              )}
+                              {(product.countryOfOrigin || (product as any).country_of_origin) && (
+                                <span className="inline-flex items-center gap-0.5 text-emerald-600 dark:text-emerald-400 font-medium">
+                                  • {getCountryFlag(product.countryOfOrigin || (product as any).country_of_origin)} {product.countryOfOrigin || (product as any).country_of_origin}
+                                </span>
+                              )}
                             </div>
                           </div>
                         </div>
@@ -702,6 +715,16 @@ export default function ProductEditHub({
                         <span className="px-1.5 py-0.5 rounded bg-indigo-50 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 text-[10px] font-semibold truncate max-w-[120px]">
                           {product.category || 'Uncategorized'}
                         </span>
+                        {product.brand && (
+                          <span className="px-1.5 py-0.5 rounded bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 text-[10px] font-mono font-bold truncate max-w-[100px]">
+                            {product.brand}
+                          </span>
+                        )}
+                        {(product.countryOfOrigin || (product as any).country_of_origin) && (
+                          <span className="px-1.5 py-0.5 rounded bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 text-[10px] font-mono font-medium">
+                            {getCountryFlag(product.countryOfOrigin || (product as any).country_of_origin)} {product.countryOfOrigin || (product as any).country_of_origin}
+                          </span>
+                        )}
                         {getStatusBadge(product.status)}
                       </div>
 

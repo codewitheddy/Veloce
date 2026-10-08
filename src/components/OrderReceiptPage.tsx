@@ -30,16 +30,21 @@ import {
   Calendar,
   AlertCircle,
   Tag,
-  DollarSign
+  DollarSign,
+  Send,
+  RefreshCw,
 } from 'lucide-react';
 import { Order } from '../types';
 import { CurrencyType, formatPrice } from '../lib/currency';
 import { useSiteSettings } from '../context/SiteSettingsContext';
+import CustomerPaymentClaimModal from './CustomerPaymentClaimModal';
+import { getAuthHeaders } from '../utils/authTokens';
 
 export interface OrderReceiptPageProps {
   order: Order;
   onBack?: () => void;
   onClose?: () => void;
+  onNavigateToOrders?: () => void;
   autoPrint?: boolean;
   shippingStatus?: 'ordered' | 'processing' | 'shipped' | 'delivered';
   onReorder?: (order: Order) => void;
@@ -52,6 +57,7 @@ export default function OrderReceiptPage({
   order,
   onBack,
   onClose,
+  onNavigateToOrders,
   autoPrint = false,
   shippingStatus,
   onReorder,
@@ -70,7 +76,31 @@ export default function OrderReceiptPage({
   const tagline = settings.general.tagline || 'Ropenix Collections & Logistics Operations';
 
   const [copiedField, setCopiedField] = useState<'paybill' | 'account' | 'orderId' | null>(null);
+  const [isSendingFollowup, setIsSendingFollowup] = useState(false);
+  const [followupMsg, setFollowupMsg] = useState<string | null>(null);
+  const [isPaymentClaimOpen, setIsPaymentClaimOpen] = useState(false);
   const printableAreaRef = useRef<HTMLDivElement>(null);
+
+  const handleSendFollowup = async () => {
+    setIsSendingFollowup(true);
+    try {
+      const res = await fetch(`/api/payments/admin/orders/${encodeURIComponent(order.id)}/resend-paybill`, {
+        method: 'POST',
+        headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setFollowupMsg(`Payment follow-up email sent to ${order.customerEmail}! (Reminder #${data.reminderCount || 1})`);
+        setTimeout(() => setFollowupMsg(null), 5000);
+      } else {
+        alert(data.error || 'Failed to send payment follow-up email');
+      }
+    } catch (err: any) {
+      alert(err?.message || 'Error sending payment follow-up email');
+    } finally {
+      setIsSendingFollowup(false);
+    }
+  };
 
   const handleBack = () => {
     if (onBack) onBack();
@@ -143,7 +173,7 @@ export default function OrderReceiptPage({
   const shippingFee = order.shippingFee ?? 0;
 
   const isCod = order.paymentMethod === 'cod';
-  const isPaid = order.paymentStatus === 'paid' || (!isCod && order.paymentStatus !== 'unpaid' && order.paymentStatus !== 'pending');
+  const isPaid = order.paymentStatus === 'paid';
 
   const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(order.id)}&color=000000&bgcolor=ffffff`;
 
@@ -195,6 +225,18 @@ export default function OrderReceiptPage({
 
         {/* Action Controls */}
         <div className="flex flex-wrap items-center gap-2">
+          {!isPaid && (
+            <button
+              type="button"
+              onClick={() => setIsPaymentClaimOpen(true)}
+              className="px-3.5 py-2 text-xs font-bold rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white transition-all cursor-pointer shadow-sm flex items-center gap-1.5 active:scale-95"
+              title="Submit your M-Pesa transaction code for admin verification"
+            >
+              <Smartphone className="h-3.5 w-3.5" />
+              <span>I Have Paid (Confirm Payment)</span>
+            </button>
+          )}
+
           {onUpdateOrderPaymentStatus && (
             <button
               type="button"
@@ -207,6 +249,23 @@ export default function OrderReceiptPage({
             >
               <Check className="h-3.5 w-3.5" />
               <span>{isPaid ? 'Mark Unpaid' : 'Mark as Verified Paid ✓'}</span>
+            </button>
+          )}
+
+          {onUpdateOrderPaymentStatus && !isPaid && (
+            <button
+              type="button"
+              onClick={handleSendFollowup}
+              disabled={isSendingFollowup}
+              className="px-3 py-2 text-xs font-bold rounded-xl border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300 hover:bg-amber-100 transition-all cursor-pointer shadow-3xs flex items-center gap-1.5 disabled:opacity-50"
+              title="Send customer payment follow-up email with Paybill details"
+            >
+              {isSendingFollowup ? (
+                <RefreshCw className="h-3.5 w-3.5 animate-spin text-amber-700" />
+              ) : (
+                <Send className="h-3.5 w-3.5 text-amber-700" />
+              )}
+              <span>{isSendingFollowup ? 'Sending Follow-up...' : 'Send Payment Follow-up'}</span>
             </button>
           )}
 
@@ -242,6 +301,21 @@ export default function OrderReceiptPage({
           </button>
         </div>
       </div>
+
+      {followupMsg && (
+        <div className="no-print mb-4 p-3 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300 rounded-xl text-xs font-semibold flex items-center justify-between shadow-3xs animate-in fade-in">
+          <div className="flex items-center gap-2">
+            <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0" />
+            <span>{followupMsg}</span>
+          </div>
+          <button
+            onClick={() => setFollowupMsg(null)}
+            className="text-emerald-700 dark:text-emerald-300 hover:text-emerald-900 font-bold p-1"
+          >
+            <Check className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      )}
 
       {/* 2. Key Metrics & Status Bar (Hidden in Print) */}
       <div className="no-print grid grid-cols-2 sm:grid-cols-4 gap-3.5">
@@ -338,7 +412,7 @@ export default function OrderReceiptPage({
                 : 'bg-amber-500 text-white'
             }`}>
               <Check className="h-3.5 w-3.5" />
-              {isPaid ? 'INVOICE SETTLED (PAID)' : 'PAYMENT PENDING'}
+              {isPaid ? 'INVOICE SETTLED (CONFIRMED PAID)' : 'AWAITING ADMIN PAYMENT CONFIRMATION'}
             </span>
 
             <div className="space-y-1 text-xs font-mono text-gray-500 dark:text-gray-400">
@@ -349,7 +423,10 @@ export default function OrderReceiptPage({
                 Receipt Date: <strong className="text-gray-800 dark:text-gray-200">{order.date}</strong>
               </div>
               <div>
-                Payment Method: <strong className="text-gray-800 dark:text-gray-200">{order.paymentMethod === 'cod' ? 'Cash on Delivery' : 'M-PESA Paybill (303030)'}</strong>
+                Order Channel: <strong className="text-gray-800 dark:text-gray-200">{(order.checkoutChannel === 'whatsapp' || order.checkoutMode === 'whatsapp' || order.orderSource === 'whatsapp' || order.paymentMethod === 'whatsapp') ? '📱 WhatsApp Checkout' : '🌐 Web Storefront'}</strong>
+              </div>
+              <div>
+                Payment Method: <strong className="text-gray-800 dark:text-gray-200">{order.paymentMethod === 'cod' ? '🚚 Cash on Delivery' : '📲 Lipa na M-PESA'}</strong>
               </div>
               {order.paymentReference && (
                 <div className="text-emerald-600 dark:text-emerald-400 font-bold flex items-center gap-1">
@@ -414,15 +491,21 @@ export default function OrderReceiptPage({
             </span>
             <div className="space-y-1.5 text-gray-600 dark:text-gray-300 w-full sm:max-w-xs">
               <div className="flex justify-between">
-                <span className="text-gray-400">Payment Channel:</span>
+                <span className="text-gray-400">Order Channel:</span>
                 <strong className="text-gray-900 dark:text-white font-mono">
-                  {order.paymentMethod === 'cod' ? 'Cash on Delivery' : 'M-PESA Paybill'}
+                  {(order.checkoutChannel === 'whatsapp' || order.checkoutMode === 'whatsapp' || order.orderSource === 'whatsapp' || order.paymentMethod === 'whatsapp') ? '📱 WhatsApp Checkout' : '🌐 Web Storefront'}
+                </strong>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-400">Payment Method:</span>
+                <strong className="text-gray-900 dark:text-white font-mono">
+                  {order.paymentMethod === 'cod' ? '🚚 Cash on Delivery' : '📲 Lipa na M-PESA'}
                 </strong>
               </div>
               <div className="flex justify-between">
                 <span className="text-gray-400">Settlement Status:</span>
                 <strong className={`font-mono font-bold ${isPaid ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'}`}>
-                  {isPaid ? (order.paymentReference ? 'Prepaid Before Delivery' : 'Verified Settled') : 'Pay on Delivery'}
+                  {isPaid ? (order.paymentReference ? '✓ Confirmed Paid (M-Pesa Verified)' : '✓ Confirmed Paid by Admin') : '⏳ Awaiting Admin Confirmation'}
                 </strong>
               </div>
               {order.paymentMethod !== 'cod' && (
@@ -672,12 +755,22 @@ export default function OrderReceiptPage({
                 {formatPrice(taxAmount, currency)}
               </span>
             </div>
-            {shippingFee > 0 && (
+            {order.fulfillmentType === 'pickup' ? (
+              <div className="flex justify-between text-emerald-600 dark:text-emerald-400 font-medium">
+                <span>Fulfillment:</span>
+                <span className="font-mono font-bold">Free Self-Pickup</span>
+              </div>
+            ) : shippingFee > 0 ? (
               <div className="flex justify-between text-gray-500 dark:text-gray-400 font-medium">
-                <span>Shipping / Delivery:</span>
+                <span>Delivery Fee ({order.quotedCourier ? order.quotedCourier.toUpperCase() : 'Courier'}):</span>
                 <span className="font-mono font-bold text-gray-800 dark:text-gray-200">
                   {formatPrice(shippingFee, currency)}
                 </span>
+              </div>
+            ) : (
+              <div className="flex justify-between text-amber-700 dark:text-amber-400 font-medium">
+                <span>Delivery Fee:</span>
+                <span className="font-mono font-bold">To be confirmed (TBC)</span>
               </div>
             )}
             {discountAmount > 0 && (
@@ -707,6 +800,28 @@ export default function OrderReceiptPage({
           </p>
         </div>
       </div>
+
+      {/* Customer Payment Claim Modal */}
+      {isPaymentClaimOpen && (
+        <CustomerPaymentClaimModal
+          isOpen={isPaymentClaimOpen}
+          onClose={() => setIsPaymentClaimOpen(false)}
+          orderId={order.id}
+          orderTotal={order.total}
+          customerName={order.customerName}
+          customerEmail={order.customerEmail}
+          customerPhone={order.phone}
+          currency={currency}
+          onNavigateToOrders={() => {
+            setIsPaymentClaimOpen(false);
+            if (onNavigateToOrders) onNavigateToOrders();
+            else window.dispatchEvent(new CustomEvent('veloce_navigate_tab', { detail: 'user' }));
+          }}
+          onClaimSuccess={(data) => {
+            setFollowupMsg(`Payment claim for M-Pesa ${data.mpesaCode} submitted! Admin has been notified via email.`);
+          }}
+        />
+      )}
     </div>
   );
 }

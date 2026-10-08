@@ -29,12 +29,15 @@ import {
   Percent,
   Flame,
   ArrowRight,
-  Edit3
+  Edit3,
+  LogOut,
+  LogIn
 } from 'lucide-react';
 import { Product, Category } from '../types';
 import { loadCategoriesFromStorage, fetchCategoriesFromBackend } from '../utils/categoryUtils';
 import { CurrencyType, formatPrice } from '../lib/currency';
 import { useLanguage } from '../context/LanguageContext';
+import { useAuth } from '../context/AuthContext';
 import { getProductDiscountInfo } from '../utils/productUtils';
 import RealTimeCurrencyConverter from './RealTimeCurrencyConverter';
 import VeloceLogo from './VeloceLogo';
@@ -96,6 +99,7 @@ export default function Header({
   activeType,
 }: HeaderProps) {
   const { language, setLanguage, supportedLanguages, t } = useLanguage();
+  const { user, isAuthenticated, logout } = useAuth();
   const [localSearchQuery, setLocalSearchQuery] = useState('');
   const searchQuery = searchQueryProp !== undefined ? searchQueryProp : localSearchQuery;
 
@@ -247,23 +251,24 @@ export default function Header({
   return (
     <header className="sticky top-0 z-50 w-full flex flex-col shadow-xs font-sans">
       {/* 1. TOP UTILITY BAR (Subtle Slate-900 / Slate-950) */}
-      <div className="w-full bg-slate-900 text-slate-300 text-xs px-4 sm:px-6 lg:px-8 py-1.5 border-b border-slate-800 transition-colors">
-        <div className="w-full max-w-[1440px] mx-auto flex items-center justify-between">
+      <div className="w-full bg-slate-900 text-slate-300 text-xs px-2.5 sm:px-6 lg:px-8 py-1.5 border-b border-slate-800 transition-colors">
+        <div className="w-full max-w-[1440px] mx-auto flex items-center justify-between gap-1.5 sm:gap-4">
           {/* Left: Location & Quick Services */}
-          <div className="flex items-center gap-3 sm:gap-5 overflow-x-auto scrollbar-none py-0.5">
+          <div className="flex items-center gap-2 sm:gap-5 min-w-0 shrink">
             {/* Location Selector */}
-            <div className="relative" ref={locationMenuRef}>
+            <div className="relative shrink-0" ref={locationMenuRef}>
               <button
                 type="button"
                 onClick={() => setIsLocationMenuOpen(!isLocationMenuOpen)}
-                className="flex items-center gap-1.5 text-slate-300 hover:text-white font-medium cursor-pointer transition-colors text-[11px] sm:text-xs whitespace-nowrap"
+                className="flex items-center gap-1 sm:gap-1.5 text-slate-300 hover:text-white font-medium cursor-pointer transition-colors text-[10.5px] sm:text-xs whitespace-nowrap"
               >
-                <span className="text-slate-400">{t('deliverTo')}</span>
-                <span className="font-bold text-white flex items-center gap-1">
+                <MapPin className="w-3 h-3 text-indigo-400 shrink-0 hidden sm:inline" />
+                <span className="text-slate-400 hidden sm:inline">{t('deliverTo')}</span>
+                <span className="font-semibold text-white flex items-center gap-1">
                   <span>{selectedLocation.flag}</span>
-                  <span>{selectedLocation.city}</span>
+                  <span className="truncate max-w-[70px] sm:max-w-none">{selectedLocation.city}</span>
                 </span>
-                <ChevronDown className="w-3 h-3 text-slate-400" />
+                <ChevronDown className="w-2.5 h-2.5 sm:w-3 sm:h-3 text-slate-400 shrink-0" />
               </button>
 
               {isLocationMenuOpen && (
@@ -316,60 +321,60 @@ export default function Header({
           </div>
 
           {/* Right: Dark Mode Toggle, Currency, Language */}
-          <div className="flex items-center gap-3 sm:gap-4 shrink-0">
+          <div className="flex items-center gap-1.5 sm:gap-3 shrink-0">
             {/* Dark/Light Mode Pill Switch */}
             <button
               type="button"
               onClick={onToggleDarkMode}
               title={darkMode ? t('switchToLight') : t('switchToDark')}
-              className="flex items-center gap-1.5 bg-slate-800 border border-slate-700 hover:border-slate-500 rounded-full px-2 py-0.5 text-[11px] text-slate-200 transition-all cursor-pointer"
+              className="flex items-center justify-center bg-slate-800 border border-slate-700 hover:border-slate-500 rounded-full h-6 px-1.5 sm:px-2 py-0.5 text-[10.5px] sm:text-[11px] text-slate-200 transition-all cursor-pointer shrink-0"
             >
               {darkMode ? (
                 <>
-                  <Moon className="w-3 h-3 text-indigo-400" />
-                  <span className="hidden sm:inline">{t('darkMode')}</span>
+                  <Moon className="w-3 h-3 text-indigo-400 shrink-0" />
+                  <span className="hidden sm:inline sm:ml-1">{t('darkMode')}</span>
                 </>
               ) : (
                 <>
-                  <Sun className="w-3 h-3 text-amber-400" />
-                  <span className="hidden sm:inline">{t('lightMode')}</span>
+                  <Sun className="w-3 h-3 text-amber-400 shrink-0" />
+                  <span className="hidden sm:inline sm:ml-1">{t('lightMode')}</span>
                 </>
               )}
             </button>
 
             {/* Currency Selector */}
-            <div className="relative">
+            <div className="relative shrink-0">
               <select
                 value={currency}
                 onChange={(e) => onChangeCurrency(e.target.value as CurrencyType)}
                 aria-label="Currency Selector"
-                className="bg-slate-800 border border-slate-700 hover:border-slate-500 rounded px-2 py-0.5 text-[11px] font-bold text-white cursor-pointer focus:outline-none appearance-none pr-5"
+                className="bg-slate-800 border border-slate-700 hover:border-slate-500 rounded px-1.5 sm:px-2 py-0.5 text-[10px] sm:text-[11px] font-bold text-white cursor-pointer focus:outline-none appearance-none pr-4 sm:pr-5"
               >
-                <option value="KSh" className="bg-slate-900 text-white">KES (KSh)</option>
-                <option value="USD" className="bg-slate-900 text-white">USD ($)</option>
-                <option value="EUR" className="bg-slate-900 text-white">EUR (€)</option>
-                <option value="GBP" className="bg-slate-900 text-white">GBP (£)</option>
-                <option value="AED" className="bg-slate-900 text-white">AED (AED)</option>
-                <option value="CAD" className="bg-slate-900 text-white">CAD (CA$)</option>
-                <option value="AUD" className="bg-slate-900 text-white">AUD (A$)</option>
-                <option value="CNY" className="bg-slate-900 text-white">CNY (¥)</option>
-                <option value="JPY" className="bg-slate-900 text-white">JPY (¥)</option>
-                <option value="KRW" className="bg-slate-900 text-white">KRW (₩)</option>
-                <option value="INR" className="bg-slate-900 text-white">INR (₹)</option>
-                <option value="ZAR" className="bg-slate-900 text-white">ZAR (R)</option>
-                <option value="UGX" className="bg-slate-900 text-white">UGX (UGX)</option>
-                <option value="TZS" className="bg-slate-900 text-white">TZS (TZS)</option>
+                <option value="KSh" className="bg-slate-900 text-white">KES</option>
+                <option value="USD" className="bg-slate-900 text-white">USD</option>
+                <option value="EUR" className="bg-slate-900 text-white">EUR</option>
+                <option value="GBP" className="bg-slate-900 text-white">GBP</option>
+                <option value="AED" className="bg-slate-900 text-white">AED</option>
+                <option value="CAD" className="bg-slate-900 text-white">CAD</option>
+                <option value="AUD" className="bg-slate-900 text-white">AUD</option>
+                <option value="CNY" className="bg-slate-900 text-white">CNY</option>
+                <option value="JPY" className="bg-slate-900 text-white">JPY</option>
+                <option value="KRW" className="bg-slate-900 text-white">KRW</option>
+                <option value="INR" className="bg-slate-900 text-white">INR</option>
+                <option value="ZAR" className="bg-slate-900 text-white">ZAR</option>
+                <option value="UGX" className="bg-slate-900 text-white">UGX</option>
+                <option value="TZS" className="bg-slate-900 text-white">TZS</option>
               </select>
-              <ChevronDown className="w-3 h-3 text-slate-400 absolute right-1.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+              <ChevronDown className="w-2.5 h-2.5 sm:w-3 sm:h-3 text-slate-400 absolute right-1 sm:right-1.5 top-1/2 -translate-y-1/2 pointer-events-none" />
             </div>
 
             {/* Multi-Language Selector */}
-            <div className="relative">
+            <div className="relative shrink-0">
               <select
                 value={language}
                 onChange={(e) => setLanguage(e.target.value as any)}
                 aria-label="Select Language"
-                className="bg-slate-800 border border-slate-700 hover:border-slate-500 rounded px-2 py-0.5 text-[11px] font-bold text-white cursor-pointer focus:outline-none appearance-none pr-5"
+                className="bg-slate-800 border border-slate-700 hover:border-slate-500 rounded px-1.5 sm:px-2 py-0.5 text-[10px] sm:text-[11px] font-bold text-white cursor-pointer focus:outline-none appearance-none pr-4 sm:pr-5 max-w-[85px] sm:max-w-none truncate"
               >
                 {supportedLanguages.map((lang) => (
                   <option key={lang.code} value={lang.code} className="bg-slate-900 text-white">
@@ -377,7 +382,7 @@ export default function Header({
                   </option>
                 ))}
               </select>
-              <ChevronDown className="w-3 h-3 text-slate-400 absolute right-1.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+              <ChevronDown className="w-2.5 h-2.5 sm:w-3 sm:h-3 text-slate-400 absolute right-1 sm:right-1.5 top-1/2 -translate-y-1/2 pointer-events-none" />
             </div>
           </div>
         </div>
@@ -516,10 +521,10 @@ export default function Header({
                 </div>
                 <div className="hidden lg:flex flex-col items-start leading-tight">
                   <span className="text-[10px] text-slate-500 dark:text-slate-400 font-medium">
-                    {typeof window !== 'undefined' && localStorage.getItem('veloce_login_name') ? t('welcome') : t('account')}
+                    {isAuthenticated && user?.name ? t('welcome') : t('account')}
                   </span>
                   <span className="text-xs font-bold tracking-wider uppercase text-slate-900 dark:text-white flex items-center gap-1">
-                    {typeof window !== 'undefined' && localStorage.getItem('veloce_login_name') ? `${t('welcome').toUpperCase()} ${localStorage.getItem('veloce_login_name')?.split(' ')[0].toUpperCase()}` : t('myAccount')} <ChevronDown className="w-3 h-3 text-slate-400" />
+                    {isAuthenticated && user?.name ? `${t('welcome').toUpperCase()} ${user.name.split(' ')[0].toUpperCase()}` : t('myAccount')} <ChevronDown className="w-3 h-3 text-slate-400" />
                   </span>
                 </div>
               </button>
@@ -528,19 +533,19 @@ export default function Header({
                 <div className="absolute right-0 top-full mt-2 w-60 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-2xl z-50 p-2 text-sm text-slate-700 dark:text-slate-200 animate-in fade-in">
                   <div className="p-2 border-b border-slate-100 dark:border-slate-800 mb-1">
                     <p className="font-bold text-slate-900 dark:text-white">
-                      {typeof window !== 'undefined' && (localStorage.getItem('ropenix_login_name') || localStorage.getItem('veloce_login_name')) ? (localStorage.getItem('ropenix_login_name') || localStorage.getItem('veloce_login_name')) : 'Store Customer'}
+                      {isAuthenticated && user ? (user.name || 'Valued Member') : 'Store Guest'}
                     </p>
                     <p className="text-xs text-slate-500 dark:text-slate-400">
-                      {typeof window !== 'undefined' && (localStorage.getItem('ropenix_login_email') || localStorage.getItem('veloce_login_email')) ? (localStorage.getItem('ropenix_login_email') || localStorage.getItem('veloce_login_email')) : 'customer@ropenix.co.ke'}
+                      {isAuthenticated && user ? user.email : 'Sign in to access your orders & wishlist'}
                     </p>
                   </div>
 
                   <button
                     onClick={() => {
-                      setCurrentTab('order-lookup');
+                      setCurrentTab('track');
                       setIsUserMenuOpen(false);
                     }}
-                    className="w-full text-left px-3 py-2 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 flex items-center gap-2 text-xs text-slate-700 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
+                    className="w-full text-left px-3 py-2 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 flex items-center gap-2 text-xs text-slate-700 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors cursor-pointer"
                   >
                     <Truck className="w-4 h-4 text-emerald-500" />
                     <span>{t('trackOrders')}</span>
@@ -554,8 +559,21 @@ export default function Header({
                     className="w-full text-left px-3 py-2 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 flex items-center gap-2 text-xs text-slate-700 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
                   >
                     <User className="w-4 h-4 text-indigo-500" />
-                    <span>{t('customerProfile')}</span>
+                    <span>{isAuthenticated ? t('customerProfile') : 'Sign In / Register'}</span>
                   </button>
+
+                  {isAuthenticated && (
+                    <button
+                      onClick={() => {
+                        logout();
+                        setIsUserMenuOpen(false);
+                      }}
+                      className="w-full text-left px-3 py-2 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-950/30 flex items-center gap-2 text-xs text-rose-600 dark:text-rose-400 transition-colors"
+                    >
+                      <LogOut className="w-4 h-4 text-rose-500" />
+                      <span>Sign Out</span>
+                    </button>
+                  )}
 
                   {/* Font Scaling Options */}
                   <div className="pt-2 mt-1 border-t border-slate-100 dark:border-slate-800">
@@ -602,9 +620,11 @@ export default function Header({
             >
               <div className="relative">
                 <ShoppingBag className="w-6 h-6 text-slate-700 dark:text-slate-200 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors" />
-                <span className="absolute -top-1.5 -right-2 bg-indigo-600 text-white font-bold text-[10px] w-4 h-4 rounded-full flex items-center justify-center shadow-xs">
-                  {cartCount > 0 ? cartCount : 1}
-                </span>
+                {cartCount > 0 && (
+                  <span className="absolute -top-1.5 -right-2 bg-indigo-600 text-white font-bold text-[10px] w-4 h-4 rounded-full flex items-center justify-center shadow-xs">
+                    {cartCount}
+                  </span>
+                )}
               </div>
               <span className="text-[10px] font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 mt-1 transition-colors">
                 {t('yourCart')}
@@ -624,22 +644,22 @@ export default function Header({
       </div>
 
       {/* 3. CATEGORY & SPECIALS SUB-NAVBAR */}
-      <div className="w-full bg-slate-50/90 dark:bg-slate-900/90 border-b border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 px-4 sm:px-6 lg:px-8 py-1 select-none shadow-2xs">
-        <div className="w-full max-w-[1440px] mx-auto flex items-center justify-between gap-3 lg:gap-6">
+      <div className="w-full bg-slate-50/90 dark:bg-slate-900/90 border-b border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 px-3 sm:px-6 lg:px-8 py-1.5 select-none shadow-2xs">
+        <div className="w-full max-w-[1440px] mx-auto flex items-center justify-between gap-2 sm:gap-4 overflow-x-auto scrollbar-none py-0.5">
           {/* Left Category Button & Navigation Links */}
-          <div className="flex items-center gap-2 lg:gap-3 overflow-x-auto scrollbar-none min-w-0 flex-1 py-0.5">
+          <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0">
             {/* ALL CATEGORIES Button */}
             <button
               ref={categoryButtonRef}
               onClick={() => setIsCategoryDrawerOpen(!isCategoryDrawerOpen)}
-              className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs sm:text-sm px-3.5 sm:px-4 py-1.5 rounded-md cursor-pointer transition-all shrink-0 shadow-xs border border-indigo-700"
+              className="flex items-center gap-1.5 sm:gap-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs sm:text-sm px-3 sm:px-4 py-1.5 rounded-md cursor-pointer transition-all shrink-0 shadow-xs border border-indigo-700"
             >
-              <Menu className="w-4 h-4 text-indigo-100" />
-              <span className="uppercase tracking-wider whitespace-nowrap">{t('allCategories')}</span>
+              <Menu className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-indigo-100 shrink-0" />
+              <span className="uppercase tracking-wider whitespace-nowrap text-[10.5px] sm:text-xs">{t('allCategories')}</span>
             </button>
 
-            {/* Category Links */}
-            <div className="hidden sm:flex items-center gap-1 xl:gap-2 overflow-x-auto scrollbar-none">
+            {/* Category Links (hidden on mobile, visible on tablet/desktop) */}
+            <div className="hidden md:flex items-center gap-1 xl:gap-2 overflow-x-auto scrollbar-none">
               {rootCategories.length > 0 ? (
                 rootCategories.map((cat) => {
                   const isCatActive = currentTab === 'store' && activeType !== 'sale' && activeCategory === cat.name;
@@ -669,16 +689,16 @@ export default function Header({
           </div>
 
           {/* Right Highlights: NEW RELEASES & CLEARANCE SALE Tabs */}
-          <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0 pl-2">
+          <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0 pl-1 sm:pl-2">
             <button
               onClick={() => handleCategoryClick('All')}
-              className="bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/50 border border-indigo-200 dark:border-indigo-800 text-indigo-700 dark:text-indigo-300 font-bold text-[10px] sm:text-xs px-2.5 sm:px-3.5 py-1.5 rounded uppercase tracking-wider cursor-pointer shadow-3xs transition-colors whitespace-nowrap"
+              className="bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/50 border border-indigo-200 dark:border-indigo-800 text-indigo-700 dark:text-indigo-300 font-bold text-[10px] sm:text-xs px-2.5 sm:px-3.5 py-1.5 rounded uppercase tracking-wider cursor-pointer shadow-3xs transition-colors whitespace-nowrap shrink-0"
             >
               {t('newReleases')}
             </button>
             <button
               onClick={handleSaleClick}
-              className={`font-bold text-[10px] sm:text-xs px-2.5 sm:px-3.5 py-1.5 rounded uppercase tracking-wider cursor-pointer shadow-xs transition-colors whitespace-nowrap ${
+              className={`font-bold text-[10px] sm:text-xs px-2.5 sm:px-3.5 py-1.5 rounded uppercase tracking-wider cursor-pointer shadow-xs transition-colors whitespace-nowrap shrink-0 ${
                 currentTab === 'store' && activeType === 'sale'
                   ? 'bg-amber-600 text-white ring-2 ring-amber-400'
                   : 'bg-amber-500 hover:bg-amber-600 active:bg-amber-700 text-white'
@@ -768,7 +788,7 @@ export default function Header({
                       <li>
                         <button
                           onClick={() => {
-                            setCurrentTab('order-lookup');
+                            setCurrentTab('user');
                             setIsCategoryDrawerOpen(false);
                           }}
                           className="hover:text-indigo-600 dark:hover:text-indigo-300 font-semibold cursor-pointer"

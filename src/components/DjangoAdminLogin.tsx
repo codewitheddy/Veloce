@@ -3,9 +3,10 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState } from 'react';
-import { Lock, User, ArrowRight, CheckCircle2, AlertCircle, Eye, EyeOff, Shield } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Lock, User, ArrowRight, CheckCircle2, AlertCircle, Eye, EyeOff, Shield, KeyRound, Sparkles } from 'lucide-react';
 import VeloceLogo from './VeloceLogo';
+import { setAuthTokens } from '../services/api';
 
 interface DjangoAdminLoginProps {
   onLoginSuccess: () => void;
@@ -13,13 +14,24 @@ interface DjangoAdminLoginProps {
 }
 
 export default function DjangoAdminLogin({ onLoginSuccess, onCancel }: DjangoAdminLoginProps) {
-  const [username, setUsername] = useState('');
+  const [username, setUsername] = useState<string>(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('veloce_admin_email') || 'ropenixkenya@gmail.com';
+    }
+    return 'ropenixkenya@gmail.com';
+  });
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(true);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
+
+  const handleQuickFill = (email: string, pass: string) => {
+    setUsername(email);
+    setPassword(pass);
+    setError(null);
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -38,6 +50,14 @@ export default function DjangoAdminLogin({ onLoginSuccess, onCancel }: DjangoAdm
       if (res.ok && (data.success || data.user?.is_superuser || data.user?.is_staff)) {
         if (data.access) {
           localStorage.setItem('veloce_admin_token', data.access);
+          localStorage.setItem('veloce_auth_token', data.access);
+          localStorage.setItem('access_token', data.access);
+          localStorage.setItem('token', data.access);
+          setAuthTokens(data.access, data.refresh);
+        }
+        if (data.refresh) {
+          localStorage.setItem('veloce_refresh_token', data.refresh);
+          localStorage.setItem('refresh_token', data.refresh);
         }
         localStorage.setItem('veloce_user_role', 'admin');
         if (data.user?.email) {
@@ -46,15 +66,22 @@ export default function DjangoAdminLogin({ onLoginSuccess, onCancel }: DjangoAdm
         if (rememberMe) {
           localStorage.setItem('veloce_remember_admin', 'true');
         }
-        setSuccessMsg("Welcome back! Loading Ropenix Admin...");
+
+        // Dispatch admin authentication restored events
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('veloce_admin_authenticated', { detail: { user: data.user } }));
+          window.dispatchEvent(new CustomEvent('veloce_admin_session_restored', { detail: { user: data.user } }));
+        }
+
+        setSuccessMsg("Welcome back! Refreshing Ropenix Admin Suite...");
         setTimeout(() => {
           onLoginSuccess();
-        }, 350);
+        }, 300);
       } else {
-        setError(data.error || data.detail || "Invalid credentials. Please verify your username and password.");
+        setError(data.error || data.detail || "Invalid credentials. Please verify your administrator username and password.");
       }
     } catch (err: any) {
-      setError("Could not connect to authentication service. Please check your network connection.");
+      setError("Could not connect to authentication service. Please check your network connection or server status.");
     } finally {
       setIsLoading(false);
     }
@@ -100,6 +127,24 @@ export default function DjangoAdminLogin({ onLoginSuccess, onCancel }: DjangoAdm
             </div>
           )}
 
+          {/* Quick Credential Quickfill Preset */}
+          <div className="mb-4 p-3 rounded-2xl bg-indigo-50/60 dark:bg-indigo-950/30 border border-indigo-100 dark:border-indigo-900/40 flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2 min-w-0">
+              <KeyRound className="w-4 h-4 text-indigo-600 dark:text-indigo-400 shrink-0" />
+              <div className="text-[11px] leading-tight text-slate-700 dark:text-slate-300 truncate">
+                <span className="font-bold text-indigo-700 dark:text-indigo-300">Admin Account:</span> ropenixkenya@gmail.com
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => handleQuickFill('ropenixkenya@gmail.com', 'admin12345')}
+              className="shrink-0 px-2.5 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] font-bold transition flex items-center gap-1 cursor-pointer shadow-2xs"
+            >
+              <Sparkles className="w-3 h-3" />
+              <span>Autofill</span>
+            </button>
+          </div>
+
           {/* Login Form */}
           <form onSubmit={handleSubmit} className="flex flex-col gap-4">
             {/* Username / Email */}
@@ -112,10 +157,9 @@ export default function DjangoAdminLogin({ onLoginSuccess, onCancel }: DjangoAdm
                 <input
                   type="text"
                   required
-                  autoFocus
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
-                  placeholder="admin@ropenix.co.ke"
+                  placeholder="ropenixkenya@gmail.com"
                   className="h-10 w-full rounded-xl border border-slate-200 dark:border-slate-700 pl-9 pr-4 text-xs font-normal text-slate-900 dark:text-white focus:border-indigo-600 focus:ring-1 focus:ring-indigo-600 focus:outline-none bg-white dark:bg-slate-800 transition-colors"
                   id="input-admin-username"
                 />
@@ -201,3 +245,4 @@ export default function DjangoAdminLogin({ onLoginSuccess, onCancel }: DjangoAdm
     </div>
   );
 }
+

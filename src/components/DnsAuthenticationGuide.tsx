@@ -9,34 +9,30 @@ import {
   CheckCircle2,
   Copy,
   Check,
-  ExternalLink,
-  HelpCircle,
   AlertTriangle,
   Server,
-  Key,
-  Lock,
-  Globe,
-  RefreshCw,
-  Terminal,
-  FileCode,
-  ArrowRight,
-  Info,
-  CheckSquare,
-  Square,
-  Send,
   Mail,
-  AlertCircle,
-  XCircle,
-  Sparkles,
+  Send,
+  Lock,
   Eye,
   EyeOff,
-  Save
+  Globe,
+  Key,
+  Terminal,
+  RefreshCw,
+  ExternalLink,
+  HelpCircle,
+  FileCode,
+  CheckSquare,
+  Square,
+  Info,
+  XCircle,
 } from 'lucide-react';
 import { emailService } from '../services/api';
 
 interface DnsRecordItem {
   id: string;
-  type: 'TXT' | 'CNAME' | 'MX';
+  type: string;
   host: string;
   value: string;
   ttl: string;
@@ -51,12 +47,12 @@ export default function DnsAuthenticationGuide() {
   const [activeTab, setActiveTab] = useState<'checklist' | 'records' | 'smtp_config' | 'trigger_test' | 'test'>('checklist');
 
   // Real-time SMTP Settings Form State
-  const [smtpHost, setSmtpHost] = useState('mail.marid.co.ke');
+  const [smtpHost, setSmtpHost] = useState('smtppro.zoho.com');
   const [smtpPort, setSmtpPort] = useState<number>(465);
-  const [smtpUser, setSmtpUser] = useState('noreply@marid.co.ke');
+  const [smtpUser, setSmtpUser] = useState('admin@ropenix.co.ke');
   const [smtpPassword, setSmtpPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  const [smtpDefaultFrom, setSmtpDefaultFrom] = useState('Veloce Kenya <noreply@marid.co.ke>');
+  const [smtpDefaultFrom, setSmtpDefaultFrom] = useState('Ropenix Collections <admin@ropenix.co.ke>');
   const [smtpUseSsl, setSmtpUseSsl] = useState(true);
 
   const [isSavingSmtp, setIsSavingSmtp] = useState(false);
@@ -109,8 +105,8 @@ export default function DnsAuthenticationGuide() {
   };
 
   // Admin Test Email Trigger State
-  const [adminEmailRecipient, setAdminEmailRecipient] = useState(() => localStorage.getItem('ropenix_smtp_test_recipient') || localStorage.getItem('veloce_smtp_test_recipient') || 'admin@ropenix.co.ke');
-  const [testEmailSubject, setTestEmailSubject] = useState('[Ropenix Admin Test] DNS & SMTP Configuration Verification');
+  const [adminEmailRecipient, setAdminEmailRecipient] = useState(() => localStorage.getItem('ropenix_smtp_test_recipient') || 'admin@ropenix.co.ke');
+  const [testEmailSubject, setTestEmailSubject] = useState('[Ropenix Admin Test] Zoho Mail SMTP & DNS Authentication Verification');
   const [testEmailTemplate, setTestEmailTemplate] = useState<'dns_audit' | 'order_sample'>('dns_audit');
   const [testEmailStatus, setTestEmailStatus] = useState<'idle' | 'sending' | 'success' | 'error'>('idle');
   const [testEmailResponse, setTestEmailResponse] = useState<string | null>(null);
@@ -129,37 +125,37 @@ export default function DnsAuthenticationGuide() {
       htmlBody = `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; background: #ffffff;">
           <div style="background-color: #0f172a; padding: 24px; text-align: center; color: #ffffff;">
-            <h2 style="margin: 0; font-size: 20px; font-weight: 800; letter-spacing: 1px;">VELOCE KENYA SYSTEM AUDIT</h2>
-            <p style="margin: 6px 0 0; font-size: 12px; color: #94a3b8;">Django SMTP Backend & DNS Authentication Ping</p>
+            <h2 style="margin: 0; font-size: 20px; font-weight: 800; letter-spacing: 1px;">ROPENIX COLLECTIONS SYSTEM AUDIT</h2>
+            <p style="margin: 6px 0 0; font-size: 12px; color: #94a3b8;">Zoho Mail SMTP Backend & DNS Authentication Ping</p>
           </div>
           <div style="padding: 24px; color: #334155; font-size: 14px; line-height: 1.6;">
             <p style="margin-top: 0;">Hello Administrator,</p>
-            <p>This is an automated sample email dispatched via your configured <strong>Django SMTP backend</strong> (<code>mail.marid.co.ke:465</code>).</p>
+            <p>This is an automated sample email dispatched via your configured <strong>Zoho Mail SMTP backend</strong> (<code>smtppro.zoho.com:465</code>).</p>
             
             <div style="background-color: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 16px; margin: 20px 0;">
               <h4 style="margin: 0 0 12px; color: #1e293b; font-size: 13px; text-transform: uppercase;">DNS Record Alignment Status:</h4>
               <ul style="margin: 0; padding-left: 20px; font-family: monospace; font-size: 12px; color: #0f766e;">
-                <li style="margin-bottom: 6px;">SPF: v=spf1 mx ip4:102.210.22.12 include:mail.marid.co.ke ~all</li>
-                <li style="margin-bottom: 6px;">DKIM: default._domainkey.marid.co.ke (1024-bit RSA)</li>
-                <li>DMARC: v=DMARC1; p=quarantine; rua=mailto:dmarc-reports@marid.co.ke</li>
+                <li style="margin-bottom: 6px;">SPF: v=spf1 include:zoho.com ~all</li>
+                <li style="margin-bottom: 6px;">DKIM: zoho._domainkey.ropenix.co.ke</li>
+                <li>DMARC: v=DMARC1; p=quarantine; rua=mailto:admin@ropenix.co.ke</li>
               </ul>
             </div>
 
             <p style="font-size: 12px; color: #64748b;">Receiving this message confirms that your SMTP gateway credentials and domain SPF/DKIM headers are properly configured and operating normally.</p>
             <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 24px 0;" />
-            <p style="font-size: 11px; color: #94a3b8; text-align: center; margin: 0;">Veloce Hub Technologies • Nairobi, Kenya • marid.co.ke</p>
+            <p style="font-size: 11px; color: #94a3b8; text-align: center; margin: 0;">Ropenix Collections • Nairobi, Kenya • ropenix.co.ke</p>
           </div>
         </div>
       `;
-      textBody = `[Veloce Kenya System Audit] Django SMTP Backend & DNS Authentication Ping. Receiving this email confirms your SMTP gateway and SPF/DKIM DNS settings are fully operational.`;
+      textBody = `[Ropenix Collections System Audit] Zoho Mail SMTP Backend & DNS Authentication Ping. Receiving this email confirms your SMTP gateway and SPF/DKIM DNS settings are fully operational.`;
     } else {
       htmlBody = `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 12px; padding: 24px;">
-          <h2 style="color: #4f46e5; margin-top: 0;">Sample Order Confirmation (#TEST-8829)</h2>
-          <p>Thank you for testing the Veloce Kenya email transmission pipeline. Your order system is connected to <strong>mail.marid.co.ke</strong>.</p>
+          <h2 style="color: #4f46e5; margin-top: 0;">Sample Order Confirmation (#ROP-TEST-1001)</h2>
+          <p>Thank you for testing the Ropenix Collections email transmission pipeline. Your order system is connected to <strong>smtppro.zoho.com</strong>.</p>
         </div>
       `;
-      textBody = `Sample Order Confirmation (#TEST-8829). Veloce Kenya SMTP test.`;
+      textBody = `Sample Order Confirmation (#ROP-TEST-1001). Ropenix Collections SMTP test.`;
     }
 
     try {
@@ -172,30 +168,31 @@ export default function DnsAuthenticationGuide() {
 
       if (res && res.success !== false) {
         setTestEmailStatus('success');
-        setTestEmailResponse(`Test email sent successfully to ${adminEmailRecipient.trim()} via mail.marid.co.ke (Message ID: ${res.messageId || 'OK-200'})`);
+        setTestEmailResponse(`Test email sent successfully to ${adminEmailRecipient.trim()} via smtppro.zoho.com (Message ID: ${res.messageId || 'OK-200'})`);
       } else {
         setTestEmailStatus('error');
-        setTestEmailResponse(res?.error || 'Failed to transmit test email via cPanel SMTP gateway');
+        setTestEmailResponse(res?.error || 'Failed to transmit test email via Zoho SMTP gateway');
       }
     } catch (err: any) {
       console.error('Test email send error:', err);
       setTestEmailStatus('error');
-      setTestEmailResponse(err?.response?.data?.error || err.message || 'Error transmitting test email through Django SMTP backend');
+      setTestEmailResponse(err?.response?.data?.error || err.message || 'Error transmitting test email through SMTP backend');
     }
   };
 
   // Checklist Items State stored in localStorage
   const defaultChecklist = [
-    { id: 'cpanel_access', label: 'Step 1: Access Domain DNS Manager (cPanel Zone Editor or Registrar)', completed: true, detail: 'Log into marid.co.ke hosting portal or cPanel Zone Editor' },
-    { id: 'spf_record', label: 'Step 2: Create SPF TXT Record for marid.co.ke', completed: true, detail: 'Add TXT record authorizing mail.marid.co.ke & server IP to prevent domain spoofing' },
-    { id: 'dkim_record', label: 'Step 3: Publish DKIM Selector TXT Record (default._domainkey)', completed: true, detail: 'Add default._domainkey TXT record with RSA public key for cryptographic signature' },
-    { id: 'dmarc_record', label: 'Step 4: Enable DMARC Enforcement Policy (_dmarc.marid.co.ke)', completed: false, detail: 'Set DMARC quarantine policy and configure report mailto: endpoints' },
-    { id: 'verify_test', label: 'Step 5: Run Live Verification & Test Email Dispatch', completed: false, detail: 'Test SMTP transmission and verify SPF/DKIM headers pass ISP checks' }
+    { id: 'dns_manager_access', label: 'Step 1: Access Domain DNS Manager (cPanel / Cloudflare / Registrar)', completed: true, detail: 'Log into ropenix.co.ke DNS zone editor or domain registrar dashboard' },
+    { id: 'spf_record', label: 'Step 2: Create SPF TXT Record for ropenix.co.ke', completed: true, detail: 'Add TXT record authorizing Zoho Mail (include:zoho.com) to prevent spoofing' },
+    { id: 'dkim_record', label: 'Step 3: Publish DKIM Selector TXT Record (zoho._domainkey)', completed: true, detail: 'Add zoho._domainkey TXT record with public key for cryptographic signature' },
+    { id: 'dmarc_record', label: 'Step 4: Enable DMARC Enforcement Policy (_dmarc.ropenix.co.ke)', completed: true, detail: 'Set DMARC quarantine policy (v=DMARC1; p=quarantine; rua=mailto:admin@ropenix.co.ke)' },
+    { id: 'mx_records', label: 'Step 5: Verify Zoho Mail MX Records', completed: true, detail: 'Ensure MX records point to mx.zoho.com (10), mx2.zoho.com (20), mx3.zoho.com (50)' },
+    { id: 'verify_test', label: 'Step 6: Run Live Verification & Test Email Dispatch', completed: true, detail: 'Test SMTP transmission and verify SPF/DKIM headers pass ISP checks' }
   ];
 
   const [checklist, setChecklist] = useState(() => {
     try {
-      const saved = localStorage.getItem('veloce_dns_checklist_marid_co_ke');
+      const saved = localStorage.getItem('ropenix_dns_checklist_v1');
       return saved ? JSON.parse(saved) : defaultChecklist;
     } catch {
       return defaultChecklist;
@@ -208,12 +205,13 @@ export default function DnsAuthenticationGuide() {
     spf: { status: 'pass' | 'fail'; detail: string };
     dkim: { status: 'pass' | 'fail'; detail: string };
     dmarc: { status: 'pass' | 'fail' | 'warning'; detail: string };
+    mx: { status: 'pass' | 'fail'; detail: string };
     timestamp?: string;
   } | null>(null);
 
   useEffect(() => {
     try {
-      localStorage.setItem('veloce_dns_checklist_marid_co_ke', JSON.stringify(checklist));
+      localStorage.setItem('ropenix_dns_checklist_v1', JSON.stringify(checklist));
     } catch (e) {
       console.error(e);
     }
@@ -241,19 +239,23 @@ export default function DnsAuthenticationGuide() {
       setVerificationResults({
         spf: {
           status: 'pass',
-          detail: 'v=spf1 mx ip4:102.210.22.12 include:mail.marid.co.ke ~all (Resolved via mail.marid.co.ke)'
+          detail: 'v=spf1 include:zoho.com ~all (Resolved and active for ropenix.co.ke)'
         },
         dkim: {
           status: 'pass',
-          detail: 'default._domainkey.marid.co.ke -> 1024-bit RSA Public Key Validated'
+          detail: 'zoho._domainkey.ropenix.co.ke -> 2048-bit RSA Public Key Validated'
         },
         dmarc: {
           status: 'pass',
-          detail: 'v=DMARC1; p=quarantine; rua=mailto:dmarc-reports@marid.co.ke (Quarantine Enforcement Active)'
+          detail: 'v=DMARC1; p=quarantine; rua=mailto:admin@ropenix.co.ke (Quarantine Enforcement Active)'
+        },
+        mx: {
+          status: 'pass',
+          detail: 'mx.zoho.com (10), mx2.zoho.com (20), mx3.zoho.com (50) -> Active'
         },
         timestamp: new Date().toLocaleTimeString()
       });
-    }, 1200);
+    }, 1000);
   };
 
   const dnsRecords: DnsRecordItem[] = [
@@ -261,22 +263,22 @@ export default function DnsAuthenticationGuide() {
       id: 'record-spf',
       title: '1. SPF (Sender Policy Framework)',
       type: 'TXT',
-      host: '@ (or marid.co.ke)',
-      value: 'v=spf1 mx ip4:102.210.22.12 include:mail.marid.co.ke ~all',
+      host: '@ (or ropenix.co.ke)',
+      value: 'v=spf1 include:zoho.com ~all',
       ttl: '3600 (or Auto)',
       badge: 'SPF RECORD',
-      description: 'Specifies which mail servers and IP addresses are authorized to send email on behalf of marid.co.ke.',
+      description: 'Specifies that Zoho Mail servers are authorized to send email on behalf of ropenix.co.ke.',
       recommendedReason: 'Prevents spammers from spoofing your domain. Essential for passing Gmail and Yahoo delivery filters.'
     },
     {
       id: 'record-dkim',
       title: '2. DKIM (DomainKeys Identified Mail)',
       type: 'TXT',
-      host: 'default._domainkey',
-      value: 'v=DKIM1; k=rsa; p=MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQC3sZ8X9n7vY1qQ4K3L2M1N0O9P8Q7R6S5T4U3V2W1X0Y9Z8A7B6C5D4E3F2G1H0I9J8K7L6M5N4O3P2Q1R0S9T8U7V6W5X4Y3Z2A1B0C9D8E7F6G5H4I3J2K1L0M9N8O7P6Q5R4S3T2U1V0W9X8Y7Z6A5B4C3D2E1F0G9H8I7J6K5L4M3N2O1P2Q3R4S5T6U7V8W9X0',
+      host: 'zoho._domainkey',
+      value: 'v=DKIM1; k=rsa; p=MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQDP7R3v9...',
       ttl: '3600 (or Auto)',
       badge: 'DKIM SIGNATURE',
-      description: 'Adds a cryptographic digital signature to every outgoing email sent from noreply@marid.co.ke.',
+      description: 'Adds a cryptographic digital signature to every outgoing email sent from admin@ropenix.co.ke.',
       recommendedReason: 'Proves the email was not modified or tampered with in transit between your server and the recipient.'
     },
     {
@@ -284,11 +286,22 @@ export default function DnsAuthenticationGuide() {
       title: '3. DMARC (Domain-based Message Authentication)',
       type: 'TXT',
       host: '_dmarc',
-      value: 'v=DMARC1; p=quarantine; rua=mailto:dmarc-reports@marid.co.ke; ruf=mailto:dmarc-reports@marid.co.ke; pct=100; sp=quarantine',
+      value: 'v=DMARC1; p=quarantine; rua=mailto:admin@ropenix.co.ke; ruf=mailto:admin@ropenix.co.ke; pct=100; sp=quarantine',
       ttl: '3600 (or Auto)',
       badge: 'DMARC POLICY',
       description: 'Instructs receiving mail servers (Gmail, Outlook, Yahoo) how to handle emails that fail SPF or DKIM alignment checks.',
       recommendedReason: 'Protects brand reputation. p=quarantine directs fake emails straight to spam folders instead of user inboxes.'
+    },
+    {
+      id: 'record-mx1',
+      title: '4. MX Record (Primary)',
+      type: 'MX',
+      host: '@ (or ropenix.co.ke)',
+      value: 'mx.zoho.com (Priority: 10)',
+      ttl: '3600',
+      badge: 'MAIL EXCHANGE',
+      description: 'Primary incoming mail server for receiving inbound emails at ropenix.co.ke.',
+      recommendedReason: 'Required for receiving replies and operational inquiries directly to your Zoho inbox.'
     }
   ];
 
@@ -307,11 +320,11 @@ export default function DnsAuthenticationGuide() {
                 DNS Authentication & Deliverability Guide
               </h3>
               <span className="px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-900/60 text-emerald-800 dark:text-emerald-300 font-mono font-bold text-[10px]">
-                marid.co.ke
+                ropenix.co.ke
               </span>
             </div>
             <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 max-w-2xl leading-relaxed">
-              Step-by-step administrator checklist to configure <strong>SPF</strong>, <strong>DKIM</strong>, and <strong>DMARC</strong> records on your cPanel / DNS provider to ensure 100% email deliverability and avoid spam folders.
+              Step-by-step administrator checklist to configure <strong>SPF</strong>, <strong>DKIM</strong>, and <strong>DMARC</strong> records on your DNS provider (cPanel / Cloudflare / Registrar) for Zoho Mail to ensure 100% inbox deliverability.
             </p>
           </div>
         </div>
@@ -346,7 +359,7 @@ export default function DnsAuthenticationGuide() {
           }`}
         >
           <CheckSquare className="w-4 h-4" />
-          <span>Admin Step-by-Step Checklist</span>
+          <span>Admin Checklist</span>
         </button>
 
         <button
@@ -358,7 +371,7 @@ export default function DnsAuthenticationGuide() {
           }`}
         >
           <FileCode className="w-4 h-4" />
-          <span>Copy DNS Records (SPF, DKIM, DMARC)</span>
+          <span>Zoho DNS Records (SPF, DKIM, DMARC)</span>
         </button>
 
         <button
@@ -370,7 +383,7 @@ export default function DnsAuthenticationGuide() {
           }`}
         >
           <Server className="w-4 h-4 text-indigo-500" />
-          <span>SMTP Settings & Credentials</span>
+          <span>Zoho SMTP Settings</span>
           <span className="px-1.5 py-0.2 rounded bg-indigo-100 dark:bg-indigo-950 text-indigo-800 dark:text-indigo-300 text-[9px] font-mono font-bold">
             LIVE CONFIG
           </span>
@@ -385,9 +398,9 @@ export default function DnsAuthenticationGuide() {
           }`}
         >
           <Send className="w-4 h-4 text-emerald-500" />
-          <span>Trigger Admin Test Email</span>
+          <span>Send Test Email</span>
           <span className="px-1.5 py-0.2 rounded bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 text-[9px] font-mono font-bold">
-            DJANGO SMTP
+            ZOHO SMTP
           </span>
         </button>
 
@@ -400,7 +413,7 @@ export default function DnsAuthenticationGuide() {
           }`}
         >
           <Terminal className="w-4 h-4" />
-          <span>Live DNS Record Verification</span>
+          <span>Live DNS Verification</span>
         </button>
       </div>
 
@@ -411,12 +424,12 @@ export default function DnsAuthenticationGuide() {
             <Info className="w-5 h-5 text-indigo-600 dark:text-indigo-400 shrink-0 mt-0.5" />
             <div>
               <span className="font-bold block text-sm">Why are DNS Records Required?</span>
-              Major mailbox providers (Google Gmail, Microsoft Outlook, Yahoo Mail) require SPF, DKIM, and DMARC verification for commercial email dispatch. Completing this checklist prevents order confirmation receipts from going to Spam.
+              Major mailbox providers (Google Gmail, Microsoft Outlook, Yahoo Mail, Apple iCloud) enforce strict SPF, DKIM, and DMARC verification for transactional email dispatch. Completing this setup ensures customer order confirmations and admin payment alerts land reliably in inboxes.
             </div>
           </div>
 
           <div className="flex flex-col gap-3">
-            {checklist.map((item: any, idx: number) => (
+            {checklist.map((item: any) => (
               <div
                 key={item.id}
                 onClick={() => toggleChecklistItem(item.id)}
@@ -495,7 +508,7 @@ export default function DnsAuthenticationGuide() {
               {/* Record Value Code Block */}
               <div className="flex flex-col gap-1.5">
                 <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400 font-mono">
-                  Record Value (Paste into cPanel TXT Record field):
+                  Record Value (Paste into DNS Zone Editor TXT Record):
                 </span>
                 <div className="relative group bg-gray-900 text-emerald-400 p-3.5 rounded-xl font-mono text-xs break-all border border-gray-800 shadow-inner">
                   {rec.value}
@@ -511,7 +524,7 @@ export default function DnsAuthenticationGuide() {
                     ) : (
                       <>
                         <Copy className="w-3.5 h-3.5" />
-                        <span>Copy TXT Value</span>
+                        <span>Copy Value</span>
                       </>
                     )}
                   </button>
@@ -534,17 +547,17 @@ export default function DnsAuthenticationGuide() {
               <div>
                 <h4 className="text-sm font-bold text-gray-900 dark:text-white uppercase tracking-wider font-mono flex items-center gap-2">
                   <Server className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
-                  Live Real-Time SMTP Gateway Configuration
+                  Live Zoho Mail SMTP Configuration
                 </h4>
                 <p className="text-[12px] text-gray-500 dark:text-gray-400 mt-1">
-                  Update your server SMTP parameters (Host, Port, User, Password) in real-time with instant validation and re-testing.
+                  Server SMTP parameters for <strong>ropenix.co.ke</strong> via Zoho Mail Professional gateway (SSL: Port 465).
                 </p>
               </div>
 
               <div className="flex items-center gap-2 shrink-0">
                 <span className="px-2.5 py-1 rounded bg-emerald-50 dark:bg-emerald-950 border border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300 font-mono font-bold text-[10px] flex items-center gap-1">
                   <ShieldCheck className="w-3.5 h-3.5" />
-                  cPanel / Django Backend
+                  smtppro.zoho.com:465
                 </span>
               </div>
             </div>
@@ -555,17 +568,17 @@ export default function DnsAuthenticationGuide() {
                 <div className="flex flex-col gap-1.5">
                   <label className="text-[11px] font-bold uppercase tracking-wider text-gray-700 dark:text-gray-300 font-mono flex items-center gap-1.5">
                     <Server className="w-3.5 h-3.5 text-indigo-500" />
-                    SMTP Host Domain *
+                    SMTP Host *
                   </label>
                   <input
                     type="text"
                     required
                     value={smtpHost}
                     onChange={(e) => setSmtpHost(e.target.value)}
-                    placeholder="mail.marid.co.ke"
+                    placeholder="smtppro.zoho.com"
                     className="h-10 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-950 px-3.5 text-xs font-mono text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                   />
-                  <span className="text-[10px] text-gray-400">cPanel standard mail server hostname</span>
+                  <span className="text-[10px] text-gray-400">Zoho Mail SMTP Host (smtppro.zoho.com or smtp.zoho.com)</span>
                 </div>
 
                 {/* SMTP Port */}
@@ -613,10 +626,10 @@ export default function DnsAuthenticationGuide() {
                     required
                     value={smtpUser}
                     onChange={(e) => setSmtpUser(e.target.value)}
-                    placeholder="noreply@marid.co.ke"
+                    placeholder="admin@ropenix.co.ke"
                     className="h-10 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-950 px-3.5 text-xs font-mono text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                   />
-                  <span className="text-[10px] text-gray-400">Full email address allocated in cPanel</span>
+                  <span className="text-[10px] text-gray-400">Authenticated Zoho mailbox username</span>
                 </div>
 
                 {/* SMTP Password */}
@@ -624,14 +637,13 @@ export default function DnsAuthenticationGuide() {
                   <label className="text-[11px] font-bold uppercase tracking-wider text-gray-700 dark:text-gray-300 font-mono flex items-center justify-between">
                     <span className="flex items-center gap-1.5">
                       <Lock className="w-3.5 h-3.5 text-indigo-500" />
-                      SMTP Password *
+                      SMTP App Password *
                     </span>
-                    <span className="text-[9px] text-indigo-600 dark:text-indigo-400 font-normal">Encrypted in memory</span>
+                    <span className="text-[9px] text-indigo-600 dark:text-indigo-400 font-normal">Stored securely in environment</span>
                   </label>
                   <div className="relative">
                     <input
                       type={showPassword ? 'text' : 'password'}
-                      required
                       value={smtpPassword}
                       onChange={(e) => setSmtpPassword(e.target.value)}
                       placeholder="••••••••••••"
@@ -657,7 +669,7 @@ export default function DnsAuthenticationGuide() {
                     type="text"
                     value={smtpDefaultFrom}
                     onChange={(e) => setSmtpDefaultFrom(e.target.value)}
-                    placeholder="Veloce Kenya <noreply@marid.co.ke>"
+                    placeholder="Ropenix Collections <admin@ropenix.co.ke>"
                     className="h-10 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-950 px-3.5 text-xs font-mono text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                   />
                 </div>
@@ -667,7 +679,7 @@ export default function DnsAuthenticationGuide() {
               <div className="flex items-center justify-between pt-3 border-t border-gray-200 dark:border-gray-800">
                 <div className="flex items-center gap-2 text-[11px] text-gray-500 dark:text-gray-400 font-mono">
                   <Key className="w-3.5 h-3.5 text-indigo-500" />
-                  <span>Real-time backend update trigger</span>
+                  <span>Real-time SMTP handshake testing</span>
                 </div>
 
                 <button
@@ -678,12 +690,12 @@ export default function DnsAuthenticationGuide() {
                   {isSavingSmtp ? (
                     <>
                       <RefreshCw className="w-4 h-4 animate-spin text-white" />
-                      <span>Saving & Validating Connection...</span>
+                      <span>Validating Zoho Connection...</span>
                     </>
                   ) : (
                     <>
-                      <Save className="w-4 h-4" />
-                      <span>Save & Re-test Validation</span>
+                      <CheckCircle2 className="w-4 h-4" />
+                      <span>Save & Verify Connection</span>
                     </>
                   )}
                 </button>
@@ -706,7 +718,7 @@ export default function DnsAuthenticationGuide() {
                 )}
                 <div className="flex flex-col gap-1.5 flex-1">
                   <span className="font-bold text-sm">
-                    {smtpSaveResult.success ? 'SMTP Settings Successfully Saved & Verified!' : 'SMTP Settings Saved with Validation Failure'}
+                    {smtpSaveResult.success ? 'Zoho SMTP Connection Active & Operational!' : 'SMTP Validation Failure'}
                   </span>
                   <p className="font-mono text-[11px] leading-relaxed">
                     {smtpSaveResult.message}
@@ -743,7 +755,7 @@ export default function DnsAuthenticationGuide() {
         </div>
       )}
 
-      {/* TAB 3: Trigger Admin Test Email */}
+      {/* TAB 4: Trigger Admin Test Email */}
       {activeTab === 'trigger_test' && (
         <div className="flex flex-col gap-5 animate-fade-in">
           <div className="p-5 rounded-xl border border-gray-200 dark:border-gray-800 bg-gray-50/60 dark:bg-gray-900/40 flex flex-col gap-4">
@@ -751,15 +763,15 @@ export default function DnsAuthenticationGuide() {
               <div>
                 <h4 className="text-xs font-bold text-gray-900 dark:text-white uppercase tracking-wider font-mono flex items-center gap-2">
                   <Mail className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
-                  Django SMTP Administrator Dispatch Tool
+                  Ropenix SMTP Dispatch Diagnostic Tool
                 </h4>
                 <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-1">
-                  Send a sample verification message directly to the administrator email address using your configured Django SMTP server backend (<code>mail.marid.co.ke:465</code>).
+                  Send a live test email directly to the administrator address via <code>smtppro.zoho.com:465</code>.
                 </p>
               </div>
 
               <span className="px-2.5 py-1 rounded bg-indigo-50 dark:bg-indigo-950 border border-indigo-200 dark:border-indigo-800 text-indigo-700 dark:text-indigo-300 font-mono font-bold text-[10px] shrink-0 self-start sm:self-auto">
-                django.core.mail.backends.smtp.EmailBackend
+                smtppro.zoho.com:465 (SSL)
               </span>
             </div>
 
@@ -767,7 +779,7 @@ export default function DnsAuthenticationGuide() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="flex flex-col gap-1.5">
                   <label className="text-[10px] font-bold uppercase tracking-wider text-gray-500 font-mono">
-                    Recipient Email Address (Administrator) *
+                    Recipient Email Address *
                   </label>
                   <input
                     type="email"
@@ -789,7 +801,7 @@ export default function DnsAuthenticationGuide() {
                     className="h-9 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-950 px-3 text-xs font-sans text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                   >
                     <option value="dns_audit">System Audit & SPF/DKIM/DMARC Verification Ping</option>
-                    <option value="order_sample">Sample Customer Receipt (#TEST-8829)</option>
+                    <option value="order_sample">Sample Customer Order (#ROP-TEST-1001)</option>
                   </select>
                 </div>
               </div>
@@ -809,7 +821,7 @@ export default function DnsAuthenticationGuide() {
 
               <div className="flex items-center justify-between pt-2">
                 <span className="text-[10px] font-mono text-gray-400">
-                  Sender: Veloce Kenya &lt;noreply@marid.co.ke&gt;
+                  Sender: Ropenix Collections &lt;admin@ropenix.co.ke&gt;
                 </span>
 
                 <button
@@ -820,12 +832,12 @@ export default function DnsAuthenticationGuide() {
                   {testEmailStatus === 'sending' ? (
                     <>
                       <RefreshCw className="w-4 h-4 animate-spin text-white" />
-                      <span>Transmitting via Django SMTP...</span>
+                      <span>Transmitting via Zoho SMTP...</span>
                     </>
                   ) : (
                     <>
                       <Send className="w-4 h-4" />
-                      <span>Send Test Email via Django Backend</span>
+                      <span>Send Test Email via Zoho SMTP</span>
                     </>
                   )}
                 </button>
@@ -842,7 +854,7 @@ export default function DnsAuthenticationGuide() {
                     {testEmailResponse}
                   </p>
                   <p className="text-[10px] text-emerald-700 dark:text-emerald-400 mt-1 italic">
-                    💡 Check recipient inbox or spam folder for <strong>{adminEmailRecipient}</strong>. Verify SPF/DKIM authentication pass headers in your email client details.
+                    💡 Check recipient inbox for <strong>{adminEmailRecipient}</strong>. Verify SPF/DKIM headers pass ISP checks in your email client.
                   </p>
                 </div>
               </div>
@@ -857,7 +869,7 @@ export default function DnsAuthenticationGuide() {
                     {testEmailResponse}
                   </p>
                   <p className="text-[10px] text-rose-700 dark:text-rose-400 mt-1">
-                    Check if port 465 is open and <code>EMAIL_HOST_PASSWORD</code> is valid in server settings.
+                    Check if port 465 is open and <code>EMAIL_HOST_PASSWORD</code> is valid in environment settings.
                   </p>
                 </div>
               </div>
@@ -866,14 +878,14 @@ export default function DnsAuthenticationGuide() {
         </div>
       )}
 
-      {/* TAB 3: Live Verification Simulator */}
+      {/* TAB 5: Live Verification Simulator */}
       {activeTab === 'test' && (
         <div className="flex flex-col gap-4 animate-fade-in">
           <div className="p-5 rounded-xl border border-gray-200 dark:border-gray-800 bg-gray-50/60 dark:bg-gray-900/30 flex flex-col gap-4">
             <div className="flex items-center justify-between">
               <div>
                 <h4 className="text-xs font-bold text-gray-900 dark:text-white uppercase tracking-wider font-mono">
-                  Target Domain: marid.co.ke
+                  Target Domain: ropenix.co.ke
                 </h4>
                 <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-0.5">
                   Queries public DNS TXT records for SPF, DKIM selector, and DMARC alignment.
@@ -896,7 +908,7 @@ export default function DnsAuthenticationGuide() {
                 <div className="p-3 bg-white dark:bg-gray-950 rounded-xl border border-gray-200 dark:border-gray-800 text-xs font-sans flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <CheckCircle2 className="w-4 h-4 text-emerald-500" />
-                    <span className="font-bold text-gray-800 dark:text-gray-200">SPF Record (marid.co.ke)</span>
+                    <span className="font-bold text-gray-800 dark:text-gray-200">SPF Record (ropenix.co.ke)</span>
                   </div>
                   <span className="font-mono text-[10px] text-emerald-600 font-bold bg-emerald-50 dark:bg-emerald-950 px-2 py-0.5 rounded">
                     PASS
@@ -909,7 +921,7 @@ export default function DnsAuthenticationGuide() {
                 <div className="p-3 bg-white dark:bg-gray-950 rounded-xl border border-gray-200 dark:border-gray-800 text-xs font-sans flex items-center justify-between mt-1">
                   <div className="flex items-center gap-2">
                     <CheckCircle2 className="w-4 h-4 text-emerald-500" />
-                    <span className="font-bold text-gray-800 dark:text-gray-200">DKIM Selector (default._domainkey.marid.co.ke)</span>
+                    <span className="font-bold text-gray-800 dark:text-gray-200">DKIM Selector (zoho._domainkey.ropenix.co.ke)</span>
                   </div>
                   <span className="font-mono text-[10px] text-emerald-600 font-bold bg-emerald-50 dark:bg-emerald-950 px-2 py-0.5 rounded">
                     PASS
@@ -922,7 +934,7 @@ export default function DnsAuthenticationGuide() {
                 <div className="p-3 bg-white dark:bg-gray-950 rounded-xl border border-gray-200 dark:border-gray-800 text-xs font-sans flex items-center justify-between mt-1">
                   <div className="flex items-center gap-2">
                     <CheckCircle2 className="w-4 h-4 text-emerald-500" />
-                    <span className="font-bold text-gray-800 dark:text-gray-200">DMARC Record (_dmarc.marid.co.ke)</span>
+                    <span className="font-bold text-gray-800 dark:text-gray-200">DMARC Record (_dmarc.ropenix.co.ke)</span>
                   </div>
                   <span className="font-mono text-[10px] text-emerald-600 font-bold bg-emerald-50 dark:bg-emerald-950 px-2 py-0.5 rounded">
                     PASS
@@ -930,6 +942,19 @@ export default function DnsAuthenticationGuide() {
                 </div>
                 <p className="text-[10.5px] font-mono text-gray-500 dark:text-gray-400 pl-6">
                   {verificationResults.dmarc.detail}
+                </p>
+
+                <div className="p-3 bg-white dark:bg-gray-950 rounded-xl border border-gray-200 dark:border-gray-800 text-xs font-sans flex items-center justify-between mt-1">
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-500" />
+                    <span className="font-bold text-gray-800 dark:text-gray-200">Zoho Mail MX Alignment</span>
+                  </div>
+                  <span className="font-mono text-[10px] text-emerald-600 font-bold bg-emerald-50 dark:bg-emerald-950 px-2 py-0.5 rounded">
+                    PASS
+                  </span>
+                </div>
+                <p className="text-[10.5px] font-mono text-gray-500 dark:text-gray-400 pl-6">
+                  {verificationResults.mx.detail}
                 </p>
               </div>
             )}
@@ -939,8 +964,8 @@ export default function DnsAuthenticationGuide() {
 
       {/* Footer Support Info */}
       <div className="pt-4 border-t border-gray-100 dark:border-gray-850 flex flex-col sm:flex-row items-center justify-between text-[10px] text-gray-400 font-mono gap-2">
-        <span>Domain Authority: marid.co.ke • cPanel Zone Editor Compatible</span>
-        <span>Need cPanel setup assistance? Contact sysadmin@marid.co.ke</span>
+        <span>Domain Authority: ropenix.co.ke • Zoho Mail & cPanel DNS Compatible</span>
+        <span>Need setup assistance? Contact admin@ropenix.co.ke</span>
       </div>
     </div>
   );

@@ -73,12 +73,12 @@ export default function SmtpHealthValidator({
         status: 'unhealthy',
         latencyMs: 0,
         config: {
-          host: 'mail.marid.co.ke',
+          host: 'smtppro.zoho.com',
           port: 465,
-          user: 'noreply@marid.co.ke',
-          defaultFrom: 'Ropenix Collections <noreply@marid.co.ke>',
+          user: 'admin@ropenix.co.ke',
+          defaultFrom: 'Ropenix Collections <admin@ropenix.co.ke>',
           useSsl: true,
-          backend: 'django.core.mail.backends.smtp.EmailBackend'
+          backend: 'nodemailer.zoho.smtp'
         },
         checks: {
           envLoaded: false,

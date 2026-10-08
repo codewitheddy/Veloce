@@ -37,8 +37,6 @@ export default function BulkPriceAdjustmentModal({
   availableCategories,
   onUpdateProductPrice
 }: BulkPriceAdjustmentModalProps) {
-  if (!isOpen) return null;
-
   // --- STATE ---
   // Categories selected for filtering products
   const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
@@ -194,6 +192,8 @@ export default function BulkPriceAdjustmentModal({
       onClose();
     }, 2500);
   };
+
+  if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200 font-sans overflow-y-auto">

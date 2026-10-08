@@ -17,50 +17,13 @@ function dispatchRealEmail(to: string, subject: string, bodyText: string, catego
   const cleanTo = (to || '').trim();
   if (!cleanTo || !cleanTo.includes('@') || cleanTo.includes('example.com')) return;
 
-  const htmlBody = `
-    <!DOCTYPE html>
-    <html>
-    <head>
-      <meta charset="utf-8">
-      <style>
-        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #f8fafc; margin: 0; padding: 20px; color: #1e293b; }
-        .card { max-width: 600px; margin: 0 auto; background: #ffffff; border-radius: 12px; overflow: hidden; border: 1px solid #e2e8f0; box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
-        .header { background: #0f172a; padding: 24px; text-align: center; border-bottom: 3px solid #4f46e5; }
-        .header h1 { color: #ffffff; margin: 0; font-size: 22px; font-weight: 800; letter-spacing: 1px; }
-        .header p { color: #94a3b8; margin: 4px 0 0 0; font-size: 12px; text-transform: uppercase; font-weight: 600; }
-        .body { padding: 32px 28px; line-height: 1.65; font-size: 14px; color: #334155; white-space: pre-wrap; }
-        .footer { background: #f8fafc; padding: 20px; text-align: center; border-top: 1px solid #f1f5f9; font-size: 11px; color: #64748b; }
-        .footer a { color: #4f46e5; text-decoration: none; font-weight: 600; }
-      </style>
-    </head>
-    <body>
-      <div class="card">
-        <div class="header">
-          <h1>ROPENIX COLLECTIONS</h1>
-          <p>${category}</p>
-        </div>
-        <div class="body">${bodyText}</div>
-        <div class="footer">
-          <p style="margin:0 0 6px 0;"><strong>Ropenix Collections Kenya</strong> • Powered by Ropenix Investments Limited</p>
-          <p style="margin:0;">Support: <a href="mailto:support@ropenix.co.ke">support@ropenix.co.ke</a> | Hotline: +254 182 180 965 (0182180965)</p>
-        </div>
-      </div>
-    </body>
-    </html>
-  `;
-
-  emailService.sendEmail({
-    to: cleanTo,
-    subject,
-    text: bodyText,
-    html: htmlBody,
-    category,
-    isPromotional,
-  }).then((res) => {
-    console.log(`[Email Dispatch Success] Transmitted "${subject}" to ${cleanTo}`, res);
-  }).catch((err) => {
-    console.warn(`[Email Dispatch Error] Failed sending "${subject}" to ${cleanTo}:`, err);
-  });
+  // Client-side UI toast helper: Log toast activity.
+  // Note: All authoritative customer transactional emails (Order Confirmation, Payment Instructions,
+  // Shipping Confirmation, Delivery, Cancellation) are managed and deduplicated on the server
+  // via the transactional email queue to guarantee single delivery with responsive HTML templates.
+  if (process.env.NODE_ENV === 'development') {
+    console.debug(`[UI Notification Toast] "${subject}" for ${cleanTo} (${category})`);
+  }
 }
 
 // ==========================================
@@ -74,8 +37,12 @@ export function buildOrderConfirmationEmail(order: Order): EmailNotification {
   const customerEmail = order.customerEmail || 'customer@example.com';
   const itemsList = order.items.map(i => `• ${i.name} (x${i.quantity}) - KSh ${i.price.toLocaleString('en-KE')}`).join('\n');
   
+  const deliveryNotice = order.fulfillmentType === 'pickup'
+    ? `Fulfillment: Free Warehouse Pickup (${order.pickupLocation || 'Main Hub'})`
+    : `Delivery Fee: To be confirmed (TBC)\nNotice: Delivery fee is not included in your total. It will be calculated after your order is placed, based on courier charges (Uber, Bolt, or PickUp Mtaani), and we'll contact you to confirm before dispatch.\nDestination: ${order.shippingAddress || 'Nairobi'}${order.areaEstate ? ` (${order.areaEstate})` : ''}${order.landmark ? ` [Landmark: ${order.landmark}]` : ''}`;
+
   const subject = `🛒 Order Confirmation: ROP-${orderIdUpper}`;
-  const body = `Hi ${customer},\n\nThank you for shopping with Ropenix Collections! Your order ROP-${orderIdUpper} has been successfully placed on ${order.date}.\n\nItems Ordered:\n${itemsList}\n\nTotal Paid: KSh ${order.total.toLocaleString('en-KE')}\nPayment Method: ${order.paymentMethod || 'Credit Card / M-Pesa'}\nShipping Address: ${order.shippingAddress || 'Default Address'}\n\nWe will notify you as soon as your package enters fulfillment.\n\nWarm regards,\nThe Ropenix Collections Team`;
+  const body = `Hi ${customer},\n\nThank you for shopping with Ropenix Collections! Your order ROP-${orderIdUpper} has been successfully placed on ${order.date}.\n\nItems Ordered:\n${itemsList}\n\nGoods Subtotal: KSh ${(order.subtotal ?? (order.total - (order.shippingFee || 0))).toLocaleString('en-KE')}\nPayment Method: ${order.paymentMethod || 'Lipa na M-Pesa'}\n\n${deliveryNotice}\n\nWe will contact you shortly with your exact courier rate quote and delivery confirmation.\n\nWarm regards,\nThe Ropenix Collections Team`;
 
   dispatchRealEmail(customerEmail, subject, body, 'Order Confirmation');
 
@@ -90,6 +57,33 @@ export function buildOrderConfirmationEmail(order: Order): EmailNotification {
     timestamp: getCurrentTimestamp(),
     recipientType: 'customer',
     category: 'Order Confirmation'
+  };
+}
+
+// 1b. Delivery Quote Notification
+export function buildDeliveryQuoteEmail(order: Order, quotedFee: number, courierName: string, notes?: string): EmailNotification {
+  const orderIdUpper = order.id.slice(0, 8).toUpperCase();
+  const customer = order.customerName || 'Customer';
+  const customerEmail = order.customerEmail || 'customer@example.com';
+  const sub = order.subtotal ?? (order.total - (order.shippingFee || 0));
+  const newTotal = sub + (order.taxTotal ?? 0) + quotedFee - (order.discountAmount ?? 0);
+
+  const subject = `📦 Delivery Quote for Order ROP-${orderIdUpper}: KSh ${quotedFee.toLocaleString('en-KE')} (${courierName})`;
+  const body = `Hi ${customer},\n\nWe have calculated the delivery fee for your order ROP-${orderIdUpper} with our partner courier (${courierName}).\n\nDelivery Quote Details:\n• Destination: ${order.shippingAddress || 'Nairobi'}${order.areaEstate ? ` (${order.areaEstate})` : ''}\n• Courier Partner: ${courierName}\n• Quoted Delivery Fee: KSh ${quotedFee.toLocaleString('en-KE')}\n• Goods Subtotal: KSh ${sub.toLocaleString('en-KE')}\n• Total Amount Due: KSh ${newTotal.toLocaleString('en-KE')}\n${notes ? `• Special Instructions: ${notes}\n` : ''}\nPayment Instructions:\nLipa na M-PESA Paybill: 303030\nAccount Number: ${order.id.toUpperCase()}\nAmount: KSh ${newTotal.toLocaleString('en-KE')}\n\nPlease reply to this email or send your M-Pesa transaction confirmation code to approve dispatch.\n\nWarm regards,\nThe Ropenix Dispatch & Fulfillment Team`;
+
+  dispatchRealEmail(customerEmail, subject, body, 'Delivery Quote');
+
+  return {
+    id: createEmailId(),
+    orderId: order.id,
+    customerName: customer,
+    customerEmail,
+    subject,
+    body,
+    status: 'pending',
+    timestamp: getCurrentTimestamp(),
+    recipientType: 'customer',
+    category: 'Delivery Quote'
   };
 }
 
@@ -133,8 +127,12 @@ export function buildShippingConfirmationEmail(order: Order, trackingNumber?: st
   const customerEmail = order.customerEmail || 'customer@example.com';
   const tracking = trackingNumber || `ROP-TRACK-${Math.floor(100000 + Math.random() * 900000)}`;
 
+  const portalOrEmailNotice = order.isGuest
+    ? `As a guest shopper, all subsequent delivery updates, courier arrival alerts, and digital receipts will be sent directly to this email address (${customerEmail}).`
+    : `You can also track your shipment status anytime inside your Ropenix Account Portal.`;
+
   const subject = `🚚 Shipping Confirmation: Order ROP-${orderIdUpper} is En Route!`;
-  const body = `Hi ${customer},\n\nGreat news! Order ROP-${orderIdUpper} has been packaged and handed over to our courier partner (${carrier}).\n\nTracking Number: ${tracking}\nEstimated Delivery Window: 1-2 Business Days\nDestination: ${order.shippingAddress || 'Nairobi, Kenya'}\n\nYou can track your shipment status anytime inside your Ropenix Account Portal.\n\nWarm regards,\nThe Ropenix Shipping Team`;
+  const body = `Hi ${customer},\n\nGreat news! Order ROP-${orderIdUpper} has been packaged and handed over to our courier partner (${carrier}).\n\nTracking Number: ${tracking}\nEstimated Delivery Window: 1-2 Business Days\nDestination: ${order.shippingAddress || 'Nairobi, Kenya'}\n\n${portalOrEmailNotice}\n\nWarm regards,\nThe Ropenix Shipping Team`;
 
   dispatchRealEmail(customerEmail, subject, body, 'Shipping Confirmation');
 

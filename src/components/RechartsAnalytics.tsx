@@ -56,10 +56,12 @@ export default function RechartsAnalytics({
 
   // Filter orders by date range if provided
   const filteredOrders = useMemo(() => {
+    if (!Array.isArray(orders)) return [];
     if (!dateRange) return orders;
     const start = new Date(dateRange.start).getTime();
     const end = new Date(dateRange.end).getTime();
     return orders.filter((o) => {
+      if (!o || !o.date) return false;
       const oDate = new Date(o.date).getTime();
       return !isNaN(oDate) && oDate >= start && oDate <= end;
     });
@@ -68,9 +70,12 @@ export default function RechartsAnalytics({
   // Product cost map for calculating margins
   const productCostMap = useMemo(() => {
     const map = new Map<string, number>();
-    products.forEach((p) => {
-      if (p.costPrice !== undefined && p.costPrice !== null) {
-        map.set(p.id, Number(p.costPrice));
+    (products || []).forEach((p) => {
+      if (p && p.costPrice !== undefined && p.costPrice !== null) {
+        const parsedCost = typeof p.costPrice === 'number' ? p.costPrice : parseFloat(String(p.costPrice));
+        if (!isNaN(parsedCost)) {
+          map.set(p.id, parsedCost);
+        }
       }
     });
     return map;
@@ -97,12 +102,17 @@ export default function RechartsAnalytics({
       let unitsCount = 0;
 
       filteredOrders.forEach((o) => {
-        if (o.status === 'completed' || o.status === 'processing') {
+        if (o && (o.status === 'completed' || o.status === 'processing')) {
           const oDateStr = (o.date || '').split(' ')[0].split('T')[0];
           if (oDateStr === dateKey) {
-            orderRevenue += o.total;
+            const parsedTotal = typeof o.total === 'number' ? o.total : parseFloat(String(o.total || '0'));
+            orderRevenue += isNaN(parsedTotal) ? 0 : parsedTotal;
             orderCount++;
-            unitsCount += o.items.reduce((s, itm) => s + itm.quantity, 0);
+            const items = Array.isArray(o.items) ? o.items : [];
+            unitsCount += items.reduce((s, itm) => {
+              const q = typeof itm?.quantity === 'number' ? itm.quantity : parseInt(String(itm?.quantity || '0'), 10);
+              return s + (isNaN(q) ? 0 : q);
+            }, 0);
           }
         }
       });
@@ -110,7 +120,7 @@ export default function RechartsAnalytics({
       result.push({
         date: dateKey,
         dayLabel: displayLabel,
-        revenue: Math.round(orderRevenue),
+        revenue: Math.round(isNaN(orderRevenue) ? 0 : orderRevenue),
         orders: orderCount,
         units: unitsCount
       });
@@ -138,28 +148,42 @@ export default function RechartsAnalytics({
       let itemsSold = 0;
 
       filteredOrders.forEach((o) => {
-        if (o.status === 'completed' || o.status === 'processing') {
+        if (o && (o.status === 'completed' || o.status === 'processing')) {
           const oDate = o.date || '';
           if (oDate.startsWith(monthKey)) {
-            revenue += o.total;
+            const parsedTotal = typeof o.total === 'number' ? o.total : parseFloat(String(o.total || '0'));
+            revenue += isNaN(parsedTotal) ? 0 : parsedTotal;
             orderCount++;
-            o.items.forEach((item) => {
-              itemsSold += item.quantity;
-              const cost = productCostMap.get(item.productId) ?? item.price * 0.55;
-              cogs += cost * item.quantity;
+            const items = Array.isArray(o.items) ? o.items : [];
+            items.forEach((item) => {
+              if (!item) return;
+              const q = typeof item.quantity === 'number' ? item.quantity : parseInt(String(item.quantity || '1'), 10);
+              const safeQty = isNaN(q) ? 1 : q;
+              itemsSold += safeQty;
+
+              const rawPrice = typeof item.price === 'number' ? item.price : parseFloat(String(item.price || '0'));
+              const safePrice = isNaN(rawPrice) ? 0 : rawPrice;
+
+              const mappedCost = item.productId ? productCostMap.get(item.productId) : undefined;
+              const cost = mappedCost !== undefined ? mappedCost : safePrice * 0.55;
+              const safeCost = isNaN(cost) ? 0 : cost;
+
+              cogs += safeCost * safeQty;
             });
           }
         }
       });
 
-      const netProfit = Math.max(0, revenue - cogs);
+      const safeRevenue = isNaN(revenue) ? 0 : revenue;
+      const safeCogs = isNaN(cogs) ? 0 : cogs;
+      const netProfit = Math.max(0, safeRevenue - safeCogs);
 
       result.push({
         month: monthLabel,
         monthKey,
-        revenue: Math.round(revenue),
-        cogs: Math.round(cogs),
-        profit: Math.round(netProfit),
+        revenue: Math.round(safeRevenue),
+        cogs: Math.round(safeCogs),
+        profit: Math.round(isNaN(netProfit) ? 0 : netProfit),
         orders: orderCount,
         itemsSold
       });
@@ -170,19 +194,34 @@ export default function RechartsAnalytics({
 
   // Total Summary KPIs
   const totalStats = useMemo(() => {
-    const totalRev = filteredOrders.reduce((sum, o) => (o.status === 'completed' || o.status === 'processing' ? sum + o.total : sum), 0);
-    const totalOrders = filteredOrders.filter((o) => o.status === 'completed' || o.status === 'processing').length;
-    const totalUnits = filteredOrders
-      .filter((o) => o.status === 'completed' || o.status === 'processing')
-      .reduce((sum, o) => sum + o.items.reduce((s, itm) => s + itm.quantity, 0), 0);
+    const totalRev = filteredOrders.reduce((sum, o) => {
+      if (!o || (o.status !== 'completed' && o.status !== 'processing')) return sum;
+      const parsedTotal = typeof o.total === 'number' ? o.total : parseFloat(String(o.total || '0'));
+      return sum + (isNaN(parsedTotal) ? 0 : parsedTotal);
+    }, 0);
 
-    const totalProfit = monthlyDataset.reduce((sum, m) => sum + m.profit, 0);
+    const totalOrders = filteredOrders.filter((o) => o && (o.status === 'completed' || o.status === 'processing')).length;
+    
+    const totalUnits = filteredOrders
+      .filter((o) => o && (o.status === 'completed' || o.status === 'processing'))
+      .reduce((sum, o) => {
+        const items = Array.isArray(o.items) ? o.items : [];
+        return sum + items.reduce((s, itm) => {
+          const q = typeof itm?.quantity === 'number' ? itm.quantity : parseInt(String(itm?.quantity || '0'), 10);
+          return s + (isNaN(q) ? 0 : q);
+        }, 0);
+      }, 0);
+
+    const totalProfit = monthlyDataset.reduce((sum, m) => {
+      const p = typeof m.profit === 'number' ? m.profit : parseFloat(String(m.profit || '0'));
+      return sum + (isNaN(p) ? 0 : p);
+    }, 0);
 
     return {
-      totalRev,
-      totalOrders,
-      totalUnits,
-      totalProfit
+      totalRev: isNaN(totalRev) ? 0 : totalRev,
+      totalOrders: isNaN(totalOrders) ? 0 : totalOrders,
+      totalUnits: isNaN(totalUnits) ? 0 : totalUnits,
+      totalProfit: isNaN(totalProfit) ? 0 : totalProfit
     };
   }, [filteredOrders, monthlyDataset]);
 

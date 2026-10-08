@@ -30,6 +30,7 @@ import {
 } from 'lucide-react';
 import { Category, CategoryAuditLog, Product } from '../types';
 import { generateSlug } from './ProductFormEditor';
+import { categoriesApi } from '../services/api';
 import {
   loadCategoriesFromStorage,
   fetchCategoriesFromBackend,
@@ -478,6 +479,9 @@ export const CategoryManagementPanel: React.FC<CategoryManagementPanelProps> = (
   const performDirectDeletion = (catId: string, catName: string) => {
     const updatedList = categories.filter((c) => c.id !== catId);
     updateCategoriesAndPersist(updatedList);
+    categoriesApi.deleteCategory(catId).catch((err) => {
+      console.warn('[CategoryManagementPanel] Backend delete failed:', err);
+    });
     addCategoryAuditLog(catId, catName, 'delete', `Deleted category "${catName}"`, 'Admin');
     showToast(`Deleted category "${catName}".`);
   };
@@ -519,6 +523,12 @@ export const CategoryManagementPanel: React.FC<CategoryManagementPanelProps> = (
 
       if (actionType === 'delete') {
         updatedCategories = updatedCategories.filter((c) => c.id !== category.id);
+        categoriesApi.bulkAction({
+          category_ids: [category.id],
+          action: 'delete',
+          resolution_mode: 'reassign',
+          target_parent_id: targetParentId || null,
+        }).catch(() => {});
         addCategoryAuditLog(
           category.id,
           category.name,
@@ -532,6 +542,11 @@ export const CategoryManagementPanel: React.FC<CategoryManagementPanelProps> = (
         updatedCategories = updatedCategories.map((c) =>
           c.id === category.id ? { ...c, status: 'Inactive', updatedAt: new Date().toISOString() } : c
         );
+        categoriesApi.bulkAction({
+          category_ids: [category.id],
+          action: 'status_inactive',
+          status: 'Inactive',
+        }).catch(() => {});
         addCategoryAuditLog(
           category.id,
           category.name,
@@ -553,6 +568,11 @@ export const CategoryManagementPanel: React.FC<CategoryManagementPanelProps> = (
             onUpdateProductDetails(p.id, { category: 'Uncategorized', subcategoryId: undefined });
           });
         }
+        categoriesApi.bulkAction({
+          category_ids: [category.id],
+          action: 'delete',
+          resolution_mode: 'cascade',
+        }).catch(() => {});
         updateCategoriesAndPersist(updatedCategories);
         addCategoryAuditLog(
           category.id,
@@ -574,6 +594,11 @@ export const CategoryManagementPanel: React.FC<CategoryManagementPanelProps> = (
             onUpdateProductDetails(p.id, { status: 'Inactive' });
           });
         }
+        categoriesApi.bulkAction({
+          category_ids: descendantIds,
+          action: 'status_inactive',
+          status: 'Inactive',
+        }).catch(() => {});
         updateCategoriesAndPersist(updatedCategories);
         addCategoryAuditLog(
           category.id,
@@ -612,18 +637,26 @@ export const CategoryManagementPanel: React.FC<CategoryManagementPanelProps> = (
   // Bulk Status Change
   const handleBulkStatusChange = (newStatus: 'Active' | 'Inactive') => {
     if (selectedIds.length === 0) return;
+    const targetIds = [...selectedIds];
     const updated = categories.map((c) =>
-      selectedIds.includes(c.id) ? { ...c, status: newStatus, updatedAt: new Date().toISOString() } : c
+      targetIds.includes(c.id) ? { ...c, status: newStatus, updatedAt: new Date().toISOString() } : c
     );
     updateCategoriesAndPersist(updated);
+    categoriesApi.bulkAction({
+      category_ids: targetIds,
+      action: newStatus === 'Active' ? 'status_active' : 'status_inactive',
+      status: newStatus,
+    }).catch((err) => {
+      console.warn('[CategoryManagementPanel] Bulk status backend sync failed:', err);
+    });
     addCategoryAuditLog(
       'bulk',
       'Multiple Categories',
       'bulk_action',
-      `Bulk updated status to "${newStatus}" for ${selectedIds.length} categories`,
+      `Bulk updated status to "${newStatus}" for ${targetIds.length} categories`,
       'Admin'
     );
-    showToast(`Updated status for ${selectedIds.length} categories to "${newStatus}".`);
+    showToast(`Updated status for ${targetIds.length} categories to "${newStatus}".`);
     setSelectedIds([]);
   };
 
@@ -631,9 +664,10 @@ export const CategoryManagementPanel: React.FC<CategoryManagementPanelProps> = (
   const handleConfirmBulkReparent = () => {
     if (selectedIds.length === 0) return;
     const parentVal = bulkTargetParentId ? bulkTargetParentId : null;
+    const targetIds = [...selectedIds];
 
     // Validate circular references for selected categories
-    for (const catId of selectedIds) {
+    for (const catId of targetIds) {
       if (parentVal && (catId === parentVal || isDescendant(categories, catId, parentVal))) {
         showToast('Cannot reparent: includes a category that would create a circular reference.', 'error');
         return;
@@ -641,17 +675,24 @@ export const CategoryManagementPanel: React.FC<CategoryManagementPanelProps> = (
     }
 
     const updated = categories.map((c) =>
-      selectedIds.includes(c.id) ? { ...c, parentId: parentVal, updatedAt: new Date().toISOString() } : c
+      targetIds.includes(c.id) ? { ...c, parentId: parentVal, updatedAt: new Date().toISOString() } : c
     );
     updateCategoriesAndPersist(updated);
+    categoriesApi.bulkAction({
+      category_ids: targetIds,
+      action: 'reparent',
+      target_parent_id: parentVal,
+    }).catch((err) => {
+      console.warn('[CategoryManagementPanel] Bulk reparent backend sync failed:', err);
+    });
     addCategoryAuditLog(
       'bulk',
       'Multiple Categories',
       'bulk_action',
-      `Bulk reparented ${selectedIds.length} categories under parent ID "${parentVal || 'Root'}"`,
+      `Bulk reparented ${targetIds.length} categories under parent ID "${parentVal || 'Root'}"`,
       'Admin'
     );
-    showToast(`Reparented ${selectedIds.length} categories.`);
+    showToast(`Reparented ${targetIds.length} categories.`);
     setIsBulkReparentOpen(false);
     setSelectedIds([]);
   };
@@ -668,7 +709,8 @@ export const CategoryManagementPanel: React.FC<CategoryManagementPanelProps> = (
   const handleConfirmBulkDelete = () => {
     if (selectedIds.length === 0) return;
 
-    const selectedCategories = categories.filter((c) => selectedIds.includes(c.id));
+    const targetIds = [...selectedIds];
+    const selectedCategories = categories.filter((c) => targetIds.includes(c.id));
     const selectedNames = selectedCategories.map((c) => c.name);
 
     if (bulkDeleteResolutionMode === 'reassign') {
@@ -678,14 +720,14 @@ export const CategoryManagementPanel: React.FC<CategoryManagementPanelProps> = (
 
       // 1. Reassign child subcategories whose parents are being deleted (if they are not also selected)
       let updatedCategories = categories.map((c) => {
-        if (c.parentId && selectedIds.includes(c.parentId) && !selectedIds.includes(c.id)) {
+        if (c.parentId && targetIds.includes(c.parentId) && !targetIds.includes(c.id)) {
           return { ...c, parentId: targetParentVal, updatedAt: new Date().toISOString() };
         }
         return c;
       });
 
       // 2. Remove the selected categories
-      updatedCategories = updatedCategories.filter((c) => !selectedIds.includes(c.id));
+      updatedCategories = updatedCategories.filter((c) => !targetIds.includes(c.id));
 
       // 3. Reassign affected products
       if (onUpdateProductDetails) {
@@ -699,19 +741,28 @@ export const CategoryManagementPanel: React.FC<CategoryManagementPanelProps> = (
         });
       }
 
+      categoriesApi.bulkAction({
+        category_ids: targetIds,
+        action: 'delete',
+        resolution_mode: 'reassign',
+        target_parent_id: targetParentVal,
+      }).catch((err) => {
+        console.warn('[CategoryManagementPanel] Bulk delete backend sync failed:', err);
+      });
+
       updateCategoriesAndPersist(updatedCategories);
       addCategoryAuditLog(
         'bulk',
-        `${selectedIds.length} Categories`,
+        `${targetIds.length} Categories`,
         'bulk_action',
-        `Bulk deleted ${selectedIds.length} categories. Reassigned dependent subcategories and products to "${targetName}".`,
+        `Bulk deleted ${targetIds.length} categories. Reassigned dependent subcategories and products to "${targetName}".`,
         'Admin'
       );
-      showToast(`Bulk deleted ${selectedIds.length} category(ies) and reassigned items to "${targetName}".`);
+      showToast(`Bulk deleted ${targetIds.length} category(ies) and reassigned items to "${targetName}".`);
     } else if (bulkDeleteResolutionMode === 'cascade') {
       // Collect all descendant category IDs for each selected category recursively
-      const allToDeleteIds = new Set<string>(selectedIds);
-      selectedIds.forEach((id) => {
+      const allToDeleteIds = new Set<string>(targetIds);
+      targetIds.forEach((id) => {
         const descendants = getAllDescendantCategoryIds(categories, id);
         descendants.forEach((dId) => allToDeleteIds.add(dId));
       });
@@ -730,12 +781,20 @@ export const CategoryManagementPanel: React.FC<CategoryManagementPanelProps> = (
         });
       }
 
+      categoriesApi.bulkAction({
+        category_ids: targetIds,
+        action: 'delete',
+        resolution_mode: 'cascade',
+      }).catch((err) => {
+        console.warn('[CategoryManagementPanel] Bulk cascade delete backend sync failed:', err);
+      });
+
       updateCategoriesAndPersist(updatedCategories);
       addCategoryAuditLog(
         'bulk',
         `${toDeleteArray.length} Categories`,
         'bulk_action',
-        `Cascade bulk deleted ${selectedIds.length} selected root categories and ${toDeleteArray.length - selectedIds.length} descendant subcategories.`,
+        `Cascade bulk deleted ${targetIds.length} selected root categories and ${toDeleteArray.length - targetIds.length} descendant subcategories.`,
         'Admin'
       );
       showToast(`Cascade deleted ${toDeleteArray.length} categories (including all descendant subcategories).`);

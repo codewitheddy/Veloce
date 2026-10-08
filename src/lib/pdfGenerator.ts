@@ -187,6 +187,20 @@ export function exportSingleReceiptPDF(order: Order) {
   doc.text('VAT Tax (Included):', margin + 105, currentY);
   doc.text(`KSh ${taxAmount.toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, margin + 145, currentY);
 
+  // Delivery / Fulfillment Row
+  currentY += 6;
+  if (order.fulfillmentType === 'pickup') {
+    doc.text('Fulfillment (Pickup):', margin + 105, currentY);
+    doc.text('Free Pickup', margin + 145, currentY);
+  } else if (order.shippingFee && order.shippingFee > 0) {
+    const courierLabel = order.quotedCourier ? `Delivery (${order.quotedCourier.toUpperCase()}):` : 'Delivery Fee:';
+    doc.text(courierLabel, margin + 105, currentY);
+    doc.text(`KSh ${order.shippingFee.toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, margin + 145, currentY);
+  } else {
+    doc.text('Delivery Fee:', margin + 105, currentY);
+    doc.text('To be confirmed (TBC)', margin + 145, currentY);
+  }
+
   // Discount Row
   if (discountAmount > 0) {
     currentY += 6;

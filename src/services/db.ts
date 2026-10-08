@@ -25,10 +25,16 @@ export const dbAxios: AxiosInstance = axios.create({
   },
 });
 
-// Interceptor for credentials
+import { getStoredAuthToken } from '../utils/authTokens';
+
+// Interceptor for credentials and Authorization header
 dbAxios.interceptors.request.use(
   (config) => {
     config.withCredentials = true;
+    const token = getStoredAuthToken();
+    if (token && !config.headers.Authorization) {
+      config.headers.Authorization = `Bearer ${token}`;
+    }
     return config;
   },
   (error) => Promise.reject(error)

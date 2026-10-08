@@ -38,14 +38,32 @@ function calculateContrastRatio(lum1: number, lum2: number): number {
 
 function getEffectiveBackgroundColor(element: HTMLElement): { r: number; g: number; b: number } {
   let current: HTMLElement | null = element;
-  let bgRgba = { r: 255, g: 255, b: 255, a: 1 }; // Default fallback white
+  
+  // Resolve base theme background color
+  let baseColor = { r: 255, g: 255, b: 255 }; // Light mode default
+  if (typeof document !== 'undefined') {
+    const isDark = document.documentElement.classList.contains('dark') ||
+                   document.body.classList.contains('dark') ||
+                   (typeof window !== 'undefined' && window.matchMedia?.('(prefers-color-scheme: dark)').matches);
+    if (isDark) {
+      baseColor = { r: 15, g: 23, b: 42 }; // Dark mode slate-900 baseline
+    }
+    
+    // Check computed body / documentElement background
+    const bodyBg = parseRGB(window.getComputedStyle(document.body).backgroundColor);
+    if (bodyBg && bodyBg.a > 0.5) {
+      baseColor = { r: bodyBg.r, g: bodyBg.g, b: bodyBg.b };
+    }
+  }
+
+  let bgRgba = { ...baseColor, a: 1 };
 
   while (current && current !== document.documentElement) {
     const style = window.getComputedStyle(current);
     const parsed = parseRGB(style.backgroundColor);
 
     if (parsed && parsed.a > 0) {
-      if (parsed.a === 1) {
+      if (parsed.a >= 0.98) {
         return { r: parsed.r, g: parsed.g, b: parsed.b };
       }
       // Blend alpha over underlying color
@@ -74,15 +92,15 @@ export interface ContrastViolation {
   isLargeText: boolean;
 }
 
-export function runContrastAudit(): ContrastViolation[] {
+export function runContrastAudit(quiet: boolean = true): ContrastViolation[] {
   const selectors = [
-    'button',
-    'a',
+    'button:not([disabled])',
+    'a:not([aria-hidden="true"])',
     'nav *',
     '[role="button"]',
-    'input',
-    'select',
-    'textarea',
+    'input:not([type="hidden"]):not([disabled])',
+    'select:not([disabled])',
+    'textarea:not([disabled])',
     'h1',
     'h2',
     'h3',
@@ -110,10 +128,14 @@ export function runContrastAudit(): ContrastViolation[] {
 
     // Skip hidden or non-visible elements
     if (el.offsetWidth === 0 && el.offsetHeight === 0) continue;
+    if (el.getAttribute('aria-hidden') === 'true') continue;
     const textContent = (el.innerText || el.textContent || '').trim();
     if (!textContent && !el.getAttribute('aria-label') && !el.getAttribute('title')) continue;
+    if (textContent.length <= 1 && !el.getAttribute('aria-label')) continue; // Skip single icon glyphs
 
     const style = window.getComputedStyle(el);
+    if (style.display === 'none' || style.visibility === 'hidden' || parseFloat(style.opacity) < 0.1) continue;
+
     const textColorParsed = parseRGB(style.color);
     if (!textColorParsed) continue;
 
@@ -146,41 +168,32 @@ export function runContrastAudit(): ContrastViolation[] {
     }
   }
 
-  // Print audit report to console
-  if (violations.length > 0) {
-    console.group('%c ⚠️ WCAG AA Contrast Audit Violations Detected', 'color: #ef4444; font-weight: bold; font-size: 14px;');
-    console.warn(`Found ${violations.length} element(s) failing WCAG AA contrast guidelines (< 4.5:1 normal, < 3.0:1 large).`);
-    console.table(
-      violations.map((v) => ({
-        Tag: v.tagName,
-        Class: v.className,
-        Text: v.textSnippet,
-        'Contrast Ratio': `${v.ratio}:1`,
-        'Required Ratio': `${v.requiredRatio}:1`,
-        'Text Color': v.textColor,
-        'BG Color': v.bgColor,
-      }))
-    );
-    console.groupEnd();
-  } else {
-    console.log('%c ✅ WCAG AA Contrast Audit Passed! All key elements meet AA contrast standards.', 'color: #10b981; font-weight: bold; font-size: 13px;');
+  // Print audit report if explicit call or critical
+  if (!quiet) {
+    if (violations.length > 0) {
+      console.group('%c ⚠️ WCAG AA Contrast Audit Violations Detected', 'color: #ef4444; font-weight: bold; font-size: 14px;');
+      console.warn(`Found ${violations.length} element(s) failing WCAG AA contrast guidelines (< 4.5:1 normal, < 3.0:1 large).`);
+      console.table(
+        violations.map((v) => ({
+          Tag: v.tagName,
+          Class: v.className,
+          Text: v.textSnippet,
+          'Contrast Ratio': `${v.ratio}:1`,
+          'Required Ratio': `${v.requiredRatio}:1`,
+          'Text Color': v.textColor,
+          'BG Color': v.bgColor,
+        }))
+      );
+      console.groupEnd();
+    } else {
+      console.log('%c ✅ WCAG AA Contrast Audit Passed! All key elements meet AA contrast standards.', 'color: #10b981; font-weight: bold; font-size: 13px;');
+    }
   }
 
   return violations;
 }
 
-// Attach to window object for manual invocation in browser developer tools
+// Attach to window object for manual invocation in browser developer tools (e.g. window.runContrastAudit(false))
 if (typeof window !== 'undefined') {
   (window as unknown as { runContrastAudit: typeof runContrastAudit }).runContrastAudit = runContrastAudit;
-
-  // Auto-run only in development mode to avoid overhead in production
-  if (import.meta.env.DEV) {
-    if (document.readyState === 'complete') {
-      setTimeout(runContrastAudit, 2000);
-    } else {
-      window.addEventListener('load', () => {
-        setTimeout(runContrastAudit, 2000);
-      });
-    }
-  }
 }

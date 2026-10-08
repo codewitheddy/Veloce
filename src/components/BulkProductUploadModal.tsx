@@ -35,11 +35,14 @@ import {
 export type ProductAttributeKey =
   | 'name'
   | 'price'
+  | 'costPrice'
   | 'sku'
   | 'type'
   | 'stock'
   | 'lowStockThreshold'
   | 'category'
+  | 'brand'
+  | 'countryOfOrigin'
   | 'description'
   | 'imageUrl'
   | 'tags'
@@ -56,8 +59,11 @@ export interface AttributeDefinition {
 
 export const PRODUCT_ATTRIBUTES: AttributeDefinition[] = [
   { key: 'name', label: 'Product Name / Title', required: true, badge: 'Required', description: 'Product title (e.g., Desk Chair)' },
-  { key: 'price', label: 'Price (KSh)', required: true, badge: 'Required', description: 'Numeric selling price in KSh' },
+  { key: 'price', label: 'Selling Price (KSh)', required: true, badge: 'Required', description: 'Numeric selling retail price in KSh' },
+  { key: 'costPrice', label: 'Cost Price (KSh)', description: 'Product acquisition, supplier, or manufacturing cost price' },
   { key: 'sku', label: 'SKU Code', description: 'Unique stock keeping unit identifier' },
+  { key: 'brand', label: 'Brand / Maker', description: 'Product manufacturer or brand name' },
+  { key: 'countryOfOrigin', label: 'Country of Origin', description: 'Country of manufacture, origin, or harvest' },
   { key: 'type', label: 'Product Type', description: 'physical, digital, or service' },
   { key: 'stock', label: 'Stock Level / Quantity', description: 'Inventory quantity for physical items' },
   { key: 'lowStockThreshold', label: 'Reorder Threshold', description: 'Low stock notification trigger count' },
@@ -81,9 +87,15 @@ export function autoDetectColumnMapping(headers: string[]): Record<string, Produ
 
     if (!assigned.has('sku') && (norm.includes('sku') || norm.includes('code') || norm.includes('itemid') || norm.includes('productid') || norm.includes('barcode'))) {
       detected = 'sku';
+    } else if (!assigned.has('costPrice') && (norm.includes('costprice') || norm.includes('buyingprice') || norm.includes('unitcost') || norm.includes('costksh') || (norm.includes('cost') && !norm.includes('selling') && !norm.includes('customer')))) {
+      detected = 'costPrice';
     } else if (!assigned.has('name') && (norm.includes('name') || norm.includes('title') || norm.includes('productname') || norm.includes('itemname'))) {
       detected = 'name';
-    } else if (!assigned.has('price') && (norm.includes('price') || norm.includes('cost') || norm.includes('amount') || norm.includes('ksh') || norm.includes('unitprice') || norm.includes('msrp') || norm.includes('rrp'))) {
+    } else if (!assigned.has('brand') && (norm.includes('brand') || norm.includes('maker') || norm.includes('manufacturer'))) {
+      detected = 'brand';
+    } else if (!assigned.has('countryOfOrigin') && (norm.includes('country') || norm.includes('origin') || norm.includes('madein') || norm.includes('countryoforigin'))) {
+      detected = 'countryOfOrigin';
+    } else if (!assigned.has('price') && (norm.includes('price') || norm.includes('amount') || norm.includes('ksh') || norm.includes('unitprice') || norm.includes('msrp') || norm.includes('rrp') || norm.includes('sellingprice'))) {
       detected = 'price';
     } else if (!assigned.has('type') && (norm === 'type' || norm.includes('producttype') || norm.includes('itemtype'))) {
       detected = 'type';
@@ -202,8 +214,6 @@ export default function BulkProductUploadModal({
   availableCategories,
   onAddCategory
 }: BulkProductUploadModalProps) {
-  if (!isOpen) return null;
-
   const [dragActive, setDragActive] = useState<boolean>(false);
   const [importMode, setImportMode] = useState<'create_new' | 'update_existing'>('update_existing');
   const [rawLines, setRawLines] = useState<string[][]>([]);
@@ -414,8 +424,11 @@ export default function BulkProductUploadModal({
 
       const rawSku = getAttrVal('sku');
       const rawName = getAttrVal('name');
+      const rawBrand = getAttrVal('brand');
+      const rawCountryOfOrigin = getAttrVal('countryOfOrigin');
       const rawType = getAttrVal('type').toLowerCase();
       const rawPrice = getAttrVal('price');
+      const rawCostPrice = getAttrVal('costPrice');
       const rawStock = getAttrVal('stock');
       const rawThreshold = getAttrVal('lowStockThreshold');
       const rawCategory = getAttrVal('category');
@@ -448,6 +461,15 @@ export default function BulkProductUploadModal({
         errors.push("Missing or invalid numeric price.");
       } else if (parsedPrice <= 0) {
         errors.push("Price must be a positive number.");
+      }
+
+      // Parse Optional Cost Price
+      let parsedCostPrice: number | undefined = undefined;
+      if (rawCostPrice) {
+        const parsedCost = parseFloat(rawCostPrice.replace(/[^\d.]/g, ''));
+        if (!isNaN(parsedCost) && parsedCost > 0) {
+          parsedCostPrice = parsedCost;
+        }
       }
 
       // Validate Stock
@@ -518,8 +540,13 @@ export default function BulkProductUploadModal({
         id: `prod-bulk-${Date.now()}-${rowIndex}-${Math.floor(Math.random() * 1000)}`,
         sku: generatedSku,
         name: rawName,
+        brand: rawBrand || undefined,
+        countryOfOrigin: rawCountryOfOrigin || undefined,
+        country_of_origin: rawCountryOfOrigin || undefined,
         type: parsedType,
         price: parsedPrice,
+        costPrice: parsedCostPrice,
+        cost_price: parsedCostPrice,
         stock: parsedStock,
         lowStockThreshold: parsedType === 'physical' ? parsedThreshold : undefined,
         category: resolvedCategory,
@@ -626,8 +653,13 @@ export default function BulkProductUploadModal({
         if (existingProduct && importMode === 'update_existing' && onUpdateProductDetails) {
           const updatedFields: Partial<Product> = {
             name: row.product.name,
+            brand: row.product.brand !== undefined ? row.product.brand : existingProduct.brand,
+            countryOfOrigin: row.product.countryOfOrigin !== undefined ? row.product.countryOfOrigin : existingProduct.countryOfOrigin,
+            country_of_origin: row.product.country_of_origin !== undefined ? row.product.country_of_origin : existingProduct.country_of_origin,
             type: row.product.type,
             price: row.product.price,
+            costPrice: row.product.costPrice !== undefined ? row.product.costPrice : (existingProduct.costPrice ?? (existingProduct as any).cost_price),
+            cost_price: row.product.cost_price !== undefined ? row.product.cost_price : ((existingProduct as any).cost_price ?? existingProduct.costPrice),
             category: row.product.category,
             description: row.product.description,
             imageUrl: row.product.imageUrl,
@@ -704,6 +736,8 @@ export default function BulkProductUploadModal({
     if (rowFilter === 'blockers') return parsedRows.filter(r => !r.isValid);
     return parsedRows;
   }, [parsedRows, rowFilter]);
+
+  if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-200 font-sans overflow-y-auto">

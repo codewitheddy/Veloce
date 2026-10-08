@@ -28,14 +28,14 @@ export const SEOHead: React.FC<SEOHeadProps> = ({
   blogs = [],
 }) => {
   const { settings } = useSiteSettings();
-  const BASE_URL = settings.seo.canonical_base_url || 'https://ropenix.co.ke';
-  const siteName = settings.general.site_name || 'Ropenix Collections';
+  const BASE_URL = settings?.seo?.canonical_base_url || 'https://ropenix.co.ke';
+  const siteName = settings?.general?.site_name || 'Ropenix Collections';
 
   const seoConfig = useMemo<SEOConfig>(() => {
     // 1. If viewing an individual product detail
     if (selectedProduct) {
       const productName = selectedProduct.name || (selectedProduct as any).title || 'Product Detail';
-      const productImage = selectedProduct.imageUrl || (selectedProduct as any).image || settings.seo.og_image_url || 'https://ropenix.co.ke/og-image.svg';
+      const productImage = selectedProduct.imageUrl || (selectedProduct as any).image || settings?.seo?.og_image_url || 'https://ropenix.co.ke/og-image.svg';
       const gallery = selectedProduct.images || selectedProduct.gallery_images || [];
 
       const cleanDesc = (selectedProduct.description || selectedProduct.shortDescription || '')
@@ -72,11 +72,11 @@ export const SEOHead: React.FC<SEOHeadProps> = ({
         },
       };
 
-      if (selectedProduct.rating && selectedProduct.rating > 0) {
+      if (selectedProduct.rating && selectedProduct.rating > 0 && selectedProduct.reviewsCount && selectedProduct.reviewsCount > 0) {
         productSchema.aggregateRating = {
           '@type': 'AggregateRating',
           ratingValue: selectedProduct.rating,
-          reviewCount: selectedProduct.reviewsCount || 1,
+          reviewCount: selectedProduct.reviewsCount,
           bestRating: 5,
           worstRating: 1,
         };
@@ -228,6 +228,27 @@ export const SEOHead: React.FC<SEOHeadProps> = ({
         };
       }
 
+      case 'track':
+      case 'tracking':
+      case 'order-tracking': {
+        const breadcrumbsSchema = {
+          '@context': 'https://schema.org',
+          '@type': 'BreadcrumbList',
+          itemListElement: [
+            { '@type': 'ListItem', position: 1, name: 'Home', item: BASE_URL },
+            { '@type': 'ListItem', position: 2, name: 'Track Order', item: `${BASE_URL}/track` },
+          ],
+        };
+        return {
+          title: `Track Your Order & Live Delivery Updates | ${siteName}`,
+          description: `Track your order in real-time with ${siteName}. Enter your order number to get live milestone updates, courier tracking, and delivery status.`,
+          keywords: `track order, live delivery tracking, courier status, order lookup, ${siteName} Kenya`,
+          canonicalUrl: `${BASE_URL}/track`,
+          ogType: 'website',
+          jsonLd: [breadcrumbsSchema],
+        };
+      }
+
       case 'contact': {
         const contactPageSchema = {
           '@context': 'https://schema.org',
@@ -295,7 +316,7 @@ export const SEOHead: React.FC<SEOHeadProps> = ({
       case 'user':
       case 'unsubscribe':
         return {
-          title: currentTab === 'admin' ? 'Django Admin Suite' : `Account & Gateway | ${siteName}`,
+          title: currentTab === 'admin' ? `Admin Operations Console | ${siteName}` : `Account & Gateway | ${siteName}`,
           robots: 'noindex, nofollow',
           canonicalUrl: `${BASE_URL}/${currentTab}`,
         };
@@ -318,14 +339,14 @@ export const SEOHead: React.FC<SEOHeadProps> = ({
         };
 
         return {
-          title: settings.seo.meta_title || `${siteName} | Luxury eCommerce & Affiliate Marketplace`,
+          title: settings?.seo?.meta_title || `${siteName} | Luxury eCommerce & Affiliate Marketplace`,
           description:
-            settings.seo.meta_description ||
+            settings?.seo?.meta_description ||
             `Explore ${siteName}, the unified luxury eCommerce and affiliate marketplace featuring bespoke tailoring, curated physical products, and verified merchant tracking.`,
-          keywords: settings.seo.meta_keywords || `eCommerce marketplace, bespoke tailoring, workspace accessories, digital downloads, affiliate platform, online store Kenya, ${siteName}`,
+          keywords: settings?.seo?.meta_keywords || `eCommerce marketplace, bespoke tailoring, workspace accessories, digital downloads, affiliate platform, online store Kenya, ${siteName}`,
           canonicalUrl: `${BASE_URL}/`,
           ogType: 'website',
-          ogImage: settings.seo.og_image_url || undefined,
+          ogImage: settings?.seo?.og_image_url || undefined,
           jsonLd: homeSchema,
         };
       }

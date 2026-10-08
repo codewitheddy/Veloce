@@ -314,28 +314,6 @@ export function InteractiveDeliveryMap({
     updateRouteAndCalculations({ lat: loc.lat, lng: loc.lng }, loc.displayName);
   };
 
-  // Geolocation trigger
-  const handleUseCurrentLocation = () => {
-    if (!navigator.geolocation) {
-      alert('Geolocation is not supported by your browser.');
-      return;
-    }
-
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        const coords = { lat: pos.coords.latitude, lng: pos.coords.longitude };
-        handleSelectLocation({
-          lat: coords.lat,
-          lng: coords.lng,
-          displayName: 'Your Current GPS Location'
-        });
-      },
-      (err) => {
-        alert(`Unable to retrieve GPS location: ${err.message}`);
-      }
-    );
-  };
-
   return (
     <div className={`relative rounded-xl overflow-hidden border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 shadow-sm ${className}`}>
       {/* Top Search & Preset Controls Header */}
@@ -363,12 +341,11 @@ export function InteractiveDeliveryMap({
               <Search className="h-3.5 w-3.5" /> Search
             </button>
             <button
-              type="button"
-              onClick={handleUseCurrentLocation}
-              title="Locate Me (GPS)"
-              className="px-2.5 py-2 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg text-xs font-medium flex items-center gap-1 transition-colors cursor-pointer shrink-0"
+              type="submit"
+              disabled={isSearching}
+              className="px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer shrink-0"
             >
-              <Crosshair className="h-3.5 w-3.5 text-indigo-500" /> GPS
+              <Search className="h-3.5 w-3.5" /> Search
             </button>
           </form>
 

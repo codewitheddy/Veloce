@@ -74,7 +74,8 @@ export default function Monthly6MonthTrends({ orders }: Monthly6MonthTrendsProps
     }
 
     // Populate data based on existing orders
-    orders.forEach((order) => {
+    (orders || []).forEach((order) => {
+      if (!order) return;
       // Respect the completed or all status filter
       if (statusFilter === 'completed' && order.status !== 'completed') {
         return;
@@ -91,11 +92,16 @@ export default function Monthly6MonthTrends({ orders }: Monthly6MonthTrendsProps
 
         const datasetItem = dataset.find(item => item.monthKey === key);
         if (datasetItem) {
-          datasetItem.revenue += order.total;
+          const parsedTotal = typeof order.total === 'number' ? order.total : parseFloat(String(order.total || '0'));
+          datasetItem.revenue += isNaN(parsedTotal) ? 0 : parsedTotal;
           datasetItem.orderCount += 1;
           
           // Sum up item quantities for volume
-          const totalQty = order.items.reduce((sum, item) => sum + item.quantity, 0);
+          const items = Array.isArray(order.items) ? order.items : [];
+          const totalQty = items.reduce((sum, item) => {
+            const q = typeof item?.quantity === 'number' ? item.quantity : parseInt(String(item?.quantity || '0'), 10);
+            return sum + (isNaN(q) ? 0 : q);
+          }, 0);
           datasetItem.unitsSold += totalQty;
         }
       }
@@ -104,7 +110,7 @@ export default function Monthly6MonthTrends({ orders }: Monthly6MonthTrendsProps
     // Format numbers
     return dataset.map((item) => ({
       ...item,
-      revenue: Number(item.revenue.toFixed(2)),
+      revenue: Number((isNaN(item.revenue) ? 0 : item.revenue).toFixed(2)),
     }));
   }, [orders, statusFilter]);
 
@@ -115,12 +121,12 @@ export default function Monthly6MonthTrends({ orders }: Monthly6MonthTrendsProps
     let totalOrderCount = 0;
 
     monthlyData.forEach(d => {
-      totalRevenue += d.revenue;
-      totalUnitsSold += d.unitsSold;
-      totalOrderCount += d.orderCount;
+      totalRevenue += isNaN(d.revenue) ? 0 : d.revenue;
+      totalUnitsSold += isNaN(d.unitsSold) ? 0 : d.unitsSold;
+      totalOrderCount += isNaN(d.orderCount) ? 0 : d.orderCount;
     });
 
-    const averageOrderValue = totalOrderCount > 0 ? totalRevenue / totalOrderCount : 0;
+    const averageOrderValue = totalOrderCount > 0 ? (totalRevenue / totalOrderCount) : 0;
 
     // Calculate month-over-month growth for the last month relative to the previous month
     let momRevenueGrowth = 0;
@@ -147,12 +153,12 @@ export default function Monthly6MonthTrends({ orders }: Monthly6MonthTrendsProps
     }
 
     return {
-      totalRevenue,
-      totalUnitsSold,
-      totalOrderCount,
-      averageOrderValue,
-      momRevenueGrowth,
-      momVolumeGrowth
+      totalRevenue: isNaN(totalRevenue) ? 0 : totalRevenue,
+      totalUnitsSold: isNaN(totalUnitsSold) ? 0 : totalUnitsSold,
+      totalOrderCount: isNaN(totalOrderCount) ? 0 : totalOrderCount,
+      averageOrderValue: isNaN(averageOrderValue) ? 0 : averageOrderValue,
+      momRevenueGrowth: isNaN(momRevenueGrowth) ? 0 : momRevenueGrowth,
+      momVolumeGrowth: isNaN(momVolumeGrowth) ? 0 : momVolumeGrowth
     };
   }, [monthlyData, volumeMetric]);
 

@@ -7,6 +7,8 @@
  * - High performance in-memory caching with TTL
  */
 
+import { KENYAN_TOWNS } from '../utils/kenyaTowns';
+
 export interface Coordinates {
   lat: number;
   lng: number;
@@ -323,6 +325,42 @@ export async function reverseGeocodeNominatim(coords: Coordinates): Promise<stri
   );
 
   return nearest ? `${nearest.name}, Nairobi` : `Coordinates (${coords.lat.toFixed(4)}, ${coords.lng.toFixed(4)})`;
+}
+
+/**
+ * Find the nearest Kenyan town to given coordinates
+ * Returns the town name and postal code if available
+ */
+export function findNearestKenyanTown(coords: Coordinates): { townName: string; postalCode?: string } | null {
+  if (!KENYAN_TOWNS || KENYAN_TOWNS.length === 0) {
+    return null;
+  }
+
+  let nearestTown = null;
+  let minDistance = Infinity;
+
+  // Calculate distance to each town using Haversine formula and find the closest one
+  for (const town of KENYAN_TOWNS) {
+    const dLat = Math.abs(town.lat - coords.lat);
+    const dLng = Math.abs(town.lng - coords.lng);
+    // Simple Euclidean distance (good enough for comparing nearby towns)
+    const distance = Math.sqrt(dLat * dLat + dLng * dLng);
+
+    if (distance < minDistance) {
+      minDistance = distance;
+      nearestTown = town;
+    }
+  }
+
+  // Return town if found and within reasonable distance (within ~0.5° ≈ ~55km)
+  if (nearestTown && minDistance < 0.5) {
+    return {
+      townName: nearestTown.name,
+      postalCode: nearestTown.postalCode
+    };
+  }
+
+  return null;
 }
 
 /**

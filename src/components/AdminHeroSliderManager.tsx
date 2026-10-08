@@ -823,6 +823,24 @@ export function AdminHeroSliderManager() {
     fetchCategoriesFromBackend().then((cats) => {
       if (cats && Array.isArray(cats)) setStoredCategories(cats);
     });
+
+    const handleCategoriesChanged = (e?: Event) => {
+      const customEvent = e as CustomEvent<Category[]>;
+      if (customEvent && customEvent.detail && Array.isArray(customEvent.detail)) {
+        setStoredCategories(customEvent.detail);
+      } else {
+        fetchCategoriesFromBackend().then((cats) => {
+          if (cats && Array.isArray(cats)) setStoredCategories(cats);
+        });
+      }
+    };
+
+    window.addEventListener('storage', handleCategoriesChanged);
+    window.addEventListener('veloce_categories_updated', handleCategoriesChanged);
+    return () => {
+      window.removeEventListener('storage', handleCategoriesChanged);
+      window.removeEventListener('veloce_categories_updated', handleCategoriesChanged);
+    };
   }, []);
 
   // Mobile Device Slider Disable Setting

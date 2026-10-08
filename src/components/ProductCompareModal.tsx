@@ -6,7 +6,8 @@
 import React, { useState } from 'react';
 import { X, Star, ShoppingBag, Check, ShieldCheck, Scale, Award, Info, ArrowRightLeft, Sparkles } from 'lucide-react';
 import { Product } from '../types';
-import { getProductDiscountInfo } from '../utils/productUtils';
+import { getProductDiscountInfo, getCountryFlag } from '../utils/productUtils';
+import { cleanDescriptionExcerpt } from '../utils/formatDescription';
 import { CurrencyType, formatPrice } from '../lib/currency';
 
 interface ProductCompareModalProps {
@@ -29,6 +30,9 @@ interface ProductSpec {
 
 // Generates beautiful realistic specifications based on product properties
 export function getProductSpecs(product: Product): ProductSpec {
+  const customOrigin = product.countryOfOrigin || (product as any).country_of_origin;
+  const formattedCustomOrigin = customOrigin ? `${getCountryFlag(customOrigin)} Made in ${customOrigin}` : undefined;
+
   switch (product.type) {
     case 'physical':
       if (product.id === 'phys-1') {
@@ -37,7 +41,7 @@ export function getProductSpecs(product: Product): ProductSpec {
           weight: '4.8 lbs / 2.18 kg',
           material: 'Solid American White Oak & Steel',
           warranty: '5 Years Manufacturer',
-          origin: 'Handcrafted in Portland, USA',
+          origin: formattedCustomOrigin || 'Handcrafted in Portland, USA',
           specialFeature: 'Built-in dual magnetic alignment pads'
         };
       }
@@ -47,7 +51,7 @@ export function getProductSpecs(product: Product): ProductSpec {
           weight: '1.48 oz / 42 grams',
           material: 'Solid CZ121 Lead-Free Brass',
           warranty: 'Lifetime Structural',
-          origin: 'CNC precision turned in Bristol, UK',
+          origin: formattedCustomOrigin || 'CNC precision turned in Bristol, UK',
           specialFeature: 'Custom Schmidt fluid refill system'
         };
       }
@@ -56,7 +60,7 @@ export function getProductSpecs(product: Product): ProductSpec {
         weight: '1.1 lbs / 0.5 kg',
         material: 'German Merino Wool & Natural Cork',
         warranty: '2 Years Manufacturer',
-        origin: 'Sourced from Bavaria, Germany',
+        origin: formattedCustomOrigin || 'Sourced from Bavaria, Germany',
         specialFeature: 'Water-resistant felt with cork bottom'
       };
     case 'digital':
@@ -66,7 +70,7 @@ export function getProductSpecs(product: Product): ProductSpec {
           weight: '48.5 MB download size',
           material: 'Figma Components & Vector assets',
           warranty: 'Lifetime Free Updates',
-          origin: 'Veloce Digital Cloud Server',
+          origin: formattedCustomOrigin || 'Veloce Digital Cloud Server',
           specialFeature: '140+ premium custom dark-mode SVG icons'
         };
       }
@@ -75,7 +79,7 @@ export function getProductSpecs(product: Product): ProductSpec {
         weight: '15.2 MB digital booklet',
         material: 'High-resolution printable guide sheets',
         warranty: 'Lifetime Access & PDF Copy',
-        origin: 'Instant Cloud Delivery',
+        origin: formattedCustomOrigin || 'Instant Cloud Delivery',
         specialFeature: 'Includes professional audiobook narration module'
       };
     case 'service':
@@ -85,7 +89,7 @@ export function getProductSpecs(product: Product): ProductSpec {
           weight: '1-on-1 private video connection',
           material: 'Zoom / Google Meet digital workspace',
           warranty: '100% Satisfaction Guarantee',
-          origin: 'Live session consultation',
+          origin: formattedCustomOrigin || 'Live session consultation',
           specialFeature: 'Review on lighting, posture & custom furniture'
         };
       }
@@ -94,7 +98,7 @@ export function getProductSpecs(product: Product): ProductSpec {
         weight: 'Collaborative Figma workspace',
         material: 'Live interactive workspace boards',
         warranty: '14 days post-sprint optimization',
-        origin: 'Coordinated brand workshop',
+        origin: formattedCustomOrigin || 'Coordinated brand workshop',
         specialFeature: 'Minimal logomark design & typography maps'
       };
     default:
@@ -103,7 +107,7 @@ export function getProductSpecs(product: Product): ProductSpec {
         weight: 'Varies',
         material: 'Premium Grade',
         warranty: '1 Year Standard',
-        origin: 'Imported',
+        origin: formattedCustomOrigin || 'Imported',
         specialFeature: 'N/A'
       };
   }
@@ -176,8 +180,8 @@ export default function ProductCompareModal({
   const rightCheaper = leftProduct && rightProduct && rightProduct.price < leftProduct.price;
   const pricesEqual = leftProduct && rightProduct && leftProduct.price === rightProduct.price;
 
-  const leftBetterRating = leftProduct && rightProduct && leftProduct.rating > rightProduct.rating;
-  const rightBetterRating = leftProduct && rightProduct && rightProduct.rating > leftProduct.rating;
+  const leftBetterRating = leftProduct && rightProduct && (leftProduct.reviewsCount > 0) && (leftProduct.rating > rightProduct.rating || rightProduct.reviewsCount === 0);
+  const rightBetterRating = leftProduct && rightProduct && (rightProduct.reviewsCount > 0) && (rightProduct.rating > leftProduct.rating || leftProduct.reviewsCount === 0);
 
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto bg-gray-900/60 backdrop-blur-xs flex items-center justify-center p-4">
@@ -282,11 +286,11 @@ export default function ProductCompareModal({
             {leftProduct && (mobileActiveTab === 'left' || mobileActiveTab === 'table') && (
               <div className="rounded-2xl border border-gray-150 bg-white p-4 relative flex flex-col justify-between">
                 <div>
-                  <div className="relative aspect-video w-full rounded-xl overflow-hidden bg-gray-50 border border-gray-100">
+                  <div className="relative aspect-video w-full rounded-xl overflow-hidden bg-gray-50 border border-gray-100 flex items-center justify-center p-2">
                     <img
                       src={leftProduct.imageUrl}
                       alt={leftProduct.name}
-                      className="w-full h-full object-cover"
+                      className="w-full h-full object-contain object-center"
                       referrerPolicy="no-referrer"
                     />
                     <span className="absolute top-2.5 left-2.5 bg-indigo-650 text-white text-[9px] font-mono font-bold px-2 py-0.5 rounded shadow-sm border border-indigo-500 uppercase">
@@ -311,7 +315,7 @@ export default function ProductCompareModal({
                   <div className="mt-4">
                     <span className="text-[10px] font-bold tracking-wider text-indigo-500 uppercase font-mono">{leftProduct.category}</span>
                     <h3 className="font-display font-semibold text-base text-gray-900 mt-1 uppercase tracking-tight">{leftProduct.name}</h3>
-                    <p className="text-xs text-gray-500 font-light mt-1.5 leading-relaxed line-clamp-3">{leftProduct.description}</p>
+                    <p className="text-xs text-gray-500 font-light mt-1.5 leading-relaxed line-clamp-3">{cleanDescriptionExcerpt(leftProduct.shortDescription || leftProduct.description, 150)}</p>
                   </div>
                 </div>
 
@@ -353,11 +357,11 @@ export default function ProductCompareModal({
             {rightProduct && (mobileActiveTab === 'right' || mobileActiveTab === 'table') && (
               <div className="rounded-2xl border border-gray-150 bg-white p-4 relative flex flex-col justify-between">
                 <div>
-                  <div className="relative aspect-video w-full rounded-xl overflow-hidden bg-gray-50 border border-gray-100">
+                  <div className="relative aspect-video w-full rounded-xl overflow-hidden bg-gray-50 border border-gray-100 flex items-center justify-center p-2">
                     <img
                       src={rightProduct.imageUrl}
                       alt={rightProduct.name}
-                      className="w-full h-full object-cover"
+                      className="w-full h-full object-contain object-center"
                       referrerPolicy="no-referrer"
                     />
                     <span className="absolute top-2.5 left-2.5 bg-indigo-650 text-white text-[9px] font-mono font-bold px-2 py-0.5 rounded shadow-sm border border-indigo-500 uppercase">
@@ -382,7 +386,7 @@ export default function ProductCompareModal({
                   <div className="mt-4">
                     <span className="text-[10px] font-bold tracking-wider text-indigo-500 uppercase font-mono">{rightProduct.category}</span>
                     <h3 className="font-display font-semibold text-base text-gray-900 mt-1 uppercase tracking-tight">{rightProduct.name}</h3>
-                    <p className="text-xs text-gray-500 font-light mt-1.5 leading-relaxed line-clamp-3">{rightProduct.description}</p>
+                    <p className="text-xs text-gray-500 font-light mt-1.5 leading-relaxed line-clamp-3">{cleanDescriptionExcerpt(rightProduct.shortDescription || rightProduct.description, 150)}</p>
                   </div>
                 </div>
 
@@ -454,19 +458,31 @@ export default function ProductCompareModal({
                 <div className="grid grid-cols-12 md:gap-4 p-4 items-center">
                   <div className="col-span-12 md:col-span-4 font-bold text-gray-500 uppercase text-[9px] font-mono">Customer Rating</div>
                   <div className="col-span-6 md:col-span-4 mt-1 md:mt-0 flex items-center gap-1.5">
-                    <div className="flex items-center text-amber-500">
-                      <Star className="h-4 w-4 fill-current" />
-                      <span className="font-bold ml-1">{leftProduct.rating.toFixed(2)}</span>
-                    </div>
-                    <span className="text-gray-400 font-mono text-[10px]">({leftProduct.reviewsCount} reviews)</span>
+                    {leftProduct.reviewsCount > 0 && leftProduct.rating > 0 ? (
+                      <>
+                        <div className="flex items-center text-amber-500">
+                          <Star className="h-4 w-4 fill-current" />
+                          <span className="font-bold ml-1">{leftProduct.rating.toFixed(1)}</span>
+                        </div>
+                        <span className="text-gray-400 font-mono text-[10px]">({leftProduct.reviewsCount} {leftProduct.reviewsCount === 1 ? 'review' : 'reviews'})</span>
+                      </>
+                    ) : (
+                      <span className="text-gray-400 font-mono text-[10px] italic">Unrated</span>
+                    )}
                     {leftBetterRating && <span className="text-[8px] bg-amber-50 border border-amber-200 text-amber-800 rounded px-1.5 py-0.1 font-bold uppercase ml-1 block sm:inline-block">Top Choice</span>}
                   </div>
                   <div className="col-span-6 md:col-span-4 mt-1 md:mt-0 text-right md:text-left flex items-center justify-end md:justify-start gap-1.5">
-                    <div className="flex items-center text-amber-500">
-                      <Star className="h-4 w-4 fill-current" />
-                      <span className="font-bold ml-1">{rightProduct.rating.toFixed(2)}</span>
-                    </div>
-                    <span className="text-gray-400 font-mono text-[10px]">({rightProduct.reviewsCount} reviews)</span>
+                    {rightProduct.reviewsCount > 0 && rightProduct.rating > 0 ? (
+                      <>
+                        <div className="flex items-center text-amber-500">
+                          <Star className="h-4 w-4 fill-current" />
+                          <span className="font-bold ml-1">{rightProduct.rating.toFixed(1)}</span>
+                        </div>
+                        <span className="text-gray-400 font-mono text-[10px]">({rightProduct.reviewsCount} {rightProduct.reviewsCount === 1 ? 'review' : 'reviews'})</span>
+                      </>
+                    ) : (
+                      <span className="text-gray-400 font-mono text-[10px] italic">Unrated</span>
+                    )}
                     {rightBetterRating && <span className="text-[8px] bg-amber-50 border border-amber-200 text-amber-800 rounded px-1.5 py-0.1 font-bold uppercase ml-1 block sm:inline-block">Top Choice</span>}
                   </div>
                 </div>
@@ -501,6 +517,17 @@ export default function ProductCompareModal({
                   </div>
                   <div className="col-span-6 md:col-span-4 mt-1 md:mt-0 text-right md:text-left text-gray-800">
                     {rightSpecs?.material}
+                  </div>
+                </div>
+
+                {/* Brand / Maker */}
+                <div className="grid grid-cols-12 md:gap-4 p-4 items-center">
+                  <div className="col-span-12 md:col-span-4 font-bold text-gray-500 uppercase text-[9px] font-mono">Brand / Maker</div>
+                  <div className="col-span-6 md:col-span-4 mt-1 md:mt-0 text-gray-850 font-semibold">
+                    {leftProduct.brand || 'Veloce Atelier'}
+                  </div>
+                  <div className="col-span-6 md:col-span-4 mt-1 md:mt-0 text-right md:text-left text-gray-850 font-semibold">
+                    {rightProduct.brand || 'Veloce Atelier'}
                   </div>
                 </div>
 

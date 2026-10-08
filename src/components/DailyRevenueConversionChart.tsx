@@ -58,11 +58,12 @@ export default function DailyRevenueConversionChart({
       // Store checkout revenue (completed, pending or shipped orders)
       let dailyRevenue = 0;
       let dailyOrdersCount = 0;
-      orders.forEach((o) => {
-        if (o.status !== 'cancelled') {
+      (orders || []).forEach((o) => {
+        if (o && o.status !== 'cancelled' && o.date) {
           const oDateStr = o.date.split(' ')[0].split('T')[0];
           if (oDateStr === dateStr) {
-            dailyRevenue += o.total;
+            const parsedTotal = typeof o.total === 'number' ? o.total : parseFloat(String(o.total || '0'));
+            dailyRevenue += isNaN(parsedTotal) ? 0 : parsedTotal;
             dailyOrdersCount++;
           }
         }
@@ -80,10 +81,10 @@ export default function DailyRevenueConversionChart({
       dataList.push({
         dateStr,
         label,
-        dailyRevenue: rev,
-        totalRevenue: rev,
-        orderCount,
-        cumulativeOrders
+        dailyRevenue: isNaN(rev) ? 0 : rev,
+        totalRevenue: isNaN(rev) ? 0 : rev,
+        orderCount: isNaN(orderCount) ? 0 : orderCount,
+        cumulativeOrders: isNaN(cumulativeOrders) ? 0 : cumulativeOrders
       });
     }
 
@@ -96,16 +97,16 @@ export default function DailyRevenueConversionChart({
     let totalOrders = 0;
 
     chartData.forEach(d => {
-      totalRevenue += d.dailyRevenue;
-      totalOrders += d.orderCount;
+      totalRevenue += isNaN(d.dailyRevenue) ? 0 : d.dailyRevenue;
+      totalOrders += isNaN(d.orderCount) ? 0 : d.orderCount;
     });
 
     const averageDailyRevenue = totalRevenue / 30;
 
     return {
-      totalRevenue,
-      totalOrders,
-      averageDailyRevenue
+      totalRevenue: isNaN(totalRevenue) ? 0 : totalRevenue,
+      totalOrders: isNaN(totalOrders) ? 0 : totalOrders,
+      averageDailyRevenue: isNaN(averageDailyRevenue) ? 0 : averageDailyRevenue
     };
   }, [chartData]);
 

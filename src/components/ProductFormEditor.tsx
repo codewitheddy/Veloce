@@ -80,11 +80,15 @@ import {
   getSubcategoriesForCategory,
   COMMON_ALLERGENS,
   COMMON_COUNTRIES,
+  COMMON_BRANDS,
+  COUNTRY_FLAG_MAP,
+  getCountryFlag,
   COMMON_SIZES,
   getDaysUntilExpiry,
   getExpiryStatus,
   CategoryClassification,
   generateSku,
+  resolveColorHex,
 } from '../utils/productUtils';
 import {
   DEFAULT_TAX_CLASSES,
@@ -97,6 +101,9 @@ import {
   isCloudinaryUrl,
   getOptimizedCloudinaryUrl,
 } from '../lib/cloudinary';
+import { ProductVariantManager } from './ProductVariantManager';
+import { ProductOption, OptionValueImage } from '../types';
+import { cleanDescriptionExcerpt } from '../utils/formatDescription';
 
 export type UserRole = 'super_admin' | 'store_manager' | 'catalog_editor';
 
@@ -207,21 +214,37 @@ export function ProductFormEditor({
   }, []);
   const [role, setRole] = useState<UserRole>(currentUserRole);
 
+  // Local draft cache for new product creation
+  const draftData = useMemo(() => {
+    if (!initialProduct && typeof window !== 'undefined') {
+      try {
+        const saved = localStorage.getItem('veloce_new_product_draft');
+        if (saved) return JSON.parse(saved);
+      } catch (e) {
+        // ignore
+      }
+    }
+    return null;
+  }, [initialProduct]);
+
   // --- FORM STATES ---
   // Basic Info
-  const [title, setTitle] = useState(initialProduct?.name || '');
-  const [slug, setSlug] = useState(initialProduct?.slug || generateSlug(initialProduct?.name || ''));
-  const [isSlugCustom, setIsSlugCustom] = useState(!!initialProduct?.slug);
-  const [brand, setBrand] = useState(initialProduct?.brand || 'Veloce Kenya');
+  const [title, setTitle] = useState(initialProduct?.name || draftData?.title || '');
+  const [slug, setSlug] = useState(initialProduct?.slug || draftData?.slug || generateSlug(initialProduct?.name || draftData?.title || ''));
+  const [isSlugCustom, setIsSlugCustom] = useState(!!initialProduct?.slug || !!draftData?.slug);
+  const [brand, setBrand] = useState(initialProduct?.brand || draftData?.brand || 'Veloce Kenya');
+  const [countryOfOrigin, setCountryOfOrigin] = useState(
+    initialProduct?.countryOfOrigin || draftData?.countryOfOrigin || (initialProduct as any)?.country_of_origin || 'Kenya'
+  );
   const [shortDescription, setShortDescription] = useState(
-    initialProduct?.shortDescription || initialProduct?.description?.slice(0, 200) || ''
+    initialProduct?.shortDescription || draftData?.shortDescription || (initialProduct?.description ? cleanDescriptionExcerpt(initialProduct.description, 200) : '')
   );
   const [status, setStatus] = useState<
     'draft' | 'scheduled' | 'published' | 'archived' | 'Active' | 'Inactive'
   >( (initialProduct?.status as any) || 'draft');
   const [publishAt, setPublishAt] = useState(initialProduct?.publishAt || '');
   const [prodType, setProdType] = useState<'physical' | 'digital' | 'service'>(
-    initialProduct?.type || 'physical'
+    initialProduct?.type || draftData?.prodType || 'physical'
   );
 
   // Media & Rich Media State
@@ -230,6 +253,8 @@ export function ProductFormEditor({
       ? initialProduct.images
       : initialProduct?.imageUrl
       ? [initialProduct.imageUrl]
+      : Array.isArray(draftData?.images) && draftData.images.length > 0
+      ? draftData.images
       : []
   );
   const [primaryImageIndex, setPrimaryImageIndex] = useState<number>(0);
@@ -277,26 +302,38 @@ export function ProductFormEditor({
       ? Number((initialProduct as any).original_price)
       : initialProduct?.basePrice || initialProduct?.price || 0;
 
-  const [basePrice, setBasePrice] = useState<number>(initialOriginalPrice);
-  const [salePrice, setSalePrice] = useState<number | ''>(
-    initialProduct?.salePrice !== undefined && initialProduct?.salePrice !== null && (initialProduct?.salePrice as any) !== ''
-      ? Number(initialProduct.salePrice)
-      : initialOriginalPrice > (initialProduct?.price || 0) && (initialProduct?.price || 0) > 0
-      ? Number(initialProduct?.price)
-      : ''
-  );
+  const [basePrice, setBasePrice] = useState<number>(draftData?.basePrice !== undefined ? Number(draftData.basePrice) : initialOriginalPrice);
+  const [salePrice, setSalePrice] = useState<number | ''>(() => {
+    if (draftData?.salePrice !== undefined && draftData.salePrice !== '') {
+      return Number(draftData.salePrice);
+    }
+    if (initialProduct?.salePrice !== undefined && initialProduct?.salePrice !== null && (initialProduct?.salePrice as any) !== '') {
+      const sp = Number(initialProduct.salePrice);
+      if (sp > 0 && sp < initialOriginalPrice) {
+        return sp;
+      }
+    }
+    if (initialOriginalPrice > (initialProduct?.price || 0) && (initialProduct?.price || 0) > 0) {
+      return Number(initialProduct?.price);
+    }
+    return '';
+  });
   const [saleStartAt, setSaleStartAt] = useState(initialProduct?.saleStartAt || '');
   const [saleEndAt, setSaleEndAt] = useState(
     initialProduct?.saleEndAt || initialProduct?.saleEndDate || ''
   );
   const initialCostPrice =
-    initialProduct?.costPrice !== undefined && initialProduct?.costPrice !== null
+    initialProduct?.costPrice !== undefined && initialProduct?.costPrice !== null && (initialProduct.costPrice as any) !== ''
       ? initialProduct.costPrice
-      : (initialProduct as any)?.cost_price !== undefined && (initialProduct as any)?.cost_price !== null
+      : (initialProduct as any)?.cost_price !== undefined && (initialProduct as any)?.cost_price !== null && (initialProduct as any)?.cost_price !== ''
       ? (initialProduct as any).cost_price
+      : initialProduct?.agreedCostPrice !== undefined && initialProduct?.agreedCostPrice !== null && (initialProduct.agreedCostPrice as any) !== ''
+      ? initialProduct.agreedCostPrice
+      : (initialProduct as any)?.agreed_cost_price !== undefined && (initialProduct as any)?.agreed_cost_price !== null && (initialProduct as any)?.agreed_cost_price !== ''
+      ? (initialProduct as any).agreed_cost_price
       : '';
   const [costPrice, setCostPrice] = useState<number | ''>(
-    initialCostPrice !== '' ? Number(initialCostPrice) : ''
+    initialCostPrice !== '' && !isNaN(Number(initialCostPrice)) ? Number(initialCostPrice) : ''
   );
   const initialTaxInfo = getProductTaxInfo(initialProduct || {});
   const [taxStatus, setTaxStatus] = useState<TaxStatus>(initialTaxInfo.taxStatus);
@@ -311,9 +348,9 @@ export function ProductFormEditor({
   const [supplierName, setSupplierName] = useState<string>(initialProduct?.supplierName || '');
   const [supplierSku, setSupplierSku] = useState<string>(initialProduct?.supplierSku || '');
   const [agreedCostPrice, setAgreedCostPrice] = useState<number | ''>(
-    initialProduct?.agreedCostPrice !== undefined && initialProduct?.agreedCostPrice !== null
-      ? initialProduct.agreedCostPrice
-      : (initialCostPrice !== '' ? Number(initialCostPrice) : '')
+    initialProduct?.agreedCostPrice !== undefined && initialProduct?.agreedCostPrice !== null && (initialProduct.agreedCostPrice as any) !== ''
+      ? Number(initialProduct.agreedCostPrice)
+      : (initialCostPrice !== '' && !isNaN(Number(initialCostPrice)) ? Number(initialCostPrice) : '')
   );
   const [leadTimeDays, setLeadTimeDays] = useState<number>(initialProduct?.leadTimeDays || 3);
   const [isPrimarySupplier, setIsPrimarySupplier] = useState<boolean>(
@@ -422,22 +459,208 @@ export function ProductFormEditor({
 
   const selectedSupplier = suppliersList.find((s) => s.id === supplierId);
 
+  // Helper to check if a product has variations/variants configured
+  const checkHasVariants = (prod?: Product | null): boolean => {
+    if (!prod) return false;
+    const anyProd = prod as any;
+    if (
+      anyProd.hasVariants === true ||
+      anyProd.has_variants === true ||
+      anyProd.hasVariants === 1 ||
+      anyProd.has_variants === 1 ||
+      anyProd.hasVariants === 'true' ||
+      anyProd.has_variants === 'true'
+    ) {
+      return true;
+    }
+    const rawOpts = anyProd.options;
+    const optsLen = Array.isArray(rawOpts)
+      ? rawOpts.length
+      : typeof rawOpts === 'string' && (rawOpts as string).trim().startsWith('[')
+      ? (() => { try { return JSON.parse(rawOpts).length; } catch { return 0; } })()
+      : 0;
+    if (optsLen > 0) return true;
+
+    const rawMatrix = anyProd.variantMatrix || anyProd.variant_matrix;
+    const matrixLen = Array.isArray(rawMatrix)
+      ? rawMatrix.length
+      : typeof rawMatrix === 'string' && (rawMatrix as string).trim().startsWith('[')
+      ? (() => { try { return JSON.parse(rawMatrix).length; } catch { return 0; } })()
+      : 0;
+    if (matrixLen > 0) return true;
+
+    const rawVars = anyProd.variants;
+    const varsLen = Array.isArray(rawVars)
+      ? rawVars.length
+      : typeof rawVars === 'string' && (rawVars as string).trim().startsWith('[')
+      ? (() => { try { return JSON.parse(rawVars).length; } catch { return 0; } })()
+      : 0;
+    if (varsLen > 0) return true;
+
+    const rawVariations = anyProd.variations;
+    const variationsLen = Array.isArray(rawVariations)
+      ? rawVariations.length
+      : typeof rawVariations === 'string' && (rawVariations as string).trim().startsWith('[')
+      ? (() => { try { return JSON.parse(rawVariations).length; } catch { return 0; } })()
+      : 0;
+    if (variationsLen > 0) return true;
+
+    const rawColorImgs = anyProd.colorImages || anyProd.color_images;
+    if (rawColorImgs && typeof rawColorImgs === 'object' && Object.keys(rawColorImgs).length > 0) return true;
+
+    return false;
+  };
+
+  const extractOptionsFromProduct = (prod?: Product | null): ProductOption[] => {
+    if (!prod) {
+      return [
+        {
+          id: 'opt-size',
+          name: 'Size',
+          position: 0,
+          values: [
+            { id: 'v-s', name: 'S', position: 0 },
+            { id: 'v-m', name: 'M', position: 1 },
+            { id: 'v-l', name: 'L', position: 2 },
+            { id: 'v-xl', name: 'XL', position: 3 },
+          ],
+        },
+        {
+          id: 'opt-color',
+          name: 'Color',
+          position: 1,
+          values: [
+            { id: 'v-black', name: 'Black', hexColor: '#111827', hexCode: '#111827', hex_code: '#111827', position: 0 },
+            { id: 'v-navy', name: 'Navy', hexColor: '#1E3A8A', hexCode: '#1E3A8A', hex_code: '#1E3A8A', position: 1 },
+            { id: 'v-white', name: 'White', hexColor: '#FFFFFF', hexCode: '#FFFFFF', hex_code: '#FFFFFF', position: 2 },
+            { id: 'v-red', name: 'Crimson Red', hexColor: '#DC2626', hexCode: '#DC2626', hex_code: '#DC2626', position: 3 },
+          ],
+        },
+      ];
+    }
+
+    const anyProd = prod as any;
+    const rawOpts = anyProd.options;
+    const parsedOpts: ProductOption[] = Array.isArray(rawOpts)
+      ? rawOpts
+      : typeof rawOpts === 'string' && (rawOpts as string).trim().startsWith('[')
+      ? (() => { try { return JSON.parse(rawOpts); } catch { return []; } })()
+      : [];
+
+    if (parsedOpts.length > 0) {
+      return parsedOpts.map((opt, oIdx) => ({
+        ...opt,
+        values: (opt.values || []).map((v, vIdx) => {
+          const isColor = opt.name.toLowerCase().trim() === 'color' || opt.name.toLowerCase().trim() === 'colour';
+          const hex = isColor ? (v.hexColor || v.hexCode || v.hex_code || resolveColorHex(v.name)) : undefined;
+          return {
+            ...v,
+            hexColor: hex,
+            hexCode: hex,
+            hex_code: hex,
+          };
+        }),
+      }));
+    }
+
+    const rawMatrix = anyProd.variantMatrix || anyProd.variant_matrix || anyProd.variants;
+    const parsedMatrix: ProductVariant[] = Array.isArray(rawMatrix)
+      ? rawMatrix
+      : typeof rawMatrix === 'string' && (rawMatrix as string).trim().startsWith('[')
+      ? (() => { try { return JSON.parse(rawMatrix); } catch { return []; } })()
+      : [];
+
+    if (parsedMatrix.length > 0) {
+      const keys = Array.from(new Set(parsedMatrix.flatMap((v) => Object.keys(v.attributes || {}))));
+      if (keys.length > 0) {
+        return keys.map((k, idx) => {
+          const vals = Array.from(new Set(parsedMatrix.map((v) => v.attributes[k]).filter(Boolean)));
+          const isColor = k.toLowerCase().trim() === 'color' || k.toLowerCase().trim() === 'colour';
+          return {
+            id: `opt-${idx}`,
+            name: k.charAt(0).toUpperCase() + k.slice(1),
+            position: idx,
+            values: vals.map((valName, vIdx) => {
+              const hex = isColor ? resolveColorHex(valName) : undefined;
+              return {
+                id: `val-${idx}-${vIdx}`,
+                name: valName,
+                position: vIdx,
+                hexColor: hex,
+                hexCode: hex,
+                hex_code: hex,
+              };
+            }),
+          };
+        });
+      }
+    }
+
+    const rawVariations = anyProd.variations;
+    const parsedVariations = Array.isArray(rawVariations)
+      ? rawVariations
+      : typeof rawVariations === 'string' && (rawVariations as string).trim().startsWith('[')
+      ? (() => { try { return JSON.parse(rawVariations); } catch { return []; } })()
+      : [];
+
+    if (parsedVariations.length > 0) {
+      return parsedVariations.map((v: any, idx: number) => {
+        const optName = v.name || `Option ${idx + 1}`;
+        const rawVals = Array.isArray(v.options) ? v.options : (Array.isArray(v.values) ? v.values : []);
+        const isColor = optName.toLowerCase().trim() === 'color' || optName.toLowerCase().trim() === 'colour';
+        return {
+          id: `opt-${idx}`,
+          name: optName,
+          position: idx,
+          values: rawVals.map((val: any, vIdx: number) => {
+            const valName = typeof val === 'string' ? val : (val.name || String(val));
+            const hex = isColor ? (val.hexColor || val.hexCode || val.hex_code || resolveColorHex(valName)) : undefined;
+            return {
+              id: `val-${idx}-${vIdx}`,
+              name: valName,
+              position: vIdx,
+              hexColor: hex,
+              hexCode: hex,
+              hex_code: hex,
+            };
+          }),
+        };
+      });
+    }
+
+    return [];
+  };
+
+  const extractVariantsFromProduct = (prod?: Product | null): ProductVariant[] => {
+    if (!prod) return [];
+    if (prod.variants && Array.isArray(prod.variants) && prod.variants.length > 0) {
+      return prod.variants;
+    }
+    if (prod.variantMatrix && Array.isArray(prod.variantMatrix) && prod.variantMatrix.length > 0) {
+      return prod.variantMatrix;
+    }
+    if ((prod as any).variant_matrix && Array.isArray((prod as any).variant_matrix) && (prod as any).variant_matrix.length > 0) {
+      return (prod as any).variant_matrix;
+    }
+    return [];
+  };
+
   // Variants & Inventory
-  const [hasVariants, setHasVariants] = useState<boolean>(
-    initialProduct?.hasVariants || !!(initialProduct?.variantMatrix?.length)
-  );
-  const [variantAttributes, setVariantAttributes] = useState<string[]>(
-    initialProduct?.variantAttributes || ['size', 'color']
-  );
-  const [attrInputs, setAttrInputs] = useState<Record<string, string>>({
-    size: '40, 41, 42',
-    color: 'Black, White, Navy',
-    weight: '',
-    length: ''
+  const [hasVariants, setHasVariants] = useState<boolean>(() => {
+    return checkHasVariants(initialProduct);
   });
-  const [variants, setVariants] = useState<ProductVariant[]>(
-    initialProduct?.variantMatrix || []
-  );
+
+  const [options, setOptions] = useState<ProductOption[]>(() => {
+    return extractOptionsFromProduct(initialProduct);
+  });
+
+  const [colorImages, setColorImages] = useState<Record<string, OptionValueImage[]>>(() => {
+    return initialProduct?.colorImages || (initialProduct as any)?.color_images || {};
+  });
+
+  const [variants, setVariants] = useState<ProductVariant[]>(() => {
+    return extractVariantsFromProduct(initialProduct);
+  });
 
   // Custom Variant Attributes Management (e.g. Material, Storage, Style, Pack Size)
   interface CustomVariantAttr {
@@ -784,7 +1007,6 @@ export function ProductFormEditor({
   const [manufacturer, setManufacturer] = useState(
     initialProduct?.manufacturer || initialProduct?.brand || 'Veloce Foods Kenya'
   );
-  const [countryOfOrigin, setCountryOfOrigin] = useState(initialProduct?.countryOfOrigin || 'Kenya');
   const [allergyInfo, setAllergyInfo] = useState<string[]>(() => {
     if (Array.isArray(initialProduct?.allergyInfo)) return initialProduct.allergyInfo;
     if (typeof initialProduct?.allergyInfo === 'string' && (initialProduct.allergyInfo as string).trim()) {
@@ -887,7 +1109,7 @@ export function ProductFormEditor({
     }
   }, [categories, initialProduct?.category, categoryId]);
 
-  // Sync images and media assets if initialProduct is updated or switched
+  // Sync all product fields and media assets if initialProduct is updated or switched
   useEffect(() => {
     if (initialProduct) {
       const rawGallery = initialProduct.images || (initialProduct as any).gallery_images;
@@ -905,6 +1127,88 @@ export function ProductFormEditor({
       if (initialProduct.images360) {
         setImages360(initialProduct.images360);
       }
+
+      // Sync Cost Price & Pricing
+      const extractedCost =
+        initialProduct.costPrice !== undefined && initialProduct.costPrice !== null && (initialProduct.costPrice as any) !== ''
+          ? initialProduct.costPrice
+          : (initialProduct as any).cost_price !== undefined && (initialProduct as any).cost_price !== null && (initialProduct as any).cost_price !== ''
+          ? (initialProduct as any).cost_price
+          : initialProduct.agreedCostPrice !== undefined && initialProduct.agreedCostPrice !== null && (initialProduct.agreedCostPrice as any) !== ''
+          ? initialProduct.agreedCostPrice
+          : (initialProduct as any).agreed_cost_price !== undefined && (initialProduct as any).agreed_cost_price !== null && (initialProduct as any).agreed_cost_price !== ''
+          ? (initialProduct as any).agreed_cost_price
+          : '';
+
+      if (extractedCost !== '' && !isNaN(Number(extractedCost))) {
+        setCostPrice(Number(extractedCost));
+      }
+
+      const extractedAgreedCost =
+        initialProduct.agreedCostPrice !== undefined && initialProduct.agreedCostPrice !== null && (initialProduct.agreedCostPrice as any) !== ''
+          ? Number(initialProduct.agreedCostPrice)
+          : (extractedCost !== '' && !isNaN(Number(extractedCost)) ? Number(extractedCost) : '');
+      if (extractedAgreedCost !== '') {
+        setAgreedCostPrice(extractedAgreedCost);
+      }
+
+      if (initialProduct.name) setTitle(initialProduct.name);
+      if (initialProduct.slug) {
+        setSlug(initialProduct.slug);
+        setIsSlugCustom(true);
+      }
+      if (initialProduct.brand) setBrand(initialProduct.brand);
+      if (initialProduct.countryOfOrigin || (initialProduct as any).country_of_origin) {
+        setCountryOfOrigin(initialProduct.countryOfOrigin || (initialProduct as any).country_of_origin);
+      }
+      if (initialProduct.shortDescription) setShortDescription(initialProduct.shortDescription);
+      if (initialProduct.description) setDescription(initialProduct.detailedDescription || initialProduct.description);
+      const origPrice =
+        initialProduct.previousPrice && Number(initialProduct.previousPrice) > (initialProduct.price || 0)
+          ? Number(initialProduct.previousPrice)
+          : initialProduct.originalPrice && Number(initialProduct.originalPrice) > (initialProduct.price || 0)
+          ? Number(initialProduct.originalPrice)
+          : (initialProduct as any)?.original_price && Number((initialProduct as any).original_price) > (initialProduct.price || 0)
+          ? Number((initialProduct as any).original_price)
+          : initialProduct.basePrice || initialProduct.price || 0;
+      if (origPrice > 0) {
+        setBasePrice(origPrice);
+      }
+      if (initialProduct.salePrice !== undefined && initialProduct.salePrice !== null && (initialProduct.salePrice as any) !== '') {
+        const sp = Number(initialProduct.salePrice);
+        if (sp > 0 && sp < origPrice) {
+          setSalePrice(sp);
+        } else {
+          setSalePrice('');
+        }
+      } else if (
+        origPrice > (initialProduct.price || 0) &&
+        (initialProduct.price || 0) > 0
+      ) {
+        setSalePrice(Number(initialProduct.price));
+      } else {
+        setSalePrice('');
+      }
+      if (initialProduct.sku) {
+        setSku(initialProduct.sku);
+        setIsSkuCustom(true);
+      }
+      const loadedOptions = extractOptionsFromProduct(initialProduct);
+      if (loadedOptions.length > 0) {
+        setOptions(loadedOptions);
+      }
+      if (initialProduct.colorImages || (initialProduct as any).color_images) {
+        setColorImages(initialProduct.colorImages || (initialProduct as any).color_images || {});
+      }
+      const loadedVariants = extractVariantsFromProduct(initialProduct);
+      if (loadedVariants.length > 0) {
+        setVariants(loadedVariants);
+      }
+      const isProductVar = checkHasVariants(initialProduct);
+      setHasVariants(isProductVar);
+      if (initialProduct.supplierId) setSupplierId(initialProduct.supplierId);
+      if (initialProduct.supplierName) setSupplierName(initialProduct.supplierName);
+      if (initialProduct.supplierSku) setSupplierSku(initialProduct.supplierSku);
     }
   }, [initialProduct]);
 
@@ -928,19 +1232,45 @@ export function ProductFormEditor({
     setIsSkuCustom(false);
   };
 
-  // Debounced Autosave simulation
+  // Debounced Autosave simulation & local draft caching
   useEffect(() => {
     const timer = setTimeout(() => {
       if (title.trim()) {
         setAutosaveStatus('saving');
+        if (!initialProduct) {
+          try {
+            localStorage.setItem(
+              'veloce_new_product_draft',
+              JSON.stringify({
+                title,
+                slug,
+                brand,
+                countryOfOrigin,
+                shortDescription,
+                description,
+                basePrice,
+                salePrice,
+                costPrice,
+                categoryId,
+                stockQty,
+                sku,
+                tags,
+                images,
+                prodType,
+              })
+            );
+          } catch {
+            // ignore
+          }
+        }
         setTimeout(() => {
           setAutosaveStatus('saved');
           setLastSavedTime(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
-        }, 600);
+        }, 300);
       }
-    }, 12000);
+    }, 1500);
     return () => clearTimeout(timer);
-  }, [title, slug, basePrice, description, images, stockQty, tags]);
+  }, [title, slug, brand, countryOfOrigin, shortDescription, description, basePrice, salePrice, costPrice, categoryId, stockQty, sku, tags, images, prodType, initialProduct]);
 
   // Real-time Slug & SKU Async Uniqueness Validation
   const isSlugDuplicate = useMemo(() => {
@@ -1101,162 +1431,6 @@ export function ProductFormEditor({
   const canPublishDirectly = role === 'super_admin' || role === 'store_manager';
 
   // --- ACTIONS ---
-  const handleAddCustomAttribute = () => {
-    if (!newAttrNameInput.trim()) {
-      alert('Please enter a custom attribute name (e.g., Material, Storage, Style)');
-      return;
-    }
-    const name = newAttrNameInput.trim();
-    const options = newAttrOptionsInput.trim() || 'Option 1, Option 2';
-    setCustomVariantAttrs((prev) => [
-      ...prev,
-      { id: `ca-${Date.now()}`, name, options }
-    ]);
-    setNewAttrNameInput('');
-    setNewAttrOptionsInput('');
-  };
-
-  const handleRemoveCustomAttribute = (id: string) => {
-    setCustomVariantAttrs((prev) => prev.filter((item) => item.id !== id));
-  };
-
-  const handleGenerateVariantMatrix = () => {
-    const attrList: { key: string; label: string; options: string[] }[] = [];
-
-    const sizeOptions = (attrInputs.size || '').split(',').map((s) => s.trim()).filter(Boolean);
-    if (sizeOptions.length > 0) {
-      attrList.push({ key: 'size', label: 'Size', options: sizeOptions });
-    }
-
-    const colorOptions = (attrInputs.color || '').split(',').map((c) => c.trim()).filter(Boolean);
-    if (colorOptions.length > 0) {
-      attrList.push({ key: 'color', label: 'Color', options: colorOptions });
-    }
-
-    const weightOptions = (attrInputs.weight || '').split(',').map((w) => w.trim()).filter(Boolean);
-    if (weightOptions.length > 0) {
-      attrList.push({ key: 'weight', label: 'Weight / Capacity', options: weightOptions });
-    }
-
-    const lengthOptions = (attrInputs.length || '').split(',').map((l) => l.trim()).filter(Boolean);
-    if (lengthOptions.length > 0) {
-      attrList.push({ key: 'length', label: 'Length / Dimensions', options: lengthOptions });
-    }
-
-    customVariantAttrs.forEach((ca) => {
-      const key = ca.name.trim().toLowerCase().replace(/\s+/g, '_');
-      const label = ca.name.trim();
-      const opts = (ca.options || '').split(',').map((o) => o.trim()).filter(Boolean);
-      if (key && opts.length > 0) {
-        attrList.push({ key, label, options: opts });
-      }
-    });
-
-    if (attrList.length === 0) {
-      alert('Please specify options in Size, Color, or add at least one Custom Variant Attribute.');
-      return;
-    }
-
-    // Cartesian product across all active attributes
-    const cartesian = (arrays: { key: string; label: string; options: string[] }[]) => {
-      return arrays.reduce<Record<string, string>[]>(
-        (acc, currAttr) => {
-          const res: Record<string, string>[] = [];
-          acc.forEach((prev) => {
-            currAttr.options.forEach((opt) => {
-              res.push({ ...prev, [currAttr.key]: opt });
-            });
-          });
-          return res;
-        },
-        [{}]
-      );
-    };
-
-    const combinations = cartesian(attrList);
-    const baseSkuPrefix = sku.trim() || generateSlug(title).toUpperCase().slice(0, 8) || 'PROD';
-
-    let count = 1;
-    const newVariants: ProductVariant[] = combinations.map((combo) => {
-      const skuSuffix = Object.values(combo)
-        .map((val) => val.replace(/[^a-zA-Z0-9]/g, '').slice(0, 4).toUpperCase())
-        .join('-');
-      const generatedSku = `${baseSkuPrefix}-${skuSuffix}`;
-
-      // Check if variant already exists to preserve custom set price and stock
-      const existing = variants.find((v) => {
-        const keys = Object.keys(combo);
-        return keys.every((k) => v.attributes[k] === combo[k]);
-      });
-
-      return {
-        id: existing?.id || `var-${Date.now()}-${count++}`,
-        sku: existing?.sku || generatedSku,
-        attributes: combo,
-        priceOverride: existing?.priceOverride !== undefined ? existing.priceOverride : (existing?.price !== undefined ? existing.price : null),
-        price: existing?.price !== undefined ? existing.price : (existing?.priceOverride !== undefined ? existing.priceOverride : null),
-        stockQty: existing?.stockQty !== undefined ? existing.stockQty : 5
-      };
-    });
-
-    setVariants(newVariants);
-    setVariantAttributes(attrList.map((a) => a.key));
-  };
-
-  const handleAddSingleCustomVariant = () => {
-    const activeAttrs: Record<string, string> = {};
-    if (singleVariantAttrs.color?.trim()) activeAttrs.color = singleVariantAttrs.color.trim();
-    if (singleVariantAttrs.size?.trim()) activeAttrs.size = singleVariantAttrs.size.trim();
-
-    customVariantAttrs.forEach((ca) => {
-      const k = ca.name.trim().toLowerCase().replace(/\s+/g, '_');
-      if (singleVariantAttrs[k]?.trim()) {
-        activeAttrs[k] = singleVariantAttrs[k].trim();
-      }
-    });
-
-    if (Object.keys(activeAttrs).length === 0) {
-      alert('Please enter at least one attribute value (e.g. Size, Color, or Material) for this custom variant.');
-      return;
-    }
-
-    const baseSkuPrefix = sku.trim() || generateSlug(title).toUpperCase().slice(0, 8) || 'PROD';
-    const skuSuffix = Object.values(activeAttrs).map(v => v.replace(/[^a-zA-Z0-9]/g, '').slice(0, 4).toUpperCase()).join('-');
-    const newSku = singleVariantSku.trim() || `${baseSkuPrefix}-${skuSuffix}`;
-    const priceVal = singleVariantPrice !== '' ? Number(singleVariantPrice) : null;
-
-    const newVariant: ProductVariant = {
-      id: `var-custom-${Date.now()}`,
-      sku: newSku,
-      attributes: activeAttrs,
-      priceOverride: priceVal,
-      price: priceVal,
-      stockQty: Number(singleVariantStock) || 5
-    };
-
-    setVariants((prev) => [...prev, newVariant]);
-    setShowAddSingleVariant(false);
-    setSingleVariantSku('');
-    setSingleVariantPrice('');
-    setSingleVariantAttrs({ color: '', size: '' });
-  };
-
-  const handleApplyBulkVariantPrice = () => {
-    if (bulkPriceInput === '') {
-      setVariants((prev) => prev.map((v) => ({ ...v, priceOverride: null, price: null })));
-      return;
-    }
-    const num = Number(bulkPriceInput);
-    if (isNaN(num) || num < 0) return;
-    setVariants((prev) => prev.map((v) => ({ ...v, priceOverride: num, price: num })));
-  };
-
-  const handleApplyBulkVariantStock = () => {
-    const num = Number(bulkStockInput);
-    if (isNaN(num) || num < 0) return;
-    setVariants((prev) => prev.map((v) => ({ ...v, stockQty: num })));
-  };
-
   // Inspect image dimensions and check storefront guidelines
   const inspectAndGetMeta = (url: string): Promise<ImageMetadata> => {
     return new Promise((resolve) => {
@@ -1640,19 +1814,37 @@ export function ProductFormEditor({
       slug: slug.trim() || initialProduct?.slug || generateSlug(title),
       name: title.trim() || initialProduct?.name || '',
       brand: brand.trim() || initialProduct?.brand || 'Veloce Kenya',
+      countryOfOrigin: countryOfOrigin.trim() || initialProduct?.countryOfOrigin || 'Kenya',
+      country_of_origin: countryOfOrigin.trim() || initialProduct?.countryOfOrigin || 'Kenya',
       description: description.trim() || shortDescription.trim() || initialProduct?.description || '',
       shortDescription: shortDescription.trim() || initialProduct?.shortDescription || '',
       detailedDescription: description.trim() || initialProduct?.detailedDescription || '',
-      price: salePrice !== '' ? Number(salePrice) : basePrice,
+      price: salePrice !== '' && Number(salePrice) > 0 && Number(salePrice) < basePrice ? Number(salePrice) : basePrice,
       basePrice,
-      salePrice: salePrice !== '' ? Number(salePrice) : null,
-      previousPrice: salePrice !== '' && basePrice > Number(salePrice) ? basePrice : (initialProduct?.previousPrice || undefined),
-      originalPrice: salePrice !== '' && basePrice > Number(salePrice) ? basePrice : (initialProduct?.originalPrice || undefined),
-      original_price: salePrice !== '' && basePrice > Number(salePrice) ? basePrice : ((initialProduct as any)?.original_price || null),
+      salePrice: salePrice !== '' && Number(salePrice) > 0 && Number(salePrice) < basePrice ? Number(salePrice) : null,
+      previousPrice: salePrice !== '' && Number(salePrice) > 0 && basePrice > Number(salePrice) ? basePrice : undefined,
+      originalPrice: salePrice !== '' && Number(salePrice) > 0 && basePrice > Number(salePrice) ? basePrice : undefined,
+      original_price: salePrice !== '' && Number(salePrice) > 0 && basePrice > Number(salePrice) ? basePrice : null,
       saleStartAt: saleStartAt || initialProduct?.saleStartAt || undefined,
       saleEndAt: saleEndAt || initialProduct?.saleEndAt || undefined,
-      costPrice: costPrice !== '' ? Number(costPrice) : (initialProduct?.costPrice || undefined),
-      cost_price: costPrice !== '' ? Number(costPrice) : ((initialProduct as any)?.cost_price || undefined),
+      costPrice: costPrice !== '' && !isNaN(Number(costPrice))
+        ? Number(costPrice)
+        : initialProduct?.costPrice !== undefined && initialProduct?.costPrice !== null
+        ? Number(initialProduct.costPrice)
+        : (initialProduct as any)?.cost_price !== undefined && (initialProduct as any)?.cost_price !== null
+        ? Number((initialProduct as any).cost_price)
+        : agreedCostPrice !== '' && !isNaN(Number(agreedCostPrice))
+        ? Number(agreedCostPrice)
+        : undefined,
+      cost_price: costPrice !== '' && !isNaN(Number(costPrice))
+        ? Number(costPrice)
+        : initialProduct?.costPrice !== undefined && initialProduct?.costPrice !== null
+        ? Number(initialProduct.costPrice)
+        : (initialProduct as any)?.cost_price !== undefined && (initialProduct as any)?.cost_price !== null
+        ? Number((initialProduct as any).cost_price)
+        : agreedCostPrice !== '' && !isNaN(Number(agreedCostPrice))
+        ? Number(agreedCostPrice)
+        : undefined,
       taxStatus,
       taxRate,
       taxClass,
@@ -1671,8 +1863,12 @@ export function ProductFormEditor({
       lowStockThreshold: Number(lowStockThreshold),
       trackInventory,
       hasVariants,
-      variantAttributes,
+      options: hasVariants ? options : (initialProduct?.options || []),
+      colorImages: hasVariants ? colorImages : (initialProduct?.colorImages || {}),
+      color_images: hasVariants ? colorImages : (initialProduct?.color_images || {}),
+      variantAttributes: options.map((o) => o.name.toLowerCase()),
       variantMatrix: hasVariants ? variants : (initialProduct?.variantMatrix || undefined),
+      variants: hasVariants ? variants : (initialProduct?.variants || undefined),
       rating: initialProduct?.rating || 5.0,
       reviewsCount: initialProduct?.reviewsCount || 0,
       reviews: initialProduct?.reviews || [],
@@ -1692,7 +1888,6 @@ export function ProductFormEditor({
       // Category Specific Fields: Food & Beverages
       ingredients: ingredients.trim() || initialProduct?.ingredients || '',
       manufacturer: manufacturer.trim() || initialProduct?.manufacturer || '',
-      countryOfOrigin: countryOfOrigin || initialProduct?.countryOfOrigin || 'Kenya',
       allergyInfo: allergyInfo.length > 0 ? allergyInfo : (initialProduct?.allergyInfo || []),
       allergyTracesNotes: allergyTracesNotes.trim() || initialProduct?.allergyTracesNotes || '',
       nutritionalInfo: nutritionalInfo.trim() || initialProduct?.nutritionalInfo || '',
@@ -2006,21 +2201,119 @@ export function ProductFormEditor({
                   </span>
                 ) : (
                   <span className="text-[11px] text-slate-400 mt-1 block font-mono">
-                    Permalink: https://marid.co.ke/products/{slug || '...'}
+                    Permalink: https://ropenix.co.ke/products/{slug || '...'}
                   </span>
                 )}
               </div>
 
               {/* Brand */}
               <div>
-                <label className="block text-xs font-bold text-slate-700 uppercase font-mono mb-1.5">Brand / Manufacturer</label>
-                <input
-                  type="text"
-                  value={brand}
-                  onChange={(e) => setBrand(e.target.value)}
-                  placeholder="e.g. Veloce Hardware"
-                  className="w-full h-11 px-3.5 rounded-xl border border-slate-300 text-sm font-medium focus:outline-hidden focus:ring-2 focus:ring-indigo-500"
-                />
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="block text-xs font-bold text-slate-700 uppercase font-mono flex items-center gap-1.5">
+                    <Tag className="h-3.5 w-3.5 text-indigo-600" /> Brand / Label
+                  </label>
+                  {brand && (
+                    <button
+                      type="button"
+                      onClick={() => setBrand('')}
+                      className="text-[10px] text-slate-400 hover:text-slate-600 font-mono"
+                    >
+                      Clear
+                    </button>
+                  )}
+                </div>
+                <div className="relative">
+                  <input
+                    type="text"
+                    list="product-form-brand-suggestions"
+                    value={brand}
+                    onChange={(e) => setBrand(e.target.value)}
+                    placeholder="e.g. Veloce Kenya or Ropenix Atelier"
+                    className="w-full h-11 px-3.5 rounded-xl border border-slate-300 text-sm font-medium focus:outline-hidden focus:ring-2 focus:ring-indigo-500 bg-white"
+                  />
+                  <datalist id="product-form-brand-suggestions">
+                    {COMMON_BRANDS.map((b) => (
+                      <option key={b} value={b} />
+                    ))}
+                  </datalist>
+                </div>
+                {/* Quick Brand Pills */}
+                <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
+                  <span className="text-[10px] text-slate-400 font-mono">Quick select:</span>
+                  {['Veloce Kenya', 'Ropenix Atelier', 'Apple', 'Samsung', 'Nike', 'Generic'].map((qb) => (
+                    <button
+                      key={qb}
+                      type="button"
+                      onClick={() => setBrand(qb)}
+                      className={`text-[10px] font-mono px-2 py-0.5 rounded-md border transition cursor-pointer ${
+                        brand === qb
+                          ? 'bg-indigo-50 text-indigo-700 border-indigo-200 font-bold'
+                          : 'bg-slate-100 text-slate-600 border-slate-200 hover:bg-slate-200'
+                      }`}
+                    >
+                      {qb}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Country of Origin */}
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="block text-xs font-bold text-slate-700 uppercase font-mono flex items-center gap-1.5">
+                    <Globe className="h-3.5 w-3.5 text-emerald-600" /> Country of Origin
+                  </label>
+                  <span className="text-[11px] font-mono font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200/60">
+                    {getCountryFlag(countryOfOrigin)} {countryOfOrigin || 'Select / Enter'}
+                  </span>
+                </div>
+                <div className="relative">
+                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-base">
+                    {getCountryFlag(countryOfOrigin)}
+                  </div>
+                  <input
+                    type="text"
+                    list="product-form-country-suggestions"
+                    value={countryOfOrigin}
+                    onChange={(e) => setCountryOfOrigin(e.target.value)}
+                    placeholder="e.g. Kenya, Italy, Japan..."
+                    className="w-full h-11 pl-9 pr-3.5 rounded-xl border border-slate-300 text-sm font-medium focus:outline-hidden focus:ring-2 focus:ring-indigo-500 bg-white"
+                  />
+                  <datalist id="product-form-country-suggestions">
+                    {COMMON_COUNTRIES.map((c) => (
+                      <option key={c} value={c}>
+                        {getCountryFlag(c)} {c}
+                      </option>
+                    ))}
+                  </datalist>
+                </div>
+                {/* Quick Country Pills */}
+                <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
+                  <span className="text-[10px] text-slate-400 font-mono">Popular:</span>
+                  {[
+                    { name: 'Kenya', flag: '🇰🇪' },
+                    { name: 'Italy', flag: '🇮🇹' },
+                    { name: 'Japan', flag: '🇯🇵' },
+                    { name: 'United States', flag: '🇺🇸' },
+                    { name: 'Germany', flag: '🇩🇪' },
+                    { name: 'United Kingdom', flag: '🇬🇧' },
+                    { name: 'China', flag: '🇨🇳' },
+                  ].map((qc) => (
+                    <button
+                      key={qc.name}
+                      type="button"
+                      onClick={() => setCountryOfOrigin(qc.name)}
+                      className={`text-[10px] font-mono px-2 py-0.5 rounded-md border transition cursor-pointer flex items-center gap-1 ${
+                        countryOfOrigin === qc.name
+                          ? 'bg-emerald-50 text-emerald-800 border-emerald-300 font-bold'
+                          : 'bg-slate-100 text-slate-600 border-slate-200 hover:bg-slate-200'
+                      }`}
+                    >
+                      <span>{qc.flag}</span>
+                      <span>{qc.name}</span>
+                    </button>
+                  ))}
+                </div>
               </div>
 
               {/* Category Selection */}
@@ -4160,629 +4453,23 @@ export function ProductFormEditor({
               </div>
             </div>
 
-            {/* Variant Matrix Toggle */}
-            <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-between">
-              <div>
-                <h4 className="font-bold text-xs text-slate-900">Enable Product Variants</h4>
-                <p className="text-[11px] text-slate-500 mt-0.5">
-                  Create multiple options for this item (e.g., Size, Color, Finish) with custom SKUs and stock.
-                </p>
-              </div>
-              <input
-                type="checkbox"
-                checked={hasVariants}
-                onChange={(e) => setHasVariants(e.target.checked)}
-                className="h-5 w-5 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500 cursor-pointer"
+            {/* Modern Product Variant & Color Image Gallery Manager */}
+            <div className="pt-2">
+              <ProductVariantManager
+                basePrice={salePrice && salePrice > 0 ? Number(salePrice) : (basePrice || 0)}
+                baseSku={sku || 'SKU'}
+                productName={title || 'Product'}
+                currency={currency}
+                hasVariants={hasVariants}
+                onHasVariantsChange={setHasVariants}
+                options={options}
+                onOptionsChange={setOptions}
+                colorImages={colorImages}
+                onColorImagesChange={setColorImages}
+                variants={variants}
+                onVariantsChange={setVariants}
               />
             </div>
-
-            {hasVariants && (
-              <div className="space-y-5 p-5 rounded-2xl bg-indigo-50/40 border border-indigo-100">
-                <div className="flex items-center justify-between border-b border-indigo-100/80 pb-3">
-                  <div>
-                    <h4 className="font-bold text-xs text-indigo-950 uppercase font-mono tracking-wider flex items-center gap-2">
-                      <Layers className="h-4 w-4 text-indigo-600" /> Multi-Attribute Variant Matrix Generator
-                    </h4>
-                    <p className="text-[11px] text-slate-500 mt-0.5">
-                      Configure color, size, and dynamic custom attributes (e.g., Material, Storage, Style). Each variant maintains its own individual price and inventory stock level.
-                    </p>
-                  </div>
-                  <span className="px-2.5 py-1 rounded-full bg-indigo-100 text-indigo-800 text-[10px] font-bold font-mono">
-                    {variants.length} Active Variant{variants.length !== 1 ? 's' : ''}
-                  </span>
-                </div>
-
-                {/* 1. Attributes Configuration Section */}
-                <div className="space-y-4">
-                  <h5 className="text-[11px] font-bold text-slate-800 uppercase font-mono tracking-wide">
-                    1. Define Variant Attributes & Options
-                  </h5>
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-2xs">
-                      <label className="block text-[11px] font-bold text-slate-700 uppercase font-mono mb-1 flex items-center justify-between">
-                        <span className="flex items-center gap-1.5">
-                          <span className="h-2 w-2 rounded-full bg-indigo-500 inline-block" />
-                          Sizes (Comma separated)
-                        </span>
-                        <span className="text-[10px] text-slate-400 font-normal">Clothing / Footwear</span>
-                      </label>
-                      <input
-                        type="text"
-                        value={attrInputs.size || ''}
-                        onChange={(e) => setAttrInputs({ ...attrInputs, size: e.target.value })}
-                        placeholder="e.g., S, M, L, XL or 39, 40, 41, 42"
-                        className="w-full h-9 px-3 rounded-lg border border-slate-200 text-xs font-mono bg-white focus:ring-2 focus:ring-indigo-500"
-                      />
-                    </div>
-
-                    <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-2xs">
-                      <label className="block text-[11px] font-bold text-slate-700 uppercase font-mono mb-1 flex items-center justify-between">
-                        <span className="flex items-center gap-1.5">
-                          <span className="h-2 w-2 rounded-full bg-emerald-500 inline-block" />
-                          Colors (Comma separated)
-                        </span>
-                        <span className="text-[10px] text-slate-400 font-normal">Styles / Aesthetics</span>
-                      </label>
-                      <input
-                        type="text"
-                        value={attrInputs.color || ''}
-                        onChange={(e) => setAttrInputs({ ...attrInputs, color: e.target.value })}
-                        placeholder="e.g., Black, Midnight Blue, Olive Green"
-                        className="w-full h-9 px-3 rounded-lg border border-slate-200 text-xs font-mono bg-white focus:ring-2 focus:ring-indigo-500"
-                      />
-                    </div>
-
-                    {/* Measurement: Weight / Volume / Capacity */}
-                    <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-2xs space-y-2">
-                      <label className="block text-[11px] font-bold text-slate-700 uppercase font-mono flex items-center justify-between">
-                        <span className="flex items-center gap-1.5">
-                          <span className="h-2 w-2 rounded-full bg-amber-500 inline-block" />
-                          Weight / Volume (kg, g, lt, ml, lb)
-                        </span>
-                        <span className="text-[10px] text-amber-600 font-bold font-mono">Mass / Liquid</span>
-                      </label>
-                      <input
-                        type="text"
-                        value={attrInputs.weight || ''}
-                        onChange={(e) => setAttrInputs({ ...attrInputs, weight: e.target.value })}
-                        placeholder="e.g., 500g, 1kg, 2kg, 5kg or 250ml, 500ml, 1lt, 2lt"
-                        className="w-full h-9 px-3 rounded-lg border border-slate-200 text-xs font-mono bg-white focus:ring-2 focus:ring-amber-500"
-                      />
-                      {/* Measurement Quick Chips */}
-                      <div className="flex flex-wrap items-center gap-1.5 pt-1">
-                        <span className="text-[10px] font-bold text-slate-400 uppercase font-mono">Presets:</span>
-                        <button
-                          type="button"
-                          onClick={() => setAttrInputs({ ...attrInputs, weight: '500g, 1kg, 2kg, 5kg' })}
-                          className="px-2 py-0.5 bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-200 text-[10px] font-mono font-bold rounded cursor-pointer"
-                        >
-                          + kg/g (1kg, 2kg, 5kg)
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setAttrInputs({ ...attrInputs, weight: '250ml, 500ml, 1lt, 2lt' })}
-                          className="px-2 py-0.5 bg-sky-50 hover:bg-sky-100 text-sky-900 border border-sky-200 text-[10px] font-mono font-bold rounded cursor-pointer"
-                        >
-                          + lt/ml (500ml, 1lt, 2lt)
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setAttrInputs({ ...attrInputs, weight: '1lb, 2lb, 5lb, 10lb' })}
-                          className="px-2 py-0.5 bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-200 text-[10px] font-mono font-bold rounded cursor-pointer"
-                        >
-                          + lb (1lb, 5lb)
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* Measurement: Length / Dimensions */}
-                    <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-2xs space-y-2">
-                      <label className="block text-[11px] font-bold text-slate-700 uppercase font-mono flex items-center justify-between">
-                        <span className="flex items-center gap-1.5">
-                          <span className="h-2 w-2 rounded-full bg-cyan-500 inline-block" />
-                          Length / Dimensions (cm, m, mm, in)
-                        </span>
-                        <span className="text-[10px] text-cyan-600 font-bold font-mono">Distance / Size</span>
-                      </label>
-                      <input
-                        type="text"
-                        value={attrInputs.length || ''}
-                        onChange={(e) => setAttrInputs({ ...attrInputs, length: e.target.value })}
-                        placeholder="e.g., 10cm, 25cm, 50cm, 100cm or 1m, 2m, 5m"
-                        className="w-full h-9 px-3 rounded-lg border border-slate-200 text-xs font-mono bg-white focus:ring-2 focus:ring-cyan-500"
-                      />
-                      {/* Length Quick Chips */}
-                      <div className="flex flex-wrap items-center gap-1.5 pt-1">
-                        <span className="text-[10px] font-bold text-slate-400 uppercase font-mono">Presets:</span>
-                        <button
-                          type="button"
-                          onClick={() => setAttrInputs({ ...attrInputs, length: '10cm, 25cm, 50cm, 100cm' })}
-                          className="px-2 py-0.5 bg-cyan-50 hover:bg-cyan-100 text-cyan-900 border border-cyan-200 text-[10px] font-mono font-bold rounded cursor-pointer"
-                        >
-                          + cm (10cm, 50cm, 100cm)
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setAttrInputs({ ...attrInputs, length: '1m, 2m, 3m, 5m' })}
-                          className="px-2 py-0.5 bg-blue-50 hover:bg-blue-100 text-blue-900 border border-blue-200 text-[10px] font-mono font-bold rounded cursor-pointer"
-                        >
-                          + m (1m, 2m, 5m)
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setAttrInputs({ ...attrInputs, length: '6in, 12in, 24in, 36in' })}
-                          className="px-2 py-0.5 bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-200 text-[10px] font-mono font-bold rounded cursor-pointer"
-                        >
-                          + in / feet
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Dedicated Measurement Units & Values Configuration Builder */}
-                  <div className="bg-amber-50/40 dark:bg-slate-900 p-4 rounded-xl border border-indigo-200/80 space-y-3 shadow-2xs">
-                    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-indigo-100 pb-2">
-                      <div>
-                        <h6 className="font-bold text-xs text-indigo-950 uppercase font-mono flex items-center gap-2">
-                          <Sliders className="h-4 w-4 text-amber-600" /> Measurement Units & Pair Builder
-                        </h6>
-                        <p className="text-[11px] text-slate-500 font-sans">
-                          Pair user-defined numeric values with unit metrics (<strong className="text-amber-800 font-mono">kg, lt, cm, m</strong>, g, ml, in) to automatically build measurement variant options.
-                        </p>
-                      </div>
-                      <span className="px-2 py-0.5 rounded bg-white text-indigo-900 border border-indigo-200 text-[10px] font-bold font-mono">
-                        Unit Config Field
-                      </span>
-                    </div>
-
-                    <div className="flex flex-wrap items-center gap-3">
-                      {/* Numeric Value Input */}
-                      <div className="w-32">
-                        <label className="block text-[10px] font-bold text-slate-600 uppercase font-mono mb-1">
-                          Numeric Value
-                        </label>
-                        <input
-                          type="number"
-                          step="any"
-                          value={measurementValInput}
-                          onChange={(e) => setMeasurementValInput(e.target.value)}
-                          placeholder="e.g. 2.5"
-                          className="w-full h-9 px-2.5 rounded-lg border border-slate-300 text-xs font-mono font-bold bg-white text-slate-900 focus:ring-2 focus:ring-indigo-500"
-                        />
-                      </div>
-
-                      {/* Dropdown for Measurement Unit */}
-                      <div className="w-44">
-                        <label className="block text-[10px] font-bold text-slate-600 uppercase font-mono mb-1">
-                          Measurement Unit
-                        </label>
-                        <select
-                          value={measurementUnitSelect}
-                          onChange={(e) => setMeasurementUnitSelect(e.target.value)}
-                          className="w-full h-9 px-2.5 rounded-lg border border-slate-300 text-xs font-mono font-bold bg-white text-slate-900 focus:ring-2 focus:ring-indigo-500 cursor-pointer"
-                        >
-                          <optgroup label="Mass & Weight">
-                            <option value="kg">kg — Kilograms</option>
-                            <option value="g">g — Grams</option>
-                            <option value="lb">lb — Pounds</option>
-                          </optgroup>
-                          <optgroup label="Volume & Capacity">
-                            <option value="lt">lt — Liters</option>
-                            <option value="ml">ml — Milliliters</option>
-                          </optgroup>
-                          <optgroup label="Length & Distance">
-                            <option value="cm">cm — Centimeters</option>
-                            <option value="m">m — Meters</option>
-                            <option value="mm">mm — Millimeters</option>
-                            <option value="in">in — Inches</option>
-                            <option value="ft">ft — Feet</option>
-                          </optgroup>
-                        </select>
-                      </div>
-
-                      {/* Add Pair Button */}
-                      <div className="pt-5 flex items-center gap-2">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            if (!measurementValInput.trim()) return;
-                            const pairedStr = `${measurementValInput.trim()}${measurementUnitSelect}`;
-                            
-                            // Determine target category based on unit
-                            const weightUnits = ['kg', 'g', 'lt', 'ml', 'lb'];
-                            if (weightUnits.includes(measurementUnitSelect)) {
-                              const curr = attrInputs.weight ? attrInputs.weight.split(',').map(s=>s.trim()).filter(Boolean) : [];
-                              if (!curr.includes(pairedStr)) curr.push(pairedStr);
-                              setAttrInputs({ ...attrInputs, weight: curr.join(', ') });
-                            } else {
-                              const curr = attrInputs.length ? attrInputs.length.split(',').map(s=>s.trim()).filter(Boolean) : [];
-                              if (!curr.includes(pairedStr)) curr.push(pairedStr);
-                              setAttrInputs({ ...attrInputs, length: curr.join(', ') });
-                            }
-                          }}
-                          className="h-9 px-4 bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs rounded-lg transition flex items-center gap-1.5 cursor-pointer shadow-2xs font-mono"
-                        >
-                          <Plus className="h-3.5 w-3.5" /> Pair & Add ({measurementValInput}{measurementUnitSelect})
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Custom Attributes Manager */}
-                  <div className="bg-white p-4 rounded-xl border border-slate-200 space-y-3">
-                    <div className="flex items-center justify-between">
-                      <label className="block text-[11px] font-bold text-slate-800 uppercase font-mono">
-                        Custom Variant Attributes (e.g., Material, Storage, Finish, Style)
-                      </label>
-                      <span className="text-[10px] text-slate-400 font-mono">
-                        {customVariantAttrs.length} Custom Attribute Types
-                      </span>
-                    </div>
-
-                    {customVariantAttrs.length > 0 && (
-                      <div className="space-y-2">
-                        {customVariantAttrs.map((ca) => (
-                          <div
-                            key={ca.id}
-                            className="flex flex-wrap items-center justify-between gap-2 p-2.5 rounded-lg bg-slate-50 border border-slate-200 text-xs font-mono"
-                          >
-                            <div className="flex items-center gap-2">
-                              <span className="px-2 py-0.5 rounded bg-amber-100 text-amber-900 font-bold text-[10px] uppercase">
-                                {ca.name}
-                              </span>
-                              <span className="text-slate-600 font-medium">
-                                Options: {ca.options}
-                              </span>
-                            </div>
-                            <button
-                              type="button"
-                              onClick={() => handleRemoveCustomAttribute(ca.id)}
-                              className="p-1 text-slate-400 hover:text-rose-600 rounded cursor-pointer"
-                              title="Delete attribute type"
-                            >
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-
-                    {/* Add Custom Attribute Form */}
-                    <div className="pt-2 border-t border-slate-100 flex flex-col sm:flex-row items-center gap-2">
-                      <input
-                        type="text"
-                        placeholder="Attr Name (e.g. Material)"
-                        value={newAttrNameInput}
-                        onChange={(e) => setNewAttrNameInput(e.target.value)}
-                        className="w-full sm:w-1/3 h-9 px-3 rounded-lg border border-slate-200 text-xs font-mono bg-slate-50 focus:bg-white"
-                      />
-                      <input
-                        type="text"
-                        placeholder="Options comma-separated (e.g. Leather, Denim, Cotton)"
-                        value={newAttrOptionsInput}
-                        onChange={(e) => setNewAttrOptionsInput(e.target.value)}
-                        className="w-full sm:w-1/2 h-9 px-3 rounded-lg border border-slate-200 text-xs font-mono bg-slate-50 focus:bg-white"
-                      />
-                      <button
-                        type="button"
-                        onClick={handleAddCustomAttribute}
-                        className="w-full sm:w-auto h-9 px-3.5 bg-slate-800 hover:bg-slate-900 text-white font-bold text-xs rounded-lg transition shrink-0 flex items-center justify-center gap-1 cursor-pointer"
-                      >
-                        <Plus className="h-3.5 w-3.5" /> Add Attribute
-                      </button>
-                    </div>
-                  </div>
-                </div>
-
-                {/* 2. Matrix Generation & Manual Variant Trigger */}
-                <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={handleGenerateVariantMatrix}
-                      className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl transition flex items-center gap-1.5 cursor-pointer shadow-xs"
-                    >
-                      <Sparkles className="h-4 w-4" /> Generate Combination Matrix
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => setShowAddSingleVariant(!showAddSingleVariant)}
-                      className="px-3.5 py-2 bg-white hover:bg-slate-50 text-indigo-700 border border-indigo-200 font-bold text-xs rounded-xl transition flex items-center gap-1.5 cursor-pointer shadow-2xs"
-                    >
-                      <Plus className="h-4 w-4" /> {showAddSingleVariant ? 'Close Form' : 'Add Single Custom Variant'}
-                    </button>
-                  </div>
-
-                  {variants.length > 0 && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (confirm('Are you sure you want to clear all variants?')) {
-                          setVariants([]);
-                        }
-                      }}
-                      className="text-xs text-rose-600 hover:text-rose-800 font-bold font-mono underline cursor-pointer"
-                    >
-                      Clear All Matrix Rows
-                    </button>
-                  )}
-                </div>
-
-                {/* Single Custom Variant Form Inline */}
-                {showAddSingleVariant && (
-                  <div className="p-4 rounded-xl bg-white border border-indigo-200 shadow-sm space-y-3">
-                    <h5 className="text-xs font-bold text-indigo-900 uppercase font-mono flex items-center gap-1.5">
-                      <Plus className="h-3.5 w-3.5 text-indigo-600" /> Manually Add Single Variant
-                    </h5>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 text-xs font-mono">
-                      <div>
-                        <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Color</label>
-                        <input
-                          type="text"
-                          placeholder="e.g. Gold"
-                          value={singleVariantAttrs.color || ''}
-                          onChange={(e) => setSingleVariantAttrs({ ...singleVariantAttrs, color: e.target.value })}
-                          className="w-full h-8 px-2 rounded border border-slate-200"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Size</label>
-                        <input
-                          type="text"
-                          placeholder="e.g. XL"
-                          value={singleVariantAttrs.size || ''}
-                          onChange={(e) => setSingleVariantAttrs({ ...singleVariantAttrs, size: e.target.value })}
-                          className="w-full h-8 px-2 rounded border border-slate-200"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-[10px] font-bold text-amber-600 uppercase mb-1">Weight / Capacity</label>
-                        <input
-                          type="text"
-                          placeholder="e.g. 1kg or 500ml"
-                          value={singleVariantAttrs.weight || ''}
-                          onChange={(e) => setSingleVariantAttrs({ ...singleVariantAttrs, weight: e.target.value })}
-                          className="w-full h-8 px-2 rounded border border-amber-200 bg-amber-50/20"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-[10px] font-bold text-cyan-600 uppercase mb-1">Length / Dimensions</label>
-                        <input
-                          type="text"
-                          placeholder="e.g. 50cm or 2m"
-                          value={singleVariantAttrs.length || ''}
-                          onChange={(e) => setSingleVariantAttrs({ ...singleVariantAttrs, length: e.target.value })}
-                          className="w-full h-8 px-2 rounded border border-cyan-200 bg-cyan-50/20"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Variant Price ($)</label>
-                        <input
-                          type="number"
-                          placeholder={`Default: $${(salePrice && salePrice > 0 ? salePrice : basePrice) || 0}`}
-                          value={singleVariantPrice}
-                          onChange={(e) => setSingleVariantPrice(e.target.value)}
-                          className="w-full h-8 px-2 rounded border border-slate-200"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Stock Qty</label>
-                        <input
-                          type="number"
-                          value={singleVariantStock}
-                          onChange={(e) => setSingleVariantStock(Number(e.target.value))}
-                          className="w-full h-8 px-2 rounded border border-slate-200"
-                        />
-                      </div>
-                    </div>
-                    {customVariantAttrs.length > 0 && (
-                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-xs font-mono pt-1">
-                        {customVariantAttrs.map((ca) => {
-                          const k = ca.name.trim().toLowerCase().replace(/\s+/g, '_');
-                          return (
-                            <div key={ca.id}>
-                              <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">{ca.name}</label>
-                              <input
-                                type="text"
-                                placeholder={`e.g. ${ca.options.split(',')[0] || ''}`}
-                                value={singleVariantAttrs[k] || ''}
-                                onChange={(e) => setSingleVariantAttrs({ ...singleVariantAttrs, [k]: e.target.value })}
-                                className="w-full h-8 px-2 rounded border border-slate-200"
-                              />
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
-                    <div className="flex items-center gap-2 pt-1">
-                      <input
-                        type="text"
-                        placeholder="Variant SKU (Optional, auto-generated if blank)"
-                        value={singleVariantSku}
-                        onChange={(e) => setSingleVariantSku(e.target.value)}
-                        className="flex-1 h-8 px-2.5 rounded border border-slate-200 text-xs font-mono"
-                      />
-                      <button
-                        type="button"
-                        onClick={handleAddSingleCustomVariant}
-                        className="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-lg cursor-pointer"
-                      >
-                        Add to Matrix
-                      </button>
-                    </div>
-                  </div>
-                )}
-
-                {/* 3. Variants Matrix Table with Individual Variant Pricing & Bulk Actions */}
-                {variants.length > 0 && (
-                  <div className="space-y-3 pt-2">
-                    {/* Bulk Action Controls Toolbar */}
-                    <div className="p-3 bg-white rounded-xl border border-slate-200 flex flex-wrap items-center justify-between gap-3 text-xs font-mono">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="font-bold text-slate-700 text-[11px] uppercase">Bulk Actions:</span>
-                        
-                        {/* Bulk Price Input */}
-                        <div className="flex items-center gap-1 border border-slate-200 rounded-lg p-1 bg-slate-50">
-                          <input
-                            type="number"
-                            placeholder="Set All Prices ($)"
-                            value={bulkPriceInput}
-                            onChange={(e) => setBulkPriceInput(e.target.value)}
-                            className="w-28 h-7 px-2 bg-white rounded border border-slate-200 text-xs"
-                          />
-                          <button
-                            type="button"
-                            onClick={handleApplyBulkVariantPrice}
-                            className="px-2 py-1 bg-slate-800 hover:bg-slate-900 text-white rounded font-bold text-[10px] cursor-pointer"
-                          >
-                            Apply Price
-                          </button>
-                        </div>
-
-                        {/* Bulk Stock Input */}
-                        <div className="flex items-center gap-1 border border-slate-200 rounded-lg p-1 bg-slate-50">
-                          <input
-                            type="number"
-                            placeholder="Set All Stock"
-                            value={bulkStockInput}
-                            onChange={(e) => setBulkStockInput(e.target.value)}
-                            className="w-24 h-7 px-2 bg-white rounded border border-slate-200 text-xs"
-                          />
-                          <button
-                            type="button"
-                            onClick={handleApplyBulkVariantStock}
-                            className="px-2 py-1 bg-slate-800 hover:bg-slate-900 text-white rounded font-bold text-[10px] cursor-pointer"
-                          >
-                            Apply Stock
-                          </button>
-                        </div>
-                      </div>
-
-                      <div className="text-[11px] text-slate-500 font-medium">
-                        Base Product Price: <strong className="text-slate-900">${(salePrice && salePrice > 0 ? salePrice : basePrice) || 0}</strong>
-                      </div>
-                    </div>
-
-                    {/* Matrix Table */}
-                    <div className="overflow-x-auto border border-slate-200 rounded-xl bg-white shadow-2xs">
-                      <table className="w-full text-left text-xs font-mono">
-                        <thead className="bg-slate-100 border-b border-slate-200 text-slate-700 font-bold uppercase text-[10px]">
-                          <tr>
-                            <th className="p-3">Variant Attributes</th>
-                            <th className="p-3">Variant SKU</th>
-                            <th className="p-3">Stock Qty</th>
-                            <th className="p-3">Variant Price ($)</th>
-                            <th className="p-3 text-right">Action</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-100">
-                          {variants.map((v, i) => {
-                            const effectiveBase = (salePrice && salePrice > 0 ? salePrice : basePrice) || 0;
-                            const currentPrice = v.priceOverride !== null && v.priceOverride !== undefined ? v.priceOverride : (v.price !== null && v.price !== undefined ? v.price : null);
-                            const priceDiff = currentPrice !== null ? currentPrice - effectiveBase : 0;
-
-                            return (
-                              <tr key={v.id} className="hover:bg-slate-50/80 transition">
-                                <td className="p-3">
-                                  <div className="flex flex-wrap gap-1.5 items-center">
-                                    {Object.entries(v.attributes).map(([k, val]) => (
-                                      <span
-                                        key={k}
-                                        className={`px-2 py-0.5 rounded-md font-bold text-[10px] uppercase border ${
-                                          k === 'size'
-                                            ? 'bg-indigo-50 text-indigo-800 border-indigo-200'
-                                            : k === 'color'
-                                            ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
-                                            : 'bg-amber-50 text-amber-800 border-amber-200'
-                                        }`}
-                                      >
-                                        {k}: <strong>{val}</strong>
-                                      </span>
-                                    ))}
-                                  </div>
-                                </td>
-                                <td className="p-3">
-                                  <input
-                                    type="text"
-                                    value={v.sku}
-                                    onChange={(e) => {
-                                      const updated = [...variants];
-                                      updated[i].sku = e.target.value;
-                                      setVariants(updated);
-                                    }}
-                                    className="h-8 px-2 rounded border border-slate-200 text-xs font-mono font-bold text-slate-800 w-full focus:ring-1 focus:ring-indigo-500"
-                                  />
-                                </td>
-                                <td className="p-3">
-                                  <input
-                                    type="number"
-                                    min={0}
-                                    value={v.stockQty}
-                                    onChange={(e) => {
-                                      const updated = [...variants];
-                                      updated[i].stockQty = Number(e.target.value);
-                                      setVariants(updated);
-                                    }}
-                                    className="h-8 px-2 rounded border border-slate-200 text-xs font-mono w-20 text-center font-bold focus:ring-1 focus:ring-indigo-500"
-                                  />
-                                </td>
-                                <td className="p-3">
-                                  <div className="flex items-center gap-2">
-                                    <input
-                                      type="number"
-                                      step="0.01"
-                                      placeholder={`Base ($${effectiveBase})`}
-                                      value={currentPrice !== null ? currentPrice : ''}
-                                      onChange={(e) => {
-                                        const updated = [...variants];
-                                        const val = e.target.value === '' ? null : Number(e.target.value);
-                                        updated[i].priceOverride = val;
-                                        updated[i].price = val;
-                                        setVariants(updated);
-                                      }}
-                                      className="h-8 px-2 rounded border border-slate-200 text-xs font-mono font-bold text-slate-900 w-28 focus:ring-1 focus:ring-indigo-500"
-                                    />
-                                    {currentPrice !== null && (
-                                      <span
-                                        className={`text-[10px] font-bold font-mono px-1.5 py-0.5 rounded ${
-                                          priceDiff > 0
-                                            ? 'bg-blue-50 text-blue-700'
-                                            : priceDiff < 0
-                                            ? 'bg-amber-50 text-amber-700'
-                                            : 'bg-slate-100 text-slate-600'
-                                        }`}
-                                      >
-                                        {priceDiff > 0
-                                          ? `+$${priceDiff.toFixed(2)}`
-                                          : priceDiff < 0
-                                          ? `-$${Math.abs(priceDiff).toFixed(2)}`
-                                          : 'Standard'}
-                                      </span>
-                                    )}
-                                  </div>
-                                </td>
-                                <td className="p-3 text-right">
-                                  <button
-                                    type="button"
-                                    onClick={() => setVariants(variants.filter((_, idx) => idx !== i))}
-                                    className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg cursor-pointer transition"
-                                    title="Remove this variant"
-                                  >
-                                    <Trash2 className="h-4 w-4" />
-                                  </button>
-                                </td>
-                              </tr>
-                            );
-                          })}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
           </div>
         </section>
 <section id="section-seo" className="bg-white rounded-2xl border border-slate-200 p-5 sm:p-8 shadow-xs scroll-mt-24">
@@ -4805,7 +4492,7 @@ export function ProductFormEditor({
                 Google Search Result SERP Snippet Preview
               </span>
               <div className="text-xs text-slate-800 font-mono flex items-center gap-1.5 truncate">
-                <span className="text-emerald-700 font-bold">https://marid.co.ke</span>
+                <span className="text-emerald-700 font-bold">https://ropenix.co.ke</span>
                 <span className="text-slate-400">› products › {slug || 'product-slug'}</span>
               </div>
               <h4 className="text-base font-medium text-blue-800 hover:underline cursor-pointer truncate">
@@ -5854,7 +5541,18 @@ export function ProductFormEditor({
                 </div>
 
                 <div className="space-y-3">
-                  <span className="text-[10px] font-bold text-indigo-600 uppercase font-mono">{brand}</span>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-[10px] font-bold text-indigo-600 uppercase font-mono bg-indigo-50 px-2 py-0.5 rounded border border-indigo-100 flex items-center gap-1">
+                      <Tag className="h-3 w-3" />
+                      {brand || 'Veloce Kenya'}
+                    </span>
+                    {countryOfOrigin && (
+                      <span className="text-[10px] font-medium text-emerald-700 font-mono bg-emerald-50 px-2 py-0.5 rounded border border-emerald-100 flex items-center gap-1">
+                        <span>{getCountryFlag(countryOfOrigin)}</span>
+                        <span>{countryOfOrigin}</span>
+                      </span>
+                    )}
+                  </div>
                   <h2 className="text-xl font-bold text-slate-900">{title || 'Product Title'}</h2>
                   <p className="text-xs text-slate-500 leading-relaxed">{shortDescription || 'Short description...'}</p>
 

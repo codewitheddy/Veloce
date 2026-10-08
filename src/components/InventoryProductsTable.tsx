@@ -33,6 +33,8 @@ import {
 } from 'lucide-react';
 import { Product, Order } from '../types';
 import { CurrencyType, formatPrice } from '../lib/currency';
+import { getCountryFlag } from '../utils/productUtils';
+import { productService } from '../services/api';
 
 interface InventoryProductsTableProps {
   products: Product[];
@@ -41,6 +43,7 @@ interface InventoryProductsTableProps {
   onEditProduct: (product: Product) => void;
   onDuplicateProduct?: (product: Product) => void;
   onDeleteProduct: (id: string, type?: 'proprietary' | 'affiliate', skipConfirm?: boolean) => void;
+  onBulkDeleteProducts?: (ids: string[]) => void;
   onUpdateProductStock: (id: string, newStock: number) => void;
   onUpdateProductSku: (id: string, newSku: string) => void;
   onUpdateProductThreshold: (id: string, newThreshold: number) => void;
@@ -61,6 +64,7 @@ export default function InventoryProductsTable({
   onEditProduct,
   onDuplicateProduct,
   onDeleteProduct,
+  onBulkDeleteProducts,
   onUpdateProductStock,
   onUpdateProductSku,
   onUpdateProductThreshold,
@@ -141,8 +145,10 @@ export default function InventoryProductsTable({
           const matchSku = p.sku?.toLowerCase().includes(q);
           const matchName = p.name?.toLowerCase().includes(q);
           const matchCategory = p.category?.toLowerCase().includes(q);
+          const matchBrand = p.brand?.toLowerCase().includes(q);
+          const matchOrigin = (p.countryOfOrigin || (p as any).country_of_origin)?.toLowerCase().includes(q);
           const matchDesc = p.description?.toLowerCase().includes(q);
-          if (!matchSku && !matchName && !matchCategory && !matchDesc) return false;
+          if (!matchSku && !matchName && !matchCategory && !matchBrand && !matchOrigin && !matchDesc) return false;
         }
       }
 
@@ -240,14 +246,27 @@ export default function InventoryProductsTable({
     setTimeout(() => setBulkNotification(null), 3500);
   };
 
-  const handleExecuteBulkDelete = () => {
+  const handleExecuteBulkDelete = async () => {
     if (selectedIds.length === 0) return;
-    selectedIds.forEach((id) => {
-      onDeleteProduct(id, 'proprietary', true);
-    });
+    const idsToDelete = [...selectedIds];
+    const count = idsToDelete.length;
+
+    if (onBulkDeleteProducts) {
+      onBulkDeleteProducts(idsToDelete);
+    } else {
+      idsToDelete.forEach((id) => {
+        onDeleteProduct(id, 'proprietary', true);
+      });
+      try {
+        await productService.bulkAction({ product_ids: idsToDelete, action: 'delete' });
+      } catch (err) {
+        console.warn('[InventoryTable] Bulk delete fallback notice:', err);
+      }
+    }
+
     setSelectedIds([]);
     setIsBulkDeleteModalOpen(false);
-    setBulkNotification(`Deleted ${selectedIds.length} product(s) from inventory.`);
+    setBulkNotification(`Permanently deleted ${count} product(s) from catalog.`);
     setTimeout(() => setBulkNotification(null), 3500);
   };
 
@@ -777,7 +796,7 @@ export default function InventoryProductsTable({
                           <span className="font-bold text-slate-900 dark:text-slate-100 line-clamp-1 text-xs">
                             {product.name}
                           </span>
-                          <div className="flex items-center gap-1.5 mt-0.5">
+                          <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
                             <span
                               className={`inline-block px-1.5 py-0.2 rounded text-[9px] font-bold uppercase tracking-wider font-mono ${
                                 product.type === 'physical'
@@ -790,8 +809,14 @@ export default function InventoryProductsTable({
                               {product.type || 'physical'}
                             </span>
                             {product.brand && (
-                              <span className="text-[10px] text-slate-600 dark:text-slate-400 font-medium truncate max-w-[100px]">
+                              <span className="text-[10px] text-indigo-700 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/60 px-1.5 py-0.2 rounded font-medium truncate max-w-[110px]">
                                 {product.brand}
+                              </span>
+                            )}
+                            {(product.countryOfOrigin || (product as any).country_of_origin) && (
+                              <span className="text-[10px] text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/60 px-1.5 py-0.2 rounded font-medium flex items-center gap-0.5">
+                                <span>{getCountryFlag(product.countryOfOrigin || (product as any).country_of_origin)}</span>
+                                <span className="truncate max-w-[100px]">{product.countryOfOrigin || (product as any).country_of_origin}</span>
                               </span>
                             )}
                           </div>

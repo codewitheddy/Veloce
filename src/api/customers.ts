@@ -1,52 +1,24 @@
 /**
  * Customer Management TypeScript API Client and Type Definitions
- * Directly executes fetch against /api/ endpoints with JWT authentication and standardized error handling.
+ * Uses the centralized api Axios client with JWT authentication, automatic token rotation, and standardized error handling.
  */
 
-const API_BASE = '/api';
+import api from '../services/api';
 
-const getAuthHeaders = (): HeadersInit => {
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-    'Accept': 'application/json',
-  };
-  try {
-    const token = localStorage.getItem('access_token') || localStorage.getItem('token');
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
+const extractErrorMessage = (err: any): string => {
+  if (err?.response?.data) {
+    const data = err.response.data;
+    if (typeof data === 'string') return data;
+    if (data.error) return data.error;
+    if (data.detail) return data.detail;
+    if (data.message) return data.message;
+    if (typeof data === 'object') {
+      return Object.entries(data)
+        .map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(', ') : v}`)
+        .join('; ');
     }
-  } catch {
-    // ignore
   }
-  return headers;
-};
-
-const handleResponse = async (response: Response) => {
-  if (!response.ok) {
-    let errorMessage = `HTTP Error ${response.status}: ${response.statusText}`;
-    try {
-      const errorData = await response.json();
-      if (typeof errorData === 'object' && errorData !== null) {
-        if (errorData.detail) {
-          errorMessage = errorData.detail;
-        } else if (errorData.message) {
-          errorMessage = errorData.message;
-        } else {
-          errorMessage = Object.entries(errorData)
-            .map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(', ') : v}`)
-            .join('; ');
-        }
-      }
-    } catch {
-      // response not json
-    }
-    throw new Error(errorMessage);
-  }
-
-  if (response.status === 204) {
-    return true;
-  }
-  return await response.json();
+  return err?.message || 'A network error occurred while contacting the customer service.';
 };
 
 export interface CustomerDeal {
@@ -122,21 +94,13 @@ export interface CustomerQueryParams {
 /**
  * Fetch paginated or filtered list of customers
  */
-export async function getCustomers(params: CustomerQueryParams = {}) {
-  const queryParams = new URLSearchParams();
-  Object.entries(params).forEach(([key, val]) => {
-    if (val !== undefined && val !== null && val !== '') {
-      queryParams.append(key, String(val));
-    }
-  });
-
-  const url = `${API_BASE}/customers/${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
-  const response = await fetch(url, {
-    method: 'GET',
-    headers: getAuthHeaders(),
-    credentials: 'include',
-  });
-  return handleResponse(response);
+export async function getCustomers(params: CustomerQueryParams = {}): Promise<CustomerListItem[] | { results: CustomerListItem[]; count?: number }> {
+  try {
+    const response = await api.get('/customers/', { params });
+    return response.data;
+  } catch (err: any) {
+    throw new Error(extractErrorMessage(err));
+  }
 }
 
 /**
@@ -144,89 +108,84 @@ export async function getCustomers(params: CustomerQueryParams = {}) {
  */
 export async function getCustomer(id: string): Promise<CustomerDetailItem> {
   if (!id) throw new Error('Customer ID is required');
-  const response = await fetch(`${API_BASE}/customers/${id}/`, {
-    method: 'GET',
-    headers: getAuthHeaders(),
-    credentials: 'include',
-  });
-  return handleResponse(response);
+  try {
+    const response = await api.get(`/customers/${id}/`);
+    return response.data;
+  } catch (err: any) {
+    throw new Error(extractErrorMessage(err));
+  }
 }
 
 /**
  * Create a new Customer record
  */
-export async function createCustomer(data: Partial<CustomerListItem>) {
-  const response = await fetch(`${API_BASE}/customers/`, {
-    method: 'POST',
-    headers: getAuthHeaders(),
-    credentials: 'include',
-    body: JSON.stringify(data),
-  });
-  return handleResponse(response);
+export async function createCustomer(data: Partial<CustomerListItem>): Promise<CustomerListItem> {
+  try {
+    const response = await api.post('/customers/', data);
+    return response.data;
+  } catch (err: any) {
+    throw new Error(extractErrorMessage(err));
+  }
 }
 
 /**
  * Update an existing Customer record
  */
-export async function updateCustomer(id: string, data: Partial<CustomerListItem>) {
+export async function updateCustomer(id: string, data: Partial<CustomerListItem>): Promise<CustomerListItem> {
   if (!id) throw new Error('Customer ID is required');
-  const response = await fetch(`${API_BASE}/customers/${id}/`, {
-    method: 'PUT',
-    headers: getAuthHeaders(),
-    credentials: 'include',
-    body: JSON.stringify(data),
-  });
-  return handleResponse(response);
+  try {
+    const response = await api.put(`/customers/${id}/`, data);
+    return response.data;
+  } catch (err: any) {
+    throw new Error(extractErrorMessage(err));
+  }
 }
 
 /**
  * Delete a Customer record
  */
-export async function deleteCustomer(id: string) {
+export async function deleteCustomer(id: string): Promise<boolean> {
   if (!id) throw new Error('Customer ID is required');
-  const response = await fetch(`${API_BASE}/customers/${id}/`, {
-    method: 'DELETE',
-    headers: getAuthHeaders(),
-    credentials: 'include',
-  });
-  return handleResponse(response);
+  try {
+    await api.delete(`/customers/${id}/`);
+    return true;
+  } catch (err: any) {
+    throw new Error(extractErrorMessage(err));
+  }
 }
 
 /**
  * Create a new Deal for a Customer
  */
-export async function createDeal(data: Partial<CustomerDeal>) {
-  const response = await fetch(`${API_BASE}/deals/`, {
-    method: 'POST',
-    headers: getAuthHeaders(),
-    credentials: 'include',
-    body: JSON.stringify(data),
-  });
-  return handleResponse(response);
+export async function createDeal(data: Partial<CustomerDeal>): Promise<CustomerDeal> {
+  try {
+    const response = await api.post('/customers/deals/', data);
+    return response.data;
+  } catch (err: any) {
+    throw new Error(extractErrorMessage(err));
+  }
 }
 
 /**
  * Create a new Order for a Customer
  */
-export async function createOrder(data: Partial<CustomerOrder>) {
-  const response = await fetch(`${API_BASE}/customer-orders/`, {
-    method: 'POST',
-    headers: getAuthHeaders(),
-    credentials: 'include',
-    body: JSON.stringify(data),
-  });
-  return handleResponse(response);
+export async function createOrder(data: Partial<CustomerOrder>): Promise<CustomerOrder> {
+  try {
+    const response = await api.post('/customers/customer-orders/', data);
+    return response.data;
+  } catch (err: any) {
+    throw new Error(extractErrorMessage(err));
+  }
 }
 
 /**
  * Create a new Invoice for a Customer
  */
-export async function createInvoice(data: Partial<CustomerInvoice>) {
-  const response = await fetch(`${API_BASE}/invoices/`, {
-    method: 'POST',
-    headers: getAuthHeaders(),
-    credentials: 'include',
-    body: JSON.stringify(data),
-  });
-  return handleResponse(response);
+export async function createInvoice(data: Partial<CustomerInvoice>): Promise<CustomerInvoice> {
+  try {
+    const response = await api.post('/customers/invoices/', data);
+    return response.data;
+  } catch (err: any) {
+    throw new Error(extractErrorMessage(err));
+  }
 }

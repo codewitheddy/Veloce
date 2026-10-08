@@ -68,9 +68,9 @@ export function RateTestingTool({
     const saved = localStorage.getItem('veloce_free_delivery_threshold');
     return saved ? Number(saved) : 5000;
   });
-  const [baseDistanceKm, setBaseDistanceKm] = useState<number>(5);
-  const [baseFee, setBaseFee] = useState<number>(200);
-  const [perKmRate, setPerKmRate] = useState<number>(30);
+  const [baseDistanceKm, setBaseDistanceKm] = useState<number>(0);
+  const [baseFee, setBaseFee] = useState<number>(0);
+  const [perKmRate, setPerKmRate] = useState<number>(25);
   const [maxDistanceKm, setMaxDistanceKm] = useState<number>(50);
 
   // Status & Calculations

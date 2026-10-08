@@ -65,6 +65,9 @@ export const productsApi = {
     const payload = {
       sku: productData.sku,
       name: productData.name,
+      brand: productData.brand || '',
+      countryOfOrigin: productData.countryOfOrigin || productData.country_of_origin || '',
+      country_of_origin: productData.country_of_origin || productData.countryOfOrigin || '',
       description: productData.description || '',
       price: productData.price,
       original_price: productData.previousPrice || productData.originalPrice || null,

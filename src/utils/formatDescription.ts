@@ -5,18 +5,31 @@
 
 import DOMPurify from 'dompurify';
 
-/**
- * Strips markdown and HTML artifacts to produce a clean plain-text teaser for cards/excerpts.
- */
 export function cleanDescriptionExcerpt(text: string | undefined | null, maxLength?: number): string {
   if (!text) return '';
   let cleaned = text
-    .replace(/<[^>]*>/g, ' ') // remove HTML tags
+    // Remove script and style tags with content
+    .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, ' ')
+    .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, ' ')
+    // Remove complete HTML tags
+    .replace(/<[^>]+>/g, ' ')
+    // Remove unclosed or truncated HTML tags (e.g. <div class="... without closing >)
+    .replace(/<[a-z0-9_\-\s"=':;\.\/]+>?/gi, ' ')
+    .replace(/<[^>]*$/g, ' ')
+    // Remove markdown symbols
     .replace(/\*\*([^*]+)\*\*/g, '$1') // remove bold
     .replace(/\*([^*]+)\*/g, '$1') // remove italic
+    .replace(/~~([^~]+)~~/g, '$1') // remove strikethrough
     .replace(/^(\*|\-|•|\d+\.)\s+/gm, '') // remove list bullets
     .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1') // remove links
     .replace(/#+\s+/g, '') // remove headers
+    // Decode common entities
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/gi, "'")
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
     .replace(/\s+/g, ' ') // collapse whitespaces
     .trim();
   if (maxLength && cleaned.length > maxLength) {
@@ -36,9 +49,12 @@ export function formatRichDescription(rawText: string | undefined | null): strin
 
   let text = rawText.trim();
 
-  // If already rich HTML with multiple block tags (<div, <ul, <table, <section), sanitize directly
-  if (/<(table|section|article)\b/i.test(text) || (/<div\b/i.test(text) && /<img\b/i.test(text))) {
-    return DOMPurify.sanitize(text);
+  // If already rich HTML with block tags (<div, <ul, <table, <section, <p), sanitize directly
+  if (/<(div|table|section|article|figure|ul|ol|header|footer|video|iframe)\b/i.test(text) || (/<p\b/i.test(text) && /<\/[a-z]+>/i.test(text))) {
+    return DOMPurify.sanitize(text, {
+      ADD_TAGS: ['iframe', 'video', 'source'],
+      ADD_ATTR: ['allow', 'allowfullscreen', 'frameborder', 'scrolling', 'target']
+    });
   }
 
   // Normalize inline bullets: "* **" or "- **" that lack preceding newline

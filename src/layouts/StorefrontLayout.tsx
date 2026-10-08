@@ -7,7 +7,7 @@ import React, { useState, useEffect, Suspense } from 'react';
 import Header from '../components/Header';
 import Footer from '../components/Footer';
 import CookieConsent from '../components/CookieConsent';
-import SocialProofToast from '../components/SocialProofToast';
+import MobileBottomNav from '../components/MobileBottomNav';
 import { ErrorBoundary } from '../components/ErrorBoundary';
 import { ArrowUp, Loader2, AlertTriangle, X } from 'lucide-react';
 import { CurrencyType } from '../lib/currency';
@@ -89,7 +89,7 @@ export default function StorefrontLayout({
   const totalCartCount = cart.reduce((sum, item) => sum + item.quantity, 0);
 
   return (
-    <div className={`min-h-screen bg-[#F9FAFB] dark:bg-gray-950 text-[#111827] dark:text-gray-100 flex flex-col justify-between font-sans selection:bg-[#111827] dark:selection:bg-indigo-650 selection:text-white transition-colors duration-200 ${darkMode ? 'dark' : ''}`}>
+    <div className={`min-h-screen pb-16 lg:pb-0 bg-slate-50 dark:bg-[#090D16] text-slate-900 dark:text-slate-100 flex flex-col justify-between font-sans selection:bg-indigo-600 selection:text-white transition-colors duration-200 ${darkMode ? 'dark' : ''}`}>
       <div>
         {/* Dynamic Maintenance Mode Notice */}
         {settings.general.maintenance_mode && !maintenanceDismissed && (
@@ -181,7 +181,7 @@ export default function StorefrontLayout({
 
       {/* Floating Back to Top Button */}
       {showBackToTop && (
-        <div className="fixed bottom-5 right-5 z-40 font-sans">
+        <div className="fixed bottom-20 lg:bottom-5 right-4 sm:right-5 z-40 font-sans">
           <button
             onClick={scrollToTop}
             className="flex h-10 w-10 items-center justify-center rounded-full bg-indigo-600 dark:bg-indigo-500 text-white shadow-[0_4px_12px_rgba(79,70,229,0.3)] hover:bg-indigo-700 dark:hover:bg-indigo-600 transition-all hover:scale-105 active:scale-95 cursor-pointer animate-in fade-in slide-in-from-bottom-4 duration-300"
@@ -196,23 +196,23 @@ export default function StorefrontLayout({
       {/* Customer Storefront Footer */}
       <Footer setCurrentTab={onTabChange} />
 
-      {/* Social Proof Real-time Sales Activity Toaster */}
-      {userRole === 'customer' && (
-        <SocialProofToast
-          products={products}
-          orders={orders}
-          userRole={userRole}
-          currentTab={currentTab}
-          onSelectProduct={(p) => {
-            onSelectProduct(p);
-            onTabChange('store');
-          }}
-          darkMode={darkMode}
-        />
-      )}
-
       {/* Customer Cookie Consent Banner */}
       <CookieConsent />
+
+      {/* Mobile & Tablet Bottom Navigation Bar */}
+      <MobileBottomNav
+        currentTab={currentTab}
+        onTabChange={onTabChange}
+        cartCount={totalCartCount}
+        wishlistCount={wishlist.length}
+        onOpenStoreWithCategory={(cat) => {
+          if (onSelectCategory) {
+            onSelectCategory(cat, 'All');
+          }
+          onTabChange('store');
+        }}
+        darkMode={darkMode}
+      />
     </div>
   );
 }

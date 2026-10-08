@@ -6,7 +6,6 @@ import {
   ChevronRight,
   Play,
   Pause,
-  Layers,
   ArrowRight
 } from 'lucide-react';
 import { HeroBanner } from '../types';
@@ -14,43 +13,86 @@ import { HeroBanner } from '../types';
 export const DEFAULT_HERO_SLIDES: HeroBanner[] = [
   {
     id: 'hero-banner-1',
-    title: 'Discover Next-Gen Quality',
-    subtitle: 'Welcome to Veloce Store',
-    description: 'Curated products and high-performance collections crafted for excellence.',
-    badge_text: 'NEW ARRIVALS 2026',
-    badgeText: 'NEW ARRIVALS 2026',
-    primary_button_text: 'Explore Catalog',
-    primaryButtonText: 'Explore Catalog',
+    title: 'Precision Mechanical Hardware',
+    subtitle: 'Engineered for Performance & Tactile Perfection',
+    description: 'CNC-machined aluminum frames, custom tuned linear switches, and dye-sublimated PBT keycaps. Built for relentless productivity.',
+    badge_text: 'NEW RELEASE 2026',
+    badgeText: 'NEW RELEASE 2026',
+    primary_button_text: 'Explore Keyboards',
+    primaryButtonText: 'Explore Keyboards',
     primary_button_url: 'store',
     primaryButtonUrl: 'store',
-    secondary_button_text: '',
-    secondaryButtonText: '',
-    secondary_button_url: '',
-    secondaryButtonUrl: '',
+    secondary_button_text: 'Custom Services',
+    secondaryButtonText: 'Custom Services',
+    secondary_button_url: 'services',
+    secondaryButtonUrl: 'services',
     hero_image: null,
-    hero_image_url: 'https://images.unsplash.com/photo-1505740420928-5e560c06d30e?auto=format&fit=crop&q=80&w=1200',
-    heroImage: 'https://images.unsplash.com/photo-1505740420928-5e560c06d30e?auto=format&fit=crop&q=80&w=1200',
-    background_type: 'image',
-    backgroundType: 'image',
-    background_color: '#141414',
-    backgroundColor: '#141414',
+    hero_image_url: 'https://images.unsplash.com/photo-1587829741301-dc798b83add3?auto=format&fit=crop&q=80&w=1200',
+    heroImage: 'https://images.unsplash.com/photo-1587829741301-dc798b83add3?auto=format&fit=crop&q=80&w=1200',
+    background_type: 'color',
+    backgroundType: 'color',
+    background_color: '#0f172a',
+    backgroundColor: '#0f172a',
     background_image: null,
-    background_image_url: 'https://images.unsplash.com/photo-1550745165-9bc0b252726f?auto=format&fit=crop&q=80&w=1800',
-    backgroundImage: 'https://images.unsplash.com/photo-1550745165-9bc0b252726f?auto=format&fit=crop&q=80&w=1800',
+    background_image_url: '',
+    backgroundImage: '',
     background_position: 'center',
     backgroundPosition: 'center',
     overlay_enabled: true,
     overlayEnabled: true,
-    overlay_color: '#0a0a0a',
-    overlayColor: '#0a0a0a',
-    overlay_opacity: 0.72,
-    overlayOpacity: 0.72,
+    overlay_color: '#000000',
+    overlayColor: '#000000',
+    overlay_opacity: 0.4,
+    overlayOpacity: 0.4,
     text_color: '#ffffff',
     textColor: '#ffffff',
     is_active: true,
     active: true,
     display_order: 1,
     displayOrder: 1,
+    start_date: null,
+    end_date: null,
+    created_at: new Date().toISOString()
+  },
+  {
+    id: 'hero-banner-2',
+    title: 'Minimalist Artisan Workspaces',
+    subtitle: 'Natural Solid Hardwoods & Clean Architecture',
+    description: 'Sustainably sourced Walnut and White Oak desk accessories, dual monitor risers, and magnetic modular organizers.',
+    badge_text: 'HANDCRAFTED EDITIONS',
+    badgeText: 'HANDCRAFTED EDITIONS',
+    primary_button_text: 'Shop Workspace Gear',
+    primaryButtonText: 'Shop Workspace Gear',
+    primary_button_url: 'store',
+    primaryButtonUrl: 'store',
+    secondary_button_text: 'Read Design Stories',
+    secondaryButtonText: 'Read Design Stories',
+    secondary_button_url: 'blog',
+    secondaryButtonUrl: 'blog',
+    hero_image: null,
+    hero_image_url: 'https://images.unsplash.com/photo-1527443224154-c4a3942d3acf?auto=format&fit=crop&q=80&w=1200',
+    heroImage: 'https://images.unsplash.com/photo-1527443224154-c4a3942d3acf?auto=format&fit=crop&q=80&w=1200',
+    background_type: 'image',
+    backgroundType: 'image',
+    background_color: '#18181b',
+    backgroundColor: '#18181b',
+    background_image: null,
+    background_image_url: 'https://images.unsplash.com/photo-1527443224154-c4a3942d3acf?auto=format&fit=crop&q=80&w=1600',
+    backgroundImage: 'https://images.unsplash.com/photo-1527443224154-c4a3942d3acf?auto=format&fit=crop&q=80&w=1600',
+    background_position: 'center',
+    backgroundPosition: 'center',
+    overlay_enabled: true,
+    overlayEnabled: true,
+    overlay_color: '#09090b',
+    overlayColor: '#09090b',
+    overlay_opacity: 0.75,
+    overlayOpacity: 0.75,
+    text_color: '#ffffff',
+    textColor: '#ffffff',
+    is_active: true,
+    active: true,
+    display_order: 2,
+    displayOrder: 2,
     start_date: null,
     end_date: null,
     created_at: new Date().toISOString()
@@ -62,7 +104,7 @@ async function fetchHeroBanners(): Promise<HeroBanner[]> {
     const res = await fetch('/api/hero-banners/');
     if (res.ok) {
       const data = await res.json();
-      if (Array.isArray(data)) {
+      if (Array.isArray(data) && data.length > 0) {
         return data;
       }
     }
@@ -74,7 +116,7 @@ async function fetchHeroBanners(): Promise<HeroBanner[]> {
     const saved = localStorage.getItem('veloce_hero_slides');
     if (saved) {
       const parsed = JSON.parse(saved);
-      if (Array.isArray(parsed)) {
+      if (Array.isArray(parsed) && parsed.length > 0) {
         return parsed;
       }
     }
@@ -110,17 +152,17 @@ export function HeroBannerSlider({
     queryKey: ['hero-banners'],
     queryFn: fetchHeroBanners,
     staleTime: 10000,
-    initialData: propSlides !== undefined ? propSlides : undefined,
+    initialData: propSlides !== undefined && propSlides.length > 0 ? propSlides : DEFAULT_HERO_SLIDES,
   });
 
   const [slides, setSlides] = useState<HeroBanner[]>(() => {
-    if (propSlides !== undefined) return propSlides;
-    if (queriedSlides !== undefined) return queriedSlides;
+    if (propSlides !== undefined && propSlides.length > 0) return propSlides;
+    if (queriedSlides !== undefined && queriedSlides.length > 0) return queriedSlides;
     try {
       const saved = localStorage.getItem('veloce_hero_slides');
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed)) return parsed;
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
       }
     } catch {
       // fallback
@@ -129,9 +171,9 @@ export function HeroBannerSlider({
   });
 
   useEffect(() => {
-    if (propSlides !== undefined) {
+    if (propSlides !== undefined && propSlides.length > 0) {
       setSlides(propSlides);
-    } else if (queriedSlides !== undefined) {
+    } else if (queriedSlides !== undefined && queriedSlides.length > 0) {
       setSlides(queriedSlides);
     }
   }, [propSlides, queriedSlides]);
@@ -149,16 +191,8 @@ export function HeroBannerSlider({
     return false;
   });
 
-  useEffect(() => {
-    if (propSlides && propSlides.length > 0) {
-      setSlides(propSlides);
-    } else if (queriedSlides && queriedSlides.length > 0) {
-      setSlides(queriedSlides);
-    }
-  }, [propSlides, queriedSlides]);
-
   const now = new Date();
-  const activeSlides = slides
+  const rawFiltered = (slides && slides.length > 0 ? slides : DEFAULT_HERO_SLIDES)
     .filter((s) => {
       const isActive = s.is_active !== undefined ? s.is_active : s.active !== false;
       if (!isActive) return false;
@@ -180,6 +214,8 @@ export function HeroBannerSlider({
       const orderB = b.display_order ?? b.displayOrder ?? 0;
       return orderA - orderB;
     });
+
+  const activeSlides = rawFiltered.length > 0 ? rawFiltered : DEFAULT_HERO_SLIDES;
 
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(true);
@@ -347,7 +383,11 @@ export function HeroBannerSlider({
   const description = currentSlide.description || 'Curated products and high-performance collections crafted for excellence.';
   const primaryCtaText = currentSlide.primary_button_text || currentSlide.primaryButtonText || 'Explore Catalog';
   const primaryCtaUrl = currentSlide.primary_button_url || currentSlide.primaryButtonUrl || 'store';
-  const heroImage = currentSlide.hero_image || currentSlide.hero_image_url || currentSlide.heroImage || '';
+  const secondaryCtaText = currentSlide.secondary_button_text || currentSlide.secondaryButtonText || '';
+  const secondaryCtaUrl = currentSlide.secondary_button_url || currentSlide.secondaryButtonUrl || '';
+  const rawHeroImage = currentSlide.hero_image || currentSlide.hero_image_url || currentSlide.heroImage || '';
+  const hasHeroImage = Boolean(rawHeroImage && typeof rawHeroImage === 'string' && rawHeroImage.trim().length > 0);
+  const heroImage = hasHeroImage ? rawHeroImage.trim() : '';
   
   const bgType = currentSlide.background_type || currentSlide.backgroundType || 'image';
   const bgColor = currentSlide.background_color || currentSlide.backgroundColor || '#141414';
@@ -394,7 +434,7 @@ export function HeroBannerSlider({
           )}
         </div>
 
-        {/* Hero Content Container - 2-Column Layout */}
+        {/* Hero Content Container - Clean Dynamic Layout */}
         <div className="relative z-10 w-full max-w-[1440px] mx-auto px-4 sm:px-8 lg:px-12 py-4 sm:py-6">
           <AnimatePresence mode="wait">
             <motion.div
@@ -403,27 +443,27 @@ export function HeroBannerSlider({
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: 10 }}
               transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
-              className="grid grid-cols-1 md:grid-cols-12 gap-6 sm:gap-8 items-center"
+              className={`grid grid-cols-1 ${hasHeroImage ? 'md:grid-cols-12 gap-6 sm:gap-8' : 'gap-4'} items-center`}
             >
-              {/* Left Column: Subtitle, Title, Description, and CTA Button */}
-              <div className="md:col-span-7 lg:col-span-7 flex flex-col justify-center items-start text-left space-y-2 sm:space-y-3">
+              {/* Left Column: Subtitle, Title, Description, and CTA Button(s) */}
+              <div className={`${hasHeroImage ? 'md:col-span-7 lg:col-span-7' : 'max-w-2xl lg:max-w-3xl'} flex flex-col justify-center items-start text-left space-y-2 sm:space-y-3`}>
                 {subtitle && (
                   <span className="text-xs sm:text-sm lg:text-base font-semibold text-[#fed700] uppercase tracking-wider font-sans">
                     {subtitle}
                   </span>
                 )}
                 
-                <h1 className="text-xl sm:text-2xl md:text-2xl lg:text-3xl font-black tracking-tight text-white leading-tight font-sans drop-shadow-md max-w-xl line-clamp-2">
+                <h1 className={`text-xl sm:text-2xl md:text-2xl ${hasHeroImage ? 'lg:text-3xl' : 'lg:text-4xl'} font-black tracking-tight text-white leading-tight font-sans drop-shadow-md max-w-xl ${!hasHeroImage ? 'lg:max-w-2xl' : ''} line-clamp-2`}>
                   {title}
                 </h1>
 
                 {description && (
-                  <p className="text-xs sm:text-sm lg:text-base font-normal text-gray-300 max-w-lg leading-relaxed">
+                  <p className={`text-xs sm:text-sm lg:text-base font-normal text-gray-300 ${hasHeroImage ? 'max-w-lg' : 'max-w-2xl'} leading-relaxed`}>
                     {description}
                   </p>
                 )}
 
-                <div className="pt-2 sm:pt-3">
+                <div className="pt-2 sm:pt-3 flex flex-wrap items-center gap-3">
                   <button
                     type="button"
                     onClick={() => handleCtaClick(primaryCtaUrl)}
@@ -431,12 +471,22 @@ export function HeroBannerSlider({
                   >
                     <span>{primaryCtaText}</span>
                   </button>
+
+                  {secondaryCtaText && (
+                    <button
+                      type="button"
+                      onClick={() => handleCtaClick(secondaryCtaUrl)}
+                      className="inline-flex items-center justify-center px-5 sm:px-7 py-2.5 sm:py-3 rounded-full text-xs sm:text-sm font-bold text-white bg-white/10 hover:bg-white/20 active:scale-95 border border-white/20 backdrop-blur-sm transition-all duration-200 cursor-pointer"
+                    >
+                      <span>{secondaryCtaText}</span>
+                    </button>
+                  )}
                 </div>
               </div>
 
-              {/* Right Column: High-Res Dual Screen Gaming Laptop / Product Visual */}
-              <div className="md:col-span-5 lg:col-span-5 flex items-center justify-center md:justify-end px-2">
-                {heroImage ? (
+              {/* Right Column: Side Product Visual (Only rendered when an image is provided) */}
+              {hasHeroImage && (
+                <div className="md:col-span-5 lg:col-span-5 flex items-center justify-center md:justify-end px-2">
                   <div className="relative w-full max-w-[380px] sm:max-w-[440px] lg:max-w-[480px] flex items-center justify-center md:justify-end">
                     <img
                       src={heroImage}
@@ -445,13 +495,8 @@ export function HeroBannerSlider({
                       className="w-full h-auto max-h-[190px] sm:max-h-[230px] lg:max-h-[260px] object-contain drop-shadow-[0_15px_30px_rgba(0,0,0,0.85)] transition-transform duration-500 hover:scale-105"
                     />
                   </div>
-                ) : (
-                  <div className="w-full max-w-xs h-44 border-2 border-dashed border-white/20 rounded-2xl flex flex-col items-center justify-center text-center p-4 bg-white/5">
-                    <Layers className="w-8 h-8 text-white/40 mb-2" />
-                    <span className="text-xs text-white/60">Upload slide image</span>
-                  </div>
-                )}
-              </div>
+                </div>
+              )}
             </motion.div>
           </AnimatePresence>
         </div>

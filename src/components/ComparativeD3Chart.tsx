@@ -99,17 +99,23 @@ export default function ComparativeD3Chart({
       let salesRevenue = 0;
       let unitsSold = 0;
 
-      orders.forEach((o) => {
-        if (o.status === 'completed' || o.status === 'processing') {
-          const oDateStr = o.date.split(' ')[0].split('T')[0];
+      (orders || []).forEach((o) => {
+        if (o && (o.status === 'completed' || o.status === 'processing')) {
+          const oDateStr = (o.date || '').split(' ')[0].split('T')[0];
           if (oDateStr === dateStr) {
+            const items = Array.isArray(o.items) ? o.items : [];
             if (selectedCategory) {
               let categoryMatch = false;
-              o.items.forEach((item) => {
+              items.forEach((item) => {
+                if (!item) return;
                 const prodCat = productCategoryMap.get(item.productId);
                 if (prodCat === selectedCategory) {
-                  salesRevenue += item.price * item.quantity;
-                  unitsSold += item.quantity;
+                  const p = typeof item.price === 'number' ? item.price : parseFloat(String(item.price || '0'));
+                  const q = typeof item.quantity === 'number' ? item.quantity : parseInt(String(item.quantity || '1'), 10);
+                  const safeP = isNaN(p) ? 0 : p;
+                  const safeQ = isNaN(q) ? 1 : q;
+                  salesRevenue += safeP * safeQ;
+                  unitsSold += safeQ;
                   categoryMatch = true;
                 }
               });
@@ -117,9 +123,13 @@ export default function ComparativeD3Chart({
                 orderCount++;
               }
             } else {
-              salesRevenue += o.total;
+              const parsedTotal = typeof o.total === 'number' ? o.total : parseFloat(String(o.total || '0'));
+              salesRevenue += isNaN(parsedTotal) ? 0 : parsedTotal;
               orderCount++;
-              unitsSold += o.items.reduce((s, itm) => s + itm.quantity, 0);
+              unitsSold += items.reduce((s, itm) => {
+                const q = typeof itm?.quantity === 'number' ? itm.quantity : parseInt(String(itm?.quantity || '0'), 10);
+                return s + (isNaN(q) ? 0 : q);
+              }, 0);
             }
           }
         }
@@ -129,9 +139,9 @@ export default function ComparativeD3Chart({
         dateObj: d,
         dateStr,
         label,
-        salesRevenue,
-        orderCount,
-        unitsSold
+        salesRevenue: isNaN(salesRevenue) ? 0 : salesRevenue,
+        orderCount: isNaN(orderCount) ? 0 : orderCount,
+        unitsSold: isNaN(unitsSold) ? 0 : unitsSold
       });
     }
 

@@ -67,13 +67,43 @@ export interface CategoryAuditLog {
   timestamp: string;
 }
 
+export interface OptionValueImage {
+  id: string;
+  url: string;
+  alt?: string;
+  position?: number;
+  isPrimary?: boolean;
+}
+
+export interface OptionValue {
+  id: string;
+  name: string;
+  hexColor?: string;
+  hexCode?: string;
+  hex_code?: string;
+  position?: number;
+  images?: OptionValueImage[];
+}
+
+export interface ProductOption {
+  id: string;
+  name: string; // e.g. "Color", "Size", "Material"
+  position: number;
+  values: OptionValue[];
+}
+
 export interface ProductVariant {
   id: string;
   sku: string;
   attributes: Record<string, string>; // e.g. { size: "42", color: "Black" }
   priceOverride?: number | null;
   price?: number | null;
+  compareAtPrice?: number | null;
+  compare_at_price?: number | null;
   stockQty: number;
+  stock?: number;
+  active?: boolean;
+  imageUrl?: string;
   imageIndex?: number;
 }
 
@@ -83,10 +113,14 @@ export interface Product {
   slug?: string;
   name: string;
   brand?: string;
+  countryOfOrigin?: string;
+  country_of_origin?: string;
   description: string;
   shortDescription?: string;
   detailedDescription?: string;
   price: number;
+  compareAtPrice?: number | null;
+  compare_at_price?: number | null;
   basePrice?: number;
   salePrice?: number | null;
   saleStartAt?: string;
@@ -112,8 +146,12 @@ export interface Product {
   lowStockThreshold?: number;
   trackInventory?: boolean;
   hasVariants?: boolean;
+  options?: ProductOption[];
+  colorImages?: Record<string, OptionValueImage[]>;
+  color_images?: Record<string, OptionValueImage[]>;
   variantAttributes?: string[]; // e.g. ['size', 'color']
   variantMatrix?: ProductVariant[];
+  variants?: ProductVariant[];
   variations?: { name: string; options: string[] }[];
   rating: number;
   reviewsCount: number;
@@ -142,7 +180,6 @@ export interface Product {
   // Category-Specific Fields: Food & Beverages
   ingredients?: string;
   manufacturer?: string;
-  countryOfOrigin?: string;
   allergyInfo?: string[];
   allergyTracesNotes?: string;
   nutritionalInfo?: string;
@@ -200,9 +237,14 @@ export interface BlogPost {
 }
 
 export interface OrderStatusHistoryEntry {
-  status: 'pending' | 'processing' | 'shipped' | 'delivered' | 'cancelled' | 'pending-cancellation';
+  status: 'pending' | 'processing' | 'shipped' | 'delivered' | 'completed' | 'cancelled' | 'pending-cancellation' | string;
   timestamp: string;
   note?: string;
+  changedBy?: string;
+  emailSent?: boolean;
+  deliveryPerson?: string;
+  deliveryNote?: string;
+  trackingNumber?: string;
 }
 
 export interface Order {
@@ -233,11 +275,20 @@ export interface Order {
   phone?: string;
   trackingNumber?: string;
   notes?: string;
-  status: 'pending' | 'processing' | 'completed' | 'cancelled' | 'pending-cancellation' | 'shipped';
+  status: 'pending' | 'awaiting_delivery_quote' | 'delivery_quoted' | 'processing' | 'completed' | 'cancelled' | 'pending-cancellation' | 'shipped' | 'delivered';
   date: string;
   couponCode?: string;
   customNote?: string;
   shippingAddress?: string;
+  areaEstate?: string;
+  landmark?: string;
+  preferredCourier?: 'uber' | 'bolt' | 'pickup_mtaani' | 'any' | string;
+  pickupMtaaniPoint?: string;
+  deliveryFeeStatus?: 'tbc' | 'quoted' | 'confirmed' | 'waived';
+  quotedCourier?: 'uber' | 'bolt' | 'pickup_mtaani' | 'fargo' | 'rider' | string;
+  quotedDeliveryFee?: number;
+  deliveryQuoteNotes?: string;
+  deliveryQuoteConfirmedAt?: string;
   fulfillmentType?: 'delivery' | 'pickup';
   pickupLocation?: string;
   pickupContactPhone?: string;
@@ -245,11 +296,19 @@ export interface Order {
   notesHistory?: { id: string; text: string; timestamp: string }[];
   statusHistory?: OrderStatusHistoryEntry[];
   isGuest?: boolean;
-  paymentMethod?: 'mpesa' | 'cod' | string;
-  paymentStatus?: 'unpaid' | 'paid' | 'pending' | 'refunded';
+  checkoutChannel?: 'whatsapp' | 'web' | 'pos' | string;
+  checkoutMode?: 'whatsapp' | 'standard' | string;
+  orderSource?: 'whatsapp' | 'website' | 'pos' | string;
+  paymentMethod?: 'mpesa' | 'cod' | 'card' | string;
+  paymentStatus?: 'unpaid' | 'paid' | 'pending' | 'pending_verification' | 'claimed' | 'partial' | 'refunded' | 'failed' | string;
   paymentReference?: string;
   mpesaPhone?: string;
+  isPaid?: boolean;
   paidAt?: string;
+  deliveryConfirmed?: boolean;
+  deliveredAt?: string;
+  deliveryPerson?: string;
+  deliveryNote?: string;
   review_request_sent_at?: string | null;
   review_request_status?: 'pending_delay' | 'sent' | 'opted_out' | 'already_reviewed' | 'cancelled';
 }
