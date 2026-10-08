@@ -4,6 +4,7 @@
  */
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import {
   ShoppingBag,
   LayoutDashboard,
@@ -155,6 +156,7 @@ export default function Header({
 
   const searchContainerRef = useRef<HTMLDivElement>(null);
   const userMenuRef = useRef<HTMLDivElement>(null);
+  const mobileUserModalRef = useRef<HTMLDivElement>(null);
   const locationMenuRef = useRef<HTMLDivElement>(null);
   const categoryDrawerRef = useRef<HTMLDivElement>(null);
   const categoryButtonRef = useRef<HTMLButtonElement>(null);
@@ -166,7 +168,11 @@ export default function Header({
       if (searchContainerRef.current && !searchContainerRef.current.contains(target)) {
         setIsSearchOpen(false);
       }
-      if (userMenuRef.current && !userMenuRef.current.contains(target)) {
+      if (
+        userMenuRef.current &&
+        !userMenuRef.current.contains(target) &&
+        (!mobileUserModalRef.current || !mobileUserModalRef.current.contains(target))
+      ) {
         setIsUserMenuOpen(false);
       }
       if (locationMenuRef.current && !locationMenuRef.current.contains(target)) {
@@ -529,21 +535,111 @@ export default function Header({
                 </div>
               </button>
 
+              {/* 1. Desktop Anchored Dropdown (lg: and above) */}
               {isUserMenuOpen && (
-                <>
-                  {/* Backdrop for mobile & tablet screens */}
+                <div className="hidden lg:block absolute right-0 top-full mt-2 w-64 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-2xl p-2 text-sm text-slate-700 dark:text-slate-200 z-50 animate-in fade-in slide-in-from-top-2 duration-150">
+                  <div className="p-2 border-b border-slate-100 dark:border-slate-800 mb-1">
+                    <div className="flex items-center gap-1.5">
+                      <p className="font-bold text-slate-900 dark:text-white text-sm truncate">
+                        {isAuthenticated && user ? (user.name || 'Valued Member') : 'Store Guest'}
+                      </p>
+                      {isAuthenticated && user?.role === 'admin' && (
+                        <span className="bg-indigo-100 dark:bg-indigo-950/80 text-indigo-700 dark:text-indigo-300 text-[9px] font-bold px-1.5 py-0.5 rounded border border-indigo-200 dark:border-indigo-800 uppercase tracking-wider shrink-0">
+                          Admin
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 truncate">
+                      {isAuthenticated && user ? user.email : 'Sign in to access your orders & wishlist'}
+                    </p>
+                  </div>
+
+                  <button
+                    onClick={() => {
+                      setCurrentTab('track');
+                      setIsUserMenuOpen(false);
+                    }}
+                    className="w-full text-left px-3 py-2 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 flex items-center gap-2 text-xs font-medium text-slate-700 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors cursor-pointer"
+                  >
+                    <Truck className="w-4 h-4 text-emerald-500 shrink-0" />
+                    <span>{t('trackOrders')}</span>
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      setCurrentTab('user');
+                      setIsUserMenuOpen(false);
+                    }}
+                    className="w-full text-left px-3 py-2 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 flex items-center gap-2 text-xs font-medium text-slate-700 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors cursor-pointer"
+                  >
+                    <User className="w-4 h-4 text-indigo-500 shrink-0" />
+                    <span>{isAuthenticated ? t('customerProfile') : 'Sign In / Register'}</span>
+                  </button>
+
+                  {isAuthenticated && user?.role === 'admin' && (
+                    <button
+                      onClick={() => {
+                        setCurrentTab('admin');
+                        setIsUserMenuOpen(false);
+                      }}
+                      className="w-full text-left px-3 py-2 rounded-lg hover:bg-indigo-50 dark:hover:bg-indigo-950/40 flex items-center gap-2 text-xs font-bold text-indigo-600 dark:text-indigo-400 transition-colors cursor-pointer"
+                    >
+                      <LayoutDashboard className="w-4 h-4 text-indigo-600 dark:text-indigo-400 shrink-0" />
+                      <span>Admin Dashboard</span>
+                    </button>
+                  )}
+
+                  {isAuthenticated && (
+                    <button
+                      onClick={() => {
+                        logout();
+                        setIsUserMenuOpen(false);
+                      }}
+                      className="w-full text-left px-3 py-2 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-950/30 flex items-center gap-2 text-xs font-medium text-rose-600 dark:text-rose-400 transition-colors cursor-pointer"
+                    >
+                      <LogOut className="w-4 h-4 text-rose-500 shrink-0" />
+                      <span>Sign Out</span>
+                    </button>
+                  )}
+
+                  {/* Font Scaling Options */}
+                  <div className="pt-2 mt-1 border-t border-slate-100 dark:border-slate-800">
+                    <div className="px-3 py-1 flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-400">
+                      <span className="flex items-center gap-1.5"><Type className="w-3.5 h-3.5" /> {t('textSize')}</span>
+                      <select
+                        value={fontSize}
+                        onChange={(e) => onChangeFontSize(e.target.value)}
+                        className="bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-slate-200 text-[10px] rounded-lg px-1.5 py-0.5 border border-slate-200 dark:border-slate-700 focus:outline-none cursor-pointer"
+                      >
+                        <option value="small">{t('small')}</option>
+                        <option value="normal">{t('normal')}</option>
+                        <option value="medium">{t('medium')}</option>
+                        <option value="large">{t('large')}</option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* 2. Mobile / Tablet Centered Modal (Guaranteed 100% Viewport Center via React Portal) */}
+              {isUserMenuOpen && typeof document !== 'undefined' && createPortal(
+                <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 lg:hidden animate-in fade-in duration-150">
+                  {/* Fullscreen Backdrop */}
                   <div
-                    className="fixed inset-0 z-40 bg-slate-950/40 backdrop-blur-xs lg:hidden"
+                    className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs transition-opacity"
                     onClick={() => setIsUserMenuOpen(false)}
                     aria-hidden="true"
                   />
 
-                  {/* Dropdown Container: Framed modal card on mobile/tablet, anchored dropdown on desktop */}
-                  <div className="fixed inset-x-3.5 top-20 sm:top-24 md:top-20 z-50 mx-auto max-w-sm w-[calc(100vw-1.75rem)] sm:w-80 lg:w-64 lg:absolute lg:inset-x-auto lg:right-0 lg:top-full lg:mt-2 lg:mx-0 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl lg:rounded-xl shadow-2xl p-3.5 sm:p-4 lg:p-2 text-sm text-slate-700 dark:text-slate-200 animate-in fade-in slide-in-from-top-2 duration-150">
-                    <div className="p-2.5 sm:p-3 lg:p-2 border-b border-slate-100 dark:border-slate-800 mb-2 lg:mb-1 flex items-center justify-between">
+                  {/* Centered Modal Box */}
+                  <div
+                    ref={mobileUserModalRef}
+                    className="relative z-10 w-full max-w-sm bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl p-4 text-sm text-slate-700 dark:text-slate-200 animate-in zoom-in-95 duration-150"
+                  >
+                    <div className="p-2 border-b border-slate-100 dark:border-slate-800 mb-3 flex items-center justify-between">
                       <div className="min-w-0 flex-1 pr-2">
                         <div className="flex items-center gap-1.5">
-                          <p className="font-bold text-slate-900 dark:text-white text-sm sm:text-base lg:text-sm truncate">
+                          <p className="font-bold text-slate-900 dark:text-white text-base truncate">
                             {isAuthenticated && user ? (user.name || 'Valued Member') : 'Store Guest'}
                           </p>
                           {isAuthenticated && user?.role === 'admin' && (
@@ -559,7 +655,7 @@ export default function Header({
                       <button
                         type="button"
                         onClick={() => setIsUserMenuOpen(false)}
-                        className="p-1 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 lg:hidden cursor-pointer"
+                        className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
                         aria-label="Close user menu"
                       >
                         <X className="w-4 h-4" />
@@ -571,7 +667,7 @@ export default function Header({
                         setCurrentTab('track');
                         setIsUserMenuOpen(false);
                       }}
-                      className="w-full text-left px-3 py-2.5 lg:py-2 rounded-xl lg:rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 flex items-center gap-2.5 lg:gap-2 text-xs font-medium text-slate-700 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors cursor-pointer"
+                      className="w-full text-left px-3 py-2.5 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800 flex items-center gap-2.5 text-xs font-medium text-slate-700 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors cursor-pointer"
                     >
                       <Truck className="w-4 h-4 text-emerald-500 shrink-0" />
                       <span>{t('trackOrders')}</span>
@@ -582,7 +678,7 @@ export default function Header({
                         setCurrentTab('user');
                         setIsUserMenuOpen(false);
                       }}
-                      className="w-full text-left px-3 py-2.5 lg:py-2 rounded-xl lg:rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 flex items-center gap-2.5 lg:gap-2 text-xs font-medium text-slate-700 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors cursor-pointer"
+                      className="w-full text-left px-3 py-2.5 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800 flex items-center gap-2.5 text-xs font-medium text-slate-700 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors cursor-pointer"
                     >
                       <User className="w-4 h-4 text-indigo-500 shrink-0" />
                       <span>{isAuthenticated ? t('customerProfile') : 'Sign In / Register'}</span>
@@ -594,7 +690,7 @@ export default function Header({
                           setCurrentTab('admin');
                           setIsUserMenuOpen(false);
                         }}
-                        className="w-full text-left px-3 py-2.5 lg:py-2 rounded-xl lg:rounded-lg hover:bg-indigo-50 dark:hover:bg-indigo-950/40 flex items-center gap-2.5 lg:gap-2 text-xs font-bold text-indigo-600 dark:text-indigo-400 transition-colors cursor-pointer"
+                        className="w-full text-left px-3 py-2.5 rounded-xl hover:bg-indigo-50 dark:hover:bg-indigo-950/40 flex items-center gap-2.5 text-xs font-bold text-indigo-600 dark:text-indigo-400 transition-colors cursor-pointer"
                       >
                         <LayoutDashboard className="w-4 h-4 text-indigo-600 dark:text-indigo-400 shrink-0" />
                         <span>Admin Dashboard</span>
@@ -607,7 +703,7 @@ export default function Header({
                           logout();
                           setIsUserMenuOpen(false);
                         }}
-                        className="w-full text-left px-3 py-2.5 lg:py-2 rounded-xl lg:rounded-lg hover:bg-rose-50 dark:hover:bg-rose-950/30 flex items-center gap-2.5 lg:gap-2 text-xs font-medium text-rose-600 dark:text-rose-400 transition-colors cursor-pointer"
+                        className="w-full text-left px-3 py-2.5 rounded-xl hover:bg-rose-50 dark:hover:bg-rose-950/30 flex items-center gap-2.5 text-xs font-medium text-rose-600 dark:text-rose-400 transition-colors cursor-pointer"
                       >
                         <LogOut className="w-4 h-4 text-rose-500 shrink-0" />
                         <span>Sign Out</span>
@@ -615,13 +711,13 @@ export default function Header({
                     )}
 
                     {/* Font Scaling Options */}
-                    <div className="pt-2.5 lg:pt-2 mt-1.5 lg:mt-1 border-t border-slate-100 dark:border-slate-800">
+                    <div className="pt-2.5 mt-2 border-t border-slate-100 dark:border-slate-800">
                       <div className="px-3 py-1 flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-400">
                         <span className="flex items-center gap-1.5"><Type className="w-3.5 h-3.5" /> {t('textSize')}</span>
                         <select
                           value={fontSize}
                           onChange={(e) => onChangeFontSize(e.target.value)}
-                          className="bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-slate-200 text-[11px] lg:text-[10px] rounded-lg px-2 py-1 lg:px-1.5 lg:py-0.5 border border-slate-200 dark:border-slate-700 focus:outline-none cursor-pointer"
+                          className="bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-slate-200 text-[11px] rounded-lg px-2 py-1 border border-slate-200 dark:border-slate-700 focus:outline-none cursor-pointer"
                         >
                           <option value="small">{t('small')}</option>
                           <option value="normal">{t('normal')}</option>
@@ -631,7 +727,8 @@ export default function Header({
                       </div>
                     </div>
                   </div>
-                </>
+                </div>,
+                document.body
               )}
             </div>
 
