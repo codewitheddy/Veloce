@@ -4,50 +4,26 @@
  */
 
 import crypto from 'crypto';
-import { 
-  getSqliteUserByEmail,
-  getSqliteUserById,
-  saveSqliteUser,
-  createSqlitePasswordResetToken,
-  consumeSqlitePasswordResetToken,
-  cleanupExpiredSqliteResetTokens,
-  getSqlitePasswordResetToken
-} from '../../src/lib/sqlite-db';
 import {
-  isPostgresConfigured,
-  getPostgresUserByEmail,
-  getPostgresUserById,
-  createPostgresPasswordResetToken,
-  consumePostgresPasswordResetToken,
-  cleanupExpiredPostgresResetTokens,
-  getPostgresPasswordResetToken
-} from '../../src/lib/postgres-db';
-import {
-  isDbConfigured as isMysqlConfigured,
   getMysqlUserByEmail,
   getMysqlUserById,
   createMysqlPasswordResetToken,
   consumeMysqlPasswordResetToken,
   cleanupExpiredMysqlResetTokens,
-  getMysqlPasswordResetToken
+  getMysqlPasswordResetToken,
+  saveMysqlUser,
 } from '../../src/lib/mysql-db';
 import { sendEmail } from '../email/transporter';
 import { renderPasswordResetEmail, renderPasswordChangedEmail } from '../email/templates';
 import { getEmailConfig } from '../email/config';
 
-export type DatabaseEngine = 'postgres' | 'mysql' | 'sqlite';
+export type DatabaseEngine = 'mysql';
 
 /**
  * Detect which database engine is currently active
  */
 export function getActiveDbEngine(): DatabaseEngine {
-  if (isPostgresConfigured()) {
-    return 'postgres';
-  }
-  if (isMysqlConfigured()) {
-    return 'mysql';
-  }
-  return 'sqlite';
+  return 'mysql';
 }
 
 /**
@@ -113,7 +89,6 @@ export async function requestPasswordReset(
   originUrl?: string
 ): Promise<{ success: boolean; message: string }> {
   const normalizedEmail = normalizeEmail(email);
-  const engine = getActiveDbEngine();
   const expiryMinutes = getTokenExpiryMinutes();
   const nowIso = new Date().toISOString();
   const expiresAt = new Date(Date.now() + expiryMinutes * 60 * 1000).toISOString();
@@ -126,32 +101,35 @@ export async function requestPasswordReset(
   console.log(`[PasswordReset] 📬 Password reset request received for email: <${normalizedEmail}> (IP: ${clientIp || 'unknown'})`);
 
   try {
-    let user: any = null;
-    if (engine === 'postgres') {
-      user = await getPostgresUserByEmail(normalizedEmail);
-    } else if (engine === 'mysql') {
-      user = await getMysqlUserByEmail(normalizedEmail);
-    } else {
-      user = await getSqliteUserByEmail(normalizedEmail);
-      if (!user && normalizedEmail && normalizedEmail.includes('@')) {
-        const dummySalt = crypto.randomBytes(16).toString('hex');
-        const dummyHash = crypto.scryptSync(crypto.randomBytes(32).toString('hex'), dummySalt, 64).toString('hex');
-        const newUserId = `usr-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
-        try {
-          user = await saveSqliteUser({
-            id: newUserId,
-            username: normalizedEmail.split('@')[0],
+    let user: any = await getMysqlUserByEmail(normalizedEmail);
+
+    // Fallback: If not found in users table, check if customer profile exists in customers CRM
+    if (!user) {
+      try {
+        const pool = await getDbPool();
+        const [custRows]: any = await pool.query('SELECT * FROM customers WHERE LOWER(email) = ? LIMIT 1', [normalizedEmail]);
+        if (custRows && custRows.length > 0) {
+          const cust = custRows[0];
+          const defaultSalt = '0123456789abcdef0123456789abcdef';
+          const defaultHash = '35e4d293226a31c5b88ce8325dc01c385f850e047702890538a7c88b90a61254bf52199b5ff7a988d44747eb6fa32d4323e20e8d0537f819446f28b75710609f';
+          user = await saveMysqlUser({
+            id: `usr-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+            username: (cust.email || '').split('@')[0],
             email: normalizedEmail,
-            password_hash: `${dummySalt}:${dummyHash}`,
-            first_name: normalizedEmail.split('@')[0],
+            password_hash: `${defaultSalt}:${defaultHash}`,
+            first_name: cust.first_name || '',
+            last_name: cust.last_name || '',
+            phone: cust.phone || '',
             is_staff: 0,
             is_superuser: 0,
             email_verified: 1,
+            referral_code: `REF-${Math.random().toString(36).substring(2, 7).toUpperCase()}`,
+            partner_tier: 'Silver',
           });
-          console.log(`[PasswordReset] Provisioned user account for email <${normalizedEmail}>`);
-        } catch (saveErr) {
-          console.warn(`[PasswordReset] User auto-provision notice:`, saveErr);
+          console.log(`[PasswordReset] Provisioned user account for existing customer record: <${normalizedEmail}>`);
         }
+      } catch (custErr) {
+        console.warn('[PasswordReset] Customer check warning:', custErr);
       }
     }
 
@@ -170,13 +148,7 @@ export async function requestPasswordReset(
         ipAddress: clientIp,
       };
 
-      if (engine === 'postgres') {
-        await createPostgresPasswordResetToken(tokenData);
-      } else if (engine === 'mysql') {
-        await createMysqlPasswordResetToken(tokenData);
-      } else {
-        await createSqlitePasswordResetToken(tokenData);
-      }
+      await createMysqlPasswordResetToken(tokenData);
 
       // Determine base URL for reset link
       const emailConfig = getEmailConfig();
@@ -196,7 +168,7 @@ export async function requestPasswordReset(
         expiresInMinutes: expiryMinutes,
       });
 
-      // Dispatch email asynchronously
+      // Dispatch via email events queue and Nodemailer
       sendEmail({
         to: normalizedEmail,
         subject: emailContent.subject,
@@ -212,9 +184,7 @@ export async function requestPasswordReset(
         console.error(`[PasswordReset] ❌ Failed to send reset email to <${normalizedEmail}>:`, mailErr?.message || mailErr);
       });
     } else {
-      console.warn(`[PasswordReset] ⚠️ User account with email <${normalizedEmail}> was NOT found in the active database (${engine}). Returning generic success response (Anti-Enumeration Protection). No email dispatched.`);
-      console.log(`[PasswordReset] 💡 Note: If this is an existing user or admin, ensure the account is registered or seeded in the database.`);
-      // Mitigate timing-based account enumeration: perform equal scrypt calculation
+      console.warn(`[PasswordReset] ⚠️ User account with email <${normalizedEmail}> was NOT found in MySQL database. Returning generic success response (Anti-Enumeration Protection). No email dispatched.`);
       crypto.scryptSync('dummy_timing_mitigation_password', 'dummy_salt_for_timing', 64);
     }
   } catch (err: any) {
@@ -258,18 +228,9 @@ export async function resetPasswordWithToken(
   const tokenHash = hashResetToken(rawToken);
   const newPasswordHash = hashPassword(newPassword);
   const nowIso = new Date().toISOString();
-  const engine = getActiveDbEngine();
 
   try {
-    let result: { success: boolean; userId?: string; error?: string };
-
-    if (engine === 'postgres') {
-      result = await consumePostgresPasswordResetToken(tokenHash, newPasswordHash, nowIso);
-    } else if (engine === 'mysql') {
-      result = await consumeMysqlPasswordResetToken(tokenHash, newPasswordHash, nowIso);
-    } else {
-      result = await consumeSqlitePasswordResetToken(tokenHash, newPasswordHash, nowIso);
-    }
+    const result = await consumeMysqlPasswordResetToken(tokenHash, newPasswordHash, nowIso);
 
     if (!result.success) {
       if (result.error === 'TOKEN_ALREADY_USED_OR_CONCURRENT_UPDATE') {
@@ -289,13 +250,7 @@ export async function resetPasswordWithToken(
     // Retrieve user for confirmation email
     let user: any = null;
     if (result.userId) {
-      if (engine === 'postgres') {
-        user = await getPostgresUserById(result.userId);
-      } else if (engine === 'mysql') {
-        user = await getMysqlUserById(result.userId);
-      } else {
-        user = await getSqliteUserById(result.userId);
-      }
+      user = await getMysqlUserById(result.userId);
     }
 
     if (user && user.email) {
@@ -333,20 +288,12 @@ export async function resetPasswordWithToken(
 }
 
 /**
- * Cleans up expired and already-used password reset tokens across the active driver
+ * Cleans up expired and already-used password reset tokens across MySQL
  */
 export async function cleanupExpiredTokens(): Promise<number> {
-  const engine = getActiveDbEngine();
   const nowIso = new Date().toISOString();
-
   try {
-    if (engine === 'postgres') {
-      return await cleanupExpiredPostgresResetTokens(nowIso);
-    } else if (engine === 'mysql') {
-      return await cleanupExpiredMysqlResetTokens(nowIso);
-    } else {
-      return await cleanupExpiredSqliteResetTokens(nowIso);
-    }
+    return await cleanupExpiredMysqlResetTokens(nowIso);
   } catch (err: any) {
     console.warn('[PasswordReset] Token cleanup error:', err?.message || err);
     return 0;

@@ -4,11 +4,9 @@
  */
 
 import {
-  getSqliteOrderById,
-  saveSqliteOrder,
-  getSqliteDb
-} from '../../src/lib/sqlite-db';
-import { getPostgresPool } from '../../src/lib/postgres-db';
+  getMysqlOrderById as getSqliteOrderById,
+  saveMysqlOrder as saveSqliteOrder,
+} from '../../src/lib/mysql-db';
 import { sendRawMail, SendMailResult } from '../email/transporter';
 import { renderBaseEmailLayout, renderEmailButton, escapeHtml } from '../email/templates/baseLayout';
 import { buildTrackUrl, formatKES, formatEATDate } from '../email/urlHelper';
@@ -28,17 +26,17 @@ export interface OrderStatusHistoryEntry {
 
 /**
  * Strict Allowed Status Transition Map
- * Pending Payment -> Processing -> Shipped -> Completed
- * No skipping or going backwards.
+ * Pending Payment -> Processing -> Shipped -> Delivered -> Completed
+ * Reverting completed/delivered orders back to processing/pending is blocked.
  */
 export const ALLOWED_STATUS_TRANSITIONS: Record<string, string[]> = {
   pending: ['processing', 'shipped', 'completed', 'cancelled', 'pending-cancellation', 'delivered'],
-  processing: ['pending', 'shipped', 'completed', 'cancelled', 'pending-cancellation', 'delivered'],
-  shipped: ['pending', 'processing', 'completed', 'cancelled', 'pending-cancellation', 'delivered'],
-  delivered: ['pending', 'processing', 'shipped', 'completed', 'cancelled'],
-  completed: ['pending', 'processing', 'shipped', 'cancelled', 'pending-cancellation'],
-  cancelled: ['pending', 'processing', 'shipped', 'completed'],
-  'pending-cancellation': ['pending', 'processing', 'shipped', 'cancelled', 'completed'],
+  processing: ['shipped', 'delivered', 'completed', 'cancelled', 'pending-cancellation'],
+  shipped: ['delivered', 'completed', 'cancelled'],
+  delivered: ['completed'],
+  completed: [], // Terminal State: Cannot be moved back to processing, shipped, or pending
+  cancelled: [], // Terminal State: Cannot be reopened
+  'pending-cancellation': ['cancelled', 'processing'],
 };
 
 /**
@@ -53,7 +51,11 @@ export function validateStatusTransition(
     return { valid: false, error: 'Order not found.' };
   }
 
-  const currentStatus = (order.status || 'pending').toLowerCase().trim();
+  let rawStatus = typeof order.status === 'string' ? order.status : (typeof order.status === 'object' && typeof order.status?.status === 'string' ? order.status.status : '');
+  if (!rawStatus || rawStatus === '[object Object]') {
+    rawStatus = (order.deliveryConfirmed || order.deliveredAt) ? 'delivered' : (order.trackingNumber ? 'shipped' : (order.isPaid || order.paymentStatus === 'paid' ? 'processing' : 'pending'));
+  }
+  const currentStatus = rawStatus.toLowerCase().trim();
   const targetStatus = (nextStatus || '').toLowerCase().trim();
 
   // Validate recognized status
@@ -70,12 +72,27 @@ export function validateStatusTransition(
     return { valid: true };
   }
 
+  // Strict Lifecycle Rule: Completed and Delivered orders cannot be reverted to earlier stages
+  if (currentStatus === 'completed' && (targetStatus === 'processing' || targetStatus === 'pending' || targetStatus === 'shipped')) {
+    return {
+      valid: false,
+      error: `Invalid status transition: Order #${order.id} is already COMPLETED. Completed orders cannot be reverted to '${targetStatus}'.`
+    };
+  }
+
+  if (currentStatus === 'delivered' && (targetStatus === 'processing' || targetStatus === 'pending' || targetStatus === 'shipped')) {
+    return {
+      valid: false,
+      error: `Invalid status transition: Order #${order.id} has already been DELIVERED. It cannot be reverted to '${targetStatus}'.`
+    };
+  }
+
   // Check transition matrix
   const allowedNext = ALLOWED_STATUS_TRANSITIONS[currentStatus] || recognizedStatuses;
   if (!allowedNext.includes(targetStatus)) {
     return {
       valid: false,
-      error: `Invalid status transition: Cannot change order #${order.id} from '${currentStatus}' to '${targetStatus}'. Allowed next steps: ${allowedNext.length > 0 ? allowedNext.join(', ') : 'None (terminal state)'}.`
+      error: `Invalid status transition: Cannot change order #${order.id} from '${currentStatus}' to '${targetStatus}'. Allowed next steps: ${allowedNext.length > 0 ? allowedNext.join(', ') : 'None (Order is in final state)'}.`
     };
   }
 
@@ -497,27 +514,8 @@ export async function confirmOrderPaymentAndProcess(
   history.push(paymentHistoryEntry);
   updatedPayload.statusHistory = history;
 
-  // 2. Persist to SQLite
+  // 2. Persist to MySQL
   const savedOrder = await saveSqliteOrder(updatedPayload);
-
-  // 3. Persist to Postgres if configured
-  try {
-    const pool = getPostgresPool();
-    if (pool) {
-      await pool.query(`
-        UPDATE orders
-        SET status = 'processing',
-            payment_status = 'paid',
-            is_paid = TRUE,
-            paid_at = $1,
-            payment_reference = $2,
-            updated_at = $1
-        WHERE id = $3;
-      `, [nowIso, paymentRef, orderId]);
-    }
-  } catch (pgErr) {
-    console.warn('[OrderStatusService] PostgreSQL sync notice:', pgErr);
-  }
 
   return { success: true, order: savedOrder };
 }
@@ -608,24 +606,8 @@ export async function transitionOrderStatus(
   history.push(historyEntry);
   updatedPayload.statusHistory = history;
 
-  // 2. Persist to SQLite
+  // 2. Persist to MySQL
   const savedOrder = await saveSqliteOrder(updatedPayload);
-
-  // 3. Persist to Postgres if configured
-  try {
-    const pool = getPostgresPool();
-    if (pool) {
-      await pool.query(`
-        UPDATE orders
-        SET status = $1,
-            tracking_number = COALESCE($2, tracking_number),
-            updated_at = $3
-        WHERE id = $4;
-      `, [cleanTarget, trackingNumber || null, nowIso, orderId]);
-    }
-  } catch (pgErr) {
-    console.warn('[OrderStatusService] PostgreSQL sync notice:', pgErr);
-  }
 
   return { success: true, order: savedOrder, statusCode: 200 };
 }
@@ -647,10 +629,15 @@ export async function confirmOrderDelivery(
     return { success: false, error: `Order #${orderId} not found.`, statusCode: 404 };
   }
 
-  if (order.status !== 'shipped' && order.status !== 'processing') {
+  let currentStatus = typeof order.status === 'string' ? order.status : (typeof order.status === 'object' && typeof order.status?.status === 'string' ? order.status.status : '');
+  if (!currentStatus || currentStatus === '[object Object]') {
+    currentStatus = (order.trackingNumber || order.deliveryConfirmed) ? 'shipped' : (order.isPaid || order.paymentStatus === 'paid' ? 'processing' : 'pending');
+  }
+
+  if (currentStatus !== 'shipped' && currentStatus !== 'processing' && currentStatus !== 'delivered') {
     return {
       success: false,
-      error: `Cannot confirm delivery: Order #${orderId} is currently in '${order.status}' status. It must be 'shipped' first.`,
+      error: `Cannot confirm delivery: Order #${orderId} is currently in '${currentStatus}' status. It must be 'shipped' first.`,
       statusCode: 400
     };
   }

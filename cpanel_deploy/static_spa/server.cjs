@@ -29,2564 +29,1832 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
 ));
 var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
 
-// src/lib/sqlite-db.ts
-function saveSqliteDb(db = dbInstance) {
-  if (!db) return;
-  try {
-    const data = db.export();
-    const buffer = Buffer.from(data);
-    import_fs.default.writeFileSync(DB_FILE_PATH, buffer);
-    try {
-      lastLoadedMtime = import_fs.default.statSync(DB_FILE_PATH).mtimeMs;
-    } catch (_) {
-    }
-  } catch (err) {
-    console.error("[SQLite] Failed to persist database to disk:", err);
+// src/lib/mysql-db.ts
+function getDbHost() {
+  let host = (process.env.DB_HOST || "127.0.0.1").trim();
+  if (host === "localhhost" || host === "localhost") {
+    host = "127.0.0.1";
   }
+  return host;
 }
-async function getSqliteDb(forceReload = false) {
-  const SQL = await (0, import_sql.default)();
-  if (dbInstance && !forceReload) {
-    if (import_fs.default.existsSync(DB_FILE_PATH)) {
+function getDbUser() {
+  return (process.env.DB_USER || "root").trim();
+}
+function getDbPassword() {
+  return process.env.DB_PASSWORD !== void 0 ? process.env.DB_PASSWORD : "";
+}
+function getDbName() {
+  return (process.env.DB_NAME || "ropenix").trim();
+}
+function getDbPort() {
+  return Number(process.env.DB_PORT) || 3306;
+}
+async function getDbPool2() {
+  if (dbPool) {
+    return dbPool;
+  }
+  const host = getDbHost();
+  const user = getDbUser();
+  const password = getDbPassword();
+  const database = getDbName();
+  const port = getDbPort();
+  try {
+    try {
+      const rootConn = await import_promise.default.createConnection({
+        host,
+        port,
+        user,
+        password,
+        connectTimeout: 4e3
+      });
+      await rootConn.query(`CREATE DATABASE IF NOT EXISTS \`${database}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;`);
+      await rootConn.end();
+    } catch (createDbErr) {
+      console.warn("[MySQL] Database existence check notice:", createDbErr.message || createDbErr);
+    }
+    dbPool = import_promise.default.createPool({
+      host,
+      port,
+      user,
+      password,
+      database,
+      waitForConnections: true,
+      connectionLimit: 15,
+      queueLimit: 0,
+      connectTimeout: 6e3,
+      enableKeepAlive: true,
+      keepAliveInitialDelay: 1e4
+    });
+    const testConn = await dbPool.getConnection();
+    console.log(`[MySQL] Successfully connected to MySQL database: ${database}@${host}:${port}`);
+    testConn.release();
+    if (!isInitialized && !isInitializing) {
+      await initializeDatabaseSchema();
+    }
+    return dbPool;
+  } catch (error) {
+    console.warn("[MySQL] Connection pool attempt failed:", error.message || error);
+    if (dbPool) {
       try {
-        const stat = import_fs.default.statSync(DB_FILE_PATH);
-        if (stat.mtimeMs > lastLoadedMtime + 100) {
-          const fileBuffer = import_fs.default.readFileSync(DB_FILE_PATH);
-          if (fileBuffer.length > 0) {
-            dbInstance = new SQL.Database(fileBuffer);
-            lastLoadedMtime = stat.mtimeMs;
-            console.log(`[SQLite] Hot-reloaded external changes from disk (${fileBuffer.length} bytes)`);
-            return dbInstance;
-          }
-        }
+        await dbPool.end();
       } catch (_) {
       }
     }
-    return dbInstance;
+    dbPool = null;
+    throw error;
   }
-  if (import_fs.default.existsSync(DB_FILE_PATH)) {
-    try {
-      const fileBuffer = import_fs.default.readFileSync(DB_FILE_PATH);
-      if (fileBuffer.length > 0) {
-        dbInstance = new SQL.Database(fileBuffer);
-        lastLoadedMtime = import_fs.default.statSync(DB_FILE_PATH).mtimeMs;
-        dbInstance.exec("PRAGMA quick_check;");
-        console.log(`[SQLite] Loaded existing database from ${DB_FILE_PATH} (${fileBuffer.length} bytes)`);
-        initializeSqliteSchema(dbInstance);
-        return dbInstance;
-      }
-    } catch (err) {
-      console.warn("[SQLite] Error reading existing SQLite file, creating fresh database:", err);
+}
+async function initializeDatabaseSchema() {
+  if (isInitialized) return;
+  isInitializing = true;
+  try {
+    const pool = dbPool || await getDbPool2();
+    console.log("[MySQL] Verifying and initializing database schema tables...");
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS users (
+        id VARCHAR(255) PRIMARY KEY,
+        email VARCHAR(255) NOT NULL UNIQUE,
+        username VARCHAR(255) NULL,
+        password_hash VARCHAR(255) NOT NULL,
+        first_name VARCHAR(255) NULL,
+        last_name VARCHAR(255) NULL,
+        phone VARCHAR(100) NULL,
+        role VARCHAR(50) DEFAULT 'customer',
+        is_staff TINYINT(1) DEFAULT 0,
+        is_superuser TINYINT(1) DEFAULT 0,
+        email_verified TINYINT(1) DEFAULT 1,
+        avatar_url LONGTEXT NULL,
+        referral_code VARCHAR(100) NULL,
+        partner_tier VARCHAR(50) DEFAULT 'Silver',
+        address TEXT NULL,
+        city VARCHAR(100) NULL,
+        country VARCHAR(100) NULL,
+        created_at VARCHAR(100) NOT NULL,
+        updated_at VARCHAR(100) NOT NULL
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    `);
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS products (
+        id VARCHAR(255) PRIMARY KEY,
+        sku VARCHAR(255) NULL,
+        slug VARCHAR(255) NULL,
+        name VARCHAR(255) NOT NULL,
+        brand VARCHAR(255) NULL,
+        country_of_origin VARCHAR(255) NULL,
+        description TEXT NULL,
+        shortDescription TEXT NULL,
+        detailedDescription LONGTEXT NULL,
+        price DECIMAL(15, 2) NOT NULL,
+        originalPrice DECIMAL(15, 2) NULL,
+        costPrice DECIMAL(15, 2) NULL,
+        previousPrice DECIMAL(15, 2) NULL,
+        category VARCHAR(255) NULL,
+        subcategory VARCHAR(255) NULL,
+        tags TEXT NULL,
+        type VARCHAR(50) NOT NULL,
+        imageUrl LONGTEXT NULL,
+        images LONGTEXT NULL,
+        stock INT DEFAULT 0,
+        lowStockThreshold INT DEFAULT 5,
+        rating DECIMAL(3, 2) DEFAULT 0,
+        reviewsCount INT DEFAULT 0,
+        variations LONGTEXT NULL,
+        reviews LONGTEXT NULL,
+        features LONGTEXT NULL,
+        specifications LONGTEXT NULL,
+        whatsInTheBox LONGTEXT NULL,
+        digitalFileUrl LONGTEXT NULL,
+        status VARCHAR(50) DEFAULT 'Active',
+        paymentRestriction VARCHAR(50) DEFAULT 'both',
+        backInStockAlert TINYINT(1) DEFAULT 0,
+        created_at VARCHAR(100) NULL,
+        updated_at VARCHAR(100) NULL
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    `);
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS orders (
+        id VARCHAR(255) PRIMARY KEY,
+        customerName VARCHAR(255) NOT NULL,
+        customerEmail VARCHAR(255) NOT NULL,
+        customerPhone VARCHAR(100) NULL,
+        items LONGTEXT NOT NULL,
+        total DECIMAL(15, 2) NOT NULL,
+        status VARCHAR(50) NOT NULL,
+        date VARCHAR(100) NOT NULL,
+        couponCode VARCHAR(255) NULL,
+        customNote TEXT NULL,
+        shippingAddress LONGTEXT NULL,
+        notesHistory LONGTEXT NULL,
+        statusHistory LONGTEXT NULL,
+        isGuest TINYINT(1) DEFAULT 0,
+        paymentMethod VARCHAR(50) DEFAULT 'cod',
+        checkoutChannel VARCHAR(50) DEFAULT 'web',
+        paymentStatus VARCHAR(50) DEFAULT 'pending',
+        paymentReference VARCHAR(255) NULL,
+        mpesaPhone VARCHAR(100) NULL,
+        isPaid TINYINT(1) DEFAULT 0,
+        paidAt VARCHAR(100) NULL,
+        mpesaReceiptNumber VARCHAR(100) NULL,
+        deliveryConfirmed TINYINT(1) DEFAULT 0,
+        deliveredAt VARCHAR(100) NULL,
+        deliveryPerson VARCHAR(255) NULL,
+        deliveryNote TEXT NULL,
+        trackingNumber VARCHAR(255) NULL,
+        deliveryFee DECIMAL(15, 2) DEFAULT 0,
+        tax DECIMAL(15, 2) DEFAULT 0,
+        discount DECIMAL(15, 2) DEFAULT 0,
+        created_at VARCHAR(100) NULL,
+        updated_at VARCHAR(100) NULL
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    `);
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS categories (
+        id VARCHAR(255) PRIMARY KEY,
+        name VARCHAR(255) NOT NULL,
+        slug VARCHAR(255) NULL,
+        description TEXT NULL,
+        image LONGTEXT NULL,
+        icon VARCHAR(100) NULL,
+        subcategories LONGTEXT NULL,
+        is_active TINYINT(1) DEFAULT 1,
+        display_order INT DEFAULT 0
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    `);
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS suppliers (
+        id VARCHAR(255) PRIMARY KEY,
+        name VARCHAR(255) NOT NULL,
+        email VARCHAR(255) NULL,
+        phone VARCHAR(100) NULL,
+        address TEXT NULL,
+        contactPerson VARCHAR(255) NULL,
+        category VARCHAR(255) NULL,
+        notes TEXT NULL,
+        productsCount INT DEFAULT 0,
+        totalSpend DECIMAL(15, 2) DEFAULT 0,
+        active TINYINT(1) DEFAULT 1,
+        rating DECIMAL(3, 2) DEFAULT 5.0,
+        currency VARCHAR(10) DEFAULT 'KSh',
+        paymentTerms VARCHAR(100) DEFAULT 'Net 30',
+        bankDetails LONGTEXT NULL,
+        kraPin VARCHAR(50) NULL,
+        dateJoined VARCHAR(100) NULL,
+        tags LONGTEXT NULL,
+        created_at VARCHAR(100) NULL,
+        updated_at VARCHAR(100) NULL
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    `);
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS supplier_products (
+        id VARCHAR(255) PRIMARY KEY,
+        supplierId VARCHAR(255) NOT NULL,
+        name VARCHAR(255) NOT NULL,
+        sku VARCHAR(255) NULL,
+        category VARCHAR(255) NULL,
+        costPrice DECIMAL(15, 2) NOT NULL,
+        sellingPrice DECIMAL(15, 2) NOT NULL,
+        stock INT DEFAULT 0,
+        minOrderQty INT DEFAULT 1,
+        leadTimeDays INT DEFAULT 7,
+        status VARCHAR(50) DEFAULT 'Active',
+        notes TEXT NULL,
+        created_at VARCHAR(100) NULL,
+        updated_at VARCHAR(100) NULL
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    `);
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS supplier_batches (
+        id VARCHAR(255) PRIMARY KEY,
+        supplierId VARCHAR(255) NOT NULL,
+        batchNumber VARCHAR(255) NOT NULL,
+        dateReceived VARCHAR(100) NOT NULL,
+        items LONGTEXT NOT NULL,
+        totalCost DECIMAL(15, 2) NOT NULL,
+        status VARCHAR(50) DEFAULT 'Received',
+        invoiceNumber VARCHAR(255) NULL,
+        notes TEXT NULL,
+        created_at VARCHAR(100) NULL
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    `);
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS supplier_payments (
+        id VARCHAR(255) PRIMARY KEY,
+        supplierId VARCHAR(255) NOT NULL,
+        amount DECIMAL(15, 2) NOT NULL,
+        date VARCHAR(100) NOT NULL,
+        paymentMethod VARCHAR(50) DEFAULT 'Bank Transfer',
+        referenceNumber VARCHAR(255) NULL,
+        status VARCHAR(50) DEFAULT 'Completed',
+        notes TEXT NULL,
+        invoiceId VARCHAR(255) NULL,
+        created_at VARCHAR(100) NULL
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    `);
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS supplier_ledger (
+        id VARCHAR(255) PRIMARY KEY,
+        supplierId VARCHAR(255) NOT NULL,
+        date VARCHAR(100) NOT NULL,
+        type VARCHAR(50) NOT NULL,
+        description TEXT NOT NULL,
+        amount DECIMAL(15, 2) NOT NULL,
+        balance DECIMAL(15, 2) NOT NULL,
+        referenceId VARCHAR(255) NULL,
+        created_at VARCHAR(100) NULL
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    `);
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS customers (
+        id VARCHAR(255) PRIMARY KEY,
+        user VARCHAR(255) NULL,
+        is_registered TINYINT(1) DEFAULT 0,
+        first_name VARCHAR(255) NULL,
+        last_name VARCHAR(255) NULL,
+        name VARCHAR(255) NOT NULL,
+        email VARCHAR(255) NOT NULL,
+        phone VARCHAR(100) NULL,
+        company VARCHAR(255) NULL,
+        location VARCHAR(255) NULL,
+        status VARCHAR(50) DEFAULT 'Active',
+        notes TEXT NULL,
+        open_deal_value DECIMAL(15, 2) DEFAULT 0,
+        created_at VARCHAR(100) NULL,
+        updated_at VARCHAR(100) NULL
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    `);
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS coupons (
+        id VARCHAR(255) PRIMARY KEY,
+        code VARCHAR(255) NOT NULL UNIQUE,
+        discountType VARCHAR(50) DEFAULT 'percentage',
+        discountValue DECIMAL(10, 2) NOT NULL,
+        minPurchase DECIMAL(15, 2) DEFAULT 0,
+        maxDiscount DECIMAL(15, 2) NULL,
+        validFrom VARCHAR(100) NULL,
+        validTo VARCHAR(100) NULL,
+        usageLimit INT DEFAULT 100,
+        usageCount INT DEFAULT 0,
+        isActive TINYINT(1) DEFAULT 1,
+        applicableCategories LONGTEXT NULL,
+        created_at VARCHAR(100) NULL
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    `);
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS reviews (
+        id VARCHAR(255) PRIMARY KEY,
+        productId VARCHAR(255) NOT NULL,
+        userName VARCHAR(255) NOT NULL,
+        userEmail VARCHAR(255) NULL,
+        rating INT NOT NULL,
+        comment TEXT NOT NULL,
+        verified TINYINT(1) DEFAULT 1,
+        status VARCHAR(50) DEFAULT 'approved',
+        helpfulCount INT DEFAULT 0,
+        date VARCHAR(100) NOT NULL,
+        reply TEXT NULL,
+        created_at VARCHAR(100) NULL
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    `);
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS site_settings (
+        id VARCHAR(50) PRIMARY KEY,
+        general LONGTEXT NULL,
+        appearance LONGTEXT NULL,
+        tax LONGTEXT NULL,
+        receipts LONGTEXT NULL,
+        backup LONGTEXT NULL,
+        payments LONGTEXT NULL,
+        notifications LONGTEXT NULL,
+        seo LONGTEXT NULL,
+        access_control LONGTEXT NULL,
+        updated_at VARCHAR(100) NULL
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    `);
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS hero_banners (
+        id VARCHAR(255) PRIMARY KEY,
+        title VARCHAR(255) NOT NULL,
+        subtitle TEXT NULL,
+        imageUrl LONGTEXT NOT NULL,
+        link VARCHAR(255) NULL,
+        ctaText VARCHAR(100) NULL,
+        badgeText VARCHAR(100) NULL,
+        active TINYINT(1) DEFAULT 1,
+        order_index INT DEFAULT 0
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    `);
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS custom_clothing_requests (
+        id VARCHAR(255) PRIMARY KEY,
+        reference_no VARCHAR(255) NOT NULL UNIQUE,
+        full_name VARCHAR(255) NOT NULL,
+        email VARCHAR(255) NOT NULL,
+        phone VARCHAR(100) NULL,
+        garment_type VARCHAR(255) NOT NULL,
+        other_garment_type VARCHAR(255) NULL,
+        material_samples LONGTEXT NULL,
+        design_images LONGTEXT NULL,
+        design_videos LONGTEXT NULL,
+        design_links LONGTEXT NULL,
+        measurements LONGTEXT NULL,
+        preferred_deadline VARCHAR(100) NULL,
+        budget_range VARCHAR(100) NULL,
+        additional_notes TEXT NULL,
+        delivery_location VARCHAR(255) NULL,
+        status VARCHAR(50) DEFAULT 'Pending Review',
+        created_at VARCHAR(100) NOT NULL,
+        updated_at VARCHAR(100) NOT NULL
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    `);
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS inventory_audit_logs (
+        id VARCHAR(255) PRIMARY KEY,
+        productId VARCHAR(255) NOT NULL,
+        productName VARCHAR(255) NOT NULL,
+        productSku VARCHAR(255) NULL,
+        timestamp VARCHAR(100) NOT NULL,
+        changeQuantity INT NOT NULL,
+        newStock INT NOT NULL,
+        reason VARCHAR(100) NOT NULL,
+        details TEXT NULL
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    `);
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS password_reset_tokens (
+        id VARCHAR(255) PRIMARY KEY,
+        user_id VARCHAR(255) NOT NULL,
+        token_hash VARCHAR(64) NOT NULL UNIQUE,
+        expires_at VARCHAR(100) NOT NULL,
+        used_at VARCHAR(100) NULL,
+        created_at VARCHAR(100) NOT NULL,
+        user_email VARCHAR(255) NULL,
+        ip_address VARCHAR(100) NULL,
+        INDEX idx_prt_user_id (user_id),
+        INDEX idx_prt_expires_at (expires_at),
+        INDEX idx_prt_token_hash (token_hash)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    `);
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS returns (
+        id VARCHAR(255) PRIMARY KEY,
+        orderId VARCHAR(255) NOT NULL,
+        customerEmail VARCHAR(255) NOT NULL,
+        customerName VARCHAR(255) NOT NULL,
+        items LONGTEXT NOT NULL,
+        reason VARCHAR(255) NOT NULL,
+        status VARCHAR(50) DEFAULT 'pending',
+        refundAmount DECIMAL(15, 2) NULL,
+        trackingNumber VARCHAR(255) NULL,
+        adminNote TEXT NULL,
+        createdAt VARCHAR(100) NOT NULL,
+        updatedAt VARCHAR(100) NOT NULL
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    `);
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS email_queue (
+        id VARCHAR(255) PRIMARY KEY,
+        to_email VARCHAR(255) NOT NULL,
+        subject VARCHAR(255) NOT NULL,
+        template_name VARCHAR(100) NOT NULL,
+        context LONGTEXT NOT NULL,
+        status VARCHAR(50) DEFAULT 'pending',
+        attempts INT DEFAULT 0,
+        max_attempts INT DEFAULT 3,
+        next_attempt_at VARCHAR(100) NOT NULL,
+        error_message TEXT NULL,
+        created_at VARCHAR(100) NOT NULL,
+        sent_at VARCHAR(100) NULL
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    `);
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS email_logs (
+        id VARCHAR(255) PRIMARY KEY,
+        recipient VARCHAR(255) NULL,
+        to_email VARCHAR(255) NULL,
+        email_type VARCHAR(100) NULL,
+        subject VARCHAR(255) NOT NULL,
+        template_name VARCHAR(100) NULL,
+        status VARCHAR(50) NOT NULL,
+        attempts INT DEFAULT 1,
+        error_message TEXT NULL,
+        related_order_id VARCHAR(255) NULL,
+        related_user_id VARCHAR(255) NULL,
+        dedupe_key VARCHAR(255) NULL UNIQUE,
+        sent_at VARCHAR(100) NULL,
+        created_at VARCHAR(100) NULL,
+        metadata LONGTEXT NULL,
+        INDEX idx_el_recipient (recipient),
+        INDEX idx_el_status (status)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    `);
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS email_subscribers (
+        id VARCHAR(255) PRIMARY KEY,
+        email VARCHAR(255) NOT NULL UNIQUE,
+        status VARCHAR(50) DEFAULT 'subscribed',
+        source VARCHAR(100) DEFAULT 'website_footer',
+        subscribed_at VARCHAR(100) NOT NULL,
+        unsubscribed_at VARCHAR(100) NULL,
+        token VARCHAR(100) NULL
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    `);
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS email_preferences (
+        id VARCHAR(255) PRIMARY KEY,
+        email VARCHAR(255) NOT NULL UNIQUE,
+        allow_marketing TINYINT(1) DEFAULT 1,
+        allow_review_requests TINYINT(1) DEFAULT 1,
+        allow_abandoned_cart TINYINT(1) DEFAULT 1,
+        allow_price_drop TINYINT(1) DEFAULT 1,
+        unsubscribed_all TINYINT(1) DEFAULT 0,
+        order_updates TINYINT(1) DEFAULT 1,
+        promotions TINYINT(1) DEFAULT 1,
+        newsletter TINYINT(1) DEFAULT 1,
+        security_alerts TINYINT(1) DEFAULT 1,
+        updated_at VARCHAR(100) NOT NULL
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    `);
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS cart_sessions (
+        id VARCHAR(255) PRIMARY KEY,
+        session_id VARCHAR(255) NOT NULL UNIQUE,
+        user_id VARCHAR(255) NULL,
+        items LONGTEXT NOT NULL,
+        updated_at VARCHAR(100) NOT NULL
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    `);
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS app_settings (
+        setting_key VARCHAR(255) PRIMARY KEY,
+        setting_value LONGTEXT NOT NULL
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    `);
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS email_jobs (
+        id VARCHAR(255) PRIMARY KEY,
+        email_type VARCHAR(100) NOT NULL,
+        recipient VARCHAR(255) NOT NULL,
+        subject VARCHAR(255) NOT NULL,
+        payload LONGTEXT NOT NULL,
+        status VARCHAR(50) DEFAULT 'queued',
+        attempts INT DEFAULT 0,
+        max_attempts INT DEFAULT 5,
+        next_attempt_at VARCHAR(100) NOT NULL,
+        error_message TEXT NULL,
+        dedupe_key VARCHAR(255) NULL UNIQUE,
+        created_at VARCHAR(100) NOT NULL,
+        updated_at VARCHAR(100) NOT NULL,
+        INDEX idx_ej_status (status),
+        INDEX idx_ej_next_attempt (next_attempt_at)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    `);
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS payment_submissions (
+        id VARCHAR(255) PRIMARY KEY,
+        order_id VARCHAR(255) NOT NULL,
+        mpesa_receipt_code VARCHAR(100) NOT NULL UNIQUE,
+        phone_number VARCHAR(100) NOT NULL,
+        amount_claimed DECIMAL(15, 2) NULL,
+        payment_method VARCHAR(50) DEFAULT 'mpesa_paybill',
+        status VARCHAR(50) DEFAULT 'pending_verification',
+        admin_notes TEXT NULL,
+        submitted_at VARCHAR(100) NOT NULL,
+        verified_at VARCHAR(100) NULL,
+        verified_by VARCHAR(255) NULL,
+        INDEX idx_ps_order (order_id),
+        INDEX idx_ps_status (status)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    `);
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS scheduled_task_logs (
+        id VARCHAR(255) PRIMARY KEY,
+        task_name VARCHAR(255) NOT NULL,
+        dedupe_key VARCHAR(255) NOT NULL UNIQUE,
+        executed_at VARCHAR(100) NOT NULL,
+        status VARCHAR(50) DEFAULT 'success',
+        details TEXT NULL,
+        INDEX idx_stl_dedupe (dedupe_key)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    `);
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS customer_orders (
+        id VARCHAR(255) PRIMARY KEY,
+        customer_id VARCHAR(255) NULL,
+        customer_name VARCHAR(255) NOT NULL,
+        customer_email VARCHAR(255) NULL,
+        customer_phone VARCHAR(100) NULL,
+        total DECIMAL(15, 2) NOT NULL,
+        status VARCHAR(50) DEFAULT 'pending',
+        payment_status VARCHAR(50) DEFAULT 'unpaid',
+        payment_reference VARCHAR(255) NULL,
+        payment_amount DECIMAL(15, 2) NULL,
+        payment_confirmed_at VARCHAR(100) NULL,
+        payment_confirmed_by VARCHAR(255) NULL,
+        payment_reminder_count INT DEFAULT 0,
+        last_payment_reminder_at VARCHAR(100) NULL,
+        items LONGTEXT NULL,
+        created_at VARCHAR(100) NULL,
+        placed_at VARCHAR(100) NULL,
+        updated_at VARCHAR(100) NULL
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    `);
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS pending_registrations (
+        id VARCHAR(255) PRIMARY KEY,
+        email VARCHAR(255) NOT NULL UNIQUE,
+        otp VARCHAR(50) NOT NULL,
+        user_data LONGTEXT NOT NULL,
+        attempts INT DEFAULT 0,
+        created_at VARCHAR(100) NOT NULL,
+        expires_at VARCHAR(100) NOT NULL
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    `);
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS user_wishlists (
+        user_id VARCHAR(255) PRIMARY KEY,
+        product_ids LONGTEXT NOT NULL,
+        updated_at VARCHAR(100) NOT NULL
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    `);
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS deals (
+        id VARCHAR(255) PRIMARY KEY,
+        customer_id VARCHAR(255) NOT NULL,
+        title VARCHAR(255) NOT NULL,
+        value DECIMAL(15, 2) NOT NULL,
+        stage VARCHAR(50) DEFAULT 'lead',
+        probability INT DEFAULT 50,
+        expected_close_date VARCHAR(100) NULL,
+        created_at VARCHAR(100) NULL,
+        updated_at VARCHAR(100) NULL
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    `);
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS invoices (
+        id VARCHAR(255) PRIMARY KEY,
+        customer_id VARCHAR(255) NOT NULL,
+        invoice_number VARCHAR(100) NOT NULL,
+        amount DECIMAL(15, 2) NOT NULL,
+        status VARCHAR(50) DEFAULT 'unpaid',
+        issue_date VARCHAR(100) NOT NULL,
+        due_date VARCHAR(100) NOT NULL,
+        items LONGTEXT NULL,
+        created_at VARCHAR(100) NULL,
+        updated_at VARCHAR(100) NULL
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    `);
+    const safeAddCol = async (table, col, def) => {
       try {
-        if (import_fs.default.existsSync(DB_FILE_PATH)) {
-          import_fs.default.unlinkSync(DB_FILE_PATH);
-          console.log("[SQLite] Cleaned up malformed database disk image from disk.");
-        }
-      } catch (unlinkErr) {
-        console.error("[SQLite] Failed to remove malformed file:", unlinkErr);
-      }
-    }
-  }
-  dbInstance = new SQL.Database();
-  initializeSqliteSchema(dbInstance);
-  saveSqliteDb(dbInstance);
-  console.log(`[SQLite] Initialized new SQLite database at ${DB_FILE_PATH}`);
-  return dbInstance;
-}
-function initializeSqliteSchema(db) {
-  try {
-    db.run("PRAGMA foreign_keys = ON;");
-  } catch (_) {
-  }
-  db.run(`
-    CREATE TABLE IF NOT EXISTS products (
-      id TEXT PRIMARY KEY,
-      sku TEXT,
-      name TEXT NOT NULL,
-      description TEXT,
-      price REAL NOT NULL,
-      category TEXT,
-      tags TEXT,
-      type TEXT NOT NULL,
-      imageUrl TEXT,
-      images TEXT,
-      stock INTEGER,
-      lowStockThreshold INTEGER,
-      variations TEXT,
-      rating REAL DEFAULT 0,
-      reviewsCount INTEGER DEFAULT 0,
-      reviews TEXT,
-      digitalFileUrl TEXT,
-      previousPrice REAL,
-      backInStockAlert INTEGER DEFAULT 0,
-      costPrice REAL,
-      taxId TEXT,
-      brand TEXT,
-      countryOfOrigin TEXT,
-      status TEXT DEFAULT 'Active',
-      paymentRestriction TEXT DEFAULT 'both',
-      shortDescription TEXT,
-      detailedDescription TEXT,
-      features TEXT,
-      specifications TEXT,
-      whatsInTheBox TEXT,
-      hasVariants INTEGER DEFAULT 0,
-      options TEXT,
-      colorImages TEXT,
-      variantMatrix TEXT,
-      variants TEXT
-    );
-
-    CREATE TABLE IF NOT EXISTS orders (
-      id TEXT PRIMARY KEY,
-      customerName TEXT NOT NULL,
-      customerEmail TEXT NOT NULL,
-      items TEXT NOT NULL,
-      total REAL NOT NULL,
-      status TEXT NOT NULL,
-      date TEXT NOT NULL,
-      couponCode TEXT,
-      customNote TEXT,
-      shippingAddress TEXT,
-      notesHistory TEXT,
-      statusHistory TEXT,
-      isGuest INTEGER DEFAULT 0,
-      paymentMethod TEXT DEFAULT 'cod',
-      checkoutChannel TEXT DEFAULT 'web',
-      review_request_sent_at TEXT,
-      review_request_status TEXT
-    );
-
-    CREATE TABLE IF NOT EXISTS reviews (
-      id TEXT PRIMARY KEY,
-      productId TEXT NOT NULL,
-      orderId TEXT,
-      userName TEXT NOT NULL,
-      userEmail TEXT,
-      rating INTEGER NOT NULL,
-      comment TEXT NOT NULL,
-      date TEXT NOT NULL,
-      verified INTEGER DEFAULT 1
-    );
-
-    CREATE TABLE IF NOT EXISTS campaigns (
-      id TEXT PRIMARY KEY,
-      name TEXT NOT NULL,
-      source TEXT NOT NULL,
-      clicks INTEGER DEFAULT 0,
-      conversions INTEGER DEFAULT 0,
-      earnings REAL DEFAULT 0,
-      status TEXT DEFAULT 'active'
-    );
-
-    CREATE TABLE IF NOT EXISTS click_logs (
-      id TEXT PRIMARY KEY,
-      timestamp TEXT NOT NULL,
-      targetId TEXT NOT NULL,
-      targetName TEXT NOT NULL,
-      targetType TEXT NOT NULL,
-      campaignName TEXT,
-      source TEXT NOT NULL,
-      converted INTEGER DEFAULT 0,
-      commission REAL DEFAULT 0
-    );
-
-    CREATE TABLE IF NOT EXISTS inventory_audit_logs (
-      id TEXT PRIMARY KEY,
-      productId TEXT NOT NULL,
-      productName TEXT NOT NULL,
-      productSku TEXT NOT NULL,
-      timestamp TEXT NOT NULL,
-      changeQuantity INTEGER NOT NULL,
-      newStock INTEGER NOT NULL,
-      reason TEXT NOT NULL,
-      details TEXT
-    );
-
-    CREATE TABLE IF NOT EXISTS app_settings (
-      setting_key TEXT PRIMARY KEY,
-      setting_value TEXT
-    );
-
-    CREATE TABLE IF NOT EXISTS unsubscribed_emails (
-      email TEXT PRIMARY KEY,
-      reason TEXT,
-      created_at TEXT
-    );
-
-    CREATE TABLE IF NOT EXISTS categories (
-      id TEXT PRIMARY KEY,
-      name TEXT NOT NULL,
-      slug TEXT NOT NULL,
-      parentId TEXT,
-      description TEXT,
-      imageUrl TEXT,
-      status TEXT DEFAULT 'Active',
-      displayOrder INTEGER DEFAULT 0,
-      previousSlugs TEXT,
-      createdAt TEXT,
-      updatedAt TEXT
-    );
-
-    CREATE TABLE IF NOT EXISTS review_opt_outs (
-      email TEXT PRIMARY KEY,
-      opt_out INTEGER DEFAULT 1,
-      updated_at TEXT
-    );
-
-    CREATE TABLE IF NOT EXISTS hero_banners (
-      id TEXT PRIMARY KEY,
-      title TEXT NOT NULL,
-      subtitle TEXT,
-      description TEXT,
-      badge_text TEXT,
-      primary_button_text TEXT,
-      primary_button_url TEXT,
-      secondary_button_text TEXT,
-      secondary_button_url TEXT,
-      hero_image_url TEXT,
-      background_type TEXT DEFAULT 'color',
-      background_color TEXT DEFAULT '#0f172a',
-      background_image_url TEXT,
-      background_position TEXT DEFAULT 'center',
-      overlay_enabled INTEGER DEFAULT 1,
-      overlay_color TEXT DEFAULT '#000000',
-      overlay_opacity REAL DEFAULT 0.5,
-      text_color TEXT DEFAULT '#ffffff',
-      is_active INTEGER DEFAULT 1,
-      display_order INTEGER DEFAULT 1,
-      start_date TEXT,
-      end_date TEXT,
-      created_at TEXT,
-      updated_at TEXT
-    );
-
-    CREATE TABLE IF NOT EXISTS customers (
-      id TEXT PRIMARY KEY,
-      user INTEGER,
-      is_registered INTEGER DEFAULT 0,
-      first_name TEXT DEFAULT '',
-      last_name TEXT DEFAULT '',
-      name TEXT NOT NULL,
-      email TEXT NOT NULL,
-      phone TEXT DEFAULT '',
-      company TEXT DEFAULT '',
-      location TEXT DEFAULT '',
-      orders_count INTEGER DEFAULT 0,
-      total_spent REAL DEFAULT 0,
-      status TEXT DEFAULT 'active',
-      notes TEXT DEFAULT '',
-      open_deal_value REAL DEFAULT 0,
-      created_at TEXT,
-      updated_at TEXT
-    );
-
-    CREATE TABLE IF NOT EXISTS deals (
-      id TEXT PRIMARY KEY,
-      customer TEXT NOT NULL,
-      customer_name TEXT,
-      title TEXT NOT NULL,
-      value REAL DEFAULT 0,
-      stage TEXT DEFAULT 'prospecting',
-      expected_close TEXT,
-      created_at TEXT
-    );
-
-    CREATE TABLE IF NOT EXISTS invoices (
-      id TEXT PRIMARY KEY,
-      customer TEXT NOT NULL,
-      customer_name TEXT,
-      order_id TEXT,
-      order_reference TEXT,
-      amount REAL DEFAULT 0,
-      status TEXT DEFAULT 'draft',
-      due_date TEXT,
-      issued_at TEXT
-    );
-
-    CREATE TABLE IF NOT EXISTS customer_orders (
-      id TEXT PRIMARY KEY,
-      reference TEXT,
-      customer TEXT NOT NULL,
-      customer_name TEXT,
-      customer_email TEXT,
-      total REAL DEFAULT 0,
-      status TEXT DEFAULT 'pending',
-      placed_at TEXT
-    );
-
-    CREATE TABLE IF NOT EXISTS suppliers (
-      id TEXT PRIMARY KEY,
-      code TEXT UNIQUE NOT NULL,
-      name TEXT NOT NULL,
-      company_name TEXT DEFAULT '',
-      email TEXT DEFAULT '',
-      phone TEXT DEFAULT '',
-      physical_address TEXT DEFAULT '',
-      tax_pin TEXT DEFAULT '',
-      payment_terms TEXT DEFAULT 'Consignment Sale',
-      bank_name TEXT DEFAULT '',
-      bank_account_number TEXT DEFAULT '',
-      mpesa_number TEXT DEFAULT '',
-      mpesa_account_name TEXT DEFAULT '',
-      status TEXT DEFAULT 'Active',
-      notes TEXT DEFAULT '',
-      created_at TEXT,
-      updated_at TEXT
-    );
-
-    CREATE TABLE IF NOT EXISTS supplier_products (
-      id TEXT PRIMARY KEY,
-      supplier TEXT NOT NULL,
-      product TEXT NOT NULL,
-      product_name TEXT NOT NULL,
-      product_sku TEXT DEFAULT '',
-      product_image_url TEXT DEFAULT '',
-      product_category TEXT DEFAULT '',
-      product_stock INTEGER DEFAULT 0,
-      supplier_sku TEXT DEFAULT '',
-      agreed_cost_price REAL DEFAULT 0,
-      selling_price REAL DEFAULT 0,
-      quantity_received INTEGER DEFAULT 0,
-      quantity_sold INTEGER DEFAULT 0,
-      remaining_stock INTEGER DEFAULT 0,
-      lead_time_days INTEGER DEFAULT 3,
-      is_primary_supplier INTEGER DEFAULT 1,
-      created_at TEXT,
-      updated_at TEXT
-    );
-
-    CREATE TABLE IF NOT EXISTS supplier_intakes (
-      id TEXT PRIMARY KEY,
-      batch_number TEXT NOT NULL,
-      supplier TEXT NOT NULL,
-      supplier_name TEXT DEFAULT '',
-      supplier_company TEXT DEFAULT '',
-      product TEXT,
-      product_name TEXT NOT NULL,
-      product_sku TEXT DEFAULT '',
-      quantity_received INTEGER NOT NULL,
-      unit_cost REAL NOT NULL,
-      total_cost REAL NOT NULL,
-      received_date TEXT NOT NULL,
-      delivery_note_ref TEXT DEFAULT '',
-      invoice_ref TEXT DEFAULT '',
-      status TEXT DEFAULT 'Received',
-      notes TEXT DEFAULT '',
-      received_by TEXT DEFAULT 'Inventory Manager',
-      created_at TEXT
-    );
-
-    CREATE TABLE IF NOT EXISTS supplier_payments (
-      id TEXT PRIMARY KEY,
-      payment_reference TEXT NOT NULL,
-      supplier TEXT NOT NULL,
-      supplier_name TEXT DEFAULT '',
-      supplier_company TEXT DEFAULT '',
-      payment_date TEXT NOT NULL,
-      amount REAL NOT NULL,
-      payment_method TEXT NOT NULL,
-      transaction_code TEXT DEFAULT '',
-      settlement_period_start TEXT,
-      settlement_period_end TEXT,
-      allocated_batches_or_orders TEXT DEFAULT '[]',
-      status TEXT DEFAULT 'Completed',
-      receipt_attachment_url TEXT DEFAULT '',
-      notes TEXT DEFAULT '',
-      processed_by TEXT DEFAULT 'Finance Controller',
-      created_at TEXT
-    );
-
-    CREATE TABLE IF NOT EXISTS supplier_ledger (
-      id TEXT PRIMARY KEY,
-      supplier TEXT NOT NULL,
-      supplier_name TEXT DEFAULT '',
-      entry_type TEXT NOT NULL,
-      reference_id TEXT DEFAULT '',
-      description TEXT DEFAULT '',
-      debit_amount REAL DEFAULT 0,
-      credit_amount REAL DEFAULT 0,
-      running_balance REAL DEFAULT 0,
-      created_at TEXT
-    );
-
-    CREATE TABLE IF NOT EXISTS email_logs (
-      id TEXT PRIMARY KEY,
-      recipient TEXT NOT NULL,
-      email_type TEXT NOT NULL,
-      subject TEXT NOT NULL,
-      status TEXT NOT NULL,
-      attempts INTEGER DEFAULT 1,
-      error_message TEXT,
-      related_order_id TEXT,
-      related_user_id TEXT,
-      dedupe_key TEXT UNIQUE,
-      metadata TEXT,
-      created_at TEXT NOT NULL,
-      sent_at TEXT
-    );
-
-    CREATE TABLE IF NOT EXISTS email_jobs (
-      id TEXT PRIMARY KEY,
-      email_type TEXT NOT NULL,
-      recipient TEXT NOT NULL,
-      subject TEXT NOT NULL,
-      payload TEXT NOT NULL,
-      status TEXT NOT NULL DEFAULT 'queued',
-      attempts INTEGER DEFAULT 0,
-      max_attempts INTEGER DEFAULT 5,
-      next_attempt_at TEXT NOT NULL,
-      error_message TEXT,
-      dedupe_key TEXT UNIQUE,
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL
-    );
-
-    CREATE TABLE IF NOT EXISTS payment_submissions (
-      id TEXT PRIMARY KEY,
-      order_id TEXT NOT NULL,
-      mpesa_receipt_code TEXT UNIQUE NOT NULL,
-      phone_number TEXT NOT NULL,
-      amount_claimed REAL,
-      payment_method TEXT DEFAULT 'mpesa_paybill',
-      status TEXT DEFAULT 'pending_verification',
-      admin_notes TEXT,
-      submitted_at TEXT NOT NULL,
-      verified_at TEXT,
-      verified_by TEXT
-    );
-
-    CREATE TABLE IF NOT EXISTS password_reset_tokens (
-      id TEXT PRIMARY KEY,
-      user_id TEXT NOT NULL,
-      token_hash VARCHAR(64) NOT NULL UNIQUE,
-      expires_at TEXT NOT NULL,
-      used_at TEXT,
-      created_at TEXT NOT NULL,
-      user_email TEXT,
-      ip_address TEXT,
-      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-    );
-    CREATE INDEX IF NOT EXISTS idx_pwd_reset_user_id ON password_reset_tokens(user_id);
-    CREATE INDEX IF NOT EXISTS idx_pwd_reset_expires_at ON password_reset_tokens(expires_at);
-    CREATE INDEX IF NOT EXISTS idx_pwd_reset_token_hash ON password_reset_tokens(token_hash);
-
-    CREATE TABLE IF NOT EXISTS user_verifications (
-      id TEXT PRIMARY KEY,
-      email TEXT NOT NULL,
-      token_hash TEXT NOT NULL,
-      expires_at TEXT NOT NULL,
-      verified_at TEXT,
-      created_at TEXT NOT NULL
-    );
-
-    CREATE TABLE IF NOT EXISTS email_preferences (
-      id TEXT PRIMARY KEY,
-      email TEXT UNIQUE NOT NULL,
-      allow_marketing INTEGER DEFAULT 1,
-      allow_review_requests INTEGER DEFAULT 1,
-      allow_abandoned_cart INTEGER DEFAULT 1,
-      allow_price_drop INTEGER DEFAULT 1,
-      unsubscribed_all INTEGER DEFAULT 0,
-      updated_at TEXT NOT NULL
-    );
-
-    CREATE TABLE IF NOT EXISTS scheduled_task_logs (
-      id TEXT PRIMARY KEY,
-      task_name TEXT NOT NULL,
-      dedupe_key TEXT UNIQUE NOT NULL,
-      executed_at TEXT NOT NULL,
-      status TEXT NOT NULL,
-      details TEXT
-    );
-
-    CREATE TABLE IF NOT EXISTS users (
-      id TEXT PRIMARY KEY,
-      username TEXT NOT NULL,
-      email TEXT NOT NULL,
-      password_hash TEXT NOT NULL,
-      first_name TEXT DEFAULT '',
-      last_name TEXT DEFAULT '',
-      phone TEXT DEFAULT '',
-      is_staff INTEGER DEFAULT 0,
-      is_superuser INTEGER DEFAULT 0,
-      email_verified INTEGER DEFAULT 1,
-      avatar_url TEXT DEFAULT '',
-      referral_code TEXT,
-      partner_tier TEXT DEFAULT 'Silver',
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL
-    );
-
-    CREATE TABLE IF NOT EXISTS pending_registrations (
-      id TEXT PRIMARY KEY,
-      email TEXT NOT NULL,
-      username TEXT NOT NULL,
-      first_name TEXT DEFAULT '',
-      last_name TEXT DEFAULT '',
-      password_hash TEXT NOT NULL,
-      phone TEXT DEFAULT '',
-      otp_hash TEXT NOT NULL,
-      otp_expires_at TEXT NOT NULL,
-      attempts INTEGER DEFAULT 0,
-      max_attempts INTEGER DEFAULT 5,
-      last_sent_at TEXT NOT NULL,
-      resend_count INTEGER DEFAULT 0,
-      resend_window_start TEXT NOT NULL,
-      created_at TEXT NOT NULL,
-      ip_address TEXT
-    );
-
-    CREATE TABLE IF NOT EXISTS audit_flagged_duplicate_accounts (
-      id TEXT PRIMARY KEY,
-      source_table TEXT NOT NULL,
-      record_id TEXT NOT NULL,
-      original_email TEXT NOT NULL,
-      normalized_email TEXT NOT NULL,
-      flagged_at TEXT NOT NULL,
-      resolution_status TEXT DEFAULT 'pending_review',
-      admin_notes TEXT
-    );
-
-    CREATE TABLE IF NOT EXISTS password_resets (
-      id TEXT PRIMARY KEY,
-      email TEXT NOT NULL,
-      token_hash TEXT NOT NULL,
-      expires_at TEXT NOT NULL,
-      used INTEGER DEFAULT 0,
-      attempts INTEGER DEFAULT 0,
-      created_at TEXT NOT NULL,
-      ip_address TEXT
-    );
-
-    CREATE TABLE IF NOT EXISTS carts (
-      id TEXT PRIMARY KEY,
-      user_id TEXT UNIQUE,
-      session_id TEXT,
-      items TEXT NOT NULL,
-      updated_at TEXT NOT NULL
-    );
-
-    CREATE TABLE IF NOT EXISTS wishlists (
-      id TEXT PRIMARY KEY,
-      user_id TEXT,
-      product_id TEXT NOT NULL,
-      created_at TEXT NOT NULL
-    );
-
-    CREATE TABLE IF NOT EXISTS custom_clothing_requests (
-      id TEXT PRIMARY KEY,
-      reference_no TEXT UNIQUE NOT NULL,
-      full_name TEXT NOT NULL,
-      email TEXT NOT NULL,
-      phone TEXT,
-      garment_type TEXT NOT NULL,
-      other_garment_type TEXT,
-      material_samples TEXT,
-      design_images TEXT,
-      design_videos TEXT,
-      design_links TEXT,
-      measurements TEXT,
-      preferred_deadline TEXT,
-      budget_range TEXT,
-      additional_notes TEXT,
-      delivery_location TEXT,
-      status TEXT DEFAULT 'Pending Review',
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL
-    );
-
-    CREATE TABLE IF NOT EXISTS review_request_logs (
-      id TEXT PRIMARY KEY,
-      order_id TEXT,
-      customer_email TEXT NOT NULL,
-      customer_name TEXT NOT NULL,
-      sent_at TEXT NOT NULL,
-      status TEXT DEFAULT 'sent',
-      product_id TEXT,
-      created_at TEXT NOT NULL
-    );
-
-    CREATE TABLE IF NOT EXISTS review_request_settings (
-      setting_key TEXT PRIMARY KEY,
-      setting_value TEXT NOT NULL
-    );
-  `);
-  try {
-    db.run("CREATE INDEX IF NOT EXISTS idx_password_resets_email ON password_resets(email);");
-  } catch {
-  }
-  try {
-    db.run("ALTER TABLE password_reset_tokens ADD COLUMN user_id TEXT;");
-  } catch {
-  }
-  try {
-    db.run("CREATE INDEX IF NOT EXISTS idx_pwd_reset_user_id ON password_reset_tokens(user_id);");
-  } catch {
-  }
-  try {
-    db.run("CREATE INDEX IF NOT EXISTS idx_pwd_reset_expires_at ON password_reset_tokens(expires_at);");
-  } catch {
-  }
-  try {
-    db.run("CREATE INDEX IF NOT EXISTS idx_pwd_reset_token_hash ON password_reset_tokens(token_hash);");
-  } catch {
-  }
-  try {
-    db.run("ALTER TABLE orders ADD COLUMN isPaid INTEGER DEFAULT 0;");
-  } catch {
-  }
-  try {
-    db.run("ALTER TABLE orders ADD COLUMN paidAt TEXT;");
-  } catch {
-  }
-  try {
-    db.run("ALTER TABLE orders ADD COLUMN deliveryConfirmed INTEGER DEFAULT 0;");
-  } catch {
-  }
-  try {
-    db.run("ALTER TABLE orders ADD COLUMN deliveredAt TEXT;");
-  } catch {
-  }
-  try {
-    db.run("ALTER TABLE orders ADD COLUMN deliveryPerson TEXT;");
-  } catch {
-  }
-  try {
-    db.run("ALTER TABLE orders ADD COLUMN deliveryNote TEXT;");
-  } catch {
-  }
-  try {
-    const dupRes = db.exec(`
-      SELECT LOWER(TRIM(email)) as norm_email, COUNT(*) as cnt 
-      FROM users 
-      WHERE email IS NOT NULL AND email != '' 
-      GROUP BY LOWER(TRIM(email)) 
-      HAVING cnt > 1;
-    `);
-    if (dupRes.length > 0 && dupRes[0].values.length > 0) {
-      for (const row of dupRes[0].values) {
-        const normEmail = String(row[0]);
-        console.warn(`[Migration Audit] Found duplicate email "${normEmail}" in users table.`);
-        const safeQuery = `SELECT id, email, created_at FROM users WHERE LOWER(TRIM(email)) = '${normEmail.replace(/'/g, "''")}';`;
-        const recRes = db.exec(safeQuery);
-        if (recRes.length > 0 && recRes[0].values.length > 1) {
-          const rows = recRes[0].values;
-          for (let i = 1; i < rows.length; i++) {
-            const dupId = String(rows[i][0]);
-            const origEmail = String(rows[i][1]);
-            const flaggedEmail = `${normEmail}+duplicate_flagged_${dupId}`;
-            db.run(`
-              INSERT OR IGNORE INTO audit_flagged_duplicate_accounts (
-                id, source_table, record_id, original_email, normalized_email, flagged_at, resolution_status, admin_notes
-              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?);
-            `, [
-              `audit-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
-              "users",
-              dupId,
-              origEmail,
-              normEmail,
-              (/* @__PURE__ */ new Date()).toISOString(),
-              "pending_review",
-              `Duplicate email detected during unique constraint migration. Renamed to ${flaggedEmail} to preserve data integrity.`
-            ]);
-            db.run(`UPDATE users SET email = ?, updated_at = ? WHERE id = ?;`, [
-              flaggedEmail,
-              (/* @__PURE__ */ new Date()).toISOString(),
-              dupId
-            ]);
-            console.info(`[Migration Audit] Flagged duplicate user ID ${dupId} (${origEmail} -> ${flaggedEmail}) for review.`);
-          }
+        await pool.query(`ALTER TABLE \`${table}\` ADD COLUMN \`${col}\` ${def};`);
+      } catch (err) {
+        if (err.errno !== 1060 && !err.message?.includes("Duplicate column")) {
         }
       }
-    }
-  } catch (auditErr) {
-    console.warn("[Migration Audit Warning]:", auditErr);
+    };
+    await safeAddCol("orders", "paymentReference", "VARCHAR(255) NULL");
+    await safeAddCol("orders", "mpesaPhone", "VARCHAR(100) NULL");
+    await safeAddCol("customer_orders", "payment_reference", "VARCHAR(255) NULL");
+    await safeAddCol("customer_orders", "payment_status", "VARCHAR(50) DEFAULT 'unpaid'");
+    await safeAddCol("customer_orders", "payment_amount", "DECIMAL(15, 2) NULL");
+    await safeAddCol("customer_orders", "payment_confirmed_at", "VARCHAR(100) NULL");
+    await safeAddCol("customer_orders", "payment_confirmed_by", "VARCHAR(255) NULL");
+    await safeAddCol("payment_submissions", "amount_claimed", "DECIMAL(15, 2) NULL");
+    await safeAddCol("payment_submissions", "payment_method", "VARCHAR(50) DEFAULT 'mpesa_paybill'");
+    await safeAddCol("payment_submissions", "admin_notes", "TEXT NULL");
+    isInitialized = true;
+    console.log("[MySQL] All core database tables verified and active in MySQL.");
+  } catch (error) {
+    console.error("[MySQL] Database table initialization failed:", error);
+    throw error;
+  } finally {
+    isInitializing = false;
   }
-  try {
-    db.run("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email_unique ON users(email);");
-  } catch {
-  }
-  try {
-    db.run("CREATE UNIQUE INDEX IF NOT EXISTS idx_pending_registrations_email ON pending_registrations(email);");
-  } catch {
-  }
-  try {
-    db.run("ALTER TABLE products ADD COLUMN hasVariants INTEGER DEFAULT 0;");
-  } catch {
-  }
-  try {
-    db.run("ALTER TABLE products ADD COLUMN options TEXT;");
-  } catch {
-  }
-  try {
-    db.run("ALTER TABLE products ADD COLUMN colorImages TEXT;");
-  } catch {
-  }
-  try {
-    db.run("ALTER TABLE products ADD COLUMN variantMatrix TEXT;");
-  } catch {
-  }
-  try {
-    db.run("ALTER TABLE products ADD COLUMN variants TEXT;");
-  } catch {
-  }
-  try {
-    db.run("ALTER TABLE products ADD COLUMN brand TEXT;");
-  } catch (e) {
-  }
-  try {
-    db.run("ALTER TABLE products ADD COLUMN countryOfOrigin TEXT;");
-  } catch (e) {
-  }
-  try {
-    db.run("ALTER TABLE orders ADD COLUMN checkoutChannel TEXT DEFAULT 'web';");
-  } catch (e) {
-  }
-  try {
-    db.run("ALTER TABLE orders ADD COLUMN paymentStatus TEXT DEFAULT 'unpaid';");
-  } catch (e) {
-  }
-  try {
-    db.run("ALTER TABLE orders ADD COLUMN paymentReference TEXT;");
-  } catch (e) {
-  }
-  try {
-    db.run("ALTER TABLE orders ADD COLUMN paymentAmount REAL;");
-  } catch (e) {
-  }
-  try {
-    db.run("ALTER TABLE orders ADD COLUMN paymentConfirmedAt TEXT;");
-  } catch (e) {
-  }
-  try {
-    db.run("ALTER TABLE orders ADD COLUMN paymentConfirmedBy TEXT;");
-  } catch (e) {
-  }
-  try {
-    db.run("ALTER TABLE orders ADD COLUMN paymentReminderCount INTEGER DEFAULT 0;");
-  } catch (e) {
-  }
-  try {
-    db.run("ALTER TABLE orders ADD COLUMN lastPaymentReminderAt TEXT;");
-  } catch (e) {
-  }
-  try {
-    db.run("ALTER TABLE orders ADD COLUMN autoCancelAt TEXT;");
-  } catch (e) {
-  }
-  try {
-    db.run("ALTER TABLE customer_orders ADD COLUMN payment_status TEXT DEFAULT 'unpaid';");
-  } catch (e) {
-  }
-  try {
-    db.run("ALTER TABLE customer_orders ADD COLUMN payment_reference TEXT;");
-  } catch (e) {
-  }
-  try {
-    db.run("ALTER TABLE customer_orders ADD COLUMN payment_amount REAL;");
-  } catch (e) {
-  }
-  try {
-    db.run("ALTER TABLE customer_orders ADD COLUMN payment_confirmed_at TEXT;");
-  } catch (e) {
-  }
-  try {
-    db.run("ALTER TABLE customer_orders ADD COLUMN payment_confirmed_by TEXT;");
-  } catch (e) {
-  }
-  try {
-    db.run("ALTER TABLE customer_orders ADD COLUMN payment_reminder_count INTEGER DEFAULT 0;");
-  } catch (e) {
-  }
-  try {
-    db.run("ALTER TABLE customer_orders ADD COLUMN last_payment_reminder_at TEXT;");
-  } catch (e) {
-  }
-  try {
-    db.run("ALTER TABLE customer_orders ADD COLUMN auto_cancel_at TEXT;");
-  } catch (e) {
-  }
-  try {
-    db.run("ALTER TABLE customer_orders ADD COLUMN created_at TEXT;");
-  } catch (e) {
-  }
-  try {
-    db.run("ALTER TABLE orders ADD COLUMN shippingFee REAL DEFAULT 0;");
-  } catch {
-  }
-  try {
-    db.run("ALTER TABLE orders ADD COLUMN discount REAL DEFAULT 0;");
-  } catch {
-  }
-  try {
-    db.run("ALTER TABLE orders ADD COLUMN subtotal REAL DEFAULT 0;");
-  } catch {
-  }
-  try {
-    db.run("ALTER TABLE orders ADD COLUMN trackingNumber TEXT;");
-  } catch {
-  }
-  try {
-    db.run("ALTER TABLE orders ADD COLUMN customerPhone TEXT;");
-  } catch {
-  }
-  try {
-    db.run("ALTER TABLE orders ADD COLUMN notes TEXT;");
-  } catch {
-  }
-  try {
-    db.run("ALTER TABLE orders ADD COLUMN userId TEXT;");
-  } catch {
-  }
-  try {
-    db.run("ALTER TABLE orders ADD COLUMN created_at TEXT;");
-  } catch {
-  }
-  try {
-    db.run("ALTER TABLE orders ADD COLUMN updated_at TEXT;");
-  } catch {
-  }
-  try {
-    db.run("ALTER TABLE orders ADD COLUMN paymentStatus TEXT DEFAULT 'pending';");
-  } catch {
-  }
-  try {
-    db.run("ALTER TABLE orders ADD COLUMN paymentReference TEXT;");
-  } catch {
-  }
-  try {
-    db.run("ALTER TABLE orders ADD COLUMN paymentAmount REAL;");
-  } catch {
-  }
-  try {
-    db.run("ALTER TABLE orders ADD COLUMN paymentConfirmedAt TEXT;");
-  } catch {
-  }
-  try {
-    db.run("ALTER TABLE orders ADD COLUMN paymentConfirmedBy TEXT;");
-  } catch {
-  }
-  try {
-    db.run("ALTER TABLE orders ADD COLUMN paymentReminderCount INTEGER DEFAULT 0;");
-  } catch {
-  }
-  try {
-    db.run("ALTER TABLE orders ADD COLUMN lastPaymentReminderAt TEXT;");
-  } catch {
-  }
-  try {
-    db.run("ALTER TABLE reviews ADD COLUMN reviewerDisplayName TEXT;");
-  } catch {
-  }
-  try {
-    db.run("ALTER TABLE reviews ADD COLUMN title TEXT;");
-  } catch {
-  }
-  try {
-    db.run("ALTER TABLE reviews ADD COLUMN mediaUrls TEXT;");
-  } catch {
-  }
-  try {
-    db.run("ALTER TABLE reviews ADD COLUMN helpfulVotes INTEGER DEFAULT 0;");
-  } catch {
-  }
-  try {
-    db.run("ALTER TABLE reviews ADD COLUMN helpfulUserIds TEXT;");
-  } catch {
-  }
-  try {
-    db.run("ALTER TABLE reviews ADD COLUMN purchasedVariant TEXT;");
-  } catch {
-  }
-  try {
-    db.run("ALTER TABLE reviews ADD COLUMN isEdited INTEGER DEFAULT 0;");
-  } catch {
-  }
-  try {
-    db.run("ALTER TABLE reviews ADD COLUMN status TEXT DEFAULT 'Published';");
-  } catch {
-  }
-  try {
-    db.run("ALTER TABLE reviews ADD COLUMN createdAt TEXT;");
-  } catch {
-  }
-  try {
-    db.run("ALTER TABLE reviews ADD COLUMN updatedAt TEXT;");
-  } catch {
-  }
-  try {
-    db.run("ALTER TABLE reviews ADD COLUMN userId TEXT;");
-  } catch {
-  }
-  try {
-    db.run(`
-      UPDATE products 
-      SET rating = 0, reviewsCount = 0, reviews = '[]'
-      WHERE id NOT IN (
-        SELECT DISTINCT productId FROM reviews WHERE status NOT IN ('Hidden', 'Removed')
-      );
-    `);
-  } catch (e) {
-  }
-  saveSqliteDb(db);
 }
-async function getSqliteDbStatus() {
+async function getDbStatus() {
   try {
-    const db = await getSqliteDb();
-    const exists = import_fs.default.existsSync(DB_FILE_PATH);
-    const size = exists ? import_fs.default.statSync(DB_FILE_PATH).size : 0;
-    const prodRes = db.exec("SELECT COUNT(*) as count FROM products;");
-    const prodCount = prodRes.length > 0 ? prodRes[0].values[0][0] : 0;
-    const orderRes = db.exec("SELECT COUNT(*) as count FROM orders;");
-    const orderCount = orderRes.length > 0 ? orderRes[0].values[0][0] : 0;
-    const revRes = db.exec("SELECT COUNT(*) as count FROM reviews;");
-    const revCount = revRes.length > 0 ? revRes[0].values[0][0] : 0;
+    const pool = await getDbPool2();
+    const [prodCount] = await pool.query("SELECT COUNT(*) as count FROM products");
+    const [orderCount] = await pool.query("SELECT COUNT(*) as count FROM orders");
+    const [userCount] = await pool.query("SELECT COUNT(*) as count FROM users");
     return {
       configured: true,
       connected: true,
-      dbEngine: "SQLite (sql.js / veloce.sqlite)",
-      filePath: DB_FILE_PATH,
-      fileSizeBytes: size,
-      message: `Active production SQLite database at ${DB_FILE_PATH} (${(size / 1024).toFixed(1)} KB)`,
+      message: `Successfully connected to MySQL database: ${getDbName()} (via local XAMPP / MySQL)`,
       stats: {
-        products: prodCount,
-        orders: orderCount,
-        reviews: revCount
+        products: prodCount[0]?.count || 0,
+        orders: orderCount[0]?.count || 0,
+        users: userCount[0]?.count || 0
       }
     };
-  } catch (err) {
+  } catch (error) {
     return {
-      configured: false,
+      configured: true,
       connected: false,
-      dbEngine: "SQLite",
-      filePath: DB_FILE_PATH,
-      fileSizeBytes: 0,
-      message: `SQLite database error: ${err.message || err}`
+      message: `Failed to connect to MySQL server: ${error.message || error}`
     };
   }
 }
-async function pushSyncDataSqlite(payload) {
-  const db = await getSqliteDb();
-  if (Array.isArray(payload.veloce_products)) {
-    db.run("DELETE FROM products;");
-    const stmt = db.prepare(`
-      INSERT INTO products (
-        id, sku, name, description, price, category, tags, type, imageUrl, images,
-        stock, lowStockThreshold, variations, rating, reviewsCount, reviews, digitalFileUrl,
-        previousPrice, backInStockAlert, costPrice, taxId, brand, countryOfOrigin, status, paymentRestriction,
-        shortDescription, detailedDescription, features, specifications, whatsInTheBox,
-        hasVariants, options, colorImages, variantMatrix, variants
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-    for (const p of payload.veloce_products) {
-      if (!p.id || !p.name) continue;
-      const isVar = p.hasVariants === true || p.hasVariants === 1 || p.hasVariants === "true" || p.has_variants === true || p.has_variants === 1 || p.has_variants === "true" || Array.isArray(p.options) && p.options.length > 0 || Array.isArray(p.variantMatrix) && p.variantMatrix.length > 0 || Array.isArray(p.variant_matrix) && p.variant_matrix.length > 0 || Array.isArray(p.variants) && p.variants.length > 0 || Array.isArray(p.variations) && p.variations.length > 0 || p.colorImages && typeof p.colorImages === "object" && Object.keys(p.colorImages).length > 0 || p.color_images && typeof p.color_images === "object" && Object.keys(p.color_images).length > 0 ? 1 : 0;
-      const optsJson = p.options ? typeof p.options === "string" ? p.options : JSON.stringify(p.options) : null;
-      const colorImgsJson = p.colorImages || p.color_images ? typeof (p.colorImages || p.color_images) === "string" ? p.colorImages || p.color_images : JSON.stringify(p.colorImages || p.color_images) : null;
-      const matrixJson = p.variantMatrix || p.variant_matrix || p.variants ? typeof (p.variantMatrix || p.variant_matrix || p.variants) === "string" ? p.variantMatrix || p.variant_matrix || p.variants : JSON.stringify(p.variantMatrix || p.variant_matrix || p.variants) : null;
-      const varsJson = p.variants || p.variantMatrix || p.variant_matrix ? typeof (p.variants || p.variantMatrix || p.variant_matrix) === "string" ? p.variants || p.variantMatrix || p.variant_matrix : JSON.stringify(p.variants || p.variantMatrix || p.variant_matrix) : null;
-      stmt.run([
-        p.id,
-        p.sku || null,
-        p.name,
-        p.description || null,
-        p.price || 0,
-        p.category || null,
-        p.tags ? JSON.stringify(p.tags) : null,
-        p.type || "physical",
-        p.imageUrl || null,
-        p.images ? JSON.stringify(p.images) : null,
-        p.stock !== void 0 ? p.stock : null,
-        p.lowStockThreshold !== void 0 ? p.lowStockThreshold : null,
-        p.variations ? JSON.stringify(p.variations) : null,
-        p.rating || 0,
-        p.reviewsCount || 0,
-        p.reviews ? JSON.stringify(p.reviews) : null,
-        p.digitalFileUrl || null,
-        p.previousPrice !== void 0 ? p.previousPrice : null,
-        p.backInStockAlert ? 1 : 0,
-        p.costPrice !== void 0 && p.costPrice !== null && p.costPrice !== "" ? Number(p.costPrice) : p.cost_price !== void 0 && p.cost_price !== null && p.cost_price !== "" ? Number(p.cost_price) : null,
-        p.taxId || null,
-        p.brand || null,
-        p.countryOfOrigin || p.country_of_origin || null,
-        p.status || "Active",
-        p.paymentRestriction || "both",
-        p.shortDescription || null,
-        p.detailedDescription || null,
-        p.features ? JSON.stringify(p.features) : null,
-        p.specifications ? JSON.stringify(p.specifications) : null,
-        p.whatsInTheBox || null,
-        isVar,
-        optsJson,
-        colorImgsJson,
-        matrixJson,
-        varsJson
-      ]);
-    }
-    stmt.free();
-  }
-  if (Array.isArray(payload.veloce_orders)) {
-    db.run("DELETE FROM orders;");
-    const stmt = db.prepare(`
-      INSERT INTO orders (
-        id, customerName, customerEmail, items, total, status, date, couponCode,
-        customNote, shippingAddress, notesHistory, statusHistory, isGuest, paymentMethod,
-        checkoutChannel, review_request_sent_at, review_request_status
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-    for (const o of payload.veloce_orders) {
-      if (!o.id) continue;
-      stmt.run([
-        o.id,
-        o.customerName || "Guest Customer",
-        o.customerEmail || "",
-        o.items ? JSON.stringify(o.items) : "[]",
-        o.total || 0,
-        o.status || "pending",
-        o.date || (/* @__PURE__ */ new Date()).toISOString(),
-        o.couponCode || null,
-        o.customNote || null,
-        o.shippingAddress || null,
-        o.notesHistory ? JSON.stringify(o.notesHistory) : null,
-        o.statusHistory ? JSON.stringify(o.statusHistory) : null,
-        o.isGuest ? 1 : 0,
-        o.paymentMethod || "cod",
-        o.checkoutChannel || (o.checkoutMode === "whatsapp" || o.paymentMethod === "whatsapp" ? "whatsapp" : "web"),
-        o.review_request_sent_at || null,
-        o.review_request_status || null
-      ]);
-    }
-    stmt.free();
-  }
-  if (Array.isArray(payload.veloce_categories) || Array.isArray(payload.categories)) {
-    const catList = payload.veloce_categories || payload.categories;
-    db.run("DELETE FROM categories;");
-    const stmt = db.prepare(`
-      INSERT INTO categories (
-        id, name, slug, parentId, description, imageUrl, status, displayOrder, previousSlugs, createdAt, updatedAt
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-    for (const c of catList) {
-      if (!c.id || !c.name) continue;
-      stmt.run([
-        String(c.id),
-        c.name,
-        c.slug || c.name.toLowerCase().replace(/\s+/g, "-"),
-        c.parentId || null,
-        c.description || "",
-        c.imageUrl || "",
-        c.status || "Active",
-        Number(c.displayOrder || 0),
-        c.previousSlugs ? JSON.stringify(c.previousSlugs) : "[]",
-        c.createdAt || (/* @__PURE__ */ new Date()).toISOString(),
-        c.updatedAt || (/* @__PURE__ */ new Date()).toISOString()
-      ]);
-    }
-    stmt.free();
-  }
-  const settingsKeys = [
-    "veloce_cart",
-    "veloce_wishlist",
-    "veloce_earnings",
-    "veloce_loyalty_points",
-    "veloce_coupons",
-    "veloce_promo_banner",
-    "customer_support_tickets",
-    "veloce_payout_logs"
-  ];
-  const stmtSettings = db.prepare(`
-    INSERT OR REPLACE INTO app_settings (setting_key, setting_value) VALUES (?, ?)
-  `);
-  for (const key of settingsKeys) {
-    if (payload[key] !== void 0 && payload[key] !== null) {
-      const valueStr = typeof payload[key] === "object" ? JSON.stringify(payload[key]) : String(payload[key]);
-      stmtSettings.run([key, valueStr]);
-    }
-  }
-  stmtSettings.free();
-  if (Array.isArray(payload.veloce_hero_slides)) {
-    await saveSqliteHeroBanners(payload.veloce_hero_slides);
-  }
-  saveSqliteDb(db);
-}
-async function pullSyncDataSqlite() {
-  const db = await getSqliteDb();
-  const result = {};
-  let prodRes = db.exec("SELECT * FROM products;");
-  if (!prodRes.length || !prodRes[0].values || prodRes[0].values.length === 0) {
-    const isCleanInit = db.exec("SELECT setting_value FROM app_settings WHERE setting_key = 'products_seeded_clean';");
-    if (!isCleanInit.length || !isCleanInit[0].values || isCleanInit[0].values.length === 0) {
-      await ensureDefaultProducts(db);
-      prodRes = db.exec("SELECT * FROM products;");
-    }
-  }
-  if (prodRes.length > 0) {
-    const cols = prodRes[0].columns;
-    result.veloce_products = prodRes[0].values.map((row) => {
-      const obj = {};
-      cols.forEach((col, idx) => {
-        obj[col] = row[idx];
-      });
-      const parseJsonSafe = (raw, fallback) => {
-        if (!raw) return fallback;
-        try {
-          return typeof raw === "string" ? JSON.parse(raw) : raw;
-        } catch {
-          return fallback;
-        }
-      };
-      const parsedOpts = parseJsonSafe(obj.options, []);
-      const parsedColorImgs = parseJsonSafe(obj.colorImages || obj.color_images, {});
-      const parsedMatrix = parseJsonSafe(obj.variantMatrix || obj.variant_matrix || obj.variants, []);
-      const parsedVars = parseJsonSafe(obj.variants || obj.variantMatrix || obj.variant_matrix, []);
-      const parsedVariations = parseJsonSafe(obj.variations, []);
-      const hasVarBool = Boolean(
-        obj.hasVariants === 1 || obj.hasVariants === true || obj.hasVariants === "true" || obj.has_variants === 1 || obj.has_variants === true || obj.has_variants === "true" || parsedOpts.length > 0 || parsedMatrix.length > 0 || parsedVars.length > 0 || parsedVariations.length > 0 || Object.keys(parsedColorImgs).length > 0
-      );
-      return {
-        ...obj,
-        price: Number(obj.price),
-        costPrice: obj.costPrice !== null && obj.costPrice !== void 0 && obj.costPrice !== "" ? Number(obj.costPrice) : void 0,
-        cost_price: obj.costPrice !== null && obj.costPrice !== void 0 && obj.costPrice !== "" ? Number(obj.costPrice) : void 0,
-        tags: parseJsonSafe(obj.tags, []),
-        images: parseJsonSafe(obj.images, []),
-        variations: parsedVariations,
-        reviews: parseJsonSafe(obj.reviews, []),
-        stock: obj.stock !== null ? Number(obj.stock) : null,
-        rating: Number(obj.rating || 0),
-        reviewsCount: Number(obj.reviewsCount || 0),
-        backInStockAlert: Boolean(obj.backInStockAlert),
-        hasVariants: hasVarBool,
-        has_variants: hasVarBool,
-        options: parsedOpts,
-        colorImages: parsedColorImgs,
-        color_images: parsedColorImgs,
-        variantMatrix: parsedMatrix,
-        variant_matrix: parsedMatrix,
-        variants: parsedVars
-      };
-    });
-  } else {
-    result.veloce_products = [];
-  }
-  const orderRes = db.exec("SELECT * FROM orders;");
-  if (orderRes.length > 0) {
-    const cols = orderRes[0].columns;
-    result.veloce_orders = orderRes[0].values.map((row) => {
-      const obj = {};
-      cols.forEach((col, idx) => {
-        obj[col] = row[idx];
-      });
-      return {
-        ...obj,
-        total: Number(obj.total),
-        items: obj.items ? JSON.parse(obj.items) : [],
-        notesHistory: obj.notesHistory ? JSON.parse(obj.notesHistory) : [],
-        statusHistory: obj.statusHistory ? JSON.parse(obj.statusHistory) : [],
-        isGuest: Boolean(obj.isGuest),
-        checkoutChannel: obj.checkoutChannel || (obj.paymentMethod === "whatsapp" ? "whatsapp" : "web"),
-        paymentMethod: obj.paymentMethod === "whatsapp" ? "mpesa" : obj.paymentMethod || "cod"
-      };
-    });
-  } else {
-    result.veloce_orders = [];
-  }
-  const catRes = db.exec("SELECT * FROM categories ORDER BY displayOrder ASC, name ASC;");
-  if (catRes.length > 0) {
-    const cols = catRes[0].columns;
-    result.veloce_categories = catRes[0].values.map((row) => {
-      const obj = {};
-      cols.forEach((col, idx) => {
-        obj[col] = row[idx];
-      });
-      return {
-        ...obj,
-        displayOrder: Number(obj.displayOrder || 0),
-        previousSlugs: obj.previousSlugs ? JSON.parse(obj.previousSlugs) : []
-      };
-    });
-  } else {
-    result.veloce_categories = [];
-  }
-  result.veloce_hero_slides = await getAllSqliteHeroBanners();
-  const settRes = db.exec("SELECT * FROM app_settings;");
-  if (settRes.length > 0) {
-    settRes[0].values.forEach((row) => {
-      const key = row[0];
-      const val = row[1];
-      try {
-        result[key] = JSON.parse(val);
-      } catch (e) {
-        if (val === "true") result[key] = true;
-        else if (val === "false") result[key] = false;
-        else if (!isNaN(Number(val))) result[key] = Number(val);
-        else result[key] = val;
-      }
-    });
-  }
-  return result;
-}
-async function getAllSqliteCategories() {
-  const db = await getSqliteDb();
-  let res = db.exec("SELECT * FROM categories ORDER BY displayOrder ASC, name ASC;");
-  if (res.length === 0 || res[0].values.length === 0) {
-    const isCleanInit = db.exec("SELECT setting_value FROM app_settings WHERE setting_key = 'categories_seeded_clean';");
-    if (!isCleanInit.length || !isCleanInit[0].values || isCleanInit[0].values.length === 0) {
-      const prodRes = db.exec("SELECT DISTINCT category FROM products WHERE category IS NOT NULL AND TRIM(category) != '';");
-      let catsToSeed = DEFAULT_INITIAL_CATEGORIES;
-      if (prodRes.length > 0 && prodRes[0].values.length > 0) {
-        const distinctNames = prodRes[0].values.map((r) => String(r[0])).filter(Boolean);
-        if (distinctNames.length > 0) {
-          catsToSeed = distinctNames.map((name, idx) => ({
-            id: `cat-${idx + 1}`,
-            name,
-            slug: name.toLowerCase().replace(/\s+/g, "-"),
-            description: `${name} products`,
-            status: "Active",
-            displayOrder: idx + 1
-          }));
-        }
-      }
-      await saveSqliteCategories(catsToSeed);
-      res = db.exec("SELECT * FROM categories ORDER BY displayOrder ASC, name ASC;");
-      if (res.length === 0) return [];
-    } else {
-      return [];
-    }
-  }
-  const cols = res[0].columns;
-  return res[0].values.map((row) => {
-    const obj = {};
-    cols.forEach((col, idx) => {
-      obj[col] = row[idx];
-    });
-    return {
-      ...obj,
-      displayOrder: Number(obj.displayOrder || 0),
-      previousSlugs: obj.previousSlugs ? JSON.parse(obj.previousSlugs) : []
-    };
-  });
-}
-async function saveSqliteCategories(categories) {
-  const db = await getSqliteDb();
-  db.run("DELETE FROM categories;");
-  db.run("INSERT OR REPLACE INTO app_settings (setting_key, setting_value) VALUES ('categories_seeded_clean', 'true');");
-  if (Array.isArray(categories) && categories.length > 0) {
-    const stmt = db.prepare(`
-      INSERT INTO categories (
-        id, name, slug, parentId, description, imageUrl, status, displayOrder, previousSlugs, createdAt, updatedAt
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-    for (const c of categories) {
-      if (!c.id || !c.name) continue;
-      stmt.run([
-        String(c.id),
-        c.name,
-        c.slug || c.name.toLowerCase().replace(/\s+/g, "-"),
-        c.parentId || null,
-        c.description || "",
-        c.imageUrl || "",
-        c.status || "Active",
-        Number(c.displayOrder || 0),
-        c.previousSlugs ? JSON.stringify(c.previousSlugs) : "[]",
-        c.createdAt || (/* @__PURE__ */ new Date()).toISOString(),
-        c.updatedAt || (/* @__PURE__ */ new Date()).toISOString()
-      ]);
-    }
-    stmt.free();
-  }
-  saveSqliteDb(db);
-  return getAllSqliteCategories();
-}
-async function deleteSqliteCategory(id) {
-  const db = await getSqliteDb();
-  db.run("DELETE FROM categories WHERE id = ?;", [id]);
-  db.run("INSERT OR REPLACE INTO app_settings (setting_key, setting_value) VALUES ('categories_seeded_clean', 'true');");
-  saveSqliteDb(db);
-  return true;
-}
-async function deleteSqliteCategoriesBulk(ids) {
-  if (!ids || ids.length === 0) return 0;
-  const db = await getSqliteDb();
-  let deleted = 0;
-  for (const id of ids) {
-    db.run("DELETE FROM categories WHERE id = ?;", [id]);
-    deleted++;
-  }
-  db.run("INSERT OR REPLACE INTO app_settings (setting_key, setting_value) VALUES ('categories_seeded_clean', 'true');");
-  saveSqliteDb(db);
-  return deleted;
-}
-async function purgeAllSqliteData() {
-  const db = await getSqliteDb();
-  db.run("DELETE FROM products;");
-  db.run("DELETE FROM orders;");
-  db.run("DELETE FROM categories;");
-  db.run("DELETE FROM campaigns;");
-  db.run("DELETE FROM click_logs;");
-  db.run("DELETE FROM inventory_audit_logs;");
-  db.run("DELETE FROM reviews;");
-  db.run("DELETE FROM hero_banners;");
-  db.run("DELETE FROM customers;");
-  db.run("DELETE FROM deals;");
-  db.run("DELETE FROM invoices;");
-  db.run("DELETE FROM customer_orders;");
-  db.run("DELETE FROM suppliers;");
-  db.run("DELETE FROM supplier_products;");
-  db.run("DELETE FROM supplier_intakes;");
-  db.run("DELETE FROM supplier_payments;");
-  db.run("DELETE FROM supplier_ledger;");
-  db.run("INSERT OR REPLACE INTO app_settings (setting_key, setting_value) VALUES ('db_is_initialized_clean', 'true');");
-  saveSqliteDb(db);
-  console.log("[SQLite] Purged all database tables completely.");
-}
-async function ensureDefaultHeroBanners(db) {
-  const database = db || await getSqliteDb();
-  const check = database.exec("SELECT COUNT(*) as count FROM hero_banners;");
-  const count = check.length > 0 && check[0].values.length > 0 ? check[0].values[0][0] : 0;
-  if (count === 0) {
-    await saveSqliteHeroBanners(DEFAULT_HERO_SLIDES_INITIAL);
-    console.log("[SQLite] Seeded default hero slides.");
-  }
-}
-async function getAllSqliteHeroBanners() {
-  const db = await getSqliteDb();
-  let res = db.exec("SELECT * FROM hero_banners ORDER BY display_order ASC, created_at DESC;");
-  if (res.length === 0 || res[0].values.length === 0) {
-    await saveSqliteHeroBanners(DEFAULT_HERO_SLIDES_INITIAL);
-    res = db.exec("SELECT * FROM hero_banners ORDER BY display_order ASC, created_at DESC;");
-  }
-  if (res.length === 0 || res[0].values.length === 0) {
-    return DEFAULT_HERO_SLIDES_INITIAL;
-  }
-  const cols = res[0].columns;
-  return res[0].values.map((row) => {
-    const obj = {};
-    cols.forEach((col, idx) => {
-      obj[col] = row[idx];
-    });
-    return {
-      ...obj,
-      display_order: Number(obj.display_order || 0),
-      displayOrder: Number(obj.display_order || 0),
-      overlay_enabled: Boolean(obj.overlay_enabled),
-      overlayEnabled: Boolean(obj.overlay_enabled),
-      overlay_opacity: Number(obj.overlay_opacity ?? 0.5),
-      overlayOpacity: Number(obj.overlay_opacity ?? 0.5),
-      is_active: Boolean(obj.is_active),
-      active: Boolean(obj.is_active)
-    };
-  });
-}
-async function saveSqliteHeroBanners(banners) {
-  const db = await getSqliteDb();
-  db.run("DELETE FROM hero_banners;");
-  db.run("INSERT OR REPLACE INTO app_settings (setting_key, setting_value) VALUES ('hero_banners_seeded', 'true');");
-  const stmt = db.prepare(`
-    INSERT INTO hero_banners (
-      id, title, subtitle, description, badge_text, primary_button_text, primary_button_url,
-      secondary_button_text, secondary_button_url, hero_image_url, background_type,
-      background_color, background_image_url, background_position, overlay_enabled,
-      overlay_color, overlay_opacity, text_color, is_active, display_order, start_date, end_date,
-      created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `);
-  for (const b of banners) {
-    if (!b.id || !b.title) continue;
-    stmt.run([
-      String(b.id),
-      b.title,
-      b.subtitle || "",
-      b.description || "",
-      b.badge_text || b.badgeText || "",
-      b.primary_button_text || b.primaryButtonText || "Shop Collection",
-      b.primary_button_url || b.primaryButtonUrl || "store",
-      b.secondary_button_text || b.secondaryButtonText || "",
-      b.secondary_button_url || b.secondaryButtonUrl || "",
-      b.hero_image_url || b.heroImage || b.imageUrl || "",
-      b.background_type || b.backgroundType || "color",
-      b.background_color || b.backgroundColor || "#0f172a",
-      b.background_image_url || b.backgroundImage || "",
-      b.background_position || b.backgroundPosition || "center",
-      (b.overlay_enabled !== void 0 ? b.overlay_enabled : b.overlayEnabled !== false) ? 1 : 0,
-      b.overlay_color || b.overlayColor || "#000000",
-      typeof b.overlay_opacity === "number" ? b.overlay_opacity : typeof b.overlayOpacity === "number" ? b.overlayOpacity : 0.5,
-      b.text_color || b.textColor || "#ffffff",
-      (b.is_active !== void 0 ? b.is_active : b.active !== false) ? 1 : 0,
-      Number(b.display_order || b.displayOrder || 1),
-      b.start_date || b.startDate || null,
-      b.end_date || b.endDate || null,
-      b.created_at || b.createdAt || (/* @__PURE__ */ new Date()).toISOString(),
-      b.updated_at || b.updatedAt || (/* @__PURE__ */ new Date()).toISOString()
-    ]);
-  }
-  stmt.free();
-  saveSqliteDb(db);
-  return getAllSqliteHeroBanners();
-}
-async function getAllSqliteCustomers() {
-  const db = await getSqliteDb();
-  const res = db.exec("SELECT * FROM customers ORDER BY created_at DESC;");
-  const customersMap = /* @__PURE__ */ new Map();
-  if (res && res.length) {
-    const cols = res[0].columns;
-    res[0].values.forEach((row) => {
-      const obj = {};
-      cols.forEach((col, idx) => {
-        obj[col] = row[idx];
-      });
-      obj.is_registered = Boolean(obj.is_registered);
-      obj.orders_count = Number(obj.orders_count || 0);
-      obj.total_spent = Number(obj.total_spent || 0);
-      obj.open_deal_value = Number(obj.open_deal_value || 0);
-      if (obj.email) {
-        customersMap.set(obj.email.toLowerCase().trim(), obj);
-      }
-      customersMap.set(obj.id, obj);
-    });
-  }
-  const users = await getAllSqliteUsers();
-  const allOrders = await getAllSqliteOrders();
-  for (const user of users) {
-    if (user.is_staff || user.is_superuser) continue;
-    const userEmail = (user.email || "").toLowerCase().trim();
-    if (!userEmail) continue;
-    const userOrders = allOrders.filter(
-      (o) => o.customerEmail && o.customerEmail.toLowerCase().trim() === userEmail || o.email && o.email.toLowerCase().trim() === userEmail || o.shippingAddress?.email && o.shippingAddress.email.toLowerCase().trim() === userEmail
-    );
-    const ordersCount = userOrders.length;
-    const totalSpent = userOrders.reduce((sum, o) => sum + Number(o.total || o.amount || 0), 0);
-    const existingCustomer = customersMap.get(userEmail);
-    if (!existingCustomer) {
-      const newCustomer = {
-        id: `cust-${user.id}`,
-        user: user.id,
-        is_registered: true,
-        first_name: user.first_name || "",
-        last_name: user.last_name || "",
-        name: `${user.first_name || ""} ${user.last_name || ""}`.trim() || user.username || userEmail.split("@")[0],
-        email: userEmail,
-        phone: user.phone || "",
-        company: "",
-        location: "",
-        orders_count: ordersCount,
-        total_spent: totalSpent,
-        status: "Active",
-        notes: `Registered customer account (${user.partner_tier || "Silver"} member)`,
-        open_deal_value: 0,
-        created_at: user.created_at || (/* @__PURE__ */ new Date()).toISOString(),
-        updated_at: user.updated_at || (/* @__PURE__ */ new Date()).toISOString()
-      };
-      try {
-        await saveSqliteCustomer(newCustomer);
-      } catch (_) {
-      }
-      customersMap.set(userEmail, newCustomer);
-    } else {
-      existingCustomer.is_registered = true;
-      if (!existingCustomer.name || existingCustomer.name === "Unknown Customer") {
-        existingCustomer.name = `${user.first_name || ""} ${user.last_name || ""}`.trim() || user.username || userEmail.split("@")[0];
-      }
-      if (!existingCustomer.phone && user.phone) {
-        existingCustomer.phone = user.phone;
-      }
-      if (ordersCount > 0) {
-        existingCustomer.orders_count = ordersCount;
-        existingCustomer.total_spent = totalSpent;
-      }
-    }
-  }
-  const uniqueList = Array.from(new Set(customersMap.values()));
-  return uniqueList.sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
-}
-async function getSqliteCustomerById(id) {
-  const db = await getSqliteDb();
-  const stmt = db.prepare("SELECT * FROM customers WHERE id = ? LIMIT 1;");
-  stmt.bind([id]);
-  let customer = null;
-  if (stmt.step()) {
-    const row = stmt.getAsObject();
-    customer = {
-      ...row,
-      is_registered: Boolean(row.is_registered),
-      orders_count: Number(row.orders_count || 0),
-      total_spent: Number(row.total_spent || 0),
-      open_deal_value: Number(row.open_deal_value || 0)
-    };
-  }
-  stmt.free();
-  if (!customer) return null;
-  const dealsStmt = db.prepare("SELECT * FROM deals WHERE customer = ? ORDER BY created_at DESC;");
-  dealsStmt.bind([id]);
-  const deals = [];
-  while (dealsStmt.step()) {
-    const d = dealsStmt.getAsObject();
-    deals.push({ ...d, value: Number(d.value || 0) });
-  }
-  dealsStmt.free();
-  const invStmt = db.prepare("SELECT * FROM invoices WHERE customer = ? ORDER BY issued_at DESC;");
-  invStmt.bind([id]);
-  const invoices = [];
-  while (invStmt.step()) {
-    const inv = invStmt.getAsObject();
-    invoices.push({ ...inv, amount: Number(inv.amount || 0) });
-  }
-  invStmt.free();
-  const ordStmt = db.prepare("SELECT * FROM customer_orders WHERE customer = ? ORDER BY placed_at DESC;");
-  ordStmt.bind([id]);
-  const orders = [];
-  while (ordStmt.step()) {
-    const ord = ordStmt.getAsObject();
-    orders.push({ ...ord, total: Number(ord.total || 0) });
-  }
-  ordStmt.free();
-  return {
-    ...customer,
-    deals,
-    invoices,
-    orders
-  };
-}
-async function saveSqliteCustomer(c) {
-  const db = await getSqliteDb();
-  const id = c.id || `cust-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
-  const now = (/* @__PURE__ */ new Date()).toISOString();
-  const stmt = db.prepare(`
-    INSERT OR REPLACE INTO customers (
-      id, user, is_registered, first_name, last_name, name, email, phone,
-      company, location, orders_count, total_spent, status, notes, open_deal_value,
-      created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `);
-  stmt.run([
-    id,
-    c.user || null,
-    c.is_registered ? 1 : 0,
-    c.first_name || "",
-    c.last_name || "",
-    c.name || `${c.first_name || ""} ${c.last_name || ""}`.trim() || "Unknown Customer",
-    c.email || "",
-    c.phone || "",
-    c.company || "",
-    c.location || "",
-    Number(c.orders_count || 0),
-    Number(c.total_spent || 0),
-    c.status || "active",
-    c.notes || "",
-    Number(c.open_deal_value || 0),
-    c.created_at || now,
-    now
+async function getMysqlUserByEmail(email) {
+  const pool = await getDbPool2();
+  const [rows] = await pool.query("SELECT * FROM users WHERE LOWER(email) = ? LIMIT 1", [
+    (email || "").trim().toLowerCase()
   ]);
-  stmt.free();
-  saveSqliteDb(db);
-  return getSqliteCustomerById(id);
+  if (!rows || rows.length === 0) return null;
+  return rows[0];
 }
-async function deleteSqliteCustomer(id) {
-  const db = await getSqliteDb();
-  db.run("DELETE FROM customers WHERE id = ?;", [id]);
-  db.run("DELETE FROM deals WHERE customer = ?;", [id]);
-  db.run("DELETE FROM invoices WHERE customer = ?;", [id]);
-  db.run("DELETE FROM customer_orders WHERE customer = ?;", [id]);
-  saveSqliteDb(db);
-  return true;
+async function getMysqlUserByEmailOrUsername(identifier) {
+  const pool = await getDbPool2();
+  const clean = (identifier || "").trim().toLowerCase();
+  const [rows] = await pool.query(
+    "SELECT * FROM users WHERE LOWER(email) = ? OR LOWER(username) = ? LIMIT 1",
+    [clean, clean]
+  );
+  if (!rows || rows.length === 0) return null;
+  return rows[0];
 }
-async function saveSqliteDeal(deal) {
-  const db = await getSqliteDb();
-  const id = deal.id || `deal-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+async function getMysqlUserById(userId) {
+  const pool = await getDbPool2();
+  const [rows] = await pool.query("SELECT * FROM users WHERE id = ? LIMIT 1", [userId]);
+  if (!rows || rows.length === 0) return null;
+  return rows[0];
+}
+async function getAllMysqlUsers() {
+  const pool = await getDbPool2();
+  const [rows] = await pool.query("SELECT * FROM users ORDER BY created_at DESC");
+  return rows || [];
+}
+async function saveMysqlUser(user) {
+  const pool = await getDbPool2();
+  const id = user.id || `usr-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
   const now = (/* @__PURE__ */ new Date()).toISOString();
-  const stmt = db.prepare(`
-    INSERT OR REPLACE INTO deals (
-      id, customer, customer_name, title, value, stage, expected_close, created_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-  `);
-  stmt.run([
-    id,
-    deal.customer,
-    deal.customer_name || "",
-    deal.title || "Untitled Deal",
-    Number(deal.value || 0),
-    deal.stage || "prospecting",
-    deal.expected_close || null,
-    deal.created_at || now
-  ]);
-  stmt.free();
-  saveSqliteDb(db);
-  return { id, ...deal };
-}
-async function deleteSqliteDeal(id) {
-  const db = await getSqliteDb();
-  db.run("DELETE FROM deals WHERE id = ?;", [id]);
-  saveSqliteDb(db);
-  return true;
-}
-async function saveSqliteInvoice(invoice) {
-  const db = await getSqliteDb();
-  const id = invoice.id || `inv-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
-  const now = (/* @__PURE__ */ new Date()).toISOString();
-  const stmt = db.prepare(`
-    INSERT OR REPLACE INTO invoices (
-      id, customer, customer_name, order_id, order_reference, amount, status, due_date, issued_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `);
-  stmt.run([
-    id,
-    invoice.customer,
-    invoice.customer_name || "",
-    invoice.order || invoice.order_id || null,
-    invoice.order_reference || "",
-    Number(invoice.amount || 0),
-    invoice.status || "draft",
-    invoice.due_date || null,
-    invoice.issued_at || now
-  ]);
-  stmt.free();
-  saveSqliteDb(db);
-  return { id, ...invoice };
-}
-async function deleteSqliteInvoice(id) {
-  const db = await getSqliteDb();
-  db.run("DELETE FROM invoices WHERE id = ?;", [id]);
-  saveSqliteDb(db);
-  return true;
-}
-async function saveSqliteCustomerOrder(order) {
-  const db = await getSqliteDb();
-  const id = order.id || `ord-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
-  const now = (/* @__PURE__ */ new Date()).toISOString();
-  const stmt = db.prepare(`
-    INSERT OR REPLACE INTO customer_orders (
-      id, reference, customer, customer_name, customer_email, total, status, placed_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-  `);
-  stmt.run([
-    id,
-    order.reference || id,
-    order.customer,
-    order.customer_name || "",
-    order.customer_email || "",
-    Number(order.total || 0),
-    order.status || "pending",
-    order.placed_at || now
-  ]);
-  stmt.free();
-  saveSqliteDb(db);
-  return { id, ...order };
-}
-async function getSqliteSiteSettings() {
-  const db = await getSqliteDb();
-  const stmt = db.prepare("SELECT setting_value FROM app_settings WHERE setting_key = 'full_site_settings' LIMIT 1;");
-  let settings = null;
-  if (stmt.step()) {
-    const val = stmt.getAsObject().setting_value;
-    try {
-      settings = JSON.parse(val);
-    } catch (_) {
-    }
-  }
-  stmt.free();
-  return settings;
-}
-async function saveSqliteSiteSettings(settings) {
-  const db = await getSqliteDb();
-  const stmt = db.prepare("INSERT OR REPLACE INTO app_settings (setting_key, setting_value) VALUES ('full_site_settings', ?);");
-  stmt.run([JSON.stringify(settings)]);
-  stmt.free();
-  saveSqliteDb(db);
-}
-async function ensureSuppliersSeeded(db) {
-  const check = db.exec("SELECT COUNT(*) as count FROM suppliers;");
-  const count = check.length > 0 && check[0].values.length > 0 ? check[0].values[0][0] : 0;
-  if (count > 0) return;
-  const stmtSup = db.prepare(`
-    INSERT INTO suppliers (
-      id, code, name, company_name, email, phone, physical_address, tax_pin,
-      payment_terms, bank_name, bank_account_number, mpesa_number, mpesa_account_name,
-      status, notes, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `);
-  for (const s of INITIAL_SUPPLIERS_SEED) {
-    stmtSup.run([
-      s.id,
-      s.code,
-      s.name,
-      s.company_name,
-      s.email,
-      s.phone,
-      s.physical_address,
-      s.tax_pin,
-      s.payment_terms,
-      s.bank_name,
-      s.bank_account_number,
-      s.mpesa_number,
-      s.mpesa_account_name,
-      s.status,
-      s.notes,
-      s.created_at,
-      s.updated_at
-    ]);
-  }
-  stmtSup.free();
-  const stmtProd = db.prepare(`
-    INSERT INTO supplier_products (
-      id, supplier, product, product_name, product_sku, product_image_url,
-      product_category, product_stock, supplier_sku, agreed_cost_price, selling_price,
-      quantity_received, quantity_sold, remaining_stock, lead_time_days, is_primary_supplier,
-      created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `);
-  for (const p of INITIAL_SUPPLIER_PRODUCTS_SEED) {
-    stmtProd.run([
-      p.id,
-      p.supplier,
-      p.product,
-      p.product_name,
-      p.product_sku,
-      p.product_image_url,
-      p.product_category,
-      p.product_stock,
-      p.supplier_sku,
-      p.agreed_cost_price,
-      p.selling_price,
-      p.quantity_received,
-      p.quantity_sold,
-      p.remaining_stock,
-      p.lead_time_days,
-      p.is_primary_supplier,
-      p.created_at,
-      p.updated_at
-    ]);
-  }
-  stmtProd.free();
-  const stmtIntake = db.prepare(`
-    INSERT INTO supplier_intakes (
-      id, batch_number, supplier, supplier_name, supplier_company, product,
-      product_name, product_sku, quantity_received, unit_cost, total_cost,
-      received_date, delivery_note_ref, invoice_ref, status, notes, received_by, created_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `);
-  for (const i of INITIAL_SUPPLIER_INTAKES_SEED) {
-    stmtIntake.run([
-      i.id,
-      i.batch_number,
-      i.supplier,
-      i.supplier_name,
-      i.supplier_company,
-      i.product,
-      i.product_name,
-      i.product_sku,
-      i.quantity_received,
-      i.unit_cost,
-      i.total_cost,
-      i.received_date,
-      i.delivery_note_ref,
-      i.invoice_ref,
-      i.status,
-      i.notes,
-      i.received_by,
-      i.created_at
-    ]);
-  }
-  stmtIntake.free();
-  const stmtPay = db.prepare(`
-    INSERT INTO supplier_payments (
-      id, payment_reference, supplier, supplier_name, supplier_company,
-      payment_date, amount, payment_method, transaction_code,
-      settlement_period_start, settlement_period_end, allocated_batches_or_orders,
-      status, receipt_attachment_url, notes, processed_by, created_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `);
-  for (const p of INITIAL_SUPPLIER_PAYMENTS_SEED) {
-    stmtPay.run([
-      p.id,
-      p.payment_reference,
-      p.supplier,
-      p.supplier_name,
-      p.supplier_company,
-      p.payment_date,
-      p.amount,
-      p.payment_method,
-      p.transaction_code,
-      p.settlement_period_start,
-      p.settlement_period_end,
-      JSON.stringify(p.allocated_batches_or_orders || []),
-      p.status,
-      p.receipt_attachment_url,
-      p.notes,
-      p.processed_by,
-      p.created_at
-    ]);
-  }
-  stmtPay.free();
-  saveSqliteDb(db);
-  console.log("[SQLite] Seeded initial Kenyan suppliers, intake batches, and payment history.");
-}
-async function getAllSqliteSuppliers(statusParam) {
-  const db = await getSqliteDb();
-  await ensureSuppliersSeeded(db);
-  let query = "SELECT * FROM suppliers ORDER BY created_at DESC;";
-  if (statusParam && statusParam !== "all") {
-    query = `SELECT * FROM suppliers WHERE status = '${statusParam.replace(/'/g, "''")}' ORDER BY created_at DESC;`;
-  }
-  const res = db.exec(query);
-  if (!res || !res.length) return [];
-  const cols = res[0].columns;
-  const suppliers = res[0].values.map((row) => {
-    const obj = {};
-    cols.forEach((c, idx) => {
-      obj[c] = row[idx];
-    });
-    return obj;
-  });
-  const allProducts = await getAllSqliteSupplierProducts();
-  const allPayments = await getAllSqliteSupplierPayments();
-  return suppliers.map((s) => {
-    const supProducts = allProducts.filter((p) => p.supplier === s.id);
-    const supPayments = allPayments.filter((p) => p.supplier === s.id && p.status === "Completed");
-    const totalReceivedValue = supProducts.reduce((acc, p) => acc + p.quantity_received * p.agreed_cost_price, 0);
-    const totalSalesRevenue = supProducts.reduce((acc, p) => acc + (p.total_sales_revenue || p.quantity_sold * p.selling_price), 0);
-    const totalCostOwed = supProducts.reduce((acc, p) => acc + (p.total_cost_owed || p.quantity_sold * p.agreed_cost_price), 0);
-    const totalPaid = supPayments.reduce((acc, p) => acc + p.amount, 0);
-    const outstandingBalance = Math.max(0, totalCostOwed - totalPaid);
-    const grossProfit = totalSalesRevenue - totalCostOwed;
-    const profitMargin = totalSalesRevenue > 0 ? Math.round(grossProfit / totalSalesRevenue * 100 * 10) / 10 : 0;
-    let paymentStatus = "Pending";
-    if (outstandingBalance <= 0 && totalPaid > 0) {
-      paymentStatus = "Paid";
-    } else if (totalPaid > 0 && outstandingBalance > 0) {
-      paymentStatus = "Partially Paid";
-    }
-    return {
-      id: s.id,
-      code: s.code,
-      name: s.name,
-      company_name: s.company_name || "",
-      email: s.email || "",
-      phone: s.phone || "",
-      physical_address: s.physical_address || "",
-      tax_pin: s.tax_pin || "",
-      payment_terms: s.payment_terms || "Consignment Sale",
-      bank_name: s.bank_name || "",
-      bank_account_number: s.bank_account_number || "",
-      mpesa_number: s.mpesa_number || "",
-      mpesa_account_name: s.mpesa_account_name || "",
-      status: s.status || "Active",
-      notes: s.notes || "",
-      total_received_value: totalReceivedValue,
-      total_sales_revenue: totalSalesRevenue,
-      total_cost_owed: totalCostOwed,
-      total_amount_paid: totalPaid,
-      outstanding_balance: outstandingBalance,
-      gross_profit: grossProfit,
-      profit_margin_percent: profitMargin,
-      payment_status: paymentStatus,
-      active_products_count: supProducts.length,
-      created_at: s.created_at || (/* @__PURE__ */ new Date()).toISOString(),
-      updated_at: s.updated_at || (/* @__PURE__ */ new Date()).toISOString()
-    };
-  });
-}
-async function getSqliteSupplierById(id) {
-  const suppliers = await getAllSqliteSuppliers();
-  return suppliers.find((s) => s.id === id || s.code === id) || null;
-}
-async function saveSqliteSupplier(data) {
-  const db = await getSqliteDb();
-  const id = data.id || `sup-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
-  const now = (/* @__PURE__ */ new Date()).toISOString();
-  let code = data.code;
-  if (!code || code.trim() === "") {
-    const countRes = db.exec("SELECT COUNT(*) as count FROM suppliers;");
-    const count = countRes.length > 0 ? countRes[0].values[0][0] : 0;
-    code = `SUP-${String(count + 1).padStart(3, "0")}`;
-  }
-  const stmt = db.prepare(`
-    INSERT OR REPLACE INTO suppliers (
-      id, code, name, company_name, email, phone, physical_address, tax_pin,
-      payment_terms, bank_name, bank_account_number, mpesa_number, mpesa_account_name,
-      status, notes, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `);
-  stmt.run([
-    id,
-    code,
-    data.name || "Unnamed Supplier",
-    data.company_name || "",
-    data.email || "",
-    data.phone || "",
-    data.physical_address || "",
-    data.tax_pin || "",
-    data.payment_terms || "Consignment Sale",
-    data.bank_name || "",
-    data.bank_account_number || "",
-    data.mpesa_number || "",
-    data.mpesa_account_name || "",
-    data.status || "Active",
-    data.notes || "",
-    data.created_at || now,
-    now
-  ]);
-  stmt.free();
-  saveSqliteDb(db);
-  const found = await getSqliteSupplierById(id);
-  return found;
-}
-async function deleteSqliteSupplier(id) {
-  const db = await getSqliteDb();
-  db.run("DELETE FROM suppliers WHERE id = ? OR code = ?;", [id, id]);
-  db.run("DELETE FROM supplier_products WHERE supplier = ?;", [id]);
-  db.run("DELETE FROM supplier_intakes WHERE supplier = ?;", [id]);
-  db.run("DELETE FROM supplier_payments WHERE supplier = ?;", [id]);
-  db.run("DELETE FROM supplier_ledger WHERE supplier = ?;", [id]);
-  saveSqliteDb(db);
-  return true;
-}
-async function getAllSqliteSupplierProducts(supplierId) {
-  const db = await getSqliteDb();
-  await ensureSuppliersSeeded(db);
-  let query = "SELECT * FROM supplier_products ORDER BY created_at DESC;";
-  if (supplierId && supplierId !== "all") {
-    query = `SELECT * FROM supplier_products WHERE supplier = '${supplierId.replace(/'/g, "''")}' ORDER BY created_at DESC;`;
-  }
-  const res = db.exec(query);
-  if (!res || !res.length) return [];
-  const cols = res[0].columns;
-  return res[0].values.map((row) => {
-    const obj = {};
-    cols.forEach((c, idx) => {
-      obj[c] = row[idx];
-    });
-    const agreedCost = Number(obj.agreed_cost_price || 0);
-    const sellPrice = Number(obj.selling_price || 0);
-    const qtyReceived = Number(obj.quantity_received || 0);
-    const qtySold = Number(obj.quantity_sold || 0);
-    const remainingStock = Math.max(0, qtyReceived - qtySold);
-    const totalCostOwed = qtySold * agreedCost;
-    const totalSalesRevenue = qtySold * sellPrice;
-    const grossProfit = totalSalesRevenue - totalCostOwed;
-    const profitMargin = sellPrice > 0 ? Math.round((sellPrice - agreedCost) / sellPrice * 100 * 10) / 10 : 0;
-    return {
-      id: obj.id,
-      supplier: obj.supplier,
-      product: obj.product,
-      product_name: obj.product_name,
-      product_sku: obj.product_sku || "",
-      product_image_url: obj.product_image_url || "",
-      product_category: obj.product_category || "",
-      product_stock: Number(obj.product_stock || remainingStock),
-      supplier_sku: obj.supplier_sku || "",
-      agreed_cost_price: agreedCost,
-      selling_price: sellPrice,
-      quantity_received: qtyReceived,
-      quantity_sold: qtySold,
-      remaining_stock: remainingStock,
-      total_cost_owed: totalCostOwed,
-      total_sales_revenue: totalSalesRevenue,
-      gross_profit: grossProfit,
-      profit_margin_percent: profitMargin,
-      lead_time_days: Number(obj.lead_time_days || 3),
-      is_primary_supplier: Boolean(obj.is_primary_supplier),
-      created_at: obj.created_at || (/* @__PURE__ */ new Date()).toISOString(),
-      updated_at: obj.updated_at || (/* @__PURE__ */ new Date()).toISOString()
-    };
-  });
-}
-async function saveSqliteSupplierProduct(data) {
-  const db = await getSqliteDb();
-  const id = data.id || `sp-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
-  const now = (/* @__PURE__ */ new Date()).toISOString();
-  const stmt = db.prepare(`
-    INSERT OR REPLACE INTO supplier_products (
-      id, supplier, product, product_name, product_sku, product_image_url,
-      product_category, product_stock, supplier_sku, agreed_cost_price, selling_price,
-      quantity_received, quantity_sold, remaining_stock, lead_time_days, is_primary_supplier,
-      created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `);
-  stmt.run([
-    id,
-    data.supplier || "",
-    data.product || id,
-    data.product_name || "Linked Sourced Product",
-    data.product_sku || "",
-    data.product_image_url || "",
-    data.product_category || "",
-    Number(data.product_stock || 0),
-    data.supplier_sku || "",
-    Number(data.agreed_cost_price || 0),
-    Number(data.selling_price || 0),
-    Number(data.quantity_received || 0),
-    Number(data.quantity_sold || 0),
-    Number(data.remaining_stock || Number(data.quantity_received || 0) - Number(data.quantity_sold || 0)),
-    Number(data.lead_time_days || 3),
-    data.is_primary_supplier ? 1 : 0,
-    data.created_at || now,
-    now
-  ]);
-  stmt.free();
-  saveSqliteDb(db);
-  const all = await getAllSqliteSupplierProducts();
-  return all.find((p) => p.id === id);
-}
-async function getAllSqliteSupplierIntakes(supplierId) {
-  const db = await getSqliteDb();
-  await ensureSuppliersSeeded(db);
-  let query = "SELECT * FROM supplier_intakes ORDER BY created_at DESC;";
-  if (supplierId && supplierId !== "all") {
-    query = `SELECT * FROM supplier_intakes WHERE supplier = '${supplierId.replace(/'/g, "''")}' ORDER BY created_at DESC;`;
-  }
-  const res = db.exec(query);
-  if (!res || !res.length) return [];
-  const cols = res[0].columns;
-  return res[0].values.map((row) => {
-    const obj = {};
-    cols.forEach((c, idx) => {
-      obj[c] = row[idx];
-    });
-    return {
-      id: obj.id,
-      batch_number: obj.batch_number,
-      supplier: obj.supplier,
-      supplier_name: obj.supplier_name || "",
-      supplier_company: obj.supplier_company || "",
-      product: obj.product || null,
-      product_name: obj.product_name,
-      product_sku: obj.product_sku || "",
-      quantity_received: Number(obj.quantity_received || 0),
-      unit_cost: Number(obj.unit_cost || 0),
-      total_cost: Number(obj.total_cost || 0),
-      received_date: obj.received_date || (/* @__PURE__ */ new Date()).toISOString().split("T")[0],
-      delivery_note_ref: obj.delivery_note_ref || "",
-      invoice_ref: obj.invoice_ref || "",
-      status: obj.status || "Received",
-      notes: obj.notes || "",
-      received_by: obj.received_by || "Inventory Manager",
-      created_at: obj.created_at || (/* @__PURE__ */ new Date()).toISOString()
-    };
-  });
-}
-async function saveSqliteSupplierIntake(data) {
-  const db = await getSqliteDb();
-  const id = data.id || `intake-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
-  const now = (/* @__PURE__ */ new Date()).toISOString();
-  const year = (/* @__PURE__ */ new Date()).getFullYear();
-  let batchNum = data.batch_number;
-  if (!batchNum || batchNum.trim() === "") {
-    const countRes = db.exec("SELECT COUNT(*) as count FROM supplier_intakes;");
-    const count = countRes.length > 0 ? countRes[0].values[0][0] : 0;
-    batchNum = `BATCH-${year}-${String(count + 1).padStart(3, "0")}`;
-  }
-  const qty = Number(data.quantity_received || 0);
-  const unitCost = Number(data.unit_cost || 0);
-  const totalCost = Number(data.total_cost || qty * unitCost);
-  let supplierName = data.supplier_name || "";
-  let supplierCompany = data.supplier_company || "";
-  if (data.supplier && (!supplierName || !supplierCompany)) {
-    const sup = await getSqliteSupplierById(data.supplier);
-    if (sup) {
-      supplierName = sup.name;
-      supplierCompany = sup.company_name;
-    }
-  }
-  const stmt = db.prepare(`
-    INSERT OR REPLACE INTO supplier_intakes (
-      id, batch_number, supplier, supplier_name, supplier_company, product,
-      product_name, product_sku, quantity_received, unit_cost, total_cost,
-      received_date, delivery_note_ref, invoice_ref, status, notes, received_by, created_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `);
-  stmt.run([
-    id,
-    batchNum,
-    data.supplier || "",
-    supplierName,
-    supplierCompany,
-    data.product || null,
-    data.product_name || "Received Sourced Lot",
-    data.product_sku || "",
-    qty,
-    unitCost,
-    totalCost,
-    data.received_date || now.split("T")[0],
-    data.delivery_note_ref || "",
-    data.invoice_ref || "",
-    data.status || "Received",
-    data.notes || "",
-    data.received_by || "Inventory Manager",
-    data.created_at || now
-  ]);
-  stmt.free();
-  if (data.supplier && data.product) {
-    db.run(`
-      UPDATE supplier_products 
-      SET quantity_received = quantity_received + ?, remaining_stock = remaining_stock + ?, updated_at = ?
-      WHERE supplier = ? AND product = ?;
-    `, [qty, qty, now, data.supplier, data.product]);
-  }
-  saveSqliteDb(db);
-  const all = await getAllSqliteSupplierIntakes();
-  return all.find((i) => i.id === id);
-}
-async function getAllSqliteSupplierPayments(supplierId) {
-  const db = await getSqliteDb();
-  await ensureSuppliersSeeded(db);
-  let query = "SELECT * FROM supplier_payments ORDER BY created_at DESC;";
-  if (supplierId && supplierId !== "all") {
-    query = `SELECT * FROM supplier_payments WHERE supplier = '${supplierId.replace(/'/g, "''")}' ORDER BY created_at DESC;`;
-  }
-  const res = db.exec(query);
-  if (!res || !res.length) return [];
-  const cols = res[0].columns;
-  return res[0].values.map((row) => {
-    const obj = {};
-    cols.forEach((c, idx) => {
-      obj[c] = row[idx];
-    });
-    let allocated = [];
-    try {
-      allocated = obj.allocated_batches_or_orders ? JSON.parse(obj.allocated_batches_or_orders) : [];
-    } catch (_) {
-    }
-    return {
-      id: obj.id,
-      payment_reference: obj.payment_reference,
-      supplier: obj.supplier,
-      supplier_name: obj.supplier_name || "",
-      supplier_company: obj.supplier_company || "",
-      payment_date: obj.payment_date || (/* @__PURE__ */ new Date()).toISOString().split("T")[0],
-      amount: Number(obj.amount || 0),
-      payment_method: obj.payment_method || "M-PESA",
-      transaction_code: obj.transaction_code || "",
-      settlement_period_start: obj.settlement_period_start || null,
-      settlement_period_end: obj.settlement_period_end || null,
-      allocated_batches_or_orders: allocated,
-      status: obj.status || "Completed",
-      receipt_attachment_url: obj.receipt_attachment_url || "",
-      notes: obj.notes || "",
-      processed_by: obj.processed_by || "Finance Controller",
-      created_at: obj.created_at || (/* @__PURE__ */ new Date()).toISOString()
-    };
-  });
-}
-async function saveSqliteSupplierPayment(data) {
-  const db = await getSqliteDb();
-  const id = data.id || `pay-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
-  const now = (/* @__PURE__ */ new Date()).toISOString();
-  const year = (/* @__PURE__ */ new Date()).getFullYear();
-  let payRef = data.payment_reference;
-  if (!payRef || payRef.trim() === "") {
-    const countRes = db.exec("SELECT COUNT(*) as count FROM supplier_payments;");
-    const count = countRes.length > 0 ? countRes[0].values[0][0] : 0;
-    payRef = `PAY-SUP-${year}-${String(count + 1).padStart(3, "0")}`;
-  }
-  let supplierName = data.supplier_name || "";
-  let supplierCompany = data.supplier_company || "";
-  if (data.supplier && (!supplierName || !supplierCompany)) {
-    const sup = await getSqliteSupplierById(data.supplier);
-    if (sup) {
-      supplierName = sup.name;
-      supplierCompany = sup.company_name;
-    }
-  }
-  const stmt = db.prepare(`
-    INSERT OR REPLACE INTO supplier_payments (
-      id, payment_reference, supplier, supplier_name, supplier_company,
-      payment_date, amount, payment_method, transaction_code,
-      settlement_period_start, settlement_period_end, allocated_batches_or_orders,
-      status, receipt_attachment_url, notes, processed_by, created_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `);
-  stmt.run([
-    id,
-    payRef,
-    data.supplier || "",
-    supplierName,
-    supplierCompany,
-    data.payment_date || now.split("T")[0],
-    Number(data.amount || 0),
-    data.payment_method || "M-PESA",
-    data.transaction_code || "",
-    data.settlement_period_start || null,
-    data.settlement_period_end || null,
-    JSON.stringify(data.allocated_batches_or_orders || []),
-    data.status || "Completed",
-    data.receipt_attachment_url || "",
-    data.notes || "",
-    data.processed_by || "Finance Controller",
-    data.created_at || now
-  ]);
-  stmt.free();
-  saveSqliteDb(db);
-  const all = await getAllSqliteSupplierPayments();
-  return all.find((p) => p.id === id);
-}
-async function getSqliteSupplierStatement(supplierId, startDate, endDate) {
-  const supplier = await getSqliteSupplierById(supplierId);
-  const intakes = await getAllSqliteSupplierIntakes(supplierId);
-  const payments = await getAllSqliteSupplierPayments(supplierId);
-  const transactions = [];
-  let runningBalance = 0;
-  const allEvents = [];
-  for (const intake of intakes) {
-    allEvents.push({
-      date: intake.received_date || intake.created_at,
-      type: "STOCK_INTAKE",
-      ref: intake.batch_number,
-      desc: `Intake Batch: ${intake.product_name} (${intake.quantity_received} units @ KSh ${intake.unit_cost.toLocaleString()})`,
-      debit: 0,
-      credit: intake.total_cost
-    });
-  }
-  for (const pay of payments) {
-    if (pay.status === "Completed") {
-      allEvents.push({
-        date: pay.payment_date || pay.created_at,
-        type: "PAYMENT_DISBURSED",
-        ref: pay.payment_reference,
-        desc: `Payment Disbursed via ${pay.payment_method} ${pay.transaction_code ? `(${pay.transaction_code})` : ""}`,
-        debit: pay.amount,
-        credit: 0
-      });
-    }
-  }
-  allEvents.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-  let totalDebited = 0;
-  let totalCredited = 0;
-  for (let i = 0; i < allEvents.length; i++) {
-    const ev = allEvents[i];
-    runningBalance += ev.credit - ev.debit;
-    totalDebited += ev.debit;
-    totalCredited += ev.credit;
-    let inRange = true;
-    if (startDate && new Date(ev.date) < new Date(startDate)) inRange = false;
-    if (endDate && new Date(ev.date) > new Date(endDate)) inRange = false;
-    if (inRange) {
-      transactions.push({
-        id: `tx-${i + 1}`,
-        date: ev.date,
-        entry_type: ev.type,
-        reference: ev.ref,
-        description: ev.desc,
-        debit: ev.debit,
-        credit: ev.credit,
-        running_balance: runningBalance
-      });
-    }
-  }
-  return {
-    supplier_id: supplierId,
-    supplier_name: supplier?.name || "Supplier",
-    company_name: supplier?.company_name || "",
-    code: supplier?.code || "SUP-001",
-    tax_pin: supplier?.tax_pin || "P051000000Z",
-    payment_terms: supplier?.payment_terms || "Consignment Sale",
-    statement_period: {
-      start: startDate || (transactions[0]?.date || "2026-01-01"),
-      end: endDate || (/* @__PURE__ */ new Date()).toISOString().split("T")[0]
-    },
-    total_debited: totalDebited,
-    total_credited: totalCredited,
-    closing_balance: Math.max(0, runningBalance),
-    transactions
-  };
-}
-async function getSqliteSupplierDashboardAnalytics() {
-  const suppliers = await getAllSqliteSuppliers();
-  const products = await getAllSqliteSupplierProducts();
-  const payments = await getAllSqliteSupplierPayments();
-  const totalSuppliers = suppliers.length;
-  const totalProducts = products.length;
-  const totalUnitsReceived = products.reduce((acc, p) => acc + (p.quantity_received || 0), 0);
-  const totalUnitsSold = products.reduce((acc, p) => acc + (p.quantity_sold || 0), 0);
-  const totalReceivedValue = products.reduce((acc, p) => acc + p.quantity_received * p.agreed_cost_price, 0);
-  const totalSalesRevenue = products.reduce((acc, p) => acc + (p.total_sales_revenue || p.quantity_sold * p.selling_price), 0);
-  const totalSupplierCosts = products.reduce((acc, p) => acc + (p.total_cost_owed || p.quantity_sold * p.agreed_cost_price), 0);
-  const totalPaid = payments.filter((p) => p.status === "Completed").reduce((acc, p) => acc + p.amount, 0);
-  const totalOutstanding = Math.max(0, totalSupplierCosts - totalPaid);
-  const totalProfit = totalSalesRevenue - totalSupplierCosts;
-  const margin = totalSalesRevenue > 0 ? Math.round(totalProfit / totalSalesRevenue * 100 * 10) / 10 : 0;
-  return {
-    metrics: {
-      total_suppliers: totalSuppliers,
-      total_products_sourced: totalProducts,
-      total_units_received: totalUnitsReceived,
-      total_units_sold: totalUnitsSold,
-      total_received_value: totalReceivedValue,
-      total_sales_revenue: totalSalesRevenue,
-      total_supplier_costs: totalSupplierCosts,
-      total_paid_to_suppliers: totalPaid,
-      total_outstanding_balance: totalOutstanding,
-      total_gross_profit: totalProfit,
-      overall_profit_margin: margin
-    },
-    status_distribution: {
-      Paid: suppliers.filter((s) => s.payment_status === "Paid").length,
-      "Partially Paid": suppliers.filter((s) => s.payment_status === "Partially Paid").length,
-      Pending: suppliers.filter((s) => s.payment_status === "Pending").length
-    },
-    top_profitable_products: products.sort((a, b) => b.gross_profit - a.gross_profit).slice(0, 5).map((p) => {
-      const sup = suppliers.find((s) => s.id === p.supplier);
-      return {
-        product_id: p.product,
-        product_name: p.product_name,
-        sku: p.product_sku,
-        supplier_name: sup?.company_name || sup?.name || "Supplier",
-        selling_price: p.selling_price,
-        supplier_cost: p.agreed_cost_price,
-        quantity_sold: p.quantity_sold,
-        revenue: p.total_sales_revenue,
-        gross_profit: p.gross_profit,
-        profit_margin: p.profit_margin_percent
-      };
-    }),
-    top_suppliers: suppliers.sort((a, b) => b.total_sales_revenue - a.total_sales_revenue).slice(0, 5).map((s) => ({
-      supplier_id: s.id,
-      supplier_name: s.name,
-      company_name: s.company_name,
-      products_count: s.active_products_count,
-      total_revenue: s.total_sales_revenue,
-      total_cost: s.total_cost_owed,
-      gross_profit: s.gross_profit,
-      outstanding_balance: s.outstanding_balance,
-      margin_percent: s.profit_margin_percent
-    }))
-  };
-}
-async function getSqliteSupplierReport(type, supplierId, startDate, endDate) {
-  const suppliers = await getAllSqliteSuppliers();
-  const products = await getAllSqliteSupplierProducts(supplierId);
-  const intakes = await getAllSqliteSupplierIntakes(supplierId);
-  const payments = await getAllSqliteSupplierPayments(supplierId);
-  const targetSuppliers = supplierId && supplierId !== "all" ? suppliers.filter((s) => s.id === supplierId) : suppliers;
-  switch (type) {
-    case "outstanding_balances":
-    case "outstanding_payments":
-      return {
-        report_type: type,
-        title: "Supplier Outstanding Balances & Aging Summary",
-        generated_at: (/* @__PURE__ */ new Date()).toISOString(),
-        columns: ["Supplier Code", "Supplier Name", "Company", "Total Cost Owed", "Total Paid", "Outstanding Balance", "Payment Terms", "Status"],
-        rows: targetSuppliers.map((s) => ({
-          code: s.code,
-          name: s.name,
-          company: s.company_name || "N/A",
-          total_owed: `KSh ${s.total_cost_owed.toLocaleString()}`,
-          total_paid: `KSh ${s.total_amount_paid.toLocaleString()}`,
-          outstanding_balance: `KSh ${s.outstanding_balance.toLocaleString()}`,
-          payment_terms: s.payment_terms,
-          status: s.payment_status
-        }))
-      };
-    case "payment_history":
-      return {
-        report_type: type,
-        title: "Supplier Payment Disbursements & Settlement History",
-        generated_at: (/* @__PURE__ */ new Date()).toISOString(),
-        columns: ["Payment Ref", "Supplier Name", "Company", "Payment Date", "Amount", "Payment Method", "Transaction Code", "Status"],
-        rows: payments.map((p) => ({
-          payment_ref: p.payment_reference,
-          supplier_name: p.supplier_name,
-          company: p.supplier_company || "N/A",
-          payment_date: p.payment_date,
-          amount: `KSh ${p.amount.toLocaleString()}`,
-          method: p.payment_method,
-          transaction_code: p.transaction_code || "N/A",
-          status: p.status
-        }))
-      };
-    case "products_received":
-      return {
-        report_type: type,
-        title: "Supplier Inventory Intake & Sourcing Log",
-        generated_at: (/* @__PURE__ */ new Date()).toISOString(),
-        columns: ["Batch Ref", "Supplier Company", "Product Name", "SKU", "Quantity Received", "Unit Cost", "Total Cost", "Received Date", "Status"],
-        rows: intakes.map((i) => ({
-          batch: i.batch_number,
-          company: i.supplier_company || i.supplier_name || "N/A",
-          product_name: i.product_name,
-          sku: i.product_sku || "N/A",
-          quantity: i.quantity_received,
-          unit_cost: `KSh ${i.unit_cost.toLocaleString()}`,
-          total_cost: `KSh ${i.total_cost.toLocaleString()}`,
-          received_date: i.received_date,
-          status: i.status
-        }))
-      };
-    case "profitability_by_supplier":
-    case "sales_by_supplier":
-      return {
-        report_type: type,
-        title: "Supplier Sourcing Profitability & Sales Revenue Breakdown",
-        generated_at: (/* @__PURE__ */ new Date()).toISOString(),
-        columns: ["Supplier Code", "Company / Artisan", "Products Sourced", "Sales Revenue", "Cost Owed", "Gross Profit", "Margin %", "Payment Status"],
-        rows: targetSuppliers.map((s) => ({
-          code: s.code,
-          company: s.company_name || s.name,
-          products_count: s.active_products_count,
-          sales_revenue: `KSh ${s.total_sales_revenue.toLocaleString()}`,
-          cost_owed: `KSh ${s.total_cost_owed.toLocaleString()}`,
-          gross_profit: `KSh ${s.gross_profit.toLocaleString()}`,
-          margin: `${s.profit_margin_percent}%`,
-          status: s.payment_status
-        }))
-      };
-    case "profitability_by_product":
-    case "products_sold":
-      return {
-        report_type: type,
-        title: "Sourced Product Margins & Unit Sales Velocity",
-        generated_at: (/* @__PURE__ */ new Date()).toISOString(),
-        columns: ["Product Name", "SKU", "Agreed Cost", "Selling Price", "Units Received", "Units Sold", "Remaining Stock", "Gross Profit", "Margin %"],
-        rows: products.map((p) => ({
-          product_name: p.product_name,
-          sku: p.product_sku || "N/A",
-          cost_price: `KSh ${p.agreed_cost_price.toLocaleString()}`,
-          selling_price: `KSh ${p.selling_price.toLocaleString()}`,
-          units_received: p.quantity_received,
-          units_sold: p.quantity_sold,
-          remaining_stock: p.remaining_stock,
-          gross_profit: `KSh ${p.gross_profit.toLocaleString()}`,
-          margin: `${p.profit_margin_percent}%`
-        }))
-      };
-    default:
-      return {
-        report_type: type,
-        title: "Supplier Consolidated Sourcing Report",
-        generated_at: (/* @__PURE__ */ new Date()).toISOString(),
-        columns: ["Supplier Code", "Supplier Name", "Company", "Total Owed", "Total Paid", "Outstanding Balance", "Status"],
-        rows: targetSuppliers.map((s) => ({
-          code: s.code,
-          name: s.name,
-          company: s.company_name || "N/A",
-          total_owed: `KSh ${s.total_cost_owed.toLocaleString()}`,
-          total_paid: `KSh ${s.total_amount_paid.toLocaleString()}`,
-          outstanding_balance: `KSh ${s.outstanding_balance.toLocaleString()}`,
-          status: s.payment_status
-        }))
-      };
-  }
-}
-async function getAllSqliteUsers() {
-  const db = await getSqliteDb();
-  const res = db.exec("SELECT * FROM users;");
-  if (res.length === 0) return [];
-  const cols = res[0].columns;
-  return res[0].values.map((row) => {
-    const obj = {};
-    cols.forEach((col, idx) => {
-      obj[col] = row[idx];
-    });
-    return {
-      ...obj,
-      is_staff: Boolean(obj.is_staff),
-      is_superuser: Boolean(obj.is_superuser),
-      email_verified: Boolean(obj.email_verified)
-    };
-  });
-}
-async function getSqliteUserByEmail(email) {
-  if (!email) return null;
-  const db = await getSqliteDb();
-  const normalized = email.trim().toLowerCase();
-  const stmt = db.prepare("SELECT * FROM users WHERE LOWER(TRIM(email)) = ? OR LOWER(TRIM(username)) = ? LIMIT 1;");
-  stmt.bind([normalized, normalized]);
-  if (!stmt.step()) {
-    stmt.free();
-    return null;
-  }
-  const obj = stmt.getAsObject();
-  stmt.free();
-  return {
-    ...obj,
-    is_staff: Boolean(obj.is_staff),
-    is_superuser: Boolean(obj.is_superuser),
-    email_verified: Boolean(obj.email_verified)
-  };
-}
-async function getSqliteUserById(id) {
-  if (!id) return null;
-  const db = await getSqliteDb();
-  const stmt = db.prepare("SELECT * FROM users WHERE id = ? LIMIT 1;");
-  stmt.bind([String(id)]);
-  if (!stmt.step()) {
-    stmt.free();
-    return null;
-  }
-  const obj = stmt.getAsObject();
-  stmt.free();
-  return {
-    ...obj,
-    is_staff: Boolean(obj.is_staff),
-    is_superuser: Boolean(obj.is_superuser),
-    email_verified: Boolean(obj.email_verified)
-  };
-}
-async function saveSqliteUser(user) {
-  const db = await getSqliteDb();
-  const id = String(user.id || `usr-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`);
-  const normalizedEmail = user.email.trim().toLowerCase();
-  const now = (/* @__PURE__ */ new Date()).toISOString();
-  const existingUser = await getSqliteUserByEmail(normalizedEmail);
-  if (existingUser && existingUser.id !== id) {
-    throw new Error("An account with this email already exists.");
-  }
-  const stmt = db.prepare(`
-    INSERT INTO users (
-      id, username, email, password_hash, first_name, last_name, phone,
+  await pool.query(
+    `INSERT INTO users (
+      id, email, username, password_hash, first_name, last_name, phone, role,
       is_staff, is_superuser, email_verified, avatar_url, referral_code, partner_tier,
-      created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    ON CONFLICT(id) DO UPDATE SET
-      username = excluded.username,
-      email = excluded.email,
-      password_hash = excluded.password_hash,
-      first_name = excluded.first_name,
-      last_name = excluded.last_name,
-      phone = excluded.phone,
-      is_staff = excluded.is_staff,
-      is_superuser = excluded.is_superuser,
-      email_verified = excluded.email_verified,
-      avatar_url = excluded.avatar_url,
-      referral_code = excluded.referral_code,
-      partner_tier = excluded.partner_tier,
-      updated_at = excluded.updated_at
-  `);
-  stmt.run([
-    id,
-    user.username || normalizedEmail.split("@")[0],
-    normalizedEmail,
-    user.password_hash,
-    user.first_name || "",
-    user.last_name || "",
-    user.phone || "",
-    user.is_staff ? 1 : 0,
-    user.is_superuser ? 1 : 0,
-    user.email_verified !== void 0 ? user.email_verified ? 1 : 0 : 1,
-    user.avatar_url || "",
-    user.referral_code || `REF-${Math.random().toString(36).substring(2, 7).toUpperCase()}`,
-    user.partner_tier || "Silver",
-    existingUser?.created_at || now,
-    now
-  ]);
-  stmt.free();
-  saveSqliteDb(db);
+      address, city, country, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON DUPLICATE KEY UPDATE
+      username = VALUES(username),
+      password_hash = VALUES(password_hash),
+      first_name = VALUES(first_name),
+      last_name = VALUES(last_name),
+      phone = VALUES(phone),
+      role = VALUES(role),
+      is_staff = VALUES(is_staff),
+      is_superuser = VALUES(is_superuser),
+      email_verified = VALUES(email_verified),
+      avatar_url = VALUES(avatar_url),
+      referral_code = VALUES(referral_code),
+      partner_tier = VALUES(partner_tier),
+      address = VALUES(address),
+      city = VALUES(city),
+      country = VALUES(country),
+      updated_at = VALUES(updated_at)`,
+    [
+      id,
+      (user.email || "").trim().toLowerCase(),
+      user.username || user.email?.split("@")[0] || "",
+      user.password_hash || user.password || "",
+      user.first_name || "",
+      user.last_name || "",
+      user.phone || "",
+      user.role || "customer",
+      user.is_staff ? 1 : 0,
+      user.is_superuser ? 1 : 0,
+      user.email_verified !== void 0 ? user.email_verified ? 1 : 0 : 1,
+      user.avatar_url || "",
+      user.referral_code || null,
+      user.partner_tier || "Silver",
+      user.address || null,
+      user.city || null,
+      user.country || null,
+      user.created_at || now,
+      now
+    ]
+  );
+  return getMysqlUserById(id);
+}
+async function updateMysqlUserPasswordById(userId, newPasswordHash) {
+  const pool = await getDbPool2();
+  const [res] = await pool.query(
+    "UPDATE users SET password_hash = ?, updated_at = ? WHERE id = ?",
+    [newPasswordHash, (/* @__PURE__ */ new Date()).toISOString(), userId]
+  );
+  return res.affectedRows > 0;
+}
+function parseProductRow(row) {
+  if (!row) return null;
   return {
-    id,
-    username: user.username || normalizedEmail.split("@")[0],
-    email: normalizedEmail,
-    password_hash: user.password_hash,
-    first_name: user.first_name || "",
-    last_name: user.last_name || "",
-    phone: user.phone || "",
-    is_staff: Boolean(user.is_staff),
-    is_superuser: Boolean(user.is_superuser),
-    email_verified: Boolean(user.email_verified !== void 0 ? user.email_verified : true),
-    avatar_url: user.avatar_url || "",
-    referral_code: user.referral_code,
-    partner_tier: user.partner_tier || "Silver",
-    created_at: existingUser?.created_at || now,
-    updated_at: now
+    ...row,
+    price: Number(row.price),
+    originalPrice: row.originalPrice ? Number(row.originalPrice) : void 0,
+    costPrice: row.costPrice ? Number(row.costPrice) : void 0,
+    previousPrice: row.previousPrice ? Number(row.previousPrice) : void 0,
+    rating: Number(row.rating || 0),
+    reviewsCount: Number(row.reviewsCount || 0),
+    stock: Number(row.stock || 0),
+    lowStockThreshold: Number(row.lowStockThreshold || 5),
+    backInStockAlert: Boolean(row.backInStockAlert),
+    tags: typeof row.tags === "string" ? safeJsonParse(row.tags, row.tags.split(",").map((t) => t.trim())) : row.tags || [],
+    images: typeof row.images === "string" ? safeJsonParse(row.images, [row.imageUrl || ""]) : row.images || [],
+    variations: typeof row.variations === "string" ? safeJsonParse(row.variations, []) : row.variations || [],
+    reviews: typeof row.reviews === "string" ? safeJsonParse(row.reviews, []) : row.reviews || [],
+    features: typeof row.features === "string" ? safeJsonParse(row.features, []) : row.features || [],
+    specifications: typeof row.specifications === "string" ? safeJsonParse(row.specifications, []) : row.specifications || []
+  };
+}
+function safeJsonParse(val, fallback) {
+  try {
+    return JSON.parse(val);
+  } catch (_) {
+    return fallback;
+  }
+}
+async function getMysqlProducts() {
+  const pool = await getDbPool2();
+  const [rows] = await pool.query("SELECT * FROM products ORDER BY created_at DESC");
+  return (rows || []).map(parseProductRow);
+}
+async function getMysqlProductById(id) {
+  const pool = await getDbPool2();
+  const [rows] = await pool.query("SELECT * FROM products WHERE id = ? LIMIT 1", [id]);
+  if (!rows || rows.length === 0) return null;
+  return parseProductRow(rows[0]);
+}
+async function saveMysqlProduct(p) {
+  const pool = await getDbPool2();
+  const id = p.id || `prod-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  await pool.query(
+    `INSERT INTO products (
+      id, sku, slug, name, brand, country_of_origin, description, shortDescription, detailedDescription,
+      price, originalPrice, costPrice, previousPrice, category, subcategory, tags, type, imageUrl, images,
+      stock, lowStockThreshold, rating, reviewsCount, variations, reviews, features, specifications,
+      whatsInTheBox, digitalFileUrl, status, paymentRestriction, backInStockAlert, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON DUPLICATE KEY UPDATE
+      sku = VALUES(sku),
+      slug = VALUES(slug),
+      name = VALUES(name),
+      brand = VALUES(brand),
+      country_of_origin = VALUES(country_of_origin),
+      description = VALUES(description),
+      shortDescription = VALUES(shortDescription),
+      detailedDescription = VALUES(detailedDescription),
+      price = VALUES(price),
+      originalPrice = VALUES(originalPrice),
+      costPrice = VALUES(costPrice),
+      previousPrice = VALUES(previousPrice),
+      category = VALUES(category),
+      subcategory = VALUES(subcategory),
+      tags = VALUES(tags),
+      type = VALUES(type),
+      imageUrl = VALUES(imageUrl),
+      images = VALUES(images),
+      stock = VALUES(stock),
+      lowStockThreshold = VALUES(lowStockThreshold),
+      rating = VALUES(rating),
+      reviewsCount = VALUES(reviewsCount),
+      variations = VALUES(variations),
+      reviews = VALUES(reviews),
+      features = VALUES(features),
+      specifications = VALUES(specifications),
+      whatsInTheBox = VALUES(whatsInTheBox),
+      digitalFileUrl = VALUES(digitalFileUrl),
+      status = VALUES(status),
+      paymentRestriction = VALUES(paymentRestriction),
+      backInStockAlert = VALUES(backInStockAlert),
+      updated_at = VALUES(updated_at)`,
+    [
+      id,
+      p.sku || "",
+      p.slug || p.name?.toLowerCase().replace(/\s+/g, "-") || "",
+      p.name || "Untitled Product",
+      p.brand || "Ropenix",
+      p.countryOfOrigin || p.country_of_origin || "Kenya",
+      p.description || "",
+      p.shortDescription || "",
+      p.detailedDescription || "",
+      Number(p.price || 0),
+      p.originalPrice ? Number(p.originalPrice) : null,
+      p.costPrice ? Number(p.costPrice) : null,
+      p.previousPrice ? Number(p.previousPrice) : null,
+      p.category || "All",
+      p.subcategory || "",
+      JSON.stringify(Array.isArray(p.tags) ? p.tags : []),
+      p.type || "physical",
+      p.imageUrl || Array.isArray(p.images) && p.images[0] || "",
+      JSON.stringify(Array.isArray(p.images) ? p.images : []),
+      Number(p.stock || 0),
+      Number(p.lowStockThreshold || 5),
+      Number(p.rating || 0),
+      Number(p.reviewsCount || 0),
+      JSON.stringify(Array.isArray(p.variations) ? p.variations : []),
+      JSON.stringify(Array.isArray(p.reviews) ? p.reviews : []),
+      JSON.stringify(Array.isArray(p.features) ? p.features : []),
+      JSON.stringify(Array.isArray(p.specifications) ? p.specifications : []),
+      p.whatsInTheBox || "",
+      p.digitalFileUrl || "",
+      p.status || "Active",
+      p.paymentRestriction || "both",
+      p.backInStockAlert ? 1 : 0,
+      p.created_at || now,
+      now
+    ]
+  );
+  return getMysqlProductById(id);
+}
+async function deleteMysqlProduct(id) {
+  const pool = await getDbPool2();
+  const [res] = await pool.query("DELETE FROM products WHERE id = ?", [id]);
+  return res.affectedRows > 0;
+}
+function parseOrderRow(row) {
+  if (!row) return null;
+  let status = row.status;
+  if (typeof status !== "string" || status === "[object Object]" || !status) {
+    status = row.deliveryConfirmed ? "delivered" : row.trackingNumber ? "shipped" : row.isPaid || row.paymentStatus === "paid" ? "processing" : "pending";
+  }
+  return {
+    ...row,
+    status,
+    total: Number(row.total),
+    deliveryFee: Number(row.deliveryFee || 0),
+    tax: Number(row.tax || 0),
+    discount: Number(row.discount || 0),
+    isGuest: Boolean(row.isGuest),
+    isPaid: Boolean(row.isPaid),
+    deliveryConfirmed: Boolean(row.deliveryConfirmed),
+    paymentReference: row.paymentReference || row.mpesaReceiptNumber || void 0,
+    mpesaReceiptNumber: row.mpesaReceiptNumber || row.paymentReference || void 0,
+    mpesaPhone: row.mpesaPhone || void 0,
+    items: typeof row.items === "string" ? safeJsonParse(row.items, []) : row.items || [],
+    shippingAddress: typeof row.shippingAddress === "string" ? safeJsonParse(row.shippingAddress, row.shippingAddress) : row.shippingAddress,
+    notesHistory: typeof row.notesHistory === "string" ? safeJsonParse(row.notesHistory, []) : row.notesHistory || [],
+    statusHistory: typeof row.statusHistory === "string" ? safeJsonParse(row.statusHistory, []) : row.statusHistory || []
+  };
+}
+async function getMysqlOrders() {
+  const pool = await getDbPool2();
+  const [rows] = await pool.query("SELECT * FROM orders ORDER BY date DESC, created_at DESC");
+  return (rows || []).map(parseOrderRow);
+}
+async function getMysqlOrderById(id) {
+  const pool = await getDbPool2();
+  const [rows] = await pool.query("SELECT * FROM orders WHERE id = ? LIMIT 1", [id]);
+  if (!rows || rows.length === 0) return null;
+  return parseOrderRow(rows[0]);
+}
+async function saveMysqlOrder(order) {
+  const pool = await getDbPool2();
+  const id = order.id || `ORD-${Date.now()}`;
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  const refCode = order.paymentReference || order.mpesaReceiptNumber || null;
+  const phone = order.mpesaPhone || order.customerPhone || order.phone || null;
+  let safeStatus = typeof order.status === "string" && order.status !== "[object Object]" ? order.status : typeof order.status === "object" && typeof order.status?.status === "string" && order.status.status !== "[object Object]" ? order.status.status : "";
+  if (!safeStatus || safeStatus === "[object Object]") {
+    safeStatus = order.deliveryConfirmed ? "delivered" : order.trackingNumber ? "shipped" : order.isPaid || order.paymentStatus === "paid" ? "processing" : "pending";
+  }
+  await pool.query(
+    `INSERT INTO orders (
+      id, customerName, customerEmail, customerPhone, items, total, status, date, couponCode,
+      customNote, shippingAddress, notesHistory, statusHistory, isGuest, paymentMethod, checkoutChannel,
+      paymentStatus, paymentReference, mpesaPhone, isPaid, paidAt, mpesaReceiptNumber, deliveryConfirmed, deliveredAt, deliveryPerson,
+      deliveryNote, trackingNumber, deliveryFee, tax, discount, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON DUPLICATE KEY UPDATE
+      customerName = VALUES(customerName),
+      customerEmail = VALUES(customerEmail),
+      customerPhone = VALUES(customerPhone),
+      items = VALUES(items),
+      total = VALUES(total),
+      status = VALUES(status),
+      couponCode = VALUES(couponCode),
+      customNote = VALUES(customNote),
+      shippingAddress = VALUES(shippingAddress),
+      notesHistory = VALUES(notesHistory),
+      statusHistory = VALUES(statusHistory),
+      isGuest = VALUES(isGuest),
+      paymentMethod = VALUES(paymentMethod),
+      checkoutChannel = VALUES(checkoutChannel),
+      paymentStatus = VALUES(paymentStatus),
+      paymentReference = VALUES(paymentReference),
+      mpesaPhone = VALUES(mpesaPhone),
+      isPaid = VALUES(isPaid),
+      paidAt = VALUES(paidAt),
+      mpesaReceiptNumber = VALUES(mpesaReceiptNumber),
+      deliveryConfirmed = VALUES(deliveryConfirmed),
+      deliveredAt = VALUES(deliveredAt),
+      deliveryPerson = VALUES(deliveryPerson),
+      deliveryNote = VALUES(deliveryNote),
+      trackingNumber = VALUES(trackingNumber),
+      deliveryFee = VALUES(deliveryFee),
+      tax = VALUES(tax),
+      discount = VALUES(discount),
+      updated_at = VALUES(updated_at)`,
+    [
+      id,
+      order.customerName || "Customer",
+      (order.customerEmail || "").trim().toLowerCase(),
+      order.customerPhone || order.phone || "",
+      JSON.stringify(Array.isArray(order.items) ? order.items : []),
+      Number(order.total || 0),
+      safeStatus,
+      order.date || now,
+      order.couponCode || null,
+      order.customNote || null,
+      typeof order.shippingAddress === "object" ? JSON.stringify(order.shippingAddress) : order.shippingAddress || null,
+      JSON.stringify(Array.isArray(order.notesHistory) ? order.notesHistory : []),
+      JSON.stringify(Array.isArray(order.statusHistory) ? order.statusHistory : []),
+      order.isGuest ? 1 : 0,
+      order.paymentMethod || "cod",
+      order.checkoutChannel || "web",
+      order.paymentStatus || (refCode ? "pending_verification" : "pending"),
+      refCode,
+      phone,
+      order.isPaid ? 1 : 0,
+      order.paidAt || null,
+      refCode,
+      order.deliveryConfirmed ? 1 : 0,
+      order.deliveredAt || null,
+      order.deliveryPerson || null,
+      order.deliveryNote || null,
+      order.trackingNumber || null,
+      Number(order.deliveryFee || 0),
+      Number(order.tax || 0),
+      Number(order.discount || 0),
+      order.created_at || now,
+      now
+    ]
+  );
+  try {
+    await pool.query(
+      `INSERT INTO customer_orders (
+        id, customer_name, customer_email, customer_phone, total, status,
+        payment_status, payment_reference, payment_amount, created_at, placed_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON DUPLICATE KEY UPDATE
+        customer_name = VALUES(customer_name),
+        customer_email = VALUES(customer_email),
+        customer_phone = VALUES(customer_phone),
+        total = VALUES(total),
+        status = VALUES(status),
+        payment_status = VALUES(payment_status),
+        payment_reference = VALUES(payment_reference),
+        payment_amount = VALUES(payment_amount),
+        updated_at = VALUES(updated_at)`,
+      [
+        id,
+        order.customerName || "Customer",
+        (order.customerEmail || "").trim().toLowerCase(),
+        order.customerPhone || order.phone || "",
+        Number(order.total || 0),
+        order.status || "Pending",
+        order.paymentStatus || (refCode ? "pending_verification" : "unpaid"),
+        refCode,
+        order.total || null,
+        order.created_at || now,
+        order.date || now,
+        now
+      ]
+    );
+  } catch (_) {
+  }
+  if (refCode && refCode.trim().length >= 8) {
+    try {
+      const claimId = `sub-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+      await pool.query(
+        `INSERT INTO payment_submissions (
+          id, order_id, mpesa_receipt_code, phone_number, amount_claimed, payment_method, status, admin_notes, submitted_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON DUPLICATE KEY UPDATE
+          phone_number = VALUES(phone_number),
+          amount_claimed = VALUES(amount_claimed),
+          submitted_at = VALUES(submitted_at)`,
+        [
+          claimId,
+          id,
+          refCode.trim().toUpperCase(),
+          phone || "254700000000",
+          Number(order.total || 0),
+          order.paymentMethod || "mpesa_paybill",
+          "pending_verification",
+          "Submitted directly during checkout placement",
+          now
+        ]
+      );
+    } catch (_) {
+    }
+  }
+  return getMysqlOrderById(id);
+}
+async function updateMysqlOrderStatus(id, statusOrUpdates, paymentStatus, trackingNumber) {
+  const pool = await getDbPool2();
+  let targetStatus = typeof statusOrUpdates === "string" && statusOrUpdates !== "[object Object]" ? statusOrUpdates : typeof statusOrUpdates === "object" && typeof statusOrUpdates?.status === "string" && statusOrUpdates.status !== "[object Object]" ? statusOrUpdates.status : void 0;
+  let targetPaymentStatus = typeof statusOrUpdates === "object" ? statusOrUpdates?.paymentStatus || statusOrUpdates?.payment_status || paymentStatus : paymentStatus;
+  let targetTrackingNumber = typeof statusOrUpdates === "object" ? statusOrUpdates?.trackingNumber || statusOrUpdates?.tracking_number || trackingNumber : trackingNumber;
+  const updates = ["updated_at = ?"];
+  const values = [(/* @__PURE__ */ new Date()).toISOString()];
+  if (targetStatus) {
+    updates.push("status = ?");
+    values.push(targetStatus);
+  }
+  if (targetPaymentStatus) {
+    updates.push("paymentStatus = ?");
+    values.push(targetPaymentStatus);
+    if (targetPaymentStatus === "paid" || targetPaymentStatus === "completed") {
+      updates.push("isPaid = 1");
+      updates.push("paidAt = ?");
+      values.push((/* @__PURE__ */ new Date()).toISOString());
+    }
+  }
+  if (targetTrackingNumber) {
+    updates.push("trackingNumber = ?");
+    values.push(targetTrackingNumber);
+  }
+  values.push(id);
+  await pool.query(`UPDATE orders SET ${updates.join(", ")} WHERE id = ?`, values);
+  return getMysqlOrderById(id);
+}
+async function deleteMysqlOrder(id) {
+  const pool = await getDbPool2();
+  const [res] = await pool.query("DELETE FROM orders WHERE id = ?", [id]);
+  return res.affectedRows > 0;
+}
+async function getMysqlCategories() {
+  const pool = await getDbPool2();
+  let [rows] = await pool.query("SELECT * FROM categories ORDER BY display_order ASC, name ASC");
+  if (!rows || rows.length === 0) {
+    for (const c of DEFAULT_CORE_CATEGORIES) {
+      await saveMysqlCategory(c);
+    }
+    const [freshRows] = await pool.query("SELECT * FROM categories ORDER BY display_order ASC, name ASC");
+    rows = freshRows || [];
+  }
+  let productCountMap = {};
+  try {
+    const [counts] = await pool.query("SELECT category, COUNT(*) as cnt FROM products GROUP BY category");
+    if (Array.isArray(counts)) {
+      for (const item of counts) {
+        if (item.category) {
+          productCountMap[item.category.toLowerCase().trim()] = Number(item.cnt || 0);
+        }
+      }
+    }
+  } catch (_) {
+  }
+  return (rows || []).map((c) => {
+    const catNameLower = (c.name || "").toLowerCase().trim();
+    const count = productCountMap[catNameLower] || 0;
+    const isActive = !(c.is_active === 0 || c.is_active === false || c.status === "Inactive");
+    return {
+      id: String(c.id),
+      name: c.name,
+      slug: c.slug || String(c.name).toLowerCase().replace(/\s+/g, "-"),
+      description: c.description || "",
+      imageUrl: c.image || c.imageUrl || "",
+      image: c.image || c.imageUrl || "",
+      icon: c.icon || "",
+      parentId: c.parentId || null,
+      status: isActive ? "Active" : "Inactive",
+      is_active: isActive,
+      displayOrder: Number(c.display_order || c.displayOrder || 0),
+      display_order: Number(c.display_order || c.displayOrder || 0),
+      subcategories: typeof c.subcategories === "string" ? safeJsonParse(c.subcategories, []) : c.subcategories || [],
+      productCount: count,
+      previousSlugs: typeof c.previousSlugs === "string" ? safeJsonParse(c.previousSlugs, []) : Array.isArray(c.previousSlugs) ? c.previousSlugs : [],
+      createdAt: c.created_at || c.createdAt || (/* @__PURE__ */ new Date()).toISOString()
+    };
+  });
+}
+async function saveMysqlCategory(cat) {
+  const pool = await getDbPool2();
+  const id = cat.id || `cat-${Date.now()}`;
+  const isActive = cat.is_active !== void 0 ? cat.is_active ? 1 : 0 : cat.status === "Inactive" ? 0 : 1;
+  const image = cat.imageUrl || cat.image || "";
+  const displayOrder = Number(cat.displayOrder || cat.display_order || 0);
+  await pool.query(
+    `INSERT INTO categories (id, name, slug, description, image, icon, subcategories, is_active, display_order)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+     ON DUPLICATE KEY UPDATE
+       name = VALUES(name),
+       slug = VALUES(slug),
+       description = VALUES(description),
+       image = VALUES(image),
+       icon = VALUES(icon),
+       subcategories = VALUES(subcategories),
+       is_active = VALUES(is_active),
+       display_order = VALUES(display_order)`,
+    [
+      id,
+      cat.name || "Category",
+      cat.slug || String(cat.name || "").toLowerCase().replace(/\s+/g, "-") || "",
+      cat.description || "",
+      image,
+      cat.icon || "",
+      JSON.stringify(Array.isArray(cat.subcategories) ? cat.subcategories : []),
+      isActive,
+      displayOrder
+    ]
+  );
+  const [rows] = await pool.query("SELECT * FROM categories WHERE id = ? LIMIT 1", [id]);
+  const row = rows[0];
+  if (!row) return cat;
+  return {
+    ...row,
+    imageUrl: row.image || row.imageUrl || "",
+    displayOrder: Number(row.display_order || 0),
+    status: row.is_active ? "Active" : "Inactive",
+    is_active: Boolean(row.is_active),
+    subcategories: typeof row.subcategories === "string" ? safeJsonParse(row.subcategories, []) : row.subcategories || []
+  };
+}
+async function deleteMysqlCategory(id) {
+  const pool = await getDbPool2();
+  const [res] = await pool.query("DELETE FROM categories WHERE id = ?", [id]);
+  return res.affectedRows > 0;
+}
+async function getMysqlSuppliers() {
+  const pool = await getDbPool2();
+  const [rows] = await pool.query("SELECT * FROM suppliers ORDER BY name ASC");
+  return (rows || []).map((s) => ({
+    ...s,
+    active: Boolean(s.active),
+    productsCount: Number(s.productsCount || 0),
+    totalSpend: Number(s.totalSpend || 0),
+    rating: Number(s.rating || 5),
+    tags: typeof s.tags === "string" ? safeJsonParse(s.tags, []) : s.tags || []
+  }));
+}
+async function saveMysqlSupplier(s) {
+  const pool = await getDbPool2();
+  const id = s.id || `sup-${Date.now()}`;
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  await pool.query(
+    `INSERT INTO suppliers (
+      id, name, email, phone, address, contactPerson, category, notes, productsCount,
+      totalSpend, active, rating, currency, paymentTerms, bankDetails, kraPin, dateJoined, tags, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON DUPLICATE KEY UPDATE
+      name = VALUES(name),
+      email = VALUES(email),
+      phone = VALUES(phone),
+      address = VALUES(address),
+      contactPerson = VALUES(contactPerson),
+      category = VALUES(category),
+      notes = VALUES(notes),
+      productsCount = VALUES(productsCount),
+      totalSpend = VALUES(totalSpend),
+      active = VALUES(active),
+      rating = VALUES(rating),
+      currency = VALUES(currency),
+      paymentTerms = VALUES(paymentTerms),
+      bankDetails = VALUES(bankDetails),
+      kraPin = VALUES(kraPin),
+      tags = VALUES(tags),
+      updated_at = VALUES(updated_at)`,
+    [
+      id,
+      s.name || "Supplier",
+      s.email || "",
+      s.phone || "",
+      s.address || "",
+      s.contactPerson || "",
+      s.category || "General",
+      s.notes || "",
+      Number(s.productsCount || 0),
+      Number(s.totalSpend || 0),
+      s.active !== void 0 ? s.active ? 1 : 0 : 1,
+      Number(s.rating || 5),
+      s.currency || "KSh",
+      s.paymentTerms || "Net 30",
+      s.bankDetails || "",
+      s.kraPin || "",
+      s.dateJoined || now,
+      JSON.stringify(Array.isArray(s.tags) ? s.tags : []),
+      s.created_at || now,
+      now
+    ]
+  );
+  const [rows] = await pool.query("SELECT * FROM suppliers WHERE id = ? LIMIT 1", [id]);
+  return rows[0];
+}
+async function deleteMysqlSupplier(id) {
+  const pool = await getDbPool2();
+  const [res] = await pool.query("DELETE FROM suppliers WHERE id = ?", [id]);
+  return res.affectedRows > 0;
+}
+async function getMysqlSupplierProducts(supplierId) {
+  const pool = await getDbPool2();
+  const query = supplierId ? "SELECT * FROM supplier_products WHERE supplierId = ? ORDER BY name ASC" : "SELECT * FROM supplier_products ORDER BY name ASC";
+  const params = supplierId ? [supplierId] : [];
+  const [rows] = await pool.query(query, params);
+  return (rows || []).map((sp) => ({
+    ...sp,
+    costPrice: Number(sp.costPrice),
+    sellingPrice: Number(sp.sellingPrice),
+    stock: Number(sp.stock)
+  }));
+}
+async function saveMysqlSupplierProduct(sp) {
+  const pool = await getDbPool2();
+  const id = sp.id || `sp-${Date.now()}`;
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  await pool.query(
+    `INSERT INTO supplier_products (
+      id, supplierId, name, sku, category, costPrice, sellingPrice, stock, minOrderQty, leadTimeDays, status, notes, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON DUPLICATE KEY UPDATE
+      name = VALUES(name),
+      sku = VALUES(sku),
+      category = VALUES(category),
+      costPrice = VALUES(costPrice),
+      sellingPrice = VALUES(sellingPrice),
+      stock = VALUES(stock),
+      minOrderQty = VALUES(minOrderQty),
+      leadTimeDays = VALUES(leadTimeDays),
+      status = VALUES(status),
+      notes = VALUES(notes),
+      updated_at = VALUES(updated_at)`,
+    [
+      id,
+      sp.supplierId,
+      sp.name || "Product",
+      sp.sku || "",
+      sp.category || "",
+      Number(sp.costPrice || 0),
+      Number(sp.sellingPrice || 0),
+      Number(sp.stock || 0),
+      Number(sp.minOrderQty || 1),
+      Number(sp.leadTimeDays || 7),
+      sp.status || "Active",
+      sp.notes || "",
+      sp.created_at || now,
+      now
+    ]
+  );
+  const [rows] = await pool.query("SELECT * FROM supplier_products WHERE id = ? LIMIT 1", [id]);
+  return rows[0];
+}
+async function getMysqlSupplierBatches(supplierId) {
+  const pool = await getDbPool2();
+  const query = supplierId ? "SELECT * FROM supplier_batches WHERE supplierId = ? ORDER BY dateReceived DESC" : "SELECT * FROM supplier_batches ORDER BY dateReceived DESC";
+  const params = supplierId ? [supplierId] : [];
+  const [rows] = await pool.query(query, params);
+  return (rows || []).map((b) => ({
+    ...b,
+    totalCost: Number(b.totalCost),
+    items: typeof b.items === "string" ? safeJsonParse(b.items, []) : b.items || []
+  }));
+}
+async function saveMysqlSupplierBatch(batch) {
+  const pool = await getDbPool2();
+  const id = batch.id || `batch-${Date.now()}`;
+  await pool.query(
+    `INSERT INTO supplier_batches (id, supplierId, batchNumber, dateReceived, items, totalCost, status, invoiceNumber, notes, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+     ON DUPLICATE KEY UPDATE
+       items = VALUES(items),
+       totalCost = VALUES(totalCost),
+       status = VALUES(status),
+       invoiceNumber = VALUES(invoiceNumber),
+       notes = VALUES(notes)`,
+    [
+      id,
+      batch.supplierId,
+      batch.batchNumber || `BAT-${Date.now()}`,
+      batch.dateReceived || (/* @__PURE__ */ new Date()).toISOString(),
+      JSON.stringify(Array.isArray(batch.items) ? batch.items : []),
+      Number(batch.totalCost || 0),
+      batch.status || "Received",
+      batch.invoiceNumber || "",
+      batch.notes || "",
+      batch.created_at || (/* @__PURE__ */ new Date()).toISOString()
+    ]
+  );
+  const [rows] = await pool.query("SELECT * FROM supplier_batches WHERE id = ? LIMIT 1", [id]);
+  return rows[0];
+}
+async function getMysqlSupplierPayments(supplierId) {
+  const pool = await getDbPool2();
+  const query = supplierId ? "SELECT * FROM supplier_payments WHERE supplierId = ? ORDER BY date DESC" : "SELECT * FROM supplier_payments ORDER BY date DESC";
+  const params = supplierId ? [supplierId] : [];
+  const [rows] = await pool.query(query, params);
+  return (rows || []).map((p) => ({ ...p, amount: Number(p.amount) }));
+}
+async function saveMysqlSupplierPayment(p) {
+  const pool = await getDbPool2();
+  const id = p.id || `pay-${Date.now()}`;
+  await pool.query(
+    `INSERT INTO supplier_payments (id, supplierId, amount, date, paymentMethod, referenceNumber, status, notes, invoiceId, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+     ON DUPLICATE KEY UPDATE
+       amount = VALUES(amount),
+       paymentMethod = VALUES(paymentMethod),
+       referenceNumber = VALUES(referenceNumber),
+       status = VALUES(status),
+       notes = VALUES(notes)`,
+    [
+      id,
+      p.supplierId,
+      Number(p.amount || 0),
+      p.date || (/* @__PURE__ */ new Date()).toISOString(),
+      p.paymentMethod || "Bank Transfer",
+      p.referenceNumber || "",
+      p.status || "Completed",
+      p.notes || "",
+      p.invoiceId || "",
+      p.created_at || (/* @__PURE__ */ new Date()).toISOString()
+    ]
+  );
+  const [rows] = await pool.query("SELECT * FROM supplier_payments WHERE id = ? LIMIT 1", [id]);
+  return rows[0];
+}
+async function getMysqlSupplierLedger(supplierId) {
+  const pool = await getDbPool2();
+  const [rows] = await pool.query(
+    "SELECT * FROM supplier_ledger WHERE supplierId = ? ORDER BY date ASC, created_at ASC",
+    [supplierId]
+  );
+  return (rows || []).map((l) => ({
+    ...l,
+    amount: Number(l.amount),
+    balance: Number(l.balance)
+  }));
+}
+async function getAllMysqlCustomers() {
+  const pool = await getDbPool2();
+  const [rows] = await pool.query("SELECT * FROM customers ORDER BY name ASC");
+  return (rows || []).map((c) => ({
+    ...c,
+    is_registered: Boolean(c.is_registered),
+    open_deal_value: Number(c.open_deal_value || 0)
+  }));
+}
+async function saveMysqlCustomer(c) {
+  const pool = await getDbPool2();
+  const id = c.id || `cust-${Date.now()}`;
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  await pool.query(
+    `INSERT INTO customers (
+      id, user, is_registered, first_name, last_name, name, email, phone, company, location, status, notes, open_deal_value, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON DUPLICATE KEY UPDATE
+      user = VALUES(user),
+      is_registered = VALUES(is_registered),
+      first_name = VALUES(first_name),
+      last_name = VALUES(last_name),
+      name = VALUES(name),
+      email = VALUES(email),
+      phone = VALUES(phone),
+      company = VALUES(company),
+      location = VALUES(location),
+      status = VALUES(status),
+      notes = VALUES(notes),
+      open_deal_value = VALUES(open_deal_value),
+      updated_at = VALUES(updated_at)`,
+    [
+      id,
+      c.user || null,
+      c.is_registered ? 1 : 0,
+      c.first_name || "",
+      c.last_name || "",
+      c.name || `${c.first_name || ""} ${c.last_name || ""}`.trim() || "Customer",
+      (c.email || "").trim().toLowerCase(),
+      c.phone || "",
+      c.company || "",
+      c.location || "",
+      c.status || "Active",
+      c.notes || "",
+      Number(c.open_deal_value || 0),
+      c.created_at || now,
+      now
+    ]
+  );
+  const [rows] = await pool.query("SELECT * FROM customers WHERE id = ? LIMIT 1", [id]);
+  return rows[0];
+}
+async function getMysqlSiteSettings() {
+  const pool = await getDbPool2();
+  const [rows] = await pool.query('SELECT * FROM site_settings WHERE id = "default" LIMIT 1');
+  if (!rows || rows.length === 0) return null;
+  const raw = rows[0];
+  return {
+    general: safeJsonParse(raw.general, null),
+    appearance: safeJsonParse(raw.appearance, null),
+    tax: safeJsonParse(raw.tax, null),
+    receipts: safeJsonParse(raw.receipts, null),
+    backup: safeJsonParse(raw.backup, null),
+    payments: safeJsonParse(raw.payments, null),
+    notifications: safeJsonParse(raw.notifications, null),
+    seo: safeJsonParse(raw.seo, null),
+    access_control: safeJsonParse(raw.access_control, null)
+  };
+}
+async function saveMysqlSiteSettings(settings) {
+  const pool = await getDbPool2();
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  await pool.query(
+    `INSERT INTO site_settings (
+      id, general, appearance, tax, receipts, backup, payments, notifications, seo, access_control, updated_at
+    ) VALUES ('default', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON DUPLICATE KEY UPDATE
+      general = VALUES(general),
+      appearance = VALUES(appearance),
+      tax = VALUES(tax),
+      receipts = VALUES(receipts),
+      backup = VALUES(backup),
+      payments = VALUES(payments),
+      notifications = VALUES(notifications),
+      seo = VALUES(seo),
+      access_control = VALUES(access_control),
+      updated_at = VALUES(updated_at)`,
+    [
+      JSON.stringify(settings.general || {}),
+      JSON.stringify(settings.appearance || {}),
+      JSON.stringify(settings.tax || {}),
+      JSON.stringify(settings.receipts || {}),
+      JSON.stringify(settings.backup || {}),
+      JSON.stringify(settings.payments || {}),
+      JSON.stringify(settings.notifications || {}),
+      JSON.stringify(settings.seo || {}),
+      JSON.stringify(settings.access_control || {}),
+      now
+    ]
+  );
+  return getMysqlSiteSettings();
+}
+async function getMysqlHeroBanners() {
+  const pool = await getDbPool2();
+  const [rows] = await pool.query("SELECT * FROM hero_banners ORDER BY order_index ASC");
+  return (rows || []).map((b) => ({
+    ...b,
+    active: Boolean(b.active),
+    order: Number(b.order_index)
+  }));
+}
+async function saveMysqlHeroBanners(banners) {
+  const pool = await getDbPool2();
+  await pool.query("DELETE FROM hero_banners");
+  for (let i = 0; i < banners.length; i++) {
+    const b = banners[i];
+    const id = b.id || `banner-${i + 1}`;
+    await pool.query(
+      `INSERT INTO hero_banners (id, title, subtitle, imageUrl, link, ctaText, badgeText, active, order_index)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        id,
+        b.title || "Untitled Banner",
+        b.subtitle || "",
+        b.imageUrl || "",
+        b.link || "/store",
+        b.ctaText || "Shop Now",
+        b.badgeText || "",
+        b.active !== void 0 ? b.active ? 1 : 0 : 1,
+        i
+      ]
+    );
+  }
+  return getMysqlHeroBanners();
+}
+async function getMysqlReviews(productId) {
+  const pool = await getDbPool2();
+  const query = productId ? "SELECT * FROM reviews WHERE productId = ? ORDER BY date DESC" : "SELECT * FROM reviews ORDER BY date DESC";
+  const params = productId ? [productId] : [];
+  const [rows] = await pool.query(query, params);
+  return (rows || []).map((r) => ({
+    ...r,
+    rating: Number(r.rating),
+    helpfulCount: Number(r.helpfulCount || 0),
+    verified: Boolean(r.verified)
+  }));
+}
+async function saveMysqlReview(r) {
+  const pool = await getDbPool2();
+  const id = r.id || `rev-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  await pool.query(
+    `INSERT INTO reviews (id, productId, userName, userEmail, rating, comment, verified, status, helpfulCount, date, reply, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+     ON DUPLICATE KEY UPDATE
+       rating = VALUES(rating),
+       comment = VALUES(comment),
+       status = VALUES(status),
+       helpfulCount = VALUES(helpfulCount),
+       reply = VALUES(reply)`,
+    [
+      id,
+      r.productId,
+      r.userName || "Customer",
+      (r.userEmail || "").trim().toLowerCase(),
+      Number(r.rating || 5),
+      r.comment || "",
+      r.verified !== void 0 ? r.verified ? 1 : 0 : 1,
+      r.status || "approved",
+      Number(r.helpfulCount || 0),
+      r.date || now,
+      r.reply || null,
+      r.created_at || now
+    ]
+  );
+  const [rows] = await pool.query("SELECT * FROM reviews WHERE id = ? LIMIT 1", [id]);
+  return rows[0];
+}
+async function deleteMysqlReview(id) {
+  const pool = await getDbPool2();
+  const [res] = await pool.query("DELETE FROM reviews WHERE id = ?", [id]);
+  return res.affectedRows > 0;
+}
+async function getMysqlCoupons() {
+  const pool = await getDbPool2();
+  const [rows] = await pool.query("SELECT * FROM coupons ORDER BY created_at DESC");
+  return (rows || []).map((c) => ({
+    ...c,
+    discountValue: Number(c.discountValue),
+    minPurchase: Number(c.minPurchase || 0),
+    maxDiscount: c.maxDiscount ? Number(c.maxDiscount) : null,
+    usageLimit: Number(c.usageLimit || 100),
+    usageCount: Number(c.usageCount || 0),
+    isActive: Boolean(c.isActive),
+    applicableCategories: typeof c.applicableCategories === "string" ? safeJsonParse(c.applicableCategories, []) : c.applicableCategories || []
+  }));
+}
+async function getMysqlCustomClothingRequests(filters) {
+  const pool = await getDbPool2();
+  const [rows] = await pool.query("SELECT * FROM custom_clothing_requests ORDER BY created_at DESC");
+  let list = (rows || []).map((r) => ({
+    ...r,
+    materialSamples: typeof r.material_samples === "string" ? safeJsonParse(r.material_samples, []) : r.material_samples || [],
+    designImages: typeof r.design_images === "string" ? safeJsonParse(r.design_images, []) : r.design_images || [],
+    designVideos: typeof r.design_videos === "string" ? safeJsonParse(r.design_videos, []) : r.design_videos || [],
+    designLinks: typeof r.design_links === "string" ? safeJsonParse(r.design_links, []) : r.design_links || [],
+    measurements: typeof r.measurements === "string" ? safeJsonParse(r.measurements, {}) : r.measurements || {}
+  }));
+  if (filters?.status) {
+    const s = filters.status.toLowerCase();
+    list = list.filter((r) => r.status && r.status.toLowerCase() === s);
+  }
+  if (filters?.search) {
+    const q = filters.search.toLowerCase();
+    list = list.filter(
+      (r) => r.reference_no && r.reference_no.toLowerCase().includes(q) || r.full_name && r.full_name.toLowerCase().includes(q) || r.email && r.email.toLowerCase().includes(q)
+    );
+  }
+  return list;
+}
+async function saveMysqlCustomClothingRequest(req) {
+  const pool = await getDbPool2();
+  const id = req.id || `req-custom-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+  const refNo = req.referenceNo || req.reference_no || `ROP-CC-${(/* @__PURE__ */ new Date()).getFullYear()}-${Math.floor(1e3 + Math.random() * 9e3)}`;
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  await pool.query(
+    `INSERT INTO custom_clothing_requests (
+      id, reference_no, full_name, email, phone, garment_type, other_garment_type,
+      material_samples, design_images, design_videos, design_links, measurements,
+      preferred_deadline, budget_range, additional_notes, delivery_location, status, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON DUPLICATE KEY UPDATE
+      status = VALUES(status),
+      additional_notes = VALUES(additional_notes),
+      updated_at = VALUES(updated_at)`,
+    [
+      id,
+      refNo,
+      req.fullName || req.full_name || "",
+      (req.email || "").trim().toLowerCase(),
+      req.phone || "",
+      req.garmentType || req.garment_type || "Custom Garment",
+      req.otherGarmentType || req.other_garment_type || "",
+      JSON.stringify(Array.isArray(req.materialSamples) ? req.materialSamples : []),
+      JSON.stringify(Array.isArray(req.designImages) ? req.designImages : []),
+      JSON.stringify(Array.isArray(req.designVideos) ? req.designVideos : []),
+      JSON.stringify(Array.isArray(req.designLinks) ? req.designLinks : []),
+      JSON.stringify(req.measurements || {}),
+      req.preferredDeadline || req.preferred_deadline || null,
+      req.budgetRange || req.budget_range || "",
+      req.additionalNotes || req.additional_notes || "",
+      req.deliveryLocation || req.delivery_location || "",
+      req.status || "Pending Review",
+      req.created_at || now,
+      now
+    ]
+  );
+  const [rows] = await pool.query("SELECT * FROM custom_clothing_requests WHERE id = ? LIMIT 1", [id]);
+  return rows[0];
+}
+async function updateMysqlCustomClothingRequestStatus(id, status) {
+  const pool = await getDbPool2();
+  await pool.query(
+    "UPDATE custom_clothing_requests SET status = ?, updated_at = ? WHERE id = ? OR reference_no = ?",
+    [status, (/* @__PURE__ */ new Date()).toISOString(), id, id]
+  );
+  const [rows] = await pool.query(
+    "SELECT * FROM custom_clothing_requests WHERE id = ? OR reference_no = ? LIMIT 1",
+    [id, id]
+  );
+  return rows[0] || null;
+}
+async function getMysqlInventoryAuditLogs(limit = 100) {
+  const pool = await getDbPool2();
+  const [rows] = await pool.query(
+    "SELECT * FROM inventory_audit_logs ORDER BY timestamp DESC LIMIT ?",
+    [Number(limit)]
+  );
+  return (rows || []).map((l) => ({
+    ...l,
+    changeQuantity: Number(l.changeQuantity),
+    newStock: Number(l.newStock)
+  }));
+}
+async function addMysqlInventoryAuditLog(log) {
+  const pool = await getDbPool2();
+  const id = `inv-log-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+  const timestamp = (/* @__PURE__ */ new Date()).toISOString();
+  await pool.query(
+    `INSERT INTO inventory_audit_logs (id, productId, productName, productSku, timestamp, changeQuantity, newStock, reason, details)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      id,
+      log.productId,
+      log.productName,
+      log.productSku || "",
+      timestamp,
+      Number(log.changeQuantity || 0),
+      Number(log.newStock || 0),
+      log.reason || "Manual Update",
+      log.details || ""
+    ]
+  );
+  return { id, timestamp, ...log };
+}
+async function createMysqlPasswordResetToken(data) {
+  const pool = await getDbPool2();
+  const id = `prt-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  await pool.query(
+    `INSERT INTO password_reset_tokens (id, user_id, token_hash, expires_at, created_at, user_email, ip_address)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    [
+      id,
+      data.userId,
+      data.tokenHash,
+      data.expiresAt,
+      now,
+      data.userEmail.toLowerCase().trim(),
+      data.ipAddress || null
+    ]
+  );
+  return { id, ...data, createdAt: now };
+}
+async function getMysqlPasswordResetToken(tokenHash) {
+  const pool = await getDbPool2();
+  const [rows] = await pool.query(
+    "SELECT * FROM password_reset_tokens WHERE token_hash = ? LIMIT 1",
+    [tokenHash]
+  );
+  if (!rows || rows.length === 0) return null;
+  return rows[0];
+}
+async function consumeMysqlPasswordResetToken(tokenHash, newPasswordHash, nowIso = (/* @__PURE__ */ new Date()).toISOString()) {
+  const pool = await getDbPool2();
+  const [updateRes] = await pool.query(
+    "UPDATE password_reset_tokens SET used_at = ? WHERE token_hash = ? AND used_at IS NULL AND expires_at >= ?",
+    [nowIso, tokenHash, nowIso]
+  );
+  if (!updateRes || updateRes.affectedRows === 0) {
+    const tokenRecord2 = await getMysqlPasswordResetToken(tokenHash);
+    if (!tokenRecord2) {
+      return { success: false, error: "Password reset token not found or invalid." };
+    }
+    if (tokenRecord2.used_at) {
+      return { success: false, error: "TOKEN_ALREADY_USED_OR_CONCURRENT_UPDATE" };
+    }
+    if (new Date(tokenRecord2.expires_at) < new Date(nowIso)) {
+      return { success: false, error: "Password reset token has expired. Please request a new link." };
+    }
+    return { success: false, error: "TOKEN_ALREADY_USED_OR_CONCURRENT_UPDATE" };
+  }
+  const tokenRecord = await getMysqlPasswordResetToken(tokenHash);
+  if (!tokenRecord || !tokenRecord.user_id) {
+    return { success: false, error: "User record linked to token not found." };
+  }
+  await updateMysqlUserPasswordById(tokenRecord.user_id, newPasswordHash);
+  return { success: true, userId: tokenRecord.user_id };
+}
+async function cleanupExpiredMysqlResetTokens(nowIso = (/* @__PURE__ */ new Date()).toISOString()) {
+  const pool = await getDbPool2();
+  const [res] = await pool.query(
+    "DELETE FROM password_reset_tokens WHERE expires_at < ? OR used_at IS NOT NULL",
+    [nowIso]
+  );
+  return res.affectedRows || 0;
+}
+async function getMysqlCartSession(sessionId) {
+  const pool = await getDbPool2();
+  const [rows] = await pool.query("SELECT items FROM cart_sessions WHERE session_id = ? LIMIT 1", [sessionId]);
+  if (!rows || rows.length === 0) return null;
+  return safeJsonParse(rows[0].items, []);
+}
+async function saveMysqlCartSession(sessionId, items, userId) {
+  const pool = await getDbPool2();
+  const id = `cart-${sessionId}`;
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  await pool.query(
+    `INSERT INTO cart_sessions (id, session_id, user_id, items, updated_at)
+     VALUES (?, ?, ?, ?, ?)
+     ON DUPLICATE KEY UPDATE
+       items = VALUES(items),
+       user_id = VALUES(user_id),
+       updated_at = VALUES(updated_at)`,
+    [id, sessionId, userId || null, JSON.stringify(items || []), now]
+  );
+}
+async function pushSyncData(payload) {
+  try {
+    if (Array.isArray(payload.veloce_products)) {
+      for (const p of payload.veloce_products) {
+        if (!p.id || !p.name) continue;
+        await saveMysqlProduct(p);
+      }
+    }
+    if (Array.isArray(payload.veloce_orders)) {
+      for (const o of payload.veloce_orders) {
+        if (!o.id) continue;
+        await saveMysqlOrder(o);
+      }
+    }
+    if (payload.veloce_site_settings) {
+      await saveMysqlSiteSettings(payload.veloce_site_settings);
+    }
+    if (Array.isArray(payload.veloce_hero_banners)) {
+      await saveMysqlHeroBanners(payload.veloce_hero_banners);
+    }
+    console.log("[MySQL] Production push synchronization successfully completed.");
+  } catch (error) {
+    console.error("[MySQL] Production push synchronization failed:", error);
+    throw error;
+  }
+}
+async function pullSyncData() {
+  const products = await getMysqlProducts();
+  const orders = await getMysqlOrders();
+  const siteSettings = await getMysqlSiteSettings();
+  const heroBanners = await getMysqlHeroBanners();
+  const suppliers = await getMysqlSuppliers();
+  const coupons = await getMysqlCoupons();
+  const reviews = await getMysqlReviews();
+  const auditLogs = await getMysqlInventoryAuditLogs(100);
+  return {
+    veloce_products: products,
+    veloce_orders: orders,
+    veloce_site_settings: siteSettings,
+    veloce_hero_banners: heroBanners,
+    veloce_suppliers: suppliers,
+    veloce_coupons: coupons,
+    veloce_reviews: reviews,
+    veloce_inventory_audit_logs: auditLogs,
+    last_synced_at: (/* @__PURE__ */ new Date()).toISOString(),
+    source: "MySQL Database"
   };
 }
 async function ensureDefaultAdminUser() {
@@ -2595,28 +1863,29 @@ async function ensureDefaultAdminUser() {
   for (const email of [adminEmail, hostUser]) {
     if (!email || !email.includes("@")) continue;
     try {
-      const existing = await getSqliteUserByEmail(email);
+      const existing = await getMysqlUserByEmail(email);
       if (!existing) {
         const defaultSalt = "0123456789abcdef0123456789abcdef";
         const defaultHash = "35e4d293226a31c5b88ce8325dc01c385f850e047702890538a7c88b90a61254bf52199b5ff7a988d44747eb6fa32d4323e20e8d0537f819446f28b75710609f";
-        await saveSqliteUser({
+        await saveMysqlUser({
           id: `usr-admin-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
           username: email.split("@")[0],
           email,
           password_hash: `${defaultSalt}:${defaultHash}`,
           first_name: "Administrator",
           last_name: "Account",
+          role: "admin",
           is_staff: 1,
           is_superuser: 1,
           email_verified: 1
         });
-        console.log(`[SQLite] Seeded default administrator account: <${email}>`);
+        console.log(`[MySQL] Seeded default administrator account: <${email}>`);
       }
     } catch (err) {
-      console.warn(`[SQLite] Admin account check notice for ${email}:`, err);
+      console.warn(`[MySQL] Admin account seed check notice for ${email}:`, err);
     }
   }
-  await ensureDefaultCustomers().catch((err) => console.warn("[SQLite] Default customer seed notice:", err));
+  await ensureDefaultCustomers().catch((err) => console.warn("[MySQL] Default customer seed notice:", err));
 }
 async function ensureDefaultCustomers() {
   const defaultCustomers = [
@@ -2646,9 +1915,9 @@ async function ensureDefaultCustomers() {
   for (const cust of defaultCustomers) {
     const email = cust.email.trim().toLowerCase();
     try {
-      let user = await getSqliteUserByEmail(email);
+      let user = await getMysqlUserByEmail(email);
       if (!user) {
-        user = await saveSqliteUser({
+        user = await saveMysqlUser({
           id: `usr-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
           username: cust.username,
           email,
@@ -2662,12 +1931,12 @@ async function ensureDefaultCustomers() {
           referral_code: `REF-${Math.random().toString(36).substring(2, 7).toUpperCase()}`,
           partner_tier: cust.partner_tier
         });
-        console.log(`[SQLite] Seeded registered customer user: <${email}>`);
+        console.log(`[MySQL] Seeded registered customer user: <${email}>`);
       }
-      const allCust = await getAllSqliteCustomers();
+      const allCust = await getAllMysqlCustomers();
       const existingCust = allCust.find((c) => (c.email || "").toLowerCase().trim() === email);
       if (!existingCust) {
-        await saveSqliteCustomer({
+        await saveMysqlCustomer({
           id: `cust-${user?.id || Date.now()}`,
           user: user?.id || null,
           is_registered: 1,
@@ -2682,1445 +1951,31 @@ async function ensureDefaultCustomers() {
           notes: `Verified registered customer (${cust.partner_tier} tier)`,
           open_deal_value: 0
         });
-        console.log(`[SQLite] Seeded CRM customer record: <${email}>`);
+        console.log(`[MySQL] Seeded CRM customer record: <${email}>`);
       }
     } catch (err) {
-      console.warn(`[SQLite] Customer seed notice for ${email}:`, err);
+      console.warn(`[MySQL] Customer seed check notice for ${email}:`, err);
     }
   }
 }
-async function ensureDefaultProducts(db) {
-  const database = db || await getSqliteDb();
-  const checkSeeded = database.exec("SELECT setting_value FROM app_settings WHERE setting_key = 'products_seeded_clean';");
-  if (checkSeeded.length > 0 && checkSeeded[0].values.length > 0) {
-    return;
-  }
-  const check = database.exec("SELECT COUNT(*) as count FROM products;");
-  const count = check.length > 0 && check[0].values.length > 0 ? check[0].values[0][0] : 0;
-  if (count > 0) {
-    database.run("INSERT OR REPLACE INTO app_settings (setting_key, setting_value) VALUES ('products_seeded_clean', 'true');");
-    saveSqliteDb(database);
-    return;
-  }
-  const existingRes = database.exec("SELECT id FROM products;");
-  const existingIds = /* @__PURE__ */ new Set();
-  if (existingRes.length > 0) {
-    existingRes[0].values.forEach((row) => {
-      if (row[0]) existingIds.add(String(row[0]));
-    });
-  }
-  const stmt = database.prepare(`
-    INSERT OR REPLACE INTO products (
-      id, sku, name, description, price, category, tags, type, imageUrl, images,
-      stock, lowStockThreshold, variations, rating, reviewsCount, reviews, digitalFileUrl,
-      previousPrice, backInStockAlert, costPrice, taxId, brand, countryOfOrigin, status, paymentRestriction,
-      shortDescription, detailedDescription, features, specifications, whatsInTheBox,
-      hasVariants, options, colorImages, variantMatrix, variants
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `);
-  for (const p of DEFAULT_PRODUCTS_SEED) {
-    if (existingIds.has(p.id)) continue;
-    stmt.run([
-      p.id,
-      p.sku || null,
-      p.name,
-      p.description || null,
-      p.price || 0,
-      p.category || null,
-      p.tags ? JSON.stringify(p.tags) : null,
-      p.type || "physical",
-      p.imageUrl || null,
-      p.images ? JSON.stringify(p.images) : null,
-      p.stock !== void 0 ? p.stock : null,
-      p.lowStockThreshold !== void 0 ? p.lowStockThreshold : null,
-      p.variations ? JSON.stringify(p.variations) : null,
-      p.rating || 0,
-      p.reviewsCount || 0,
-      p.reviews ? JSON.stringify(p.reviews) : null,
-      p.digitalFileUrl || null,
-      p.previousPrice !== void 0 ? p.previousPrice : null,
-      p.backInStockAlert ? 1 : 0,
-      p.costPrice !== void 0 ? p.costPrice : null,
-      p.taxId || null,
-      p.brand || null,
-      p.countryOfOrigin || null,
-      p.status || "Active",
-      p.paymentRestriction || "both",
-      p.shortDescription || null,
-      p.detailedDescription || null,
-      p.features ? JSON.stringify(p.features) : null,
-      p.specifications ? JSON.stringify(p.specifications) : null,
-      p.whatsInTheBox || null,
-      p.hasVariants ? 1 : 0,
-      p.options ? JSON.stringify(p.options) : null,
-      p.colorImages ? JSON.stringify(p.colorImages) : null,
-      p.variantMatrix ? JSON.stringify(p.variantMatrix) : null,
-      p.variants ? JSON.stringify(p.variants) : null
-    ]);
-  }
-  stmt.free();
-  database.run("INSERT OR REPLACE INTO app_settings (setting_key, setting_value) VALUES ('products_seeded_clean', 'true');");
-  saveSqliteDb(database);
-  console.log("[SQLite] Seeded default catalog products (initial clean bootstrap).");
-}
-async function deleteSqliteProduct(id) {
-  const db = await getSqliteDb();
-  db.run("DELETE FROM products WHERE id = ?;", [id]);
-  saveSqliteDb(db);
-  return true;
-}
-async function deleteSqliteProductsBulk(ids) {
-  if (!ids || ids.length === 0) return 0;
-  const db = await getSqliteDb();
-  let deleted = 0;
-  for (const id of ids) {
-    db.run("DELETE FROM products WHERE id = ?;", [id]);
-    deleted++;
-  }
-  saveSqliteDb(db);
-  return deleted;
-}
-async function getSqlitePendingRegistration(email) {
-  if (!email) return null;
-  const db = await getSqliteDb();
-  const normalized = email.trim().toLowerCase();
-  const stmt = db.prepare("SELECT * FROM pending_registrations WHERE LOWER(TRIM(email)) = ? LIMIT 1;");
-  stmt.bind([normalized]);
-  if (!stmt.step()) {
-    stmt.free();
-    return null;
-  }
-  const obj = stmt.getAsObject();
-  stmt.free();
-  return obj;
-}
-async function saveSqlitePendingRegistration(pending) {
-  const db = await getSqliteDb();
-  const normalizedEmail = pending.email.trim().toLowerCase();
-  const id = `pend-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
-  const now = (/* @__PURE__ */ new Date()).toISOString();
-  db.run("DELETE FROM pending_registrations WHERE LOWER(TRIM(email)) = ?;", [normalizedEmail]);
-  const stmt = db.prepare(`
-    INSERT INTO pending_registrations (
-      id, email, username, first_name, last_name, password_hash, phone,
-      otp_hash, otp_expires_at, attempts, max_attempts, last_sent_at,
-      resend_count, resend_window_start, created_at, ip_address
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `);
-  const record = {
-    id,
-    email: normalizedEmail,
-    username: pending.username || normalizedEmail.split("@")[0],
-    first_name: pending.first_name || "",
-    last_name: pending.last_name || "",
-    password_hash: pending.password_hash,
-    phone: pending.phone || "",
-    otp_hash: pending.otp_hash,
-    otp_expires_at: pending.otp_expires_at,
-    attempts: pending.attempts !== void 0 ? pending.attempts : 0,
-    max_attempts: pending.max_attempts !== void 0 ? pending.max_attempts : 5,
-    last_sent_at: pending.last_sent_at || now,
-    resend_count: pending.resend_count !== void 0 ? pending.resend_count : 0,
-    resend_window_start: pending.resend_window_start || now,
-    created_at: now,
-    ip_address: pending.ip_address || ""
-  };
-  stmt.run([
-    record.id,
-    record.email,
-    record.username,
-    record.first_name,
-    record.last_name,
-    record.password_hash,
-    record.phone,
-    record.otp_hash,
-    record.otp_expires_at,
-    record.attempts,
-    record.max_attempts,
-    record.last_sent_at,
-    record.resend_count,
-    record.resend_window_start,
-    record.created_at,
-    record.ip_address
-  ]);
-  stmt.free();
-  saveSqliteDb(db);
-  return record;
-}
-async function updateSqlitePendingRegistrationAttempts(email, newAttempts) {
-  const db = await getSqliteDb();
-  const normalizedEmail = email.trim().toLowerCase();
-  db.run("UPDATE pending_registrations SET attempts = ? WHERE LOWER(TRIM(email)) = ?;", [newAttempts, normalizedEmail]);
-  saveSqliteDb(db);
-}
-async function deleteSqlitePendingRegistration(email) {
-  if (!email) return;
-  const db = await getSqliteDb();
-  const normalizedEmail = email.trim().toLowerCase();
-  db.run("DELETE FROM pending_registrations WHERE LOWER(TRIM(email)) = ?;", [normalizedEmail]);
-  saveSqliteDb(db);
-}
-async function createSqlitePasswordResetToken(data) {
-  const db = await getSqliteDb();
-  const id = data.id || `prt-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
-  const nowIso = data.createdAt || (/* @__PURE__ */ new Date()).toISOString();
-  db.run("UPDATE password_reset_tokens SET used_at = ? WHERE user_id = ? AND used_at IS NULL;", [nowIso, data.userId]);
-  const stmt = db.prepare(`
-    INSERT INTO password_reset_tokens (
-      id, user_id, token_hash, expires_at, used_at, created_at, user_email, ip_address
-    ) VALUES (?, ?, ?, ?, NULL, ?, ?, ?);
-  `);
-  stmt.run([
-    id,
-    data.userId,
-    data.tokenHash,
-    data.expiresAt,
-    nowIso,
-    data.userEmail || null,
-    data.ipAddress || null
-  ]);
-  stmt.free();
-  saveSqliteDb(db);
-  return {
-    id,
-    user_id: data.userId,
-    token_hash: data.tokenHash,
-    expires_at: data.expiresAt,
-    used_at: null,
-    created_at: nowIso,
-    user_email: data.userEmail,
-    ip_address: data.ipAddress
-  };
-}
-async function consumeSqlitePasswordResetToken(tokenHash, newPasswordHash, nowIso = (/* @__PURE__ */ new Date()).toISOString()) {
-  if (!tokenHash || !newPasswordHash) {
-    return { success: false, error: "INVALID_PARAMETERS" };
-  }
-  const db = await getSqliteDb();
-  const stmtCheck = db.prepare(`
-    SELECT id, user_id FROM password_reset_tokens 
-    WHERE token_hash = ? AND used_at IS NULL AND expires_at > ? 
-    LIMIT 1;
-  `);
-  stmtCheck.bind([tokenHash, nowIso]);
-  if (!stmtCheck.step()) {
-    stmtCheck.free();
-    return { success: false, error: "INVALID_OR_EXPIRED_TOKEN" };
-  }
-  const tokenRow = stmtCheck.getAsObject();
-  stmtCheck.free();
-  const userId = String(tokenRow.user_id);
-  db.run(
-    "UPDATE password_reset_tokens SET used_at = ? WHERE token_hash = ? AND used_at IS NULL AND expires_at > ?;",
-    [nowIso, tokenHash, nowIso]
-  );
-  const rowsModified = db.getRowsModified();
-  if (rowsModified !== 1) {
-    return { success: false, error: "TOKEN_ALREADY_USED_OR_CONCURRENT_UPDATE" };
-  }
-  const stmtUser = db.prepare("UPDATE users SET password_hash = ?, updated_at = ? WHERE id = ?;");
-  stmtUser.run([newPasswordHash, nowIso, userId]);
-  stmtUser.free();
-  saveSqliteDb(db);
-  return { success: true, userId };
-}
-async function cleanupExpiredSqliteResetTokens(nowIso = (/* @__PURE__ */ new Date()).toISOString()) {
-  const db = await getSqliteDb();
-  const checkRes = db.exec(`SELECT COUNT(*) FROM password_reset_tokens WHERE expires_at < '${nowIso}' OR used_at IS NOT NULL;`);
-  const count = checkRes.length > 0 ? checkRes[0].values[0][0] : 0;
-  if (count > 0) {
-    db.run(`DELETE FROM password_reset_tokens WHERE expires_at < ? OR used_at IS NOT NULL;`, [nowIso]);
-    saveSqliteDb(db);
-  }
-  return count;
-}
-function mapSqliteOrderRow(row) {
-  if (!row) return null;
-  let items = [];
+async function ensureDefaultProducts() {
   try {
-    items = typeof row.items === "string" ? JSON.parse(row.items) : row.items || [];
-  } catch {
-    items = [];
-  }
-  let notesHistory = [];
-  try {
-    notesHistory = typeof row.notesHistory === "string" ? JSON.parse(row.notesHistory) : row.notesHistory || [];
-  } catch {
-    notesHistory = [];
-  }
-  let statusHistory = [];
-  try {
-    statusHistory = typeof row.statusHistory === "string" ? JSON.parse(row.statusHistory) : row.statusHistory || [];
-  } catch {
-    statusHistory = [];
-  }
-  return {
-    id: row.id,
-    customerName: row.customerName || "Customer",
-    customer_name: row.customerName || "Customer",
-    customerEmail: row.customerEmail || "",
-    customer_email: row.customerEmail || "",
-    customerPhone: row.customerPhone || "",
-    phone: row.customerPhone || "",
-    userId: row.userId || null,
-    items,
-    total: Number(row.total || 0),
-    subtotal: Number(row.subtotal !== void 0 && row.subtotal !== null ? row.subtotal : row.total || 0),
-    shippingFee: Number(row.shippingFee || 0),
-    discount: Number(row.discount || 0),
-    status: row.status || "pending",
-    paymentStatus: row.paymentStatus || "pending",
-    paymentMethod: row.paymentMethod || "M-PESA",
-    trackingNumber: row.trackingNumber || `ROP-TRK-${String(row.id).slice(-6).toUpperCase()}`,
-    shippingAddress: row.shippingAddress || "",
-    notes: row.notes || row.customNote || "",
-    date: row.date || row.created_at || (/* @__PURE__ */ new Date()).toISOString(),
-    created_at: row.created_at || row.date || (/* @__PURE__ */ new Date()).toISOString(),
-    updated_at: row.updated_at || row.created_at || (/* @__PURE__ */ new Date()).toISOString(),
-    notesHistory,
-    statusHistory,
-    isGuest: Boolean(row.isGuest),
-    checkoutChannel: row.checkoutChannel || "web",
-    review_request_sent_at: row.review_request_sent_at || null,
-    review_request_status: row.review_request_status || null,
-    paymentConfirmedAt: row.paymentConfirmedAt || null,
-    paymentConfirmedBy: row.paymentConfirmedBy || null,
-    paymentReference: row.paymentReference || null,
-    paymentAmount: row.paymentAmount !== void 0 && row.paymentAmount !== null ? Number(row.paymentAmount) : null,
-    paymentReminderCount: Number(row.paymentReminderCount || 0),
-    lastPaymentReminderAt: row.lastPaymentReminderAt || null,
-    isPaid: Boolean(row.isPaid || row.paymentStatus === "paid"),
-    paidAt: row.paidAt || row.paymentConfirmedAt || null,
-    deliveryConfirmed: Boolean(row.deliveryConfirmed),
-    deliveredAt: row.deliveredAt || null,
-    deliveryPerson: row.deliveryPerson || null,
-    deliveryNote: row.deliveryNote || null
-  };
-}
-async function getAllSqliteOrders() {
-  const db = await getSqliteDb();
-  const res = db.exec("SELECT * FROM orders ORDER BY COALESCE(created_at, date) DESC;");
-  if (res.length === 0) return [];
-  const cols = res[0].columns;
-  return res[0].values.map((val) => {
-    const raw = {};
-    cols.forEach((col, i) => {
-      raw[col] = val[i];
-    });
-    return mapSqliteOrderRow(raw);
-  });
-}
-async function getSqliteOrderById(id) {
-  if (!id) return null;
-  const db = await getSqliteDb();
-  const stmt = db.prepare("SELECT * FROM orders WHERE id = ? LIMIT 1;");
-  stmt.bind([String(id).trim()]);
-  if (stmt.step()) {
-    const raw = stmt.getAsObject();
-    stmt.free();
-    return mapSqliteOrderRow(raw);
-  }
-  stmt.free();
-  return null;
-}
-async function getSqliteOrdersByUser(email, userId) {
-  const db = await getSqliteDb();
-  const normEmail = email ? email.trim().toLowerCase() : "";
-  const safeUserId = userId ? String(userId).trim() : "";
-  let query = "SELECT * FROM orders WHERE 1=0";
-  const params = [];
-  if (normEmail && safeUserId) {
-    query = "SELECT * FROM orders WHERE LOWER(TRIM(customerEmail)) = ? OR userId = ? ORDER BY COALESCE(created_at, date) DESC;";
-    params.push(normEmail, safeUserId);
-  } else if (normEmail) {
-    query = "SELECT * FROM orders WHERE LOWER(TRIM(customerEmail)) = ? ORDER BY COALESCE(created_at, date) DESC;";
-    params.push(normEmail);
-  } else if (safeUserId) {
-    query = "SELECT * FROM orders WHERE userId = ? ORDER BY COALESCE(created_at, date) DESC;";
-    params.push(safeUserId);
-  } else {
-    return [];
-  }
-  const stmt = db.prepare(query);
-  stmt.bind(params);
-  const rows = [];
-  while (stmt.step()) {
-    rows.push(mapSqliteOrderRow(stmt.getAsObject()));
-  }
-  stmt.free();
-  return rows;
-}
-async function saveSqliteOrder(order) {
-  const db = await getSqliteDb();
-  const id = order.id || `ord-${Date.now()}`;
-  const nowIso = (/* @__PURE__ */ new Date()).toISOString();
-  const customerName = order.customerName || order.customer_name || "Valued Customer";
-  const customerEmail = (order.customerEmail || order.customer_email || "").trim().toLowerCase();
-  const customerPhone = order.customerPhone || order.phone || order.customer_phone || "";
-  const itemsJson = typeof order.items === "string" ? order.items : JSON.stringify(order.items || []);
-  const total = Number(order.total || 0);
-  const subtotal = Number(order.subtotal !== void 0 ? order.subtotal : order.total || 0);
-  const shippingFee = Number(order.shippingFee || 0);
-  const discount = Number(order.discount || 0);
-  const status = order.status || "pending";
-  const date = order.date || order.created_at || nowIso;
-  const couponCode = order.couponCode || null;
-  const customNote = order.customNote || order.notes || null;
-  const shippingAddress = order.shippingAddress || order.shipping_address || null;
-  const notesHistoryJson = order.notesHistory ? JSON.stringify(order.notesHistory) : null;
-  const statusHistoryJson = order.statusHistory ? JSON.stringify(order.statusHistory) : null;
-  const isGuest = order.isGuest ? 1 : 0;
-  const paymentMethod = order.paymentMethod || order.payment_method || "M-PESA";
-  const checkoutChannel = order.checkoutChannel || "web";
-  const reviewRequestSentAt = order.review_request_sent_at || null;
-  const reviewRequestStatus = order.review_request_status || null;
-  const paymentStatus = order.paymentStatus || "pending";
-  const trackingNumber = order.trackingNumber || `ROP-TRK-${String(id).slice(-6).toUpperCase()}`;
-  const notes = order.notes || customNote || "";
-  const userId = order.userId ? String(order.userId) : null;
-  const createdAt = order.created_at || order.createdAt || date;
-  const updatedAt = nowIso;
-  const paymentReference = order.paymentReference || null;
-  const paymentAmount = order.paymentAmount !== void 0 && order.paymentAmount !== null ? Number(order.paymentAmount) : null;
-  const paymentConfirmedAt = order.paymentConfirmedAt || order.paidAt || null;
-  const paymentConfirmedBy = order.paymentConfirmedBy || null;
-  const paymentReminderCount = Number(order.paymentReminderCount || 0);
-  const lastPaymentReminderAt = order.lastPaymentReminderAt || null;
-  const isPaid = order.isPaid !== void 0 ? order.isPaid ? 1 : 0 : paymentStatus === "paid" ? 1 : 0;
-  const paidAt = order.paidAt || paymentConfirmedAt || (isPaid ? nowIso : null);
-  const deliveryConfirmed = order.deliveryConfirmed ? 1 : 0;
-  const deliveredAt = order.deliveredAt || null;
-  const deliveryPerson = order.deliveryPerson || null;
-  const deliveryNote = order.deliveryNote || null;
-  const stmt = db.prepare(`
-    INSERT OR REPLACE INTO orders (
-      id, customerName, customerEmail, items, total, status, date, couponCode,
-      customNote, shippingAddress, notesHistory, statusHistory, isGuest, paymentMethod,
-      checkoutChannel, review_request_sent_at, review_request_status, paymentStatus,
-      shippingFee, discount, subtotal, trackingNumber, customerPhone, notes, userId,
-      created_at, updated_at, paymentReference, paymentAmount, paymentConfirmedAt,
-      paymentConfirmedBy, paymentReminderCount, lastPaymentReminderAt,
-      isPaid, paidAt, deliveryConfirmed, deliveredAt, deliveryPerson, deliveryNote
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
-  `);
-  stmt.run([
-    id,
-    customerName,
-    customerEmail,
-    itemsJson,
-    total,
-    status,
-    date,
-    couponCode,
-    customNote,
-    shippingAddress,
-    notesHistoryJson,
-    statusHistoryJson,
-    isGuest,
-    paymentMethod,
-    checkoutChannel,
-    reviewRequestSentAt,
-    reviewRequestStatus,
-    paymentStatus,
-    shippingFee,
-    discount,
-    subtotal,
-    trackingNumber,
-    customerPhone,
-    notes,
-    userId,
-    createdAt,
-    updatedAt,
-    paymentReference,
-    paymentAmount,
-    paymentConfirmedAt,
-    paymentConfirmedBy,
-    paymentReminderCount,
-    lastPaymentReminderAt,
-    isPaid,
-    paidAt,
-    deliveryConfirmed,
-    deliveredAt,
-    deliveryPerson,
-    deliveryNote
-  ]);
-  stmt.free();
-  saveSqliteDb(db);
-  return getSqliteOrderById(id);
-}
-async function updateSqliteOrderStatus(id, updates) {
-  const existing = await getSqliteOrderById(id);
-  if (!existing) return null;
-  const merged = { ...existing, ...updates, updated_at: (/* @__PURE__ */ new Date()).toISOString() };
-  return saveSqliteOrder(merged);
-}
-async function deleteSqliteOrder(id) {
-  const db = await getSqliteDb();
-  db.run("DELETE FROM orders WHERE id = ?;", [id]);
-  saveSqliteDb(db);
-  return true;
-}
-async function syncSqliteOrders(ordersList) {
-  if (!Array.isArray(ordersList)) return;
-  for (const ord of ordersList) {
-    if (ord && ord.id) {
-      await saveSqliteOrder(ord);
-    }
-  }
-}
-function mapSqliteReviewRow(row) {
-  if (!row) return null;
-  let mediaUrls = [];
-  try {
-    mediaUrls = typeof row.mediaUrls === "string" ? JSON.parse(row.mediaUrls) : row.mediaUrls || [];
-  } catch {
-    mediaUrls = [];
-  }
-  let helpfulUserIds = [];
-  try {
-    helpfulUserIds = typeof row.helpfulUserIds === "string" ? JSON.parse(row.helpfulUserIds) : row.helpfulUserIds || [];
-  } catch {
-    helpfulUserIds = [];
-  }
-  return {
-    id: row.id,
-    productId: row.productId,
-    orderId: row.orderId || void 0,
-    userId: row.userId || null,
-    userEmail: row.userEmail || "",
-    userName: row.userName || "Verified Buyer",
-    reviewerDisplayName: row.reviewerDisplayName || row.userName || "Anonymous",
-    rating: Number(row.rating !== void 0 && row.rating !== null ? row.rating : 0),
-    title: row.title || "",
-    comment: row.comment || "",
-    mediaUrls,
-    verifiedPurchase: Boolean(row.verified === 1 || row.orderId || row.verifiedPurchase),
-    status: row.status || "Published",
-    date: row.date || row.createdAt || (/* @__PURE__ */ new Date()).toISOString().split("T")[0],
-    createdAt: row.createdAt || row.date || (/* @__PURE__ */ new Date()).toISOString(),
-    updatedAt: row.updatedAt || void 0,
-    helpfulVotes: Number(row.helpfulVotes || 0),
-    helpfulUserIds,
-    purchasedVariant: row.purchasedVariant || void 0,
-    isEdited: Boolean(row.isEdited)
-  };
-}
-async function getAllSqliteReviews() {
-  const db = await getSqliteDb();
-  const res = db.exec("SELECT * FROM reviews ORDER BY COALESCE(createdAt, date) DESC;");
-  if (res.length === 0) return [];
-  const cols = res[0].columns;
-  return res[0].values.map((val) => {
-    const raw = {};
-    cols.forEach((col, i) => {
-      raw[col] = val[i];
-    });
-    return mapSqliteReviewRow(raw);
-  });
-}
-async function recomputeSqliteProductRating(productId) {
-  if (!productId) return { rating: 0, reviewsCount: 0 };
-  const db = await getSqliteDb();
-  const stmt = db.prepare("SELECT * FROM reviews WHERE productId = ? AND status NOT IN ('Hidden', 'Removed') ORDER BY COALESCE(createdAt, date) DESC;");
-  stmt.bind([String(productId).trim()]);
-  const activeReviews = [];
-  let sum = 0;
-  while (stmt.step()) {
-    const mapped = mapSqliteReviewRow(stmt.getAsObject());
-    activeReviews.push(mapped);
-    sum += mapped.rating;
-  }
-  stmt.free();
-  const reviewsCount = activeReviews.length;
-  const rating = reviewsCount > 0 ? Math.round(sum / reviewsCount * 10) / 10 : 0;
-  const reviewsJson = JSON.stringify(activeReviews);
-  db.run("UPDATE products SET rating = ?, reviewsCount = ?, reviews = ? WHERE id = ?;", [
-    rating,
-    reviewsCount,
-    reviewsJson,
-    String(productId).trim()
-  ]);
-  saveSqliteDb(db);
-  return { rating, reviewsCount };
-}
-async function getSqliteReviewsByProduct(productId, options) {
-  const db = await getSqliteDb();
-  const stmt = db.prepare("SELECT * FROM reviews WHERE productId = ? AND status NOT IN ('Hidden', 'Removed') ORDER BY COALESCE(createdAt, date) DESC;");
-  stmt.bind([String(productId).trim()]);
-  const allReviews = [];
-  while (stmt.step()) {
-    allReviews.push(mapSqliteReviewRow(stmt.getAsObject()));
-  }
-  stmt.free();
-  let filtered = [...allReviews];
-  if (options?.rating) {
-    const ratingNum = Number(options.rating);
-    filtered = filtered.filter((r) => Math.floor(r.rating) === ratingNum);
-  }
-  const sort = options?.sort || "recent";
-  if (sort === "highest") {
-    filtered.sort((a, b) => b.rating - a.rating || new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-  } else if (sort === "lowest") {
-    filtered.sort((a, b) => a.rating - b.rating || new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-  } else if (sort === "helpful") {
-    filtered.sort((a, b) => (b.helpfulVotes || 0) - (a.helpfulVotes || 0));
-  } else {
-    filtered.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-  }
-  const totalCount = allReviews.length;
-  const distribution = { 5: 0, 4: 0, 3: 0, 2: 0, 1: 0 };
-  let totalSum = 0;
-  allReviews.forEach((r) => {
-    const star = Math.min(5, Math.max(1, Math.floor(r.rating)));
-    distribution[star] = (distribution[star] || 0) + 1;
-    totalSum += r.rating;
-  });
-  const average = totalCount > 0 ? Math.round(totalSum / totalCount * 10) / 10 : 0;
-  return {
-    reviews: filtered,
-    summary: {
-      average,
-      totalCount,
-      distribution
-    }
-  };
-}
-async function saveSqliteReview(review) {
-  const db = await getSqliteDb();
-  const id = review.id || `rev-${Date.now()}`;
-  const nowIso = (/* @__PURE__ */ new Date()).toISOString();
-  const dateStr = review.date || nowIso.split("T")[0];
-  const mediaUrlsJson = JSON.stringify(Array.isArray(review.mediaUrls) ? review.mediaUrls : []);
-  const helpfulUserIdsJson = JSON.stringify(Array.isArray(review.helpfulUserIds) ? review.helpfulUserIds : []);
-  const stmt = db.prepare(`
-    INSERT OR REPLACE INTO reviews (
-      id, productId, orderId, userName, userEmail, reviewerDisplayName,
-      rating, title, comment, mediaUrls, verified, status, date,
-      helpfulVotes, helpfulUserIds, purchasedVariant, isEdited,
-      createdAt, updatedAt, userId
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
-  `);
-  stmt.run([
-    id,
-    review.productId,
-    review.orderId || null,
-    review.userName || "Anonymous Customer",
-    review.userEmail ? review.userEmail.toLowerCase().trim() : "",
-    review.reviewerDisplayName || review.userName || "Anonymous",
-    Number(review.rating !== void 0 && review.rating !== null ? review.rating : 5),
-    review.title || "",
-    review.comment || "",
-    mediaUrlsJson,
-    review.verifiedPurchase ? 1 : review.verified ? 1 : 0,
-    review.status || "Published",
-    dateStr,
-    Number(review.helpfulVotes || 0),
-    helpfulUserIdsJson,
-    review.purchasedVariant || null,
-    review.isEdited ? 1 : 0,
-    review.createdAt || nowIso,
-    review.updatedAt || nowIso,
-    review.userId ? String(review.userId) : null
-  ]);
-  stmt.free();
-  saveSqliteDb(db);
-  await recomputeSqliteProductRating(review.productId);
-  return mapSqliteReviewRow(review);
-}
-async function updateSqliteReview(id, updates) {
-  const db = await getSqliteDb();
-  const stmt = db.prepare("SELECT * FROM reviews WHERE id = ? LIMIT 1;");
-  stmt.bind([id]);
-  if (!stmt.step()) {
-    stmt.free();
-    return null;
-  }
-  const existing = mapSqliteReviewRow(stmt.getAsObject());
-  stmt.free();
-  const merged = {
-    ...existing,
-    ...updates,
-    isEdited: true,
-    updatedAt: (/* @__PURE__ */ new Date()).toISOString()
-  };
-  const saved = await saveSqliteReview(merged);
-  await recomputeSqliteProductRating(existing.productId);
-  return saved;
-}
-async function deleteSqliteReview(id) {
-  const db = await getSqliteDb();
-  const stmt = db.prepare("SELECT productId FROM reviews WHERE id = ? LIMIT 1;");
-  stmt.bind([id]);
-  let productId = null;
-  if (stmt.step()) {
-    productId = stmt.getAsObject().productId;
-  }
-  stmt.free();
-  db.run("UPDATE reviews SET status = 'Removed', updatedAt = ? WHERE id = ?;", [(/* @__PURE__ */ new Date()).toISOString(), id]);
-  saveSqliteDb(db);
-  if (productId) {
-    await recomputeSqliteProductRating(productId);
-  }
-  return true;
-}
-async function toggleSqliteReviewHelpful(id, voterId) {
-  const db = await getSqliteDb();
-  const stmt = db.prepare("SELECT * FROM reviews WHERE id = ? LIMIT 1;");
-  stmt.bind([id]);
-  if (!stmt.step()) {
-    stmt.free();
-    return null;
-  }
-  const review = mapSqliteReviewRow(stmt.getAsObject());
-  stmt.free();
-  const helpfulUserIds = review.helpfulUserIds || [];
-  const alreadyVoted = helpfulUserIds.includes(voterId);
-  let newHelpfulUserIds;
-  let newHelpfulVotes;
-  if (alreadyVoted) {
-    newHelpfulUserIds = helpfulUserIds.filter((v) => v !== voterId);
-    newHelpfulVotes = Math.max(0, (review.helpfulVotes || 1) - 1);
-  } else {
-    newHelpfulUserIds = [...helpfulUserIds, voterId];
-    newHelpfulVotes = (review.helpfulVotes || 0) + 1;
-  }
-  db.run(
-    "UPDATE reviews SET helpfulVotes = ?, helpfulUserIds = ?, updatedAt = ? WHERE id = ?;",
-    [newHelpfulVotes, JSON.stringify(newHelpfulUserIds), (/* @__PURE__ */ new Date()).toISOString(), id]
-  );
-  saveSqliteDb(db);
-  return { helpfulVotes: newHelpfulVotes, voted: !alreadyVoted };
-}
-async function updateSqliteReviewStatus(id, status) {
-  const db = await getSqliteDb();
-  db.run("UPDATE reviews SET status = ?, updatedAt = ? WHERE id = ?;", [status, (/* @__PURE__ */ new Date()).toISOString(), id]);
-  saveSqliteDb(db);
-  const stmt = db.prepare("SELECT * FROM reviews WHERE id = ? LIMIT 1;");
-  stmt.bind([id]);
-  if (stmt.step()) {
-    const raw = stmt.getAsObject();
-    stmt.free();
-    const mapped = mapSqliteReviewRow(raw);
-    await recomputeSqliteProductRating(mapped.productId);
-    return mapped;
-  }
-  stmt.free();
-  return null;
-}
-async function getSqliteReviewRequestLogs() {
-  const db = await getSqliteDb();
-  const res = db.exec("SELECT * FROM review_request_logs ORDER BY created_at DESC;");
-  if (res.length === 0) return [];
-  const cols = res[0].columns;
-  return res[0].values.map((val) => {
-    const raw = {};
-    cols.forEach((col, i) => {
-      raw[col] = val[i];
-    });
-    return raw;
-  });
-}
-async function getSqliteReviewRequestSettings() {
-  const db = await getSqliteDb();
-  const defaults = {
-    enabled: true,
-    delayDays: 3,
-    autoTriggerOnDelivery: true,
-    incentiveDiscountPercent: 10
-  };
-  const res = db.exec("SELECT setting_key, setting_value FROM review_request_settings;");
-  if (res.length === 0) return defaults;
-  const result = { ...defaults };
-  for (const row of res[0].values) {
-    const key = String(row[0]);
-    const val = String(row[1]);
-    if (key === "enabled") result.enabled = val === "true" || val === "1";
-    if (key === "delayDays") result.delayDays = Number(val) || 3;
-    if (key === "autoTriggerOnDelivery") result.autoTriggerOnDelivery = val === "true" || val === "1";
-    if (key === "incentiveDiscountPercent") result.incentiveDiscountPercent = Number(val) || 10;
-  }
-  return result;
-}
-async function saveSqliteReviewRequestSettings(settings) {
-  const db = await getSqliteDb();
-  const current = await getSqliteReviewRequestSettings();
-  const merged = { ...current, ...settings };
-  const stmt = db.prepare("INSERT OR REPLACE INTO review_request_settings (setting_key, setting_value) VALUES (?, ?);");
-  stmt.run(["enabled", String(merged.enabled)]);
-  stmt.run(["delayDays", String(merged.delayDays)]);
-  stmt.run(["autoTriggerOnDelivery", String(merged.autoTriggerOnDelivery)]);
-  stmt.run(["incentiveDiscountPercent", String(merged.incentiveDiscountPercent)]);
-  stmt.free();
-  saveSqliteDb(db);
-  return merged;
-}
-async function addSqliteReviewOptOut(email) {
-  if (!email) return;
-  const db = await getSqliteDb();
-  const normEmail = email.trim().toLowerCase();
-  db.run("INSERT OR REPLACE INTO review_opt_outs (email, opt_out, updated_at) VALUES (?, 1, ?);", [normEmail, (/* @__PURE__ */ new Date()).toISOString()]);
-  saveSqliteDb(db);
-}
-async function getSqliteReviewOptOutsCount() {
-  const db = await getSqliteDb();
-  const res = db.exec("SELECT COUNT(*) FROM review_opt_outs WHERE opt_out = 1;");
-  return res.length > 0 ? res[0].values[0][0] : 0;
-}
-async function getSqliteCart(cartKey) {
-  if (!cartKey) return [];
-  const db = await getSqliteDb();
-  const safeKey = String(cartKey).trim();
-  const stmt = db.prepare("SELECT items FROM carts WHERE user_id = ? OR session_id = ? OR id = ? LIMIT 1;");
-  stmt.bind([safeKey, safeKey, safeKey]);
-  if (stmt.step()) {
-    const raw = stmt.getAsObject();
-    stmt.free();
-    try {
-      const parsed = typeof raw.items === "string" ? JSON.parse(raw.items) : raw.items;
-      return Array.isArray(parsed) ? parsed : [];
-    } catch {
-      return [];
-    }
-  }
-  stmt.free();
-  return [];
-}
-async function saveSqliteCart(cartKey, items) {
-  const db = await getSqliteDb();
-  const safeKey = (cartKey || "guest_default").trim();
-  const itemsJson = JSON.stringify(Array.isArray(items) ? items : []);
-  const nowIso = (/* @__PURE__ */ new Date()).toISOString();
-  const stmt = db.prepare(`
-    INSERT INTO carts (id, user_id, session_id, items, updated_at)
-    VALUES (?, ?, ?, ?, ?)
-    ON CONFLICT(id) DO UPDATE SET items = excluded.items, updated_at = excluded.updated_at;
-  `);
-  stmt.run([`cart-${safeKey}`, safeKey, safeKey, itemsJson, nowIso]);
-  stmt.free();
-  saveSqliteDb(db);
-  return items;
-}
-async function clearSqliteCart(cartKey) {
-  const db = await getSqliteDb();
-  const safeKey = (cartKey || "guest_default").trim();
-  db.run("DELETE FROM carts WHERE user_id = ? OR session_id = ? OR id = ?;", [safeKey, safeKey, `cart-${safeKey}`]);
-  saveSqliteDb(db);
-}
-async function getSqliteWishlist(userOrSessionKey = "default") {
-  const db = await getSqliteDb();
-  const safeKey = (userOrSessionKey || "default").trim();
-  const stmt = db.prepare("SELECT product_id FROM wishlists WHERE user_id = ?;");
-  stmt.bind([safeKey]);
-  const productIds = [];
-  while (stmt.step()) {
-    const row = stmt.getAsObject();
-    if (row.product_id) productIds.push(String(row.product_id));
-  }
-  stmt.free();
-  return productIds;
-}
-async function addToSqliteWishlist(userOrSessionKey, productId) {
-  if (!productId) return getSqliteWishlist(userOrSessionKey);
-  const db = await getSqliteDb();
-  const safeKey = (userOrSessionKey || "default").trim();
-  const prodIdStr = String(productId).trim();
-  const id = `wish-${safeKey}-${prodIdStr}`;
-  db.run("INSERT OR IGNORE INTO wishlists (id, user_id, product_id, created_at) VALUES (?, ?, ?, ?);", [
-    id,
-    safeKey,
-    prodIdStr,
-    (/* @__PURE__ */ new Date()).toISOString()
-  ]);
-  saveSqliteDb(db);
-  return getSqliteWishlist(safeKey);
-}
-async function removeFromSqliteWishlist(userOrSessionKey, productId) {
-  const db = await getSqliteDb();
-  const safeKey = (userOrSessionKey || "default").trim();
-  const prodIdStr = String(productId).trim();
-  db.run("DELETE FROM wishlists WHERE user_id = ? AND product_id = ?;", [safeKey, prodIdStr]);
-  saveSqliteDb(db);
-  return getSqliteWishlist(safeKey);
-}
-function mapSqliteCustomClothingRow(row) {
-  if (!row) return null;
-  let materialSamples = [];
-  try {
-    materialSamples = typeof row.material_samples === "string" ? JSON.parse(row.material_samples) : row.material_samples || [];
-  } catch {
-    materialSamples = [];
-  }
-  let designImages = [];
-  try {
-    designImages = typeof row.design_images === "string" ? JSON.parse(row.design_images) : row.design_images || [];
-  } catch {
-    designImages = [];
-  }
-  let designVideos = [];
-  try {
-    designVideos = typeof row.design_videos === "string" ? JSON.parse(row.design_videos) : row.design_videos || [];
-  } catch {
-    designVideos = [];
-  }
-  let designLinks = [];
-  try {
-    designLinks = typeof row.design_links === "string" ? JSON.parse(row.design_links) : row.design_links || [];
-  } catch {
-    designLinks = [];
-  }
-  let measurements = {};
-  try {
-    measurements = typeof row.measurements === "string" ? JSON.parse(row.measurements) : row.measurements || {};
-  } catch {
-    measurements = {};
-  }
-  return {
-    id: row.id,
-    referenceNo: row.reference_no,
-    fullName: row.full_name,
-    email: row.email,
-    phone: row.phone || "",
-    garmentType: row.garment_type,
-    otherGarmentType: row.other_garment_type || "",
-    materialSamples,
-    designImages,
-    designVideos,
-    designLinks,
-    measurements,
-    preferredDeadline: row.preferred_deadline || null,
-    budgetRange: row.budget_range || "",
-    additionalNotes: row.additional_notes || "",
-    deliveryLocation: row.delivery_location || "",
-    status: row.status || "Pending Review",
-    createdAt: row.created_at || (/* @__PURE__ */ new Date()).toISOString(),
-    updatedAt: row.updated_at || (/* @__PURE__ */ new Date()).toISOString()
-  };
-}
-async function getSqliteCustomClothingRequests(filters) {
-  const db = await getSqliteDb();
-  const res = db.exec("SELECT * FROM custom_clothing_requests ORDER BY created_at DESC;");
-  if (res.length === 0) return [];
-  const cols = res[0].columns;
-  let list = res[0].values.map((val) => {
-    const raw = {};
-    cols.forEach((col, i) => {
-      raw[col] = val[i];
-    });
-    return mapSqliteCustomClothingRow(raw);
-  });
-  if (filters?.status) {
-    const s = filters.status.toLowerCase();
-    list = list.filter((r) => r.status && r.status.toLowerCase() === s);
-  }
-  if (filters?.search) {
-    const q = filters.search.toLowerCase();
-    list = list.filter(
-      (r) => r.referenceNo && r.referenceNo.toLowerCase().includes(q) || r.fullName && r.fullName.toLowerCase().includes(q) || r.email && r.email.toLowerCase().includes(q) || r.garmentType && r.garmentType.toLowerCase().includes(q)
-    );
-  }
-  return list;
-}
-async function getSqliteCustomClothingRequestById(id) {
-  const db = await getSqliteDb();
-  const stmt = db.prepare("SELECT * FROM custom_clothing_requests WHERE id = ? OR reference_no = ? LIMIT 1;");
-  stmt.bind([id, id]);
-  if (stmt.step()) {
-    const raw = stmt.getAsObject();
-    stmt.free();
-    return mapSqliteCustomClothingRow(raw);
-  }
-  stmt.free();
-  return null;
-}
-async function saveSqliteCustomClothingRequest(req) {
-  const db = await getSqliteDb();
-  const id = req.id || `req-custom-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
-  const refNo = req.referenceNo || req.reference_no || `ROP-CC-${(/* @__PURE__ */ new Date()).getFullYear()}-${Math.floor(1e3 + Math.random() * 9e3)}`;
-  const nowIso = (/* @__PURE__ */ new Date()).toISOString();
-  const stmt = db.prepare(`
-    INSERT OR REPLACE INTO custom_clothing_requests (
-      id, reference_no, full_name, email, phone, garment_type, other_garment_type,
-      material_samples, design_images, design_videos, design_links,
-      measurements, preferred_deadline, budget_range, additional_notes, delivery_location,
-      status, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
-  `);
-  stmt.run([
-    id,
-    refNo,
-    (req.fullName || req.full_name || "").trim(),
-    (req.email || "").trim().toLowerCase(),
-    (req.phone || "").trim(),
-    (req.garmentType || req.garment_type || "Custom Garment").trim(),
-    (req.otherGarmentType || req.other_garment_type || "").trim(),
-    JSON.stringify(Array.isArray(req.materialSamples) ? req.materialSamples : []),
-    JSON.stringify(Array.isArray(req.designImages) ? req.designImages : []),
-    JSON.stringify(Array.isArray(req.designVideos) ? req.designVideos : []),
-    JSON.stringify(Array.isArray(req.designLinks) ? req.designLinks : []),
-    JSON.stringify(req.measurements || {}),
-    req.preferredDeadline || req.preferred_deadline || null,
-    (req.budgetRange || req.budget_range || "").trim(),
-    (req.additionalNotes || req.additional_notes || "").trim(),
-    (req.deliveryLocation || req.delivery_location || "").trim(),
-    req.status || "Pending Review",
-    req.createdAt || req.created_at || nowIso,
-    nowIso
-  ]);
-  stmt.free();
-  saveSqliteDb(db);
-  return getSqliteCustomClothingRequestById(id);
-}
-async function updateSqliteCustomClothingRequestStatus(id, status) {
-  const db = await getSqliteDb();
-  db.run("UPDATE custom_clothing_requests SET status = ?, updated_at = ? WHERE id = ? OR reference_no = ?;", [
-    status,
-    (/* @__PURE__ */ new Date()).toISOString(),
-    id,
-    id
-  ]);
-  saveSqliteDb(db);
-  return getSqliteCustomClothingRequestById(id);
-}
-async function getSqliteInventoryAuditLogs(limit = 100) {
-  const db = await getSqliteDb();
-  const stmt = db.prepare("SELECT * FROM inventory_audit_logs ORDER BY timestamp DESC LIMIT ?;");
-  stmt.bind([limit]);
-  const logs = [];
-  while (stmt.step()) {
-    logs.push(stmt.getAsObject());
-  }
-  stmt.free();
-  return logs;
-}
-async function addSqliteInventoryAuditLog(log) {
-  const db = await getSqliteDb();
-  const id = `inv-log-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
-  const timestamp = (/* @__PURE__ */ new Date()).toISOString();
-  const stmt = db.prepare(`
-    INSERT INTO inventory_audit_logs (
-      id, productId, productName, productSku, timestamp, changeQuantity, newStock, reason, details
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
-  `);
-  stmt.run([
-    id,
-    log.productId,
-    log.productName,
-    log.productSku || "",
-    timestamp,
-    log.changeQuantity,
-    log.newStock,
-    log.reason,
-    log.details || ""
-  ]);
-  stmt.free();
-  saveSqliteDb(db);
-  return { id, timestamp, ...log };
-}
-var import_sql, import_fs, import_path, DB_FILE_PATH, dbInstance, lastLoadedMtime, DEFAULT_INITIAL_CATEGORIES, DEFAULT_HERO_SLIDES_INITIAL, INITIAL_SUPPLIERS_SEED, INITIAL_SUPPLIER_PRODUCTS_SEED, INITIAL_SUPPLIER_INTAKES_SEED, INITIAL_SUPPLIER_PAYMENTS_SEED, DEFAULT_PRODUCTS_SEED;
-var init_sqlite_db = __esm({
-  "src/lib/sqlite-db.ts"() {
-    import_sql = __toESM(require("sql.js"), 1);
-    import_fs = __toESM(require("fs"), 1);
-    import_path = __toESM(require("path"), 1);
-    DB_FILE_PATH = import_path.default.join(process.cwd(), "veloce.sqlite");
-    dbInstance = null;
-    lastLoadedMtime = 0;
-    DEFAULT_INITIAL_CATEGORIES = [
-      { id: "cat-1", name: "Electronics", slug: "electronics", description: "Smartphones, Audio, Computing and Accessories", status: "Active", displayOrder: 1 },
-      { id: "cat-2", name: "Fashion", slug: "fashion", description: "Men & Women Apparel, Shoes, and Accessories", status: "Active", displayOrder: 2 },
-      { id: "cat-3", name: "Home & Living", slug: "home-living", description: "Furniture, Decor, Kitchen and Appliances", status: "Active", displayOrder: 3 },
-      { id: "cat-4", name: "Beauty & Fragrances", slug: "beauty-fragrances", description: "Skincare, Makeup, Perfumes and Personal Care", status: "Active", displayOrder: 4 },
-      { id: "cat-5", name: "Sports & Outdoor", slug: "sports-outdoor", description: "Fitness Gear, Sportswear and Equipment", status: "Active", displayOrder: 5 },
-      { id: "cat-6", name: "Food & Beverages", slug: "food-beverages", description: "Snacks, Organic Groceries, Coffee and Drinks", status: "Active", displayOrder: 6 }
-    ];
-    DEFAULT_HERO_SLIDES_INITIAL = [
-      {
-        id: "hero-banner-1",
-        title: "Precision Mechanical Hardware",
-        subtitle: "Engineered for Performance & Tactile Perfection",
-        description: "CNC-machined aluminum frames, custom tuned linear switches, and dye-sublimated PBT keycaps. Built for relentless productivity.",
-        badge_text: "NEW RELEASE 2026",
-        primary_button_text: "Explore Keyboards",
-        primary_button_url: "store",
-        secondary_button_text: "Custom Services",
-        secondary_button_url: "services",
-        hero_image_url: "https://images.unsplash.com/photo-1587829741301-dc798b83add3?auto=format&fit=crop&q=80&w=1200",
-        background_type: "color",
-        background_color: "#0f172a",
-        background_image_url: "",
-        background_position: "center",
-        overlay_enabled: 1,
-        overlay_color: "#000000",
-        overlay_opacity: 0.4,
-        text_color: "#ffffff",
-        is_active: 1,
-        display_order: 1,
-        start_date: null,
-        end_date: null
-      },
-      {
-        id: "hero-banner-2",
-        title: "Minimalist Artisan Workspaces",
-        subtitle: "Natural Solid Hardwoods & Clean Architecture",
-        description: "Sustainably sourced Walnut and White Oak desk accessories, dual monitor risers, and magnetic modular organizers.",
-        badge_text: "HANDCRAFTED EDITIONS",
-        primary_button_text: "Shop Workspace Gear",
-        primary_button_url: "store",
-        secondary_button_text: "Read Design Stories",
-        secondary_button_url: "blog",
-        hero_image_url: "https://images.unsplash.com/photo-1527443224154-c4a3942d3acf?auto=format&fit=crop&q=80&w=1200",
-        background_type: "image",
-        background_color: "#18181b",
-        background_image_url: "https://images.unsplash.com/photo-1527443224154-c4a3942d3acf?auto=format&fit=crop&q=80&w=1600",
-        background_position: "center",
-        overlay_enabled: 1,
-        overlay_color: "#09090b",
-        overlay_opacity: 0.75,
-        text_color: "#ffffff",
-        is_active: 1,
-        display_order: 2,
-        start_date: null,
-        end_date: null
-      }
-    ];
-    INITIAL_SUPPLIERS_SEED = [
-      {
-        id: "sup-001",
-        code: "SUP-001",
-        name: "Samuel Ndung'u",
-        company_name: "Global Precision Woodworks",
-        email: "samuel@precisionwoodworks.co.ke",
-        phone: "+254 712 345 678",
-        physical_address: "Enterprise Road, Industrial Area, Nairobi",
-        tax_pin: "P051882910Z",
-        payment_terms: "Consignment Sale",
-        bank_name: "Equity Bank Kenya",
-        bank_account_number: "0180293849102",
-        mpesa_number: "0712345678",
-        mpesa_account_name: "Samuel Ndungu / Precision Woodworks",
-        status: "Active",
-        notes: "Premium solid oak & mahogany artisan furniture and acoustic risers.",
-        created_at: new Date(Date.now() - 864e5 * 45).toISOString(),
-        updated_at: (/* @__PURE__ */ new Date()).toISOString()
-      },
-      {
-        id: "sup-002",
-        code: "SUP-002",
-        name: "Grace Mutua",
-        company_name: "Obsidian Tech Foundry",
-        email: "supply@obsidiantech.co.ke",
-        phone: "+254 722 987 654",
-        physical_address: "The Mirage Tower, Chiromo Road, Westlands, Nairobi",
-        tax_pin: "P052991044A",
-        payment_terms: "Net 30",
-        bank_name: "KCB Bank",
-        bank_account_number: "1109283746",
-        mpesa_number: "0722987654",
-        mpesa_account_name: "Obsidian Tech Foundry Ltd",
-        status: "Active",
-        notes: "CNC aluminum mechanical keyboards, magnetic switches, and studio monitors.",
-        created_at: new Date(Date.now() - 864e5 * 60).toISOString(),
-        updated_at: (/* @__PURE__ */ new Date()).toISOString()
-      },
-      {
-        id: "sup-003",
-        code: "SUP-003",
-        name: "Hassan Omar",
-        company_name: "Rift Valley Apparel Mill",
-        email: "hassan@rvapparel.co.ke",
-        phone: "+254 733 112 233",
-        physical_address: "Kenyatta Avenue, Nakuru CBD, Nakuru",
-        tax_pin: "P054128990K",
-        payment_terms: "Bi-weekly",
-        bank_name: "Standard Chartered",
-        bank_account_number: "01050293847",
-        mpesa_number: "0733112233",
-        mpesa_account_name: "Rift Valley Apparel Mill",
-        status: "Active",
-        notes: "Organic heavyweight cotton hoodies, bespoke streetwear, and linen shirts.",
-        created_at: new Date(Date.now() - 864e5 * 30).toISOString(),
-        updated_at: (/* @__PURE__ */ new Date()).toISOString()
-      },
-      {
-        id: "sup-004",
-        code: "SUP-004",
-        name: "Amina Salim",
-        company_name: "Kilifi Artisan Handcrafts",
-        email: "amina@kilifihandcrafts.co.ke",
-        phone: "+254 744 556 677",
-        physical_address: "Bofa Road, Kilifi Creek, Kilifi",
-        tax_pin: "P053772199M",
-        payment_terms: "Immediate",
-        bank_name: "Cooperative Bank",
-        bank_account_number: "01128374659200",
-        mpesa_number: "0744556677",
-        mpesa_account_name: "Amina Salim Swahili Crafts",
-        status: "Active",
-        notes: "Handmade coconut wax scented candles, essential oils, and woven decor.",
-        created_at: new Date(Date.now() - 864e5 * 15).toISOString(),
-        updated_at: (/* @__PURE__ */ new Date()).toISOString()
-      }
-    ];
-    INITIAL_SUPPLIER_PRODUCTS_SEED = [
-      {
-        id: "sp-001",
-        supplier: "sup-001",
-        product: "prod-oak-riser",
-        product_name: "Solid Walnut Dual Monitor Riser with MagSafe Slot",
-        product_sku: "DSK-OAK-001",
-        product_image_url: "https://images.unsplash.com/photo-1527443224154-c4a3942d3acf?auto=format&fit=crop&q=80&w=600",
-        product_category: "Home & Living",
-        product_stock: 14,
-        supplier_sku: "GPW-WNR-90",
-        agreed_cost_price: 6500,
-        selling_price: 11900,
-        quantity_received: 25,
-        quantity_sold: 11,
-        remaining_stock: 14,
-        lead_time_days: 4,
-        is_primary_supplier: 1,
-        created_at: new Date(Date.now() - 864e5 * 40).toISOString(),
-        updated_at: (/* @__PURE__ */ new Date()).toISOString()
-      },
-      {
-        id: "sp-002",
-        supplier: "sup-001",
-        product: "prod-acoustic-panel",
-        product_name: "Artisan Acoustic Felt & Timber Wall Slat (Pair)",
-        product_sku: "DSK-SLAT-002",
-        product_image_url: "https://images.unsplash.com/photo-1513694203232-719a280e022f?auto=format&fit=crop&q=80&w=600",
-        product_category: "Home & Living",
-        product_stock: 8,
-        supplier_sku: "GPW-SLT-44",
-        agreed_cost_price: 9e3,
-        selling_price: 16500,
-        quantity_received: 15,
-        quantity_sold: 7,
-        remaining_stock: 8,
-        lead_time_days: 5,
-        is_primary_supplier: 1,
-        created_at: new Date(Date.now() - 864e5 * 35).toISOString(),
-        updated_at: (/* @__PURE__ */ new Date()).toISOString()
-      },
-      {
-        id: "sp-003",
-        supplier: "sup-002",
-        product: "prod-mag-keyboard",
-        product_name: "Veloce Titan 75% CNC Magnetic Hall-Effect Keyboard",
-        product_sku: "KB-TITAN-75",
-        product_image_url: "https://images.unsplash.com/photo-1587829741301-dc798b83add3?auto=format&fit=crop&q=80&w=600",
-        product_category: "Electronics",
-        product_stock: 19,
-        supplier_sku: "OTF-KB-75X",
-        agreed_cost_price: 14500,
-        selling_price: 24500,
-        quantity_received: 30,
-        quantity_sold: 11,
-        remaining_stock: 19,
-        lead_time_days: 7,
-        is_primary_supplier: 1,
-        created_at: new Date(Date.now() - 864e5 * 50).toISOString(),
-        updated_at: (/* @__PURE__ */ new Date()).toISOString()
-      },
-      {
-        id: "sp-004",
-        supplier: "sup-003",
-        product: "prod-streetwear-hoodie",
-        product_name: "Ropenix Heavyweight 480GSM French Terry Hoodie",
-        product_sku: "APP-HDY-480",
-        product_image_url: "https://images.unsplash.com/photo-1556905055-8f358a7a47b2?auto=format&fit=crop&q=80&w=600",
-        product_category: "Fashion",
-        product_stock: 32,
-        supplier_sku: "RVA-HD-BLK",
-        agreed_cost_price: 3200,
-        selling_price: 6800,
-        quantity_received: 50,
-        quantity_sold: 18,
-        remaining_stock: 32,
-        lead_time_days: 3,
-        is_primary_supplier: 1,
-        created_at: new Date(Date.now() - 864e5 * 25).toISOString(),
-        updated_at: (/* @__PURE__ */ new Date()).toISOString()
-      },
-      {
-        id: "sp-005",
-        supplier: "sup-004",
-        product: "prod-candle-coconut",
-        product_name: "Swahili Coast Coconut & Amber Hand-Poured Candle",
-        product_sku: "BEA-CNDL-01",
-        product_image_url: "https://images.unsplash.com/photo-1603006905003-be475563bc59?auto=format&fit=crop&q=80&w=600",
-        product_category: "Beauty & Fragrances",
-        product_stock: 22,
-        supplier_sku: "KAH-CND-AMB",
-        agreed_cost_price: 1200,
-        selling_price: 2600,
-        quantity_received: 40,
-        quantity_sold: 18,
-        remaining_stock: 22,
-        lead_time_days: 2,
-        is_primary_supplier: 1,
-        created_at: new Date(Date.now() - 864e5 * 12).toISOString(),
-        updated_at: (/* @__PURE__ */ new Date()).toISOString()
-      }
-    ];
-    INITIAL_SUPPLIER_INTAKES_SEED = [
-      {
-        id: "intake-001",
-        batch_number: "BATCH-2026-001",
-        supplier: "sup-001",
-        supplier_name: "Samuel Ndung'u",
-        supplier_company: "Global Precision Woodworks",
-        product: "prod-oak-riser",
-        product_name: "Solid Walnut Dual Monitor Riser with MagSafe Slot",
-        product_sku: "DSK-OAK-001",
-        quantity_received: 25,
-        unit_cost: 6500,
-        total_cost: 162500,
-        received_date: new Date(Date.now() - 864e5 * 40).toISOString().split("T")[0],
-        delivery_note_ref: "DN-GPW-9042",
-        invoice_ref: "INV-GPW-1102",
-        status: "Received",
-        notes: "Q1 production lot. All walnut slats kiln-dried and certified.",
-        received_by: "Operations Supervisor",
-        created_at: new Date(Date.now() - 864e5 * 40).toISOString()
-      },
-      {
-        id: "intake-002",
-        batch_number: "BATCH-2026-002",
-        supplier: "sup-002",
-        supplier_name: "Grace Mutua",
-        supplier_company: "Obsidian Tech Foundry",
-        product: "prod-mag-keyboard",
-        product_name: "Veloce Titan 75% CNC Magnetic Hall-Effect Keyboard",
-        product_sku: "KB-TITAN-75",
-        quantity_received: 30,
-        unit_cost: 14500,
-        total_cost: 435e3,
-        received_date: new Date(Date.now() - 864e5 * 50).toISOString().split("T")[0],
-        delivery_note_ref: "DN-OTF-4011",
-        invoice_ref: "INV-OTF-8891",
-        status: "Received",
-        notes: "Anodized black aluminum housings. Rapid trigger switches verified.",
-        received_by: "Tech QA Lead",
-        created_at: new Date(Date.now() - 864e5 * 50).toISOString()
-      },
-      {
-        id: "intake-003",
-        batch_number: "BATCH-2026-003",
-        supplier: "sup-003",
-        supplier_name: "Hassan Omar",
-        supplier_company: "Rift Valley Apparel Mill",
-        product: "prod-streetwear-hoodie",
-        product_name: "Ropenix Heavyweight 480GSM French Terry Hoodie",
-        product_sku: "APP-HDY-480",
-        quantity_received: 50,
-        unit_cost: 3200,
-        total_cost: 16e4,
-        received_date: new Date(Date.now() - 864e5 * 25).toISOString().split("T")[0],
-        delivery_note_ref: "DN-RVA-0129",
-        invoice_ref: "INV-RVA-4401",
-        status: "Received",
-        notes: "Shrinkage tests passed. High-density embroidered logos on chest.",
-        received_by: "Apparel Logistics",
-        created_at: new Date(Date.now() - 864e5 * 25).toISOString()
-      },
-      {
-        id: "intake-004",
-        batch_number: "BATCH-2026-004",
-        supplier: "sup-004",
-        supplier_name: "Amina Salim",
-        supplier_company: "Kilifi Artisan Handcrafts",
-        product: "prod-candle-coconut",
-        product_name: "Swahili Coast Coconut & Amber Hand-Poured Candle",
-        product_sku: "BEA-CNDL-01",
-        quantity_received: 40,
-        unit_cost: 1200,
-        total_cost: 48e3,
-        received_date: new Date(Date.now() - 864e5 * 12).toISOString().split("T")[0],
-        delivery_note_ref: "DN-KAH-5510",
-        invoice_ref: "INV-KAH-0092",
-        status: "Received",
-        notes: "Amber glass jars with wooden wicks and organic fragrance oils.",
-        received_by: "Warehouse Inbound",
-        created_at: new Date(Date.now() - 864e5 * 12).toISOString()
-      }
-    ];
-    INITIAL_SUPPLIER_PAYMENTS_SEED = [
-      {
-        id: "pay-001",
-        payment_reference: "PAY-SUP-2026-001",
-        supplier: "sup-001",
-        supplier_name: "Samuel Ndung'u",
-        supplier_company: "Global Precision Woodworks",
-        payment_date: new Date(Date.now() - 864e5 * 10).toISOString().split("T")[0],
-        amount: 5e4,
-        payment_method: "M-PESA",
-        transaction_code: "QEH78912KL",
-        settlement_period_start: new Date(Date.now() - 864e5 * 30).toISOString().split("T")[0],
-        settlement_period_end: new Date(Date.now() - 864e5 * 10).toISOString().split("T")[0],
-        allocated_batches_or_orders: ["BATCH-2026-001"],
-        status: "Completed",
-        receipt_attachment_url: "",
-        notes: "Bi-monthly consignment sales disbursement for units sold in period.",
-        processed_by: "Finance Controller",
-        created_at: new Date(Date.now() - 864e5 * 10).toISOString()
-      },
-      {
-        id: "pay-002",
-        payment_reference: "PAY-SUP-2026-002",
-        supplier: "sup-002",
-        supplier_name: "Grace Mutua",
-        supplier_company: "Obsidian Tech Foundry",
-        payment_date: new Date(Date.now() - 864e5 * 20).toISOString().split("T")[0],
-        amount: 1e5,
-        payment_method: "Bank Transfer",
-        transaction_code: "FT2602288190",
-        settlement_period_start: new Date(Date.now() - 864e5 * 45).toISOString().split("T")[0],
-        settlement_period_end: new Date(Date.now() - 864e5 * 20).toISOString().split("T")[0],
-        allocated_batches_or_orders: ["BATCH-2026-002"],
-        status: "Completed",
-        receipt_attachment_url: "",
-        notes: "Net 30 invoice milestone settlement to KCB Bank account.",
-        processed_by: "Finance Controller",
-        created_at: new Date(Date.now() - 864e5 * 20).toISOString()
-      },
-      {
-        id: "pay-003",
-        payment_reference: "PAY-SUP-2026-003",
-        supplier: "sup-004",
-        supplier_name: "Amina Salim",
-        supplier_company: "Kilifi Artisan Handcrafts",
-        payment_date: new Date(Date.now() - 864e5 * 12).toISOString().split("T")[0],
-        amount: 21600,
-        payment_method: "M-PESA",
-        transaction_code: "QEH33901MN",
-        settlement_period_start: new Date(Date.now() - 864e5 * 12).toISOString().split("T")[0],
-        settlement_period_end: new Date(Date.now() - 864e5 * 12).toISOString().split("T")[0],
-        allocated_batches_or_orders: ["BATCH-2026-004"],
-        status: "Completed",
-        receipt_attachment_url: "",
-        notes: "Immediate payment settlement on arrival of artisanal batch.",
-        processed_by: "Finance Controller",
-        created_at: new Date(Date.now() - 864e5 * 12).toISOString()
-      }
-    ];
-    DEFAULT_PRODUCTS_SEED = [
+    const existing = await getMysqlProducts();
+    const existingIds = new Set(existing.map((p) => p.id));
+    const DEFAULT_PRODUCTS = [
       {
         id: "prod-oak-riser",
         sku: "DSK-OAK-001",
         slug: "solid-walnut-dual-monitor-riser",
         name: "Solid Walnut Dual Monitor Riser with MagSafe Slot",
         brand: "Veloce Woodcraft",
-        countryOfOrigin: "Kenya",
         country_of_origin: "Kenya",
         description: "Handcrafted from sustainable solid American walnut timber. Integrated magnetic wireless charging dock, dual display capacity, and premium anodized aluminum risers.",
         shortDescription: "Handcrafted solid walnut dual monitor stand with integrated MagSafe charging pad.",
-        detailedDescription: "Elevate your workspace ergonomics and aesthetic with the Veloce Solid Walnut Dual Monitor Riser. Masterfully carved from kiln-dried Grade-A American Walnut, this desk shelf accommodates two 27-inch displays or an ultrawide monitor with zero flex. Features a recessed magnetic charging bay for Qi/MagSafe devices and felt-padded aluminum feet to protect premium desk surfaces.",
+        detailedDescription: "Elevate your workspace ergonomics and aesthetic with the Veloce Solid Walnut Dual Monitor Riser. Masterfully carved from kiln-dried Grade-A American Walnut, this desk shelf accommodates two 27-inch displays or an ultrawide monitor with zero flex.",
         price: 11900,
         costPrice: 6500,
-        cost_price: 6500,
         originalPrice: 13500,
-        original_price: 13500,
         previousPrice: 13500,
         category: "Home & Living",
         tags: ["Desk Setup", "Walnut", "Ergonomic", "Workspace", "Handmade"],
@@ -4132,27 +1987,9 @@ var init_sqlite_db = __esm({
         ],
         stock: 14,
         lowStockThreshold: 5,
-        rating: 0,
-        reviewsCount: 0,
-        status: "Active",
-        features: [
-          "Solid kiln-dried American Walnut",
-          "Integrated 15W Qi/MagSafe charging channel",
-          "Holds up to 50kg dual monitor setups",
-          "Cork-lined under-shelf organization slot"
-        ],
-        specifications: [
-          { key: "Dimensions", value: "115cm x 23cm x 11cm" },
-          { key: "Weight", value: "4.2 kg" },
-          { key: "Material", value: "American Black Walnut & Matte Aluminum" }
-        ],
-        whatsInTheBox: "1x Solid Walnut Shelf, 2x Anodized Aluminum Risers, 1x MagSafe Fast-Charging Cable, 4x Anti-slip Wool Felt Pads",
-        hasVariants: false,
-        options: [],
-        colorImages: {},
-        variantMatrix: [],
-        variants: [],
-        reviews: []
+        rating: 4.8,
+        reviewsCount: 12,
+        status: "Active"
       },
       {
         id: "prod-mag-keyboard",
@@ -4160,16 +1997,13 @@ var init_sqlite_db = __esm({
         slug: "veloce-titan-75-cnc-magnetic-keyboard",
         name: "Veloce Titan 75% CNC Magnetic Hall-Effect Keyboard",
         brand: "Veloce Tech",
-        countryOfOrigin: "Kenya",
         country_of_origin: "Kenya",
         description: "Aerospace-grade CNC aluminum housing, rapid-trigger Hall effect magnetic analog switches, and dynamic per-key RGB backlighting.",
         shortDescription: "Precision CNC 75% gaming & typing keyboard with magnetic rapid-trigger switches.",
-        detailedDescription: "The Veloce Titan 75 is engineered for uncompromising speed, tactile feedback, and endurance. Built inside an anodized 6063 aerospace aluminum case with custom sound-dampening poron foam gaskets. Features adjustable magnetic switch actuation from 0.1mm to 4.0mm with dynamic RT (Rapid Trigger) capability.",
+        detailedDescription: "The Veloce Titan 75 is engineered for uncompromising speed, tactile feedback, and endurance. Built inside an anodized 6063 aerospace aluminum case with custom sound-dampening poron foam gaskets.",
         price: 24500,
         costPrice: 14500,
-        cost_price: 14500,
         originalPrice: 28e3,
-        original_price: 28e3,
         previousPrice: 28e3,
         category: "Electronics",
         tags: ["Keyboard", "Hall-Effect", "Gaming", "Electronics", "CNC Aluminum"],
@@ -4180,27 +2014,9 @@ var init_sqlite_db = __esm({
         ],
         stock: 19,
         lowStockThreshold: 4,
-        rating: 0,
-        reviewsCount: 0,
-        status: "Active",
-        features: [
-          "Rapid Trigger analog magnetic switches",
-          "0.1mm - 4.0mm customizable actuation depth",
-          "Full CNC 6063 aluminum chassis with brass weight",
-          "8000Hz polling rate with ultra-low 0.125ms latency"
-        ],
-        specifications: [
-          { key: "Layout", value: "75% Compact (82 Keys)" },
-          { key: "Connectivity", value: "Type-C Detachable Braided Cable + 2.4GHz Wireless" },
-          { key: "Weight", value: "1.85 kg" }
-        ],
-        whatsInTheBox: "1x Titan 75 Keyboard, 1x Custom Aviator Coiled Cable, 1x 2-in-1 Switch & Keycap Puller, 4x Spare Magnetic Switches",
-        hasVariants: false,
-        options: [],
-        colorImages: {},
-        variantMatrix: [],
-        variants: [],
-        reviews: []
+        rating: 4.9,
+        reviewsCount: 24,
+        status: "Active"
       },
       {
         id: "prod-streetwear-hoodie",
@@ -4208,16 +2024,13 @@ var init_sqlite_db = __esm({
         slug: "ropenix-heavyweight-480gsm-french-terry-hoodie",
         name: "Ropenix Heavyweight 480GSM French Terry Hoodie",
         brand: "Ropenix Atelier",
-        countryOfOrigin: "Kenya",
         country_of_origin: "Kenya",
         description: "Custom milled 100% organic combed cotton in 480 GSM ultra-heavyweight knit. Double-layered structured hood and signature dropped shoulder fit.",
         shortDescription: "Luxury heavyweight 480GSM organic cotton oversized streetwear hoodie.",
-        detailedDescription: "Crafted in Nairobi with obsessive attention to fabric weight, drape, and longevity. Milled from sustainably sourced East African organic long-staple cotton, pre-shrunk to guarantee zero size change after washing. Designed with double-needle reverse coverstitching, kangaroo pocket with reinforced bartacks, and seamless ribbed cuffs.",
+        detailedDescription: "Crafted in Nairobi with obsessive attention to fabric weight, drape, and longevity. Milled from sustainably sourced East African organic long-staple cotton, pre-shrunk to guarantee zero size change after washing.",
         price: 6800,
         costPrice: 3200,
-        cost_price: 3200,
         originalPrice: 8e3,
-        original_price: 8e3,
         previousPrice: 8e3,
         category: "Fashion",
         tags: ["Streetwear", "Hoodie", "Apparel", "Fashion", "Organic Cotton"],
@@ -4228,27 +2041,9 @@ var init_sqlite_db = __esm({
         ],
         stock: 32,
         lowStockThreshold: 8,
-        rating: 0,
-        reviewsCount: 0,
-        status: "Active",
-        features: [
-          "Ultra-heavy 480 GSM 100% organic combed French Terry",
-          "Double-lined structured hood with zero drawstrings",
-          "Pre-shrunk fabric with lint-free soft brushed interior",
-          "Relaxed boxy silhouette with dropped shoulders"
-        ],
-        specifications: [
-          { key: "Material", value: "100% Organic Combed Cotton (480 GSM)" },
-          { key: "Care", value: "Machine wash cold inside-out, hang dry" },
-          { key: "Origin", value: "Ethically crafted in Kenya" }
-        ],
-        whatsInTheBox: "1x Ropenix Heavyweight Hoodie in branded dust bag with authentication card",
-        hasVariants: false,
-        options: [],
-        colorImages: {},
-        variantMatrix: [],
-        variants: [],
-        reviews: []
+        rating: 4.7,
+        reviewsCount: 18,
+        status: "Active"
       },
       {
         id: "prod-candle-coconut",
@@ -4256,16 +2051,13 @@ var init_sqlite_db = __esm({
         slug: "swahili-coast-coconut-amber-candle",
         name: "Swahili Coast Coconut & Amber Hand-Poured Candle",
         brand: "Kilifi Artisans",
-        countryOfOrigin: "Kenya",
         country_of_origin: "Kenya",
         description: "Hand-poured coconut wax with crackling wood wick and aromatic amber fragrance notes from the Kenyan coast.",
         shortDescription: "Artisanal coconut wax candle with crackling wood wick and coastal amber aroma.",
-        detailedDescription: "Handcrafted in Kilifi using 100% natural coconut soy wax blended with pure essential oils and fragrance essences inspired by the Indian Ocean coastline. Features a sustainable FSC-certified cherry wood wick that crackles soothingly as it burns for up to 60 clean hours.",
+        detailedDescription: "Handcrafted in Kilifi using 100% natural coconut soy wax blended with pure essential oils and fragrance essences inspired by the Indian Ocean coastline.",
         price: 2600,
         costPrice: 1200,
-        cost_price: 1200,
         originalPrice: 3200,
-        original_price: 3200,
         previousPrice: 3200,
         category: "Beauty & Fragrances",
         tags: ["Candle", "Fragrance", "Handmade", "Eco-friendly", "Kilifi"],
@@ -4276,501 +2068,499 @@ var init_sqlite_db = __esm({
         ],
         stock: 22,
         lowStockThreshold: 6,
-        rating: 0,
-        reviewsCount: 0,
-        status: "Active",
-        features: [
-          "60+ hours burn time with zero soot",
-          "FSC-certified crackling wood wick",
-          "Re-usable amber glass apothecary jar with aluminium lid",
-          "Non-toxic, phthalate-free, vegan formula"
-        ],
-        specifications: [
-          { key: "Wax Weight", value: "280g / 9.8 oz" },
-          { key: "Burn Time", value: "55 - 65 hours" },
-          { key: "Vessel", value: "Amber Apothecary Glass" }
-        ],
-        whatsInTheBox: "1x Hand-Poured Amber Candle with wooden matchbox",
-        hasVariants: false,
-        options: [],
-        colorImages: {},
-        variantMatrix: [],
-        variants: [],
-        reviews: []
+        rating: 4.9,
+        reviewsCount: 15,
+        status: "Active"
       }
     ];
-  }
-});
-
-// src/lib/postgres-db.ts
-function isPostgresConfigured() {
-  const databaseUrl = process.env.DATABASE_URL || process.env.POSTGRES_URL || "";
-  const isPostgresUrl = databaseUrl.startsWith("postgres://") || databaseUrl.startsWith("postgresql://");
-  const host = process.env.POSTGRES_HOST || process.env.PGHOST || "";
-  const user = process.env.POSTGRES_USER || process.env.PGUSER || "";
-  const database = process.env.POSTGRES_DB || process.env.PGDATABASE || "";
-  return isPostgresUrl || !!(host && user && database);
-}
-function getPostgresPool() {
-  if (pgPool) return pgPool;
-  const databaseUrl = process.env.DATABASE_URL || process.env.POSTGRES_URL || "";
-  const isPostgresUrl = databaseUrl.startsWith("postgres://") || databaseUrl.startsWith("postgresql://");
-  const host = process.env.POSTGRES_HOST || process.env.PGHOST || (isPostgresUrl ? void 0 : "");
-  const user = process.env.POSTGRES_USER || process.env.PGUSER || "";
-  const password = process.env.POSTGRES_PASSWORD || process.env.PGPASSWORD || "";
-  const database = process.env.POSTGRES_DB || process.env.PGDATABASE || "";
-  const port = Number(process.env.POSTGRES_PORT || process.env.PGPORT) || 5432;
-  if (isPostgresUrl) {
-    try {
-      pgPool = new Pool({
-        connectionString: databaseUrl,
-        ssl: process.env.POSTGRES_SSL === "true" ? { rejectUnauthorized: false } : void 0,
-        max: 20,
-        idleTimeoutMillis: 3e4,
-        connectionTimeoutMillis: 5e3
-      });
-      return pgPool;
-    } catch (err) {
-      console.error("[PostgreSQL] Failed to initialize connection pool with DATABASE_URL:", err);
-      return null;
-    }
-  }
-  if (host && user && database) {
-    try {
-      pgPool = new Pool({
-        host,
-        user,
-        password,
-        database,
-        port,
-        ssl: process.env.POSTGRES_SSL === "true" ? { rejectUnauthorized: false } : void 0,
-        max: 20,
-        idleTimeoutMillis: 3e4,
-        connectionTimeoutMillis: 5e3
-      });
-      return pgPool;
-    } catch (err) {
-      console.error("[PostgreSQL] Failed to initialize connection pool:", err);
-      return null;
-    }
-  }
-  return null;
-}
-async function initPostgresTables() {
-  const pool = getPostgresPool();
-  if (!pool) return;
-  const client = await pool.connect();
-  try {
-    await client.query(`
-      CREATE TABLE IF NOT EXISTS products (
-        id VARCHAR(255) PRIMARY KEY,
-        sku VARCHAR(255),
-        name VARCHAR(255) NOT NULL,
-        description TEXT,
-        price NUMERIC(15, 2) NOT NULL,
-        category VARCHAR(255),
-        tags JSONB,
-        type VARCHAR(50) DEFAULT 'physical',
-        image_url TEXT,
-        images JSONB,
-        stock INT,
-        low_stock_threshold INT,
-        variations JSONB,
-        rating NUMERIC(3, 2) DEFAULT 0,
-        reviews_count INT DEFAULT 0,
-        reviews JSONB,
-        digital_file_url TEXT,
-        previous_price NUMERIC(15, 2),
-        back_in_stock_alert BOOLEAN DEFAULT FALSE,
-        cost_price NUMERIC(15, 2),
-        tax_id VARCHAR(255),
-        status VARCHAR(50) DEFAULT 'Active',
-        payment_restriction VARCHAR(50) DEFAULT 'both',
-        short_description TEXT,
-        detailed_description TEXT,
-        features JSONB,
-        specifications JSONB,
-        whats_in_the_box TEXT,
-        has_variants BOOLEAN DEFAULT FALSE,
-        options JSONB,
-        color_images JSONB,
-        variant_matrix JSONB,
-        variants JSONB,
-        created_at TIMESTAMPTZ DEFAULT NOW(),
-        updated_at TIMESTAMPTZ DEFAULT NOW()
-      );
-      ALTER TABLE products ADD COLUMN IF NOT EXISTS has_variants BOOLEAN DEFAULT FALSE;
-      ALTER TABLE products ADD COLUMN IF NOT EXISTS options JSONB;
-      ALTER TABLE products ADD COLUMN IF NOT EXISTS color_images JSONB;
-      ALTER TABLE products ADD COLUMN IF NOT EXISTS variant_matrix JSONB;
-      ALTER TABLE products ADD COLUMN IF NOT EXISTS variants JSONB;
-    `);
-    await client.query(`
-      CREATE TABLE IF NOT EXISTS categories (
-        id VARCHAR(255) PRIMARY KEY,
-        name VARCHAR(255) NOT NULL,
-        slug VARCHAR(255) NOT NULL UNIQUE,
-        parent_id VARCHAR(255),
-        description TEXT,
-        image_url TEXT,
-        status VARCHAR(50) DEFAULT 'active',
-        display_order INT DEFAULT 0,
-        previous_slugs JSONB,
-        created_at TIMESTAMPTZ DEFAULT NOW(),
-        updated_at TIMESTAMPTZ DEFAULT NOW()
-      );
-    `);
-    await client.query(`
-      CREATE TABLE IF NOT EXISTS orders (
-        id VARCHAR(255) PRIMARY KEY,
-        user_id VARCHAR(255),
-        customer_name VARCHAR(255),
-        customer_email VARCHAR(255),
-        customer_phone VARCHAR(255),
-        delivery_address TEXT,
-        city VARCHAR(255),
-        postal_code VARCHAR(50),
-        items JSONB NOT NULL,
-        subtotal NUMERIC(15, 2) NOT NULL,
-        discount NUMERIC(15, 2) DEFAULT 0,
-        shipping_fee NUMERIC(15, 2) DEFAULT 0,
-        tax_amount NUMERIC(15, 2) DEFAULT 0,
-        total NUMERIC(15, 2) NOT NULL,
-        status VARCHAR(50) DEFAULT 'Pending',
-        checkout_channel VARCHAR(50) DEFAULT 'web',
-        payment_method VARCHAR(50) DEFAULT 'cod',
-        payment_reference VARCHAR(255),
-        payment_status VARCHAR(50) DEFAULT 'Pending',
-        tracking_number VARCHAR(255),
-        notes TEXT,
-        created_at TIMESTAMPTZ DEFAULT NOW(),
-        updated_at TIMESTAMPTZ DEFAULT NOW()
-      );
-      ALTER TABLE orders ADD COLUMN IF NOT EXISTS checkout_channel VARCHAR(50) DEFAULT 'web';
-      ALTER TABLE orders ADD COLUMN IF NOT EXISTS is_paid BOOLEAN DEFAULT FALSE;
-      ALTER TABLE orders ADD COLUMN IF NOT EXISTS paid_at TIMESTAMPTZ;
-      ALTER TABLE orders ADD COLUMN IF NOT EXISTS delivery_confirmed BOOLEAN DEFAULT FALSE;
-      ALTER TABLE orders ADD COLUMN IF NOT EXISTS delivered_at TIMESTAMPTZ;
-      ALTER TABLE orders ADD COLUMN IF NOT EXISTS delivery_person VARCHAR(255);
-      ALTER TABLE orders ADD COLUMN IF NOT EXISTS delivery_note TEXT;
-      ALTER TABLE orders ADD COLUMN IF NOT EXISTS status_history JSONB;
-    `);
-    await client.query(`
-      CREATE TABLE IF NOT EXISTS reviews (
-        id VARCHAR(255) PRIMARY KEY,
-        product_id VARCHAR(255) NOT NULL,
-        author VARCHAR(255) NOT NULL,
-        rating INT NOT NULL,
-        comment TEXT NOT NULL,
-        date TIMESTAMPTZ DEFAULT NOW(),
-        verified BOOLEAN DEFAULT TRUE,
-        created_at TIMESTAMPTZ DEFAULT NOW()
-      );
-    `);
-    await client.query(`
-      CREATE TABLE IF NOT EXISTS app_settings (
-        setting_key VARCHAR(255) PRIMARY KEY,
-        setting_value JSONB,
-        updated_at TIMESTAMPTZ DEFAULT NOW()
-      );
-    `);
-    await client.query(`
-      CREATE TABLE IF NOT EXISTS email_logs (
-        id VARCHAR(255) PRIMARY KEY,
-        recipient VARCHAR(255) NOT NULL,
-        email_type VARCHAR(100) NOT NULL,
-        subject TEXT NOT NULL,
-        status VARCHAR(50) NOT NULL,
-        attempts INT DEFAULT 1,
-        error_message TEXT,
-        related_order_id VARCHAR(255),
-        related_user_id VARCHAR(255),
-        dedupe_key VARCHAR(255) UNIQUE,
-        metadata JSONB,
-        created_at TIMESTAMPTZ DEFAULT NOW(),
-        sent_at TIMESTAMPTZ
-      );
-    `);
-    await client.query(`
-      CREATE TABLE IF NOT EXISTS email_jobs (
-        id VARCHAR(255) PRIMARY KEY,
-        email_type VARCHAR(100) NOT NULL,
-        recipient VARCHAR(255) NOT NULL,
-        subject TEXT NOT NULL,
-        payload JSONB NOT NULL,
-        status VARCHAR(50) DEFAULT 'queued',
-        attempts INT DEFAULT 0,
-        max_attempts INT DEFAULT 5,
-        next_attempt_at TIMESTAMPTZ NOT NULL,
-        error_message TEXT,
-        dedupe_key VARCHAR(255) UNIQUE,
-        created_at TIMESTAMPTZ DEFAULT NOW(),
-        updated_at TIMESTAMPTZ DEFAULT NOW()
-      );
-      CREATE INDEX IF NOT EXISTS idx_email_jobs_status_next_attempt ON email_jobs(status, next_attempt_at);
-    `);
-    await client.query(`
-      CREATE TABLE IF NOT EXISTS payment_submissions (
-        id VARCHAR(255) PRIMARY KEY,
-        order_id VARCHAR(255) NOT NULL,
-        mpesa_receipt_code VARCHAR(100) UNIQUE NOT NULL,
-        phone_number VARCHAR(50) NOT NULL,
-        amount_claimed NUMERIC(15, 2),
-        payment_method VARCHAR(50) DEFAULT 'mpesa_paybill',
-        status VARCHAR(50) DEFAULT 'pending_verification',
-        admin_notes TEXT,
-        submitted_at TIMESTAMPTZ DEFAULT NOW(),
-        verified_at TIMESTAMPTZ,
-        verified_by VARCHAR(255)
-      );
-    `);
-    await client.query(`
-      CREATE TABLE IF NOT EXISTS users (
-        id VARCHAR(255) PRIMARY KEY,
-        username VARCHAR(150) NOT NULL,
-        email VARCHAR(255) UNIQUE NOT NULL,
-        password_hash TEXT NOT NULL,
-        first_name VARCHAR(150) DEFAULT '',
-        last_name VARCHAR(150) DEFAULT '',
-        phone VARCHAR(100) DEFAULT '',
-        is_staff INT DEFAULT 0,
-        is_superuser INT DEFAULT 0,
-        email_verified INT DEFAULT 1,
-        avatar_url TEXT DEFAULT '',
-        referral_code VARCHAR(50),
-        partner_tier VARCHAR(50) DEFAULT 'Silver',
-        created_at TIMESTAMPTZ DEFAULT NOW(),
-        updated_at TIMESTAMPTZ DEFAULT NOW()
-      );
-      CREATE UNIQUE INDEX IF NOT EXISTS idx_pg_users_email_unique ON users(LOWER(email));
-    `);
-    await client.query(`
-      CREATE TABLE IF NOT EXISTS password_reset_tokens (
-        id VARCHAR(255) PRIMARY KEY,
-        user_id VARCHAR(255) NOT NULL,
-        token_hash VARCHAR(64) NOT NULL UNIQUE,
-        expires_at TIMESTAMPTZ NOT NULL,
-        used_at TIMESTAMPTZ,
-        created_at TIMESTAMPTZ DEFAULT NOW(),
-        user_email VARCHAR(255),
-        ip_address VARCHAR(100),
-        CONSTRAINT fk_pg_pwd_reset_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-      );
-      ALTER TABLE password_reset_tokens ADD COLUMN IF NOT EXISTS user_id VARCHAR(255);
-      CREATE INDEX IF NOT EXISTS idx_pg_pwd_reset_user_id ON password_reset_tokens(user_id);
-      CREATE INDEX IF NOT EXISTS idx_pg_pwd_reset_expires_at ON password_reset_tokens(expires_at);
-      CREATE INDEX IF NOT EXISTS idx_pg_pwd_reset_token_hash ON password_reset_tokens(token_hash);
-    `);
-    await client.query(`
-      CREATE TABLE IF NOT EXISTS user_verifications (
-        id VARCHAR(255) PRIMARY KEY,
-        email VARCHAR(255) NOT NULL,
-        token_hash VARCHAR(255) NOT NULL,
-        expires_at TIMESTAMPTZ NOT NULL,
-        verified_at TIMESTAMPTZ,
-        created_at TIMESTAMPTZ DEFAULT NOW()
-      );
-    `);
-    await client.query(`
-      CREATE TABLE IF NOT EXISTS email_preferences (
-        id VARCHAR(255) PRIMARY KEY,
-        email VARCHAR(255) UNIQUE NOT NULL,
-        allow_marketing INT DEFAULT 1,
-        allow_review_requests INT DEFAULT 1,
-        allow_abandoned_cart INT DEFAULT 1,
-        allow_price_drop INT DEFAULT 1,
-        unsubscribed_all INT DEFAULT 0,
-        updated_at TIMESTAMPTZ DEFAULT NOW()
-      );
-    `);
-    await client.query(`
-      CREATE TABLE IF NOT EXISTS scheduled_task_logs (
-        id VARCHAR(255) PRIMARY KEY,
-        task_name VARCHAR(100) NOT NULL,
-        dedupe_key VARCHAR(255) UNIQUE NOT NULL,
-        executed_at TIMESTAMPTZ DEFAULT NOW(),
-        status VARCHAR(50) NOT NULL,
-        details TEXT
-      );
-    `);
-    await client.query(`
-      CREATE TABLE IF NOT EXISTS pending_registrations (
-        id VARCHAR(255) PRIMARY KEY,
-        email VARCHAR(255) UNIQUE NOT NULL,
-        username VARCHAR(150) NOT NULL,
-        first_name VARCHAR(150) DEFAULT '',
-        last_name VARCHAR(150) DEFAULT '',
-        password_hash TEXT NOT NULL,
-        phone VARCHAR(100) DEFAULT '',
-        otp_hash VARCHAR(255) NOT NULL,
-        otp_expires_at TIMESTAMPTZ NOT NULL,
-        attempts INT DEFAULT 0,
-        max_attempts INT DEFAULT 5,
-        last_sent_at TIMESTAMPTZ DEFAULT NOW(),
-        resend_count INT DEFAULT 0,
-        resend_window_start TIMESTAMPTZ DEFAULT NOW(),
-        created_at TIMESTAMPTZ DEFAULT NOW(),
-        ip_address VARCHAR(100)
-      );
-      CREATE UNIQUE INDEX IF NOT EXISTS idx_pg_pending_registrations_email ON pending_registrations(LOWER(email));
-    `);
-    await client.query(`
-      CREATE TABLE IF NOT EXISTS audit_flagged_duplicate_accounts (
-        id VARCHAR(255) PRIMARY KEY,
-        source_table VARCHAR(100) NOT NULL,
-        record_id VARCHAR(255) NOT NULL,
-        original_email VARCHAR(255) NOT NULL,
-        normalized_email VARCHAR(255) NOT NULL,
-        flagged_at TIMESTAMPTZ DEFAULT NOW(),
-        resolution_status VARCHAR(50) DEFAULT 'pending_review',
-        admin_notes TEXT
-      );
-    `);
-    await client.query(`
-      ALTER TABLE orders ADD COLUMN IF NOT EXISTS payment_status VARCHAR(50) DEFAULT 'unpaid';
-      ALTER TABLE orders ADD COLUMN IF NOT EXISTS payment_reference VARCHAR(255);
-      ALTER TABLE orders ADD COLUMN IF NOT EXISTS payment_amount NUMERIC(15, 2);
-      ALTER TABLE orders ADD COLUMN IF NOT EXISTS payment_confirmed_at TIMESTAMPTZ;
-      ALTER TABLE orders ADD COLUMN IF NOT EXISTS payment_confirmed_by VARCHAR(255);
-      ALTER TABLE orders ADD COLUMN IF NOT EXISTS payment_reminder_count INT DEFAULT 0;
-      ALTER TABLE orders ADD COLUMN IF NOT EXISTS last_payment_reminder_at TIMESTAMPTZ;
-      ALTER TABLE orders ADD COLUMN IF NOT EXISTS auto_cancel_at TIMESTAMPTZ;
-    `);
-    console.log("[PostgreSQL] Database tables & email system tables initialized successfully.");
-  } catch (err) {
-    console.error("[PostgreSQL] Failed to initialize tables:", err);
-  } finally {
-    client.release();
-  }
-}
-async function getPostgresDbStatus() {
-  const pool = getPostgresPool();
-  if (!pool) {
-    return {
-      configured: false,
-      connected: false,
-      dbEngine: "PostgreSQL",
-      message: "PostgreSQL is not configured. Set DATABASE_URL or POSTGRES_DB in environment."
-    };
-  }
-  try {
-    const client = await pool.connect();
-    try {
-      const prodRes = await client.query("SELECT COUNT(*) as count FROM products");
-      const orderRes = await client.query("SELECT COUNT(*) as count FROM orders");
-      const catRes = await client.query("SELECT COUNT(*) as count FROM categories");
-      const revRes = await client.query("SELECT COUNT(*) as count FROM reviews");
-      return {
-        configured: true,
-        connected: true,
-        dbEngine: "PostgreSQL",
-        message: "Successfully connected to production PostgreSQL database.",
-        stats: {
-          products: parseInt(prodRes.rows[0]?.count || "0", 10),
-          orders: parseInt(orderRes.rows[0]?.count || "0", 10),
-          categories: parseInt(catRes.rows[0]?.count || "0", 10),
-          reviews: parseInt(revRes.rows[0]?.count || "0", 10)
-        }
-      };
-    } finally {
-      client.release();
+    for (const p of DEFAULT_PRODUCTS) {
+      if (!existingIds.has(p.id)) {
+        await saveMysqlProduct(p);
+        console.log(`[MySQL] Seeded missing catalog product: "${p.name}" (${p.id})`);
+      }
     }
   } catch (err) {
-    return {
-      configured: true,
-      connected: false,
-      dbEngine: "PostgreSQL",
-      message: `Failed to connect to PostgreSQL: ${err.message || err}`
-    };
+    console.warn("[MySQL] Default product seed notice:", err);
   }
 }
-async function getPostgresUserByEmail(email) {
-  const pool = getPostgresPool();
-  if (!pool) return null;
-  const normalized = email.trim().toLowerCase();
-  const res = await pool.query("SELECT * FROM users WHERE LOWER(TRIM(email)) = $1 LIMIT 1", [normalized]);
-  if (res.rows.length === 0) return null;
-  return res.rows[0];
+async function ensureDefaultHeroBanners() {
+  try {
+    const existing = await getMysqlHeroBanners();
+    if (existing.length > 0) return;
+    const DEFAULT_BANNERS = [
+      {
+        id: "banner-1",
+        title: "Curated Excellence. Uncompromised Quality.",
+        subtitle: "Experience precision engineering, bespoke tailoring, and timeless craftsmanship built in Kenya.",
+        imageUrl: "https://images.unsplash.com/photo-1441986300917-64674bd600d8?auto=format&fit=crop&q=80&w=1600",
+        link: "/store",
+        ctaText: "Explore Catalog",
+        badgeText: "New Season Collections",
+        active: true
+      },
+      {
+        id: "banner-2",
+        title: "Bespoke Atelier Tailoring & Custom Garments",
+        subtitle: "Submit your bespoke fashion requests, upload reference mood boards, and track tailor execution in real-time.",
+        imageUrl: "https://images.unsplash.com/photo-1558769132-cb1aea458c5e?auto=format&fit=crop&q=80&w=1600",
+        link: "/services",
+        ctaText: "Design Bespoke Apparel",
+        badgeText: "Handmade in Nairobi",
+        active: true
+      }
+    ];
+    await saveMysqlHeroBanners(DEFAULT_BANNERS);
+    console.log("[MySQL] Seeded default promotional hero banners.");
+  } catch (err) {
+    console.warn("[MySQL] Default hero banner seed notice:", err);
+  }
 }
-async function getPostgresUserById(userId) {
-  const pool = getPostgresPool();
-  if (!pool) return null;
-  const res = await pool.query("SELECT * FROM users WHERE id = $1 LIMIT 1", [userId]);
-  if (res.rows.length === 0) return null;
-  return res.rows[0];
+async function getAppSetting(key, defaultValue = null) {
+  try {
+    const pool = await getDbPool2();
+    const [rows] = await pool.query("SELECT setting_value FROM app_settings WHERE setting_key = ? LIMIT 1", [key]);
+    if (rows && rows.length > 0 && rows[0].setting_value) {
+      try {
+        return JSON.parse(rows[0].setting_value);
+      } catch {
+        return rows[0].setting_value;
+      }
+    }
+  } catch (err) {
+    console.warn(`[MySQL] getAppSetting('${key}') notice:`, err);
+  }
+  return defaultValue;
 }
-async function createPostgresPasswordResetToken(data) {
-  const pool = getPostgresPool();
-  if (!pool) throw new Error("PostgreSQL pool not available");
-  const id = data.id || `prt-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
-  const nowIso = data.createdAt || (/* @__PURE__ */ new Date()).toISOString();
-  await pool.query("UPDATE password_reset_tokens SET used_at = $1 WHERE user_id = $2 AND used_at IS NULL", [nowIso, data.userId]);
-  await pool.query(
-    `INSERT INTO password_reset_tokens (id, user_id, token_hash, expires_at, used_at, created_at, user_email, ip_address)
-     VALUES ($1, $2, $3, $4, NULL, $5, $6, $7)`,
-    [id, data.userId, data.tokenHash, data.expiresAt, nowIso, data.userEmail || null, data.ipAddress || null]
-  );
+async function setAppSetting(key, value) {
+  try {
+    const pool = await getDbPool2();
+    const stringVal = typeof value === "string" ? value : JSON.stringify(value);
+    await pool.query(
+      `INSERT INTO app_settings (setting_key, setting_value)
+       VALUES (?, ?)
+       ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value);`,
+      [key, stringVal]
+    );
+  } catch (err) {
+    console.warn(`[MySQL] setAppSetting('${key}') notice:`, err);
+  }
+}
+async function getMysqlPendingRegistration(email) {
+  const pool = await getDbPool2();
+  const [rows] = await pool.query("SELECT * FROM pending_registrations WHERE LOWER(email) = ? LIMIT 1", [
+    (email || "").trim().toLowerCase()
+  ]);
+  if (!rows || rows.length === 0) return null;
+  const row = rows[0];
   return {
-    id,
-    user_id: data.userId,
-    token_hash: data.tokenHash,
-    expires_at: data.expiresAt,
-    used_at: null,
-    created_at: nowIso,
-    user_email: data.userEmail,
-    ip_address: data.ipAddress
+    ...row,
+    userData: typeof row.user_data === "string" ? JSON.parse(row.user_data) : row.user_data
   };
 }
-async function consumePostgresPasswordResetToken(tokenHash, newPasswordHash, nowIso = (/* @__PURE__ */ new Date()).toISOString()) {
-  const pool = getPostgresPool();
-  if (!pool) throw new Error("PostgreSQL pool not available");
-  const client = await pool.connect();
-  try {
-    await client.query("BEGIN");
-    const tokenCheck = await client.query(
-      "SELECT id, user_id FROM password_reset_tokens WHERE token_hash = $1 AND used_at IS NULL AND expires_at > $2 LIMIT 1",
-      [tokenHash, nowIso]
-    );
-    if (tokenCheck.rows.length === 0) {
-      await client.query("ROLLBACK");
-      return { success: false, error: "INVALID_OR_EXPIRED_TOKEN" };
-    }
-    const userId = String(tokenCheck.rows[0].user_id);
-    const updateTokenRes = await client.query(
-      "UPDATE password_reset_tokens SET used_at = $1 WHERE token_hash = $2 AND used_at IS NULL AND expires_at > $3",
-      [nowIso, tokenHash, nowIso]
-    );
-    if (updateTokenRes.rowCount !== 1) {
-      await client.query("ROLLBACK");
-      return { success: false, error: "TOKEN_ALREADY_USED_OR_CONCURRENT_UPDATE" };
-    }
-    await client.query(
-      "UPDATE users SET password_hash = $1, updated_at = $2 WHERE id = $3",
-      [newPasswordHash, nowIso, userId]
-    );
-    await client.query("COMMIT");
-    return { success: true, userId };
-  } catch (err) {
-    await client.query("ROLLBACK");
-    throw err;
-  } finally {
-    client.release();
+async function saveMysqlPendingRegistration(record) {
+  const pool = await getDbPool2();
+  const id = record.id || `pr-${Date.now()}`;
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  const userDataStr = typeof record.userData === "string" ? record.userData : JSON.stringify(record.userData || {});
+  await pool.query(
+    `INSERT INTO pending_registrations (id, email, otp, user_data, attempts, created_at, expires_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?)
+     ON DUPLICATE KEY UPDATE
+       otp = VALUES(otp),
+       user_data = VALUES(user_data),
+       attempts = VALUES(attempts),
+       expires_at = VALUES(expires_at);`,
+    [
+      id,
+      (record.email || "").trim().toLowerCase(),
+      record.otp,
+      userDataStr,
+      record.attempts || 0,
+      record.createdAt || now,
+      record.expiresAt || new Date(Date.now() + 15 * 60 * 1e3).toISOString()
+    ]
+  );
+}
+async function deleteMysqlPendingRegistration(email) {
+  const pool = await getDbPool2();
+  await pool.query("DELETE FROM pending_registrations WHERE LOWER(email) = ?", [(email || "").trim().toLowerCase()]);
+}
+async function updateMysqlPendingRegistrationAttempts(email, attempts) {
+  const pool = await getDbPool2();
+  await pool.query("UPDATE pending_registrations SET attempts = ? WHERE LOWER(email) = ?", [attempts, (email || "").trim().toLowerCase()]);
+}
+async function deleteSqliteProductsBulk(ids) {
+  if (!ids || ids.length === 0) return;
+  const pool = await getDbPool2();
+  await pool.query(`DELETE FROM products WHERE id IN (?)`, [ids]);
+}
+async function saveSqliteCategories(categories) {
+  for (const c of categories) {
+    await saveMysqlCategory(c);
   }
 }
-async function cleanupExpiredPostgresResetTokens(nowIso = (/* @__PURE__ */ new Date()).toISOString()) {
-  const pool = getPostgresPool();
-  if (!pool) return 0;
-  const res = await pool.query("DELETE FROM password_reset_tokens WHERE expires_at < $1 OR used_at IS NOT NULL", [nowIso]);
-  return res.rowCount || 0;
+async function deleteSqliteCategoriesBulk(ids) {
+  if (!ids || ids.length === 0) return;
+  const pool = await getDbPool2();
+  await pool.query(`DELETE FROM categories WHERE id IN (?)`, [ids]);
 }
-var import_pg, import_dotenv, Pool, pgPool;
-var init_postgres_db = __esm({
-  "src/lib/postgres-db.ts"() {
-    import_pg = __toESM(require("pg"), 1);
+async function getSqliteOrdersByUser(userIdOrEmail) {
+  const pool = await getDbPool2();
+  const [rows] = await pool.query(
+    "SELECT * FROM orders WHERE customerEmail = ? OR customerEmail = (SELECT email FROM users WHERE id = ? LIMIT 1) ORDER BY date DESC",
+    [userIdOrEmail, userIdOrEmail]
+  );
+  return (rows || []).map((r) => ({
+    ...r,
+    items: typeof r.items === "string" ? JSON.parse(r.items) : r.items
+  }));
+}
+async function syncSqliteOrders(orders) {
+  for (const o of orders) {
+    await saveMysqlOrder(o);
+  }
+}
+async function getSqliteSupplierById(id) {
+  const pool = await getDbPool2();
+  const [rows] = await pool.query("SELECT * FROM suppliers WHERE id = ? LIMIT 1", [id]);
+  return rows[0] || null;
+}
+async function getSqliteSupplierStatement(supplierId) {
+  const supplier = await getSqliteSupplierById(supplierId);
+  if (!supplier) return null;
+  const batches = await getMysqlSupplierBatches(supplierId);
+  const payments = await getMysqlSupplierPayments(supplierId);
+  const ledger = await getMysqlSupplierLedger(supplierId);
+  const totalInvoiced = batches.reduce((sum, b) => sum + Number(b.totalCost || 0), 0);
+  const totalPaid = payments.reduce((sum, p) => sum + Number(p.amount || 0), 0);
+  return {
+    supplier,
+    openingBalance: 0,
+    closingBalance: totalInvoiced - totalPaid,
+    totalInvoiced,
+    totalPaid,
+    batches,
+    payments,
+    ledgerEntries: ledger,
+    periodStart: supplier.created_at || (/* @__PURE__ */ new Date()).toISOString(),
+    periodEnd: (/* @__PURE__ */ new Date()).toISOString()
+  };
+}
+async function getSqliteSupplierDashboardAnalytics() {
+  const suppliers = await getMysqlSuppliers();
+  const batches = await getMysqlSupplierBatches();
+  const payments = await getMysqlSupplierPayments();
+  const totalPurchases = batches.reduce((sum, b) => sum + Number(b.totalCost || 0), 0);
+  const totalPayments = payments.reduce((sum, p) => sum + Number(p.amount || 0), 0);
+  return {
+    totalSuppliers: suppliers.length,
+    activeSuppliers: suppliers.filter((s) => s.active).length,
+    totalPurchases,
+    totalOutstanding: totalPurchases - totalPayments,
+    totalBatchesReceived: batches.length,
+    pendingPaymentsCount: 0,
+    topSuppliersByVolume: suppliers.slice(0, 5).map((s) => ({ supplierId: s.id, supplierName: s.name, totalVolume: Number(s.totalSpend || 0) }))
+  };
+}
+async function getSqliteSupplierReport(range) {
+  const metrics = await getSqliteSupplierDashboardAnalytics();
+  const suppliers = await getMysqlSuppliers();
+  const batches = await getMysqlSupplierBatches();
+  const payments = await getMysqlSupplierPayments();
+  return {
+    generatedAt: (/* @__PURE__ */ new Date()).toISOString(),
+    metrics,
+    suppliers,
+    batches,
+    payments
+  };
+}
+async function getSqliteCustomerById(id) {
+  const pool = await getDbPool2();
+  const [rows] = await pool.query("SELECT * FROM customers WHERE id = ? LIMIT 1", [id]);
+  return rows[0] || null;
+}
+async function deleteSqliteCustomer(id) {
+  const pool = await getDbPool2();
+  await pool.query("DELETE FROM customers WHERE id = ?", [id]);
+}
+async function saveSqliteDeal(deal) {
+  const pool = await getDbPool2();
+  const id = deal.id || `deal-${Date.now()}`;
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  await pool.query(
+    `INSERT INTO deals (id, customer_id, title, value, stage, probability, expected_close_date, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+     ON DUPLICATE KEY UPDATE
+       title = VALUES(title),
+       value = VALUES(value),
+       stage = VALUES(stage),
+       probability = VALUES(probability),
+       expected_close_date = VALUES(expected_close_date),
+       updated_at = VALUES(updated_at);`,
+    [
+      id,
+      deal.customerId || deal.customer_id || "",
+      deal.title || "Deal",
+      Number(deal.value || 0),
+      deal.stage || "lead",
+      deal.probability || 50,
+      deal.expectedCloseDate || null,
+      deal.createdAt || now,
+      now
+    ]
+  );
+  return { ...deal, id };
+}
+async function deleteSqliteDeal(id) {
+  const pool = await getDbPool2();
+  await pool.query("DELETE FROM deals WHERE id = ?", [id]);
+}
+async function saveSqliteInvoice(inv) {
+  const pool = await getDbPool2();
+  const id = inv.id || `inv-${Date.now()}`;
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  const itemsStr = typeof inv.items === "string" ? inv.items : JSON.stringify(inv.items || []);
+  await pool.query(
+    `INSERT INTO invoices (id, customer_id, invoice_number, amount, status, issue_date, due_date, items, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+     ON DUPLICATE KEY UPDATE
+       invoice_number = VALUES(invoice_number),
+       amount = VALUES(amount),
+       status = VALUES(status),
+       issue_date = VALUES(issue_date),
+       due_date = VALUES(due_date),
+       items = VALUES(items),
+       updated_at = VALUES(updated_at);`,
+    [
+      id,
+      inv.customerId || inv.customer_id || "",
+      inv.invoiceNumber || inv.invoice_number || `INV-${Date.now()}`,
+      Number(inv.amount || 0),
+      inv.status || "unpaid",
+      inv.issueDate || inv.issue_date || now,
+      inv.dueDate || inv.due_date || now,
+      itemsStr,
+      inv.createdAt || now,
+      now
+    ]
+  );
+  return { ...inv, id };
+}
+async function deleteSqliteInvoice(id) {
+  const pool = await getDbPool2();
+  await pool.query("DELETE FROM invoices WHERE id = ?", [id]);
+}
+async function saveSqliteCustomerOrder(order) {
+  const pool = await getDbPool2();
+  const id = order.id || `co-${Date.now()}`;
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  const itemsStr = typeof order.items === "string" ? order.items : JSON.stringify(order.items || []);
+  await pool.query(
+    `INSERT INTO customer_orders (id, customer_id, customer_name, customer_email, customer_phone, total, status, payment_status, payment_reference, payment_amount, items, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+     ON DUPLICATE KEY UPDATE
+       customer_name = VALUES(customer_name),
+       customer_email = VALUES(customer_email),
+       customer_phone = VALUES(customer_phone),
+       total = VALUES(total),
+       status = VALUES(status),
+       payment_status = VALUES(payment_status),
+       payment_reference = VALUES(payment_reference),
+       payment_amount = VALUES(payment_amount),
+       items = VALUES(items),
+       updated_at = VALUES(updated_at);`,
+    [
+      id,
+      order.customerId || order.customer_id || null,
+      order.customerName || order.customer_name || "Customer",
+      order.customerEmail || order.customer_email || "",
+      order.customerPhone || order.customer_phone || "",
+      Number(order.total || 0),
+      order.status || "pending",
+      order.paymentStatus || order.payment_status || "unpaid",
+      order.paymentReference || order.payment_reference || null,
+      order.paymentAmount || order.payment_amount || null,
+      itemsStr,
+      order.createdAt || now,
+      now
+    ]
+  );
+  return { ...order, id };
+}
+async function getSqliteReviewsByProduct(productId) {
+  const pool = await getDbPool2();
+  const [rows] = await pool.query('SELECT * FROM reviews WHERE productId = ? AND status = "approved" ORDER BY date DESC', [productId]);
+  return rows || [];
+}
+async function updateSqliteReview(review) {
+  await saveMysqlReview(review);
+}
+async function toggleSqliteReviewHelpful(reviewId) {
+  const pool = await getDbPool2();
+  await pool.query("UPDATE reviews SET helpfulCount = helpfulCount + 1 WHERE id = ?", [reviewId]);
+  const [rows] = await pool.query("SELECT helpfulCount FROM reviews WHERE id = ? LIMIT 1", [reviewId]);
+  return rows[0]?.helpfulCount || 0;
+}
+async function updateSqliteReviewStatus(reviewId, status) {
+  const pool = await getDbPool2();
+  await pool.query("UPDATE reviews SET status = ? WHERE id = ?", [status, reviewId]);
+}
+async function recomputeSqliteProductRating(productId) {
+  const pool = await getDbPool2();
+  const [rows] = await pool.query('SELECT AVG(rating) as avgRating, COUNT(*) as count FROM reviews WHERE productId = ? AND status = "approved"', [productId]);
+  const avg = rows[0]?.avgRating || 0;
+  const count = rows[0]?.count || 0;
+  await pool.query("UPDATE products SET rating = ?, reviewsCount = ? WHERE id = ?", [Number(avg).toFixed(1), count, productId]);
+}
+async function getSqliteCustomClothingRequestById(id) {
+  const pool = await getDbPool2();
+  const [rows] = await pool.query("SELECT * FROM custom_clothing_requests WHERE id = ? LIMIT 1", [id]);
+  return rows[0] || null;
+}
+async function getSqliteWishlist(userId) {
+  const pool = await getDbPool2();
+  const [rows] = await pool.query("SELECT product_ids FROM user_wishlists WHERE user_id = ? LIMIT 1", [userId]);
+  if (!rows || rows.length === 0) return [];
+  try {
+    return JSON.parse(rows[0].product_ids || "[]");
+  } catch {
+    return [];
+  }
+}
+async function addToSqliteWishlist(userId, productId) {
+  const current = await getSqliteWishlist(userId);
+  if (!current.includes(productId)) {
+    current.push(productId);
+  }
+  const pool = await getDbPool2();
+  await pool.query(
+    `INSERT INTO user_wishlists (user_id, product_ids, updated_at)
+     VALUES (?, ?, ?)
+     ON DUPLICATE KEY UPDATE product_ids = VALUES(product_ids), updated_at = VALUES(updated_at);`,
+    [userId, JSON.stringify(current), (/* @__PURE__ */ new Date()).toISOString()]
+  );
+  return current;
+}
+async function removeFromSqliteWishlist(userId, productId) {
+  const current = await getSqliteWishlist(userId);
+  const next = current.filter((id) => id !== productId);
+  const pool = await getDbPool2();
+  await pool.query(
+    `INSERT INTO user_wishlists (user_id, product_ids, updated_at)
+     VALUES (?, ?, ?)
+     ON DUPLICATE KEY UPDATE product_ids = VALUES(product_ids), updated_at = VALUES(updated_at);`,
+    [userId, JSON.stringify(next), (/* @__PURE__ */ new Date()).toISOString()]
+  );
+  return next;
+}
+async function getSqliteCart(userIdOrSession) {
+  const session = await getMysqlCartSession(userIdOrSession);
+  return session ? session.items : [];
+}
+async function saveSqliteCart(userIdOrSession, items) {
+  await saveMysqlCartSession(userIdOrSession, items);
+}
+async function clearSqliteCart(userIdOrSession) {
+  await saveMysqlCartSession(userIdOrSession, []);
+}
+var import_promise, import_dotenv, dbPool, isInitialized, isInitializing, DEFAULT_CORE_CATEGORIES, getSqliteUserByEmail, getSqliteUserById, saveSqliteUser, getAllSqliteUsers, getSqlitePendingRegistration, saveSqlitePendingRegistration, deleteSqlitePendingRegistration, updateSqlitePendingRegistrationAttempts, deleteSqliteProduct, getAllSqliteCategories, deleteSqliteCategory, getAllSqliteOrders, getSqliteOrderById, saveSqliteOrder, deleteSqliteOrder, getAllSqliteSuppliers, saveSqliteSupplier, deleteSqliteSupplier, getAllSqliteSupplierProducts, saveSqliteSupplierProduct, getAllSqliteSupplierIntakes, saveSqliteSupplierIntake, getAllSqliteSupplierPayments, saveSqliteSupplierPayment, getAllSqliteCustomers, saveSqliteCustomer, getAllSqliteHeroBanners, saveSqliteHeroBanners, getAllSqliteReviews, saveSqliteReview, deleteSqliteReview, getSqliteReviewRequestLogs, getSqliteReviewRequestSettings, saveSqliteReviewRequestSettings, addSqliteReviewOptOut, getSqliteReviewOptOutsCount, getSqliteCustomClothingRequests, saveSqliteCustomClothingRequest, updateSqliteCustomClothingRequestStatus, getSqliteInventoryAuditLogs, addSqliteInventoryAuditLog, pullSyncDataSqlite2;
+var init_mysql_db = __esm({
+  "src/lib/mysql-db.ts"() {
+    import_promise = __toESM(require("mysql2/promise"), 1);
     import_dotenv = __toESM(require("dotenv"), 1);
     import_dotenv.default.config();
-    ({ Pool } = import_pg.default);
-    pgPool = null;
+    dbPool = null;
+    isInitialized = false;
+    isInitializing = false;
+    DEFAULT_CORE_CATEGORIES = [
+      {
+        id: "cat-fashion",
+        name: "Fashion",
+        slug: "fashion",
+        description: "Men & Women Apparel, Streetwear, Shoes, and Accessories",
+        image: "https://images.unsplash.com/photo-1542291026-7eec264c27ff?w=600",
+        icon: "Shirt",
+        subcategories: ["Streetwear", "Hoodies", "T-Shirts", "Trousers"],
+        is_active: 1,
+        display_order: 1
+      },
+      {
+        id: "cat-electronics",
+        name: "Electronics",
+        slug: "electronics",
+        description: "Keyboards, Audio, Smartphones, Computing, and Smart Tech",
+        image: "https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=600",
+        icon: "Laptop",
+        subcategories: ["Mechanical Keyboards", "Audio", "Accessories"],
+        is_active: 1,
+        display_order: 2
+      },
+      {
+        id: "cat-home-living",
+        name: "Home & Living",
+        slug: "home-living",
+        description: "Desk Setup, Furniture, Decor, Kitchen and Smart Appliances",
+        image: "https://images.unsplash.com/photo-1555041469-a586c61ea9bc?w=600",
+        icon: "Home",
+        subcategories: ["Desk Accessories", "Decor", "Lighting"],
+        is_active: 1,
+        display_order: 3
+      },
+      {
+        id: "cat-beauty-fragrances",
+        name: "Beauty & Fragrances",
+        slug: "beauty-fragrances",
+        description: "Handcrafted Candles, Skincare, Perfumes, and Personal Care",
+        image: "https://images.unsplash.com/photo-1603006905003-be475563bc59?w=600",
+        icon: "Sparkles",
+        subcategories: ["Candles", "Fragrances", "Skincare"],
+        is_active: 1,
+        display_order: 4
+      }
+    ];
+    getSqliteUserByEmail = getMysqlUserByEmail;
+    getSqliteUserById = getMysqlUserById;
+    saveSqliteUser = saveMysqlUser;
+    getAllSqliteUsers = getAllMysqlUsers;
+    getSqlitePendingRegistration = getMysqlPendingRegistration;
+    saveSqlitePendingRegistration = saveMysqlPendingRegistration;
+    deleteSqlitePendingRegistration = deleteMysqlPendingRegistration;
+    updateSqlitePendingRegistrationAttempts = updateMysqlPendingRegistrationAttempts;
+    deleteSqliteProduct = deleteMysqlProduct;
+    getAllSqliteCategories = getMysqlCategories;
+    deleteSqliteCategory = deleteMysqlCategory;
+    getAllSqliteOrders = getMysqlOrders;
+    getSqliteOrderById = getMysqlOrderById;
+    saveSqliteOrder = saveMysqlOrder;
+    deleteSqliteOrder = deleteMysqlOrder;
+    getAllSqliteSuppliers = getMysqlSuppliers;
+    saveSqliteSupplier = saveMysqlSupplier;
+    deleteSqliteSupplier = deleteMysqlSupplier;
+    getAllSqliteSupplierProducts = getMysqlSupplierProducts;
+    saveSqliteSupplierProduct = saveMysqlSupplierProduct;
+    getAllSqliteSupplierIntakes = getMysqlSupplierBatches;
+    saveSqliteSupplierIntake = saveMysqlSupplierBatch;
+    getAllSqliteSupplierPayments = getMysqlSupplierPayments;
+    saveSqliteSupplierPayment = saveMysqlSupplierPayment;
+    getAllSqliteCustomers = getAllMysqlCustomers;
+    saveSqliteCustomer = saveMysqlCustomer;
+    getAllSqliteHeroBanners = getMysqlHeroBanners;
+    saveSqliteHeroBanners = saveMysqlHeroBanners;
+    getAllSqliteReviews = getMysqlReviews;
+    saveSqliteReview = saveMysqlReview;
+    deleteSqliteReview = deleteMysqlReview;
+    getSqliteReviewRequestLogs = async () => [];
+    getSqliteReviewRequestSettings = async () => getAppSetting("review_request_settings", { enabled: true, delayDays: 7 });
+    saveSqliteReviewRequestSettings = async (s) => setAppSetting("review_request_settings", s);
+    addSqliteReviewOptOut = async (email) => setAppSetting(`optout_review_${email}`, true);
+    getSqliteReviewOptOutsCount = async () => 0;
+    getSqliteCustomClothingRequests = getMysqlCustomClothingRequests;
+    saveSqliteCustomClothingRequest = saveMysqlCustomClothingRequest;
+    updateSqliteCustomClothingRequestStatus = updateMysqlCustomClothingRequestStatus;
+    getSqliteInventoryAuditLogs = getMysqlInventoryAuditLogs;
+    addSqliteInventoryAuditLog = addMysqlInventoryAuditLog;
+    pullSyncDataSqlite2 = pullSyncData;
   }
 });
 
@@ -4874,62 +2664,20 @@ var init_config = __esm({
 });
 
 // server/email/db.ts
-function isPostgresActive() {
-  const pool = getPostgresPool();
-  return Boolean(pool);
-}
 async function logEmail(record) {
   const id = `elog-${Date.now()}-${import_crypto.default.randomBytes(4).toString("hex")}`;
   const now = (/* @__PURE__ */ new Date()).toISOString();
-  const metadataStr = record.metadata ? JSON.stringify(record.metadata) : null;
-  if (isPostgresActive()) {
-    const pool = getPostgresPool();
-    try {
-      await pool.query(
-        `INSERT INTO email_logs (id, recipient, email_type, subject, status, attempts, error_message, related_order_id, related_user_id, dedupe_key, metadata, created_at, sent_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
-         ON CONFLICT (dedupe_key) DO UPDATE SET
-           status = EXCLUDED.status,
-           attempts = email_logs.attempts + 1,
-           error_message = EXCLUDED.error_message,
-           sent_at = EXCLUDED.sent_at`,
-        [
-          id,
-          record.recipient,
-          record.email_type,
-          record.subject,
-          record.status,
-          record.attempts || 1,
-          record.error_message || null,
-          record.related_order_id || null,
-          record.related_user_id || null,
-          record.dedupe_key || null,
-          metadataStr ? JSON.parse(metadataStr) : null,
-          now,
-          record.sent_at || (record.status === "sent" ? now : null)
-        ]
-      );
-      return id;
-    } catch (err) {
-      console.warn("[Email DB] PG logEmail warning:", err?.message);
-    }
-  }
+  const metadataStr = record.metadata ? typeof record.metadata === "string" ? record.metadata : JSON.stringify(record.metadata) : null;
   try {
-    const db = await getSqliteDb();
-    if (record.dedupe_key) {
-      const existing = db.exec("SELECT id FROM email_logs WHERE dedupe_key = ?;", [record.dedupe_key]);
-      if (existing.length > 0 && existing[0].values.length > 0) {
-        db.run(
-          `UPDATE email_logs SET status = ?, attempts = attempts + 1, error_message = ?, sent_at = ? WHERE dedupe_key = ?;`,
-          [record.status, record.error_message || null, record.sent_at || (record.status === "sent" ? now : null), record.dedupe_key]
-        );
-        saveSqliteDb(db);
-        return String(existing[0].values[0][0]);
-      }
-    }
-    db.run(
+    const pool = await getDbPool2();
+    await pool.query(
       `INSERT INTO email_logs (id, recipient, email_type, subject, status, attempts, error_message, related_order_id, related_user_id, dedupe_key, metadata, created_at, sent_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       ON DUPLICATE KEY UPDATE
+         status = VALUES(status),
+         attempts = email_logs.attempts + 1,
+         error_message = VALUES(error_message),
+         sent_at = VALUES(sent_at);`,
       [
         id,
         record.recipient,
@@ -4946,31 +2694,22 @@ async function logEmail(record) {
         record.sent_at || (record.status === "sent" ? now : null)
       ]
     );
-    saveSqliteDb(db);
   } catch (err) {
-    console.warn("[Email DB] SQLite logEmail warning:", err?.message);
+    console.warn("[Email DB] MySQL logEmail warning:", err?.message || err);
   }
   return id;
 }
 async function isDedupeKeyProcessed(dedupeKey) {
   if (!dedupeKey) return false;
-  if (isPostgresActive()) {
-    const pool = getPostgresPool();
-    try {
-      const res = await pool.query(
-        `SELECT id FROM email_logs WHERE dedupe_key = $1 AND status = 'sent' LIMIT 1`,
-        [dedupeKey]
-      );
-      return res.rows.length > 0;
-    } catch {
-      return false;
-    }
-  }
   try {
-    const db = await getSqliteDb();
-    const res = db.exec("SELECT id FROM email_logs WHERE dedupe_key = ? AND status = 'sent' LIMIT 1;", [dedupeKey]);
-    return res.length > 0 && res[0].values.length > 0;
-  } catch {
+    const pool = await getDbPool2();
+    const [rows] = await pool.query(
+      `SELECT id FROM email_logs WHERE dedupe_key = ? AND status = 'sent' LIMIT 1`,
+      [dedupeKey]
+    );
+    return Boolean(rows && rows.length > 0);
+  } catch (err) {
+    console.warn("[Email DB] isDedupeKeyProcessed check warning:", err?.message || err);
     return false;
   }
 }
@@ -4984,43 +2723,13 @@ async function enqueueEmailJob(job) {
   const now = /* @__PURE__ */ new Date();
   const nextAttempt = new Date(now.getTime() + (job.delaySeconds || 0) * 1e3).toISOString();
   const nowIso = now.toISOString();
-  const payloadStr = JSON.stringify(job.payload || {});
-  if (isPostgresActive()) {
-    const pool = getPostgresPool();
-    try {
-      const query = `
-        INSERT INTO email_jobs (id, email_type, recipient, subject, payload, status, attempts, max_attempts, next_attempt_at, dedupe_key, created_at, updated_at)
-        VALUES ($1, $2, $3, $4, $5, 'queued', 0, $6, $7, $8, $9, $9)
-        ON CONFLICT (dedupe_key) DO NOTHING
-        RETURNING id;
-      `;
-      const res = await pool.query(query, [
-        id,
-        job.emailType,
-        job.recipient,
-        job.subject,
-        JSON.parse(payloadStr),
-        job.maxAttempts || 5,
-        nextAttempt,
-        dedupeKey,
-        nowIso
-      ]);
-      return res.rows[0]?.id || null;
-    } catch (err) {
-      console.warn("[Email Queue] PG enqueue warning:", err?.message);
-    }
-  }
+  const payloadStr = typeof job.payload === "string" ? job.payload : JSON.stringify(job.payload || {});
   try {
-    const db = await getSqliteDb();
-    if (dedupeKey) {
-      const existing = db.exec("SELECT id, status FROM email_jobs WHERE dedupe_key = ?;", [dedupeKey]);
-      if (existing.length > 0 && existing[0].values.length > 0) {
-        return null;
-      }
-    }
-    db.run(
+    const pool = await getDbPool2();
+    await pool.query(
       `INSERT INTO email_jobs (id, email_type, recipient, subject, payload, status, attempts, max_attempts, next_attempt_at, dedupe_key, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, 'queued', 0, ?, ?, ?, ?, ?);`,
+       VALUES (?, ?, ?, ?, ?, 'queued', 0, ?, ?, ?, ?, ?)
+       ON DUPLICATE KEY UPDATE id = id;`,
       [
         id,
         job.emailType,
@@ -5034,185 +2743,99 @@ async function enqueueEmailJob(job) {
         nowIso
       ]
     );
-    saveSqliteDb(db);
     return id;
   } catch (err) {
-    console.warn("[Email Queue] SQLite enqueue warning:", err?.message);
+    console.warn("[Email Queue] MySQL enqueue warning:", err?.message || err);
     return null;
   }
 }
 async function fetchDueEmailJobs(limit = 10) {
-  const nowIso = (/* @__PURE__ */ new Date()).toISOString();
-  if (isPostgresActive()) {
-    const pool = getPostgresPool();
-    try {
-      const query = `
-        SELECT id, email_type, recipient, subject, payload, status, attempts, max_attempts, next_attempt_at, error_message, dedupe_key, created_at, updated_at
-        FROM email_jobs
-        WHERE status = 'queued' AND next_attempt_at <= $1
-        ORDER BY next_attempt_at ASC
-        LIMIT $2
-        FOR UPDATE SKIP LOCKED;
-      `;
-      const res = await pool.query(query, [nowIso, limit]);
-      return res.rows.map((r) => ({
-        ...r,
-        payload: typeof r.payload === "string" ? JSON.parse(r.payload) : r.payload
-      }));
-    } catch {
-      const query = `
-        SELECT id, email_type, recipient, subject, payload, status, attempts, max_attempts, next_attempt_at, error_message, dedupe_key, created_at, updated_at
-        FROM email_jobs
-        WHERE status = 'queued' AND next_attempt_at <= $1
-        ORDER BY next_attempt_at ASC
-        LIMIT $2;
-      `;
-      const res = await pool.query(query, [nowIso, limit]);
-      return res.rows.map((r) => ({
-        ...r,
-        payload: typeof r.payload === "string" ? JSON.parse(r.payload) : r.payload
-      }));
-    }
-  }
+  const now = /* @__PURE__ */ new Date();
+  const nowIso = now.toISOString();
+  const staleThresholdIso = new Date(now.getTime() - 2 * 60 * 1e3).toISOString();
   try {
-    const db = await getSqliteDb();
-    const res = db.exec(
-      "SELECT id, email_type, recipient, subject, payload, status, attempts, max_attempts, next_attempt_at, error_message, dedupe_key, created_at, updated_at FROM email_jobs WHERE status = 'queued' AND next_attempt_at <= ? ORDER BY next_attempt_at ASC LIMIT ?;",
-      [nowIso, limit]
+    const pool = await getDbPool2();
+    const [rows] = await pool.query(
+      `SELECT id, email_type, recipient, subject, payload, status, attempts, max_attempts, next_attempt_at, error_message, dedupe_key, created_at, updated_at
+       FROM email_jobs
+       WHERE (status = 'queued' AND next_attempt_at <= ?)
+          OR (status = 'sending' AND updated_at <= ?)
+       ORDER BY next_attempt_at ASC
+       LIMIT ?`,
+      [nowIso, staleThresholdIso, limit]
     );
-    if (res.length === 0 || res[0].values.length === 0) return [];
-    const cols = res[0].columns;
-    return res[0].values.map((row) => {
-      const obj = {};
-      cols.forEach((col, idx) => {
-        obj[col] = row[idx];
-      });
-      try {
-        obj.payload = JSON.parse(obj.payload);
-      } catch {
-        obj.payload = {};
+    if (!rows || rows.length === 0) return [];
+    return rows.map((r) => {
+      let payload = r.payload;
+      if (typeof payload === "string") {
+        try {
+          payload = JSON.parse(payload);
+        } catch {
+          payload = {};
+        }
       }
-      return obj;
+      return {
+        ...r,
+        payload
+      };
     });
-  } catch {
+  } catch (err) {
+    console.warn("[Email DB] fetchDueEmailJobs error:", err?.message || err);
     return [];
   }
 }
 async function updateEmailJobStatus(jobId, status, details) {
   const nowIso = (/* @__PURE__ */ new Date()).toISOString();
-  if (isPostgresActive()) {
-    const pool = getPostgresPool();
-    try {
-      await pool.query(
-        `UPDATE email_jobs SET
-          status = $1,
-          attempts = COALESCE($2, attempts),
-          next_attempt_at = COALESCE($3, next_attempt_at),
-          error_message = $4,
-          updated_at = $5
-         WHERE id = $6`,
-        [
-          status,
-          details?.attempts ?? null,
-          details?.nextAttemptAt ? new Date(details.nextAttemptAt) : null,
-          details?.errorMessage ?? null,
-          nowIso,
-          jobId
-        ]
-      );
-      return;
-    } catch (err) {
-      console.warn("[Email DB] PG updateEmailJobStatus warning:", err?.message);
-    }
-  }
   try {
-    const db = await getSqliteDb();
-    db.run(
+    const pool = await getDbPool2();
+    await pool.query(
       `UPDATE email_jobs SET
         status = ?,
-        attempts = CASE WHEN ? IS NOT NULL THEN ? ELSE attempts END,
-        next_attempt_at = CASE WHEN ? IS NOT NULL THEN ? ELSE next_attempt_at END,
+        attempts = COALESCE(?, attempts),
+        next_attempt_at = COALESCE(?, next_attempt_at),
         error_message = ?,
         updated_at = ?
-       WHERE id = ?;`,
+       WHERE id = ?`,
       [
         status,
         details?.attempts ?? null,
-        details?.attempts ?? null,
-        details?.nextAttemptAt ?? null,
-        details?.nextAttemptAt ?? null,
+        details?.nextAttemptAt || null,
         details?.errorMessage ?? null,
         nowIso,
         jobId
       ]
     );
-    saveSqliteDb(db);
   } catch (err) {
-    console.warn("[Email DB] SQLite updateEmailJobStatus warning:", err?.message);
+    console.warn("[Email DB] MySQL updateEmailJobStatus warning:", err?.message || err);
   }
 }
 async function fetchEmailJobs(status, limit = 50) {
-  if (isPostgresActive()) {
-    const pool = getPostgresPool();
-    try {
-      const query = status ? `SELECT * FROM email_jobs WHERE status = $1 ORDER BY created_at DESC LIMIT $2` : `SELECT * FROM email_jobs ORDER BY created_at DESC LIMIT $1`;
-      const params = status ? [status, limit] : [limit];
-      const res = await pool.query(query, params);
-      return res.rows.map((r) => ({
-        ...r,
-        payload: typeof r.payload === "string" ? JSON.parse(r.payload) : r.payload
-      }));
-    } catch {
-      return [];
-    }
-  }
   try {
-    const db = await getSqliteDb();
-    const query = status ? `SELECT id, email_type, recipient, subject, payload, status, attempts, max_attempts, next_attempt_at, error_message, dedupe_key, created_at, updated_at FROM email_jobs WHERE status = ? ORDER BY created_at DESC LIMIT ?;` : `SELECT id, email_type, recipient, subject, payload, status, attempts, max_attempts, next_attempt_at, error_message, dedupe_key, created_at, updated_at FROM email_jobs ORDER BY created_at DESC LIMIT ?;`;
+    const pool = await getDbPool2();
+    const query = status ? `SELECT * FROM email_jobs WHERE status = ? ORDER BY created_at DESC LIMIT ?` : `SELECT * FROM email_jobs ORDER BY created_at DESC LIMIT ?`;
     const params = status ? [status, limit] : [limit];
-    const res = db.exec(query, params);
-    if (res.length === 0 || res[0].values.length === 0) return [];
-    const cols = res[0].columns;
-    return res[0].values.map((row) => {
-      const obj = {};
-      cols.forEach((col, idx) => {
-        obj[col] = row[idx];
-      });
-      try {
-        obj.payload = JSON.parse(obj.payload);
-      } catch {
-        obj.payload = {};
-      }
-      return obj;
-    });
-  } catch {
+    const [rows] = await pool.query(query, params);
+    if (!rows || rows.length === 0) return [];
+    return rows.map((r) => ({
+      ...r,
+      payload: typeof r.payload === "string" ? JSON.parse(r.payload || "{}") : r.payload
+    }));
+  } catch (err) {
+    console.warn("[Email DB] fetchEmailJobs error:", err?.message || err);
     return [];
   }
 }
 async function retryFailedJobs() {
   const nowIso = (/* @__PURE__ */ new Date()).toISOString();
-  if (isPostgresActive()) {
-    const pool = getPostgresPool();
-    try {
-      const res = await pool.query(
-        `UPDATE email_jobs SET status = 'queued', attempts = 0, next_attempt_at = $1, updated_at = $1 WHERE status = 'failed' RETURNING id;`,
-        [nowIso]
-      );
-      return res.rowCount || 0;
-    } catch {
-      return 0;
-    }
-  }
   try {
-    const db = await getSqliteDb();
-    const countRes = db.exec("SELECT count(*) FROM email_jobs WHERE status = 'failed';");
-    const count = countRes.length > 0 && countRes[0].values.length > 0 ? Number(countRes[0].values[0][0]) : 0;
-    if (count > 0) {
-      db.run("UPDATE email_jobs SET status = 'queued', attempts = 0, next_attempt_at = ?, updated_at = ? WHERE status = 'failed';", [nowIso, nowIso]);
-      saveSqliteDb(db);
-    }
-    return count;
-  } catch {
+    const pool = await getDbPool2();
+    const [result] = await pool.query(
+      `UPDATE email_jobs SET status = 'queued', attempts = 0, next_attempt_at = ?, updated_at = ? WHERE status = 'failed'`,
+      [nowIso, nowIso]
+    );
+    return result?.affectedRows || 0;
+  } catch (err) {
+    console.warn("[Email DB] retryFailedJobs error:", err?.message || err);
     return 0;
   }
 }
@@ -5229,36 +2852,11 @@ async function createPaymentSubmission(submission) {
       error: `M-Pesa Transaction Code "${cleanCode}" has already been submitted for Order #${existing.order_id}. Duplicate payment claims are rejected.`
     };
   }
-  if (isPostgresActive()) {
-    const pool = getPostgresPool();
-    try {
-      await pool.query(
-        `INSERT INTO payment_submissions (id, order_id, mpesa_receipt_code, phone_number, amount_claimed, payment_method, status, admin_notes, submitted_at)
-         VALUES ($1, $2, $3, $4, $5, $6, 'pending_verification', $7, $8)`,
-        [
-          id,
-          submission.orderId,
-          cleanCode,
-          cleanPhone,
-          submission.amountClaimed || null,
-          submission.paymentMethod || "mpesa_paybill",
-          submission.adminNotes || null,
-          nowIso
-        ]
-      );
-      return { success: true, id };
-    } catch (err) {
-      if (err?.code === "23505") {
-        return { success: false, duplicate: true, error: `M-Pesa code "${cleanCode}" has already been used.` };
-      }
-      return { success: false, error: err?.message || "Failed to record payment submission" };
-    }
-  }
   try {
-    const db = await getSqliteDb();
-    db.run(
+    const pool = await getDbPool2();
+    await pool.query(
       `INSERT INTO payment_submissions (id, order_id, mpesa_receipt_code, phone_number, amount_claimed, payment_method, status, admin_notes, submitted_at)
-       VALUES (?, ?, ?, ?, ?, ?, 'pending_verification', ?, ?);`,
+       VALUES (?, ?, ?, ?, ?, ?, 'pending_verification', ?, ?)`,
       [
         id,
         submission.orderId,
@@ -5270,114 +2868,57 @@ async function createPaymentSubmission(submission) {
         nowIso
       ]
     );
-    saveSqliteDb(db);
     return { success: true, id };
   } catch (err) {
-    if (String(err?.message || "").includes("UNIQUE") || String(err?.message || "").includes("constraint")) {
-      return { success: false, duplicate: true, error: `M-Pesa code "${cleanCode}" is already in use.` };
+    if (String(err?.message || "").includes("Duplicate entry") || String(err?.message || "").includes("UNIQUE")) {
+      return { success: false, duplicate: true, error: `M-Pesa code "${cleanCode}" has already been used.` };
     }
-    return { success: false, error: err?.message || "Failed to save payment claim" };
+    return { success: false, error: err?.message || "Failed to save payment submission" };
   }
 }
 async function getPaymentSubmissionByMpesaCode(code) {
   const cleanCode = code.trim().toUpperCase();
-  if (isPostgresActive()) {
-    const pool = getPostgresPool();
-    try {
-      const res = await pool.query(
-        `SELECT id, order_id, mpesa_receipt_code, phone_number, amount_claimed, payment_method, status, admin_notes, submitted_at, verified_at, verified_by
-         FROM payment_submissions WHERE UPPER(mpesa_receipt_code) = $1 LIMIT 1`,
-        [cleanCode]
-      );
-      return res.rows[0] || null;
-    } catch {
-      return null;
-    }
-  }
   try {
-    const db = await getSqliteDb();
-    const res = db.exec(
-      "SELECT id, order_id, mpesa_receipt_code, phone_number, amount_claimed, payment_method, status, admin_notes, submitted_at, verified_at, verified_by FROM payment_submissions WHERE UPPER(mpesa_receipt_code) = ? LIMIT 1;",
+    const pool = await getDbPool2();
+    const [rows] = await pool.query(
+      `SELECT id, order_id, mpesa_receipt_code, phone_number, amount_claimed, payment_method, status, admin_notes, submitted_at, verified_at, verified_by
+       FROM payment_submissions WHERE UPPER(mpesa_receipt_code) = UPPER(?) LIMIT 1`,
       [cleanCode]
     );
-    if (res.length === 0 || res[0].values.length === 0) return null;
-    const row = res[0].values[0];
-    const cols = res[0].columns;
-    const obj = {};
-    cols.forEach((col, idx) => {
-      obj[col] = row[idx];
-    });
-    return obj;
+    if (!rows || rows.length === 0) return null;
+    return rows[0];
   } catch {
     return null;
   }
 }
 async function getPaymentSubmissionsForOrder(orderId) {
-  if (isPostgresActive()) {
-    const pool = getPostgresPool();
-    try {
-      const res = await pool.query(
-        `SELECT id, order_id, mpesa_receipt_code, phone_number, amount_claimed, payment_method, status, admin_notes, submitted_at, verified_at, verified_by
-         FROM payment_submissions WHERE order_id = $1 ORDER BY submitted_at DESC`,
-        [orderId]
-      );
-      return res.rows;
-    } catch {
-      return [];
-    }
-  }
   try {
-    const db = await getSqliteDb();
-    const res = db.exec(
-      "SELECT id, order_id, mpesa_receipt_code, phone_number, amount_claimed, payment_method, status, admin_notes, submitted_at, verified_at, verified_by FROM payment_submissions WHERE order_id = ? ORDER BY submitted_at DESC;",
+    const pool = await getDbPool2();
+    const [rows] = await pool.query(
+      `SELECT id, order_id, mpesa_receipt_code, phone_number, amount_claimed, payment_method, status, admin_notes, submitted_at, verified_at, verified_by
+       FROM payment_submissions WHERE order_id = ? ORDER BY submitted_at DESC`,
       [orderId]
     );
-    if (res.length === 0 || res[0].values.length === 0) return [];
-    const cols = res[0].columns;
-    return res[0].values.map((row) => {
-      const obj = {};
-      cols.forEach((col, idx) => {
-        obj[col] = row[idx];
-      });
-      return obj;
-    });
+    return rows || [];
   } catch {
     return [];
   }
 }
 async function updatePaymentSubmissionStatus(submissionId, status, details) {
   const nowIso = (/* @__PURE__ */ new Date()).toISOString();
-  if (isPostgresActive()) {
-    const pool = getPostgresPool();
-    try {
-      await pool.query(
-        `UPDATE payment_submissions SET
-          status = $1,
-          verified_at = $2,
-          verified_by = $3,
-          admin_notes = COALESCE($4, admin_notes)
-         WHERE id = $5`,
-        [status, nowIso, details.verifiedBy, details.adminNotes || null, submissionId]
-      );
-      return;
-    } catch (err) {
-      console.warn("[Email DB] PG updatePaymentSubmissionStatus warning:", err?.message);
-    }
-  }
   try {
-    const db = await getSqliteDb();
-    db.run(
+    const pool = await getDbPool2();
+    await pool.query(
       `UPDATE payment_submissions SET
         status = ?,
         verified_at = ?,
         verified_by = ?,
-        admin_notes = CASE WHEN ? IS NOT NULL THEN ? ELSE admin_notes END
-       WHERE id = ?;`,
-      [status, nowIso, details.verifiedBy, details.adminNotes || null, details.adminNotes || null, submissionId]
+        admin_notes = COALESCE(?, admin_notes)
+       WHERE id = ?`,
+      [status, nowIso, details.verifiedBy, details.adminNotes || null, submissionId]
     );
-    saveSqliteDb(db);
   } catch (err) {
-    console.warn("[Email DB] SQLite updatePaymentSubmissionStatus warning:", err?.message);
+    console.warn("[Email DB] MySQL updatePaymentSubmissionStatus warning:", err?.message || err);
   }
 }
 async function getEmailPreferences(email) {
@@ -5392,46 +2933,24 @@ async function getEmailPreferences(email) {
     unsubscribed_all: false,
     updated_at: (/* @__PURE__ */ new Date()).toISOString()
   };
-  if (isPostgresActive()) {
-    const pool = getPostgresPool();
-    try {
-      const res = await pool.query(
-        `SELECT id, email, allow_marketing, allow_review_requests, allow_abandoned_cart, allow_price_drop, unsubscribed_all, updated_at
-         FROM email_preferences WHERE email = $1 LIMIT 1`,
-        [cleanEmail]
-      );
-      if (res.rows.length > 0) {
-        return {
-          ...res.rows[0],
-          allow_marketing: Boolean(res.rows[0].allow_marketing),
-          allow_review_requests: Boolean(res.rows[0].allow_review_requests),
-          allow_abandoned_cart: Boolean(res.rows[0].allow_abandoned_cart),
-          allow_price_drop: Boolean(res.rows[0].allow_price_drop),
-          unsubscribed_all: Boolean(res.rows[0].unsubscribed_all)
-        };
-      }
-      return defaultPrefs;
-    } catch {
-      return defaultPrefs;
-    }
-  }
   try {
-    const db = await getSqliteDb();
-    const res = db.exec(
-      "SELECT id, email, allow_marketing, allow_review_requests, allow_abandoned_cart, allow_price_drop, unsubscribed_all, updated_at FROM email_preferences WHERE email = ? LIMIT 1;",
+    const pool = await getDbPool2();
+    const [rows] = await pool.query(
+      `SELECT id, email, allow_marketing, allow_review_requests, allow_abandoned_cart, allow_price_drop, unsubscribed_all, updated_at
+       FROM email_preferences WHERE email = ? LIMIT 1`,
       [cleanEmail]
     );
-    if (res.length > 0 && res[0].values.length > 0) {
-      const row = res[0].values[0];
+    if (rows && rows.length > 0) {
+      const r = rows[0];
       return {
-        id: String(row[0]),
-        email: String(row[1]),
-        allow_marketing: Boolean(row[2]),
-        allow_review_requests: Boolean(row[3]),
-        allow_abandoned_cart: Boolean(row[4]),
-        allow_price_drop: Boolean(row[5]),
-        unsubscribed_all: Boolean(row[6]),
-        updated_at: String(row[7])
+        id: r.id,
+        email: r.email,
+        allow_marketing: Boolean(r.allow_marketing),
+        allow_review_requests: Boolean(r.allow_review_requests),
+        allow_abandoned_cart: Boolean(r.allow_abandoned_cart),
+        allow_price_drop: Boolean(r.allow_price_drop),
+        unsubscribed_all: Boolean(r.unsubscribed_all),
+        updated_at: r.updated_at
       };
     }
     return defaultPrefs;
@@ -5449,22 +2968,13 @@ async function isEmailOptedOut(email, category) {
   return false;
 }
 async function wasScheduledTaskExecuted(dedupeKey) {
-  if (isPostgresActive()) {
-    const pool = getPostgresPool();
-    try {
-      const res = await pool.query(
-        `SELECT id FROM scheduled_task_logs WHERE dedupe_key = $1 AND status = 'success' LIMIT 1`,
-        [dedupeKey]
-      );
-      return res.rows.length > 0;
-    } catch {
-      return false;
-    }
-  }
   try {
-    const db = await getSqliteDb();
-    const res = db.exec("SELECT id FROM scheduled_task_logs WHERE dedupe_key = ? AND status = 'success' LIMIT 1;", [dedupeKey]);
-    return res.length > 0 && res[0].values.length > 0;
+    const pool = await getDbPool2();
+    const [rows] = await pool.query(
+      `SELECT id FROM scheduled_task_logs WHERE dedupe_key = ? AND status = 'success' LIMIT 1`,
+      [dedupeKey]
+    );
+    return Boolean(rows && rows.length > 0);
   } catch {
     return false;
   }
@@ -5472,31 +2982,16 @@ async function wasScheduledTaskExecuted(dedupeKey) {
 async function recordScheduledTaskExecution(taskName, dedupeKey, details) {
   const id = `task-${Date.now()}-${import_crypto.default.randomBytes(3).toString("hex")}`;
   const nowIso = (/* @__PURE__ */ new Date()).toISOString();
-  if (isPostgresActive()) {
-    const pool = getPostgresPool();
-    try {
-      await pool.query(
-        `INSERT INTO scheduled_task_logs (id, task_name, dedupe_key, executed_at, status, details)
-         VALUES ($1, $2, $3, $4, 'success', $5)
-         ON CONFLICT (dedupe_key) DO UPDATE SET executed_at = EXCLUDED.executed_at, details = EXCLUDED.details`,
-        [id, taskName, dedupeKey, nowIso, details || null]
-      );
-      return;
-    } catch (err) {
-      console.warn("[Email DB] PG recordScheduledTaskExecution warning:", err?.message);
-    }
-  }
   try {
-    const db = await getSqliteDb();
-    db.run(
+    const pool = await getDbPool2();
+    await pool.query(
       `INSERT INTO scheduled_task_logs (id, task_name, dedupe_key, executed_at, status, details)
        VALUES (?, ?, ?, ?, 'success', ?)
-       ON CONFLICT (dedupe_key) DO UPDATE SET executed_at = excluded.executed_at, details = excluded.details;`,
+       ON DUPLICATE KEY UPDATE executed_at = VALUES(executed_at), details = VALUES(details);`,
       [id, taskName, dedupeKey, nowIso, details || null]
     );
-    saveSqliteDb(db);
   } catch (err) {
-    console.warn("[Email DB] SQLite recordScheduledTaskExecution warning:", err?.message);
+    console.warn("[Email DB] MySQL recordScheduledTaskExecution warning:", err?.message || err);
   }
 }
 async function logScheduledTaskRun(dedupeKey, details) {
@@ -5509,123 +3004,55 @@ async function isRecipientOptedOut(email, emailType) {
 }
 async function updateOrderPaymentStatus(orderId, status, details) {
   const nowIso = (/* @__PURE__ */ new Date()).toISOString();
-  if (isPostgresActive()) {
-    const pool = getPostgresPool();
-    try {
-      await pool.query(
-        `UPDATE orders SET
-          payment_status = $1,
-          payment_reference = COALESCE($2, payment_reference),
-          payment_amount = COALESCE($3, payment_amount),
-          payment_confirmed_at = COALESCE($4, payment_confirmed_at),
-          payment_confirmed_by = COALESCE($5, payment_confirmed_by),
-          payment_reminder_count = COALESCE($6, payment_reminder_count),
-          last_payment_reminder_at = COALESCE($7, last_payment_reminder_at)
-         WHERE id = $8`,
-        [
-          status,
-          details?.paymentReference || null,
-          details?.paymentAmount || null,
-          details?.paymentConfirmedAt || (status === "paid" ? nowIso : null),
-          details?.paymentConfirmedBy || null,
-          details?.paymentReminderCount ?? null,
-          details?.lastPaymentReminderAt || null,
-          orderId
-        ]
-      ).catch(() => {
-      });
-      await pool.query(
-        `UPDATE customer_orders SET
-          payment_status = $1,
-          payment_reference = COALESCE($2, payment_reference),
-          payment_amount = COALESCE($3, payment_amount),
-          payment_confirmed_at = COALESCE($4, payment_confirmed_at),
-          payment_confirmed_by = COALESCE($5, payment_confirmed_by),
-          payment_reminder_count = COALESCE($6, payment_reminder_count),
-          last_payment_reminder_at = COALESCE($7, last_payment_reminder_at)
-         WHERE id = $8`,
-        [
-          status,
-          details?.paymentReference || null,
-          details?.paymentAmount || null,
-          details?.paymentConfirmedAt || (status === "paid" ? nowIso : null),
-          details?.paymentConfirmedBy || null,
-          details?.paymentReminderCount ?? null,
-          details?.lastPaymentReminderAt || null,
-          orderId
-        ]
-      ).catch(() => {
-      });
-      return;
-    } catch (e) {
-      console.warn("[Email DB] PG updateOrderPaymentStatus warning:", e?.message);
-    }
-  }
   try {
-    const db = await getSqliteDb();
+    const pool = await getDbPool2();
+    await pool.query(
+      `UPDATE orders SET
+        paymentStatus = ?,
+        paymentReference = COALESCE(?, paymentReference),
+        total = COALESCE(?, total),
+        paidAt = COALESCE(?, paidAt),
+        deliveryNote = COALESCE(?, deliveryNote),
+        updated_at = ?
+       WHERE id = ?`,
+      [
+        status,
+        details?.paymentReference || null,
+        details?.paymentAmount || null,
+        details?.paymentConfirmedAt || (status === "paid" ? nowIso : null),
+        details?.notes || null,
+        nowIso,
+        orderId
+      ]
+    );
     try {
-      db.run(
-        `UPDATE orders SET
-          paymentStatus = ?,
-          paymentReference = CASE WHEN ? IS NOT NULL THEN ? ELSE paymentReference END,
-          paymentAmount = CASE WHEN ? IS NOT NULL THEN ? ELSE paymentAmount END,
-          paymentConfirmedAt = CASE WHEN ? IS NOT NULL THEN ? ELSE paymentConfirmedAt END,
-          paymentConfirmedBy = CASE WHEN ? IS NOT NULL THEN ? ELSE paymentConfirmedBy END,
-          paymentReminderCount = CASE WHEN ? IS NOT NULL THEN ? ELSE paymentReminderCount END,
-          lastPaymentReminderAt = CASE WHEN ? IS NOT NULL THEN ? ELSE lastPaymentReminderAt END
-         WHERE id = ?;`,
-        [
-          status,
-          details?.paymentReference || null,
-          details?.paymentReference || null,
-          details?.paymentAmount || null,
-          details?.paymentAmount || null,
-          details?.paymentConfirmedAt || (status === "paid" ? nowIso : null),
-          details?.paymentConfirmedAt || (status === "paid" ? nowIso : null),
-          details?.paymentConfirmedBy || null,
-          details?.paymentConfirmedBy || null,
-          details?.paymentReminderCount ?? null,
-          details?.paymentReminderCount ?? null,
-          details?.lastPaymentReminderAt || null,
-          details?.lastPaymentReminderAt || null,
-          orderId
-        ]
-      );
-    } catch (err1) {
-    }
-    try {
-      db.run(
+      await pool.query(
         `UPDATE customer_orders SET
           payment_status = ?,
-          payment_reference = CASE WHEN ? IS NOT NULL THEN ? ELSE payment_reference END,
-          payment_amount = CASE WHEN ? IS NOT NULL THEN ? ELSE payment_amount END,
-          payment_confirmed_at = CASE WHEN ? IS NOT NULL THEN ? ELSE payment_confirmed_at END,
-          payment_confirmed_by = CASE WHEN ? IS NOT NULL THEN ? ELSE payment_confirmed_by END,
-          payment_reminder_count = CASE WHEN ? IS NOT NULL THEN ? ELSE payment_reminder_count END,
-          last_payment_reminder_at = CASE WHEN ? IS NOT NULL THEN ? ELSE last_payment_reminder_at END
-         WHERE id = ?;`,
+          payment_reference = COALESCE(?, payment_reference),
+          payment_amount = COALESCE(?, payment_amount),
+          payment_confirmed_at = COALESCE(?, payment_confirmed_at),
+          payment_confirmed_by = COALESCE(?, payment_confirmed_by),
+          payment_reminder_count = COALESCE(?, payment_reminder_count),
+          last_payment_reminder_at = COALESCE(?, last_payment_reminder_at),
+          updated_at = ?
+         WHERE id = ?`,
         [
           status,
           details?.paymentReference || null,
-          details?.paymentReference || null,
-          details?.paymentAmount || null,
           details?.paymentAmount || null,
           details?.paymentConfirmedAt || (status === "paid" ? nowIso : null),
-          details?.paymentConfirmedAt || (status === "paid" ? nowIso : null),
-          details?.paymentConfirmedBy || null,
           details?.paymentConfirmedBy || null,
           details?.paymentReminderCount ?? null,
-          details?.paymentReminderCount ?? null,
           details?.lastPaymentReminderAt || null,
-          details?.lastPaymentReminderAt || null,
+          nowIso,
           orderId
         ]
       );
-    } catch (err2) {
+    } catch (_) {
     }
-    saveSqliteDb(db);
   } catch (e) {
-    console.warn("[Email DB] SQLite updateOrderPaymentStatus warning:", e?.message);
+    console.warn("[Email DB] MySQL updateOrderPaymentStatus warning:", e?.message || e);
   }
 }
 function normalizeOrderRecord(row) {
@@ -5640,7 +3067,7 @@ function normalizeOrderRecord(row) {
   }
   const customerName = row.customerName || row.customer_name || "Customer";
   const customerEmail = row.customerEmail || row.customer_email || "";
-  const customerPhone = row.phone || row.customerPhone || row.customer_phone || row.mpesaPhone || "";
+  const customerPhone = row.customerPhone || row.phone || row.customer_phone || row.mpesaPhone || "";
   const total = Number(row.total || 0);
   const status = row.status || "pending";
   const paymentStatus = row.paymentStatus || row.payment_status || "unpaid";
@@ -5679,41 +3106,15 @@ function normalizeOrderRecord(row) {
 async function fetchAuthoritativeOrderById(orderId) {
   if (!orderId) return null;
   const cleanId = String(orderId).trim();
-  if (isPostgresActive()) {
-    const pool = getPostgresPool();
-    try {
-      const res1 = await pool.query(`SELECT * FROM orders WHERE UPPER(id) = UPPER($1) LIMIT 1`, [cleanId]);
-      if (res1.rows.length > 0) return normalizeOrderRecord(res1.rows[0]);
-      const res2 = await pool.query(`SELECT * FROM customer_orders WHERE UPPER(id) = UPPER($1) LIMIT 1`, [cleanId]);
-      if (res2.rows.length > 0) return normalizeOrderRecord(res2.rows[0]);
-    } catch {
-    }
-  }
   try {
-    const db = await getSqliteDb();
-    try {
-      const res1 = db.exec("SELECT * FROM orders WHERE UPPER(id) = UPPER(?) LIMIT 1;", [cleanId]);
-      if (res1.length > 0 && res1[0].values.length > 0) {
-        const cols = res1[0].columns;
-        const obj = {};
-        cols.forEach((c, idx) => {
-          obj[c] = res1[0].values[0][idx];
-        });
-        return normalizeOrderRecord(obj);
-      }
-    } catch {
+    const pool = await getDbPool2();
+    const [rows] = await pool.query(`SELECT * FROM orders WHERE UPPER(id) = UPPER(?) LIMIT 1`, [cleanId]);
+    if (rows && rows.length > 0) {
+      return normalizeOrderRecord(rows[0]);
     }
-    try {
-      const res2 = db.exec("SELECT * FROM customer_orders WHERE UPPER(id) = UPPER(?) LIMIT 1;", [cleanId]);
-      if (res2.length > 0 && res2[0].values.length > 0) {
-        const cols = res2[0].columns;
-        const obj = {};
-        cols.forEach((c, idx) => {
-          obj[c] = res2[0].values[0][idx];
-        });
-        return normalizeOrderRecord(obj);
-      }
-    } catch {
+    const [cRows] = await pool.query(`SELECT * FROM customer_orders WHERE UPPER(id) = UPPER(?) LIMIT 1`, [cleanId]);
+    if (cRows && cRows.length > 0) {
+      return normalizeOrderRecord(cRows[0]);
     }
     return null;
   } catch {
@@ -5723,120 +3124,49 @@ async function fetchAuthoritativeOrderById(orderId) {
 async function getUnpaidOrders(olderThanHours = 0) {
   const thresholdIso = new Date(Date.now() - olderThanHours * 3600 * 1e3).toISOString();
   const resultMap = /* @__PURE__ */ new Map();
-  if (isPostgresActive()) {
-    const pool = getPostgresPool();
-    try {
-      const res1 = await pool.query(
-        `SELECT * FROM orders
-         WHERE (payment_status = 'unpaid' OR payment_status IS NULL)
-           AND status NOT IN ('cancelled', 'completed', 'delivered')
-           AND created_at <= $1
-         ORDER BY created_at ASC`,
-        [thresholdIso]
-      );
-      for (const r of res1.rows) {
-        const norm = normalizeOrderRecord(r);
-        if (norm && !resultMap.has(norm.id)) resultMap.set(norm.id, norm);
-      }
-    } catch {
-    }
-    try {
-      const res2 = await pool.query(
-        `SELECT * FROM customer_orders
-         WHERE (payment_status = 'unpaid' OR payment_status IS NULL)
-           AND status NOT IN ('cancelled', 'completed', 'delivered')
-           AND created_at <= $1
-         ORDER BY created_at ASC`,
-        [thresholdIso]
-      );
-      for (const r of res2.rows) {
-        const norm = normalizeOrderRecord(r);
-        if (norm && !resultMap.has(norm.id)) resultMap.set(norm.id, norm);
-      }
-    } catch {
-    }
-    if (resultMap.size > 0) return Array.from(resultMap.values());
-  }
   try {
-    const db = await getSqliteDb();
-    try {
-      const res1 = db.exec(
-        `SELECT id, customerName, customerEmail, total, status,
-                COALESCE(paymentStatus, 'unpaid') as paymentStatus,
-                COALESCE(paymentReminderCount, 0) as paymentReminderCount,
-                lastPaymentReminderAt,
-                date, items, shippingAddress
-         FROM orders
-         WHERE (paymentStatus = 'unpaid' OR paymentStatus IS NULL)
-           AND status NOT IN ('cancelled', 'completed', 'delivered')
-           AND date <= ?
-         ORDER BY date ASC;`,
-        [thresholdIso]
-      );
-      if (res1.length > 0 && res1[0].values.length > 0) {
-        const cols = res1[0].columns;
-        for (const val of res1[0].values) {
-          const obj = {};
-          cols.forEach((c, idx) => {
-            obj[c] = val[idx];
-          });
-          const norm = normalizeOrderRecord(obj);
-          if (norm && !resultMap.has(norm.id)) resultMap.set(norm.id, norm);
-        }
-      }
-    } catch (e1) {
-      console.warn("[Email DB] getUnpaidOrders orders query note:", e1);
+    const pool = await getDbPool2();
+    const [rows] = await pool.query(
+      `SELECT * FROM orders
+       WHERE (paymentStatus = 'unpaid' OR paymentStatus = 'pending' OR paymentStatus IS NULL)
+         AND status NOT IN ('cancelled', 'completed', 'delivered')
+         AND date <= ?
+       ORDER BY date ASC`,
+      [thresholdIso]
+    );
+    for (const r of rows || []) {
+      const norm = normalizeOrderRecord(r);
+      if (norm && !resultMap.has(norm.id)) resultMap.set(norm.id, norm);
     }
     try {
-      const res2 = db.exec(
-        `SELECT id, customer_name, customer_email, total, status,
-                payment_status, payment_reminder_count, last_payment_reminder_at,
-                COALESCE(created_at, placed_at) as created_at
-         FROM customer_orders
-         WHERE (payment_status = 'unpaid' OR payment_status IS NULL)
+      const [cRows] = await pool.query(
+        `SELECT * FROM customer_orders
+         WHERE (payment_status = 'unpaid' OR payment_status = 'pending' OR payment_status IS NULL)
            AND status NOT IN ('cancelled', 'completed', 'delivered')
-           AND (created_at <= ? OR placed_at <= ?);`,
+           AND (created_at <= ? OR placed_at <= ?)
+         ORDER BY created_at ASC`,
         [thresholdIso, thresholdIso]
       );
-      if (res2.length > 0 && res2[0].values.length > 0) {
-        const cols = res2[0].columns;
-        for (const val of res2[0].values) {
-          const obj = {};
-          cols.forEach((c, idx) => {
-            obj[c] = val[idx];
-          });
-          const norm = normalizeOrderRecord(obj);
-          if (norm && !resultMap.has(norm.id)) resultMap.set(norm.id, norm);
-        }
+      for (const r of cRows || []) {
+        const norm = normalizeOrderRecord(r);
+        if (norm && !resultMap.has(norm.id)) resultMap.set(norm.id, norm);
       }
-    } catch (e2) {
-      console.warn("[Email DB] getUnpaidOrders customer_orders query note:", e2);
+    } catch (_) {
     }
     return Array.from(resultMap.values());
-  } catch {
+  } catch (err) {
+    console.warn("[Email DB] getUnpaidOrders error:", err?.message || err);
     return [];
   }
 }
 async function hasUnprocessedPaymentSubmission(orderId) {
-  if (isPostgresActive()) {
-    const pool = getPostgresPool();
-    try {
-      const res = await pool.query(
-        `SELECT id FROM payment_submissions WHERE order_id = $1 AND status = 'pending_verification' LIMIT 1`,
-        [orderId]
-      );
-      return res.rows.length > 0;
-    } catch {
-      return false;
-    }
-  }
   try {
-    const db = await getSqliteDb();
-    const res = db.exec(
-      "SELECT id FROM payment_submissions WHERE order_id = ? AND status = 'pending_verification' LIMIT 1;",
+    const pool = await getDbPool2();
+    const [rows] = await pool.query(
+      `SELECT id FROM payment_submissions WHERE order_id = ? AND status = 'pending_verification' LIMIT 1`,
       [orderId]
     );
-    return res.length > 0 && res[0].values.length > 0;
+    return Boolean(rows && rows.length > 0);
   } catch {
     return false;
   }
@@ -5845,8 +3175,7 @@ var import_crypto, recordPaymentSubmission, getPaymentSubmissionByCode, hasSched
 var init_db = __esm({
   "server/email/db.ts"() {
     import_crypto = __toESM(require("crypto"), 1);
-    init_sqlite_db();
-    init_postgres_db();
+    init_mysql_db();
     recordPaymentSubmission = createPaymentSubmission;
     getPaymentSubmissionByCode = getPaymentSubmissionByMpesaCode;
     hasScheduledTaskRun = wasScheduledTaskExecuted;
@@ -5965,10 +3294,10 @@ var init_types = __esm({
 });
 
 // server/email/urlHelper.ts
-function buildUrl(path3 = "", params) {
+function buildUrl(path2 = "", params) {
   const config2 = getEmailConfig();
   const base = config2.urls.frontendUrl.replace(/\/+$/, "");
-  const cleanPath = path3.startsWith("/") ? path3 : path3 ? `/${path3}` : "";
+  const cleanPath = path2.startsWith("/") ? path2 : path2 ? `/${path2}` : "";
   let url = `${base}${cleanPath || "/"}`;
   if (params) {
     const searchParams = new URLSearchParams();
@@ -5987,10 +3316,10 @@ function buildUrl(path3 = "", params) {
 function buildTrackUrl(orderId) {
   return buildUrl("/", { trackOrder: orderId });
 }
-function buildAdminUrl(path3 = "", params) {
+function buildAdminUrl(path2 = "", params) {
   const config2 = getEmailConfig();
   const base = config2.urls.adminUrl.replace(/\/+$/, "");
-  const cleanPath = path3.startsWith("/") ? path3 : `/${path3}`;
+  const cleanPath = path2.startsWith("/") ? path2 : `/${path2}`;
   let url = `${base}${cleanPath}`;
   if (params) {
     const searchParams = new URLSearchParams();
@@ -6604,6 +3933,16 @@ function renderOrderConfirmationEmail(order) {
           <td style="padding: 4px 0; color: #64748b;"><strong>Payment Method:</strong></td>
           <td style="padding: 4px 0; color: #0f172a; font-weight: 600;">${escapeHtml(order.paymentMethod || "M-PESA Paybill")}</td>
         </tr>
+        ${order.paymentReference ? `
+        <tr>
+          <td style="padding: 4px 0; color: #64748b;"><strong>Payment Reference:</strong></td>
+          <td style="padding: 4px 0; color: #0f172a; font-weight: 700; font-family: monospace;">${escapeHtml(order.paymentReference)}</td>
+        </tr>
+        ` : ""}
+        <tr>
+          <td style="padding: 4px 0; color: #64748b;"><strong>Payment Status:</strong></td>
+          <td style="padding: 4px 0; color: #0284c7; font-weight: 700;">Pending Admin Verification</td>
+        </tr>
         ${order.shippingAddress ? `
         <tr>
           <td style="padding: 4px 0; color: #64748b; vertical-align: top;"><strong>Delivery Address:</strong></td>
@@ -6618,21 +3957,12 @@ function renderOrderConfirmationEmail(order) {
     ${renderOrderItemsTable(order.items)}
     ${renderOrderTotals(order)}
 
-    <!-- Paybill Payment Box (if M-Pesa / manual) -->
-    ${isMpesa ? renderPaybillBox(totalFormatted, shortId) : ""}
-
-    ${isGuest ? `
-    <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 14px 18px; margin: 24px 0; text-align: center; font-size: 13px; color: #475569;">
-      \u{1F4EC} <strong>Guest Order Notice:</strong> All subsequent order progress, dispatch alerts, and digital receipts will be delivered directly to <strong>${escapeHtml(order.customerEmail)}</strong>.
-    </div>
-    ` : `
     <div style="text-align: center; margin: 28px 0;">
-      ${renderEmailButton("Track Order & Submit Payment Code", trackUrl, "indigo")}
+      ${renderEmailButton("Track Order Status", trackUrl, "indigo")}
     </div>
-    `}
 
     <p style="margin: 20px 0 0 0; font-size: 13px; color: #475569; line-height: 1.6;">
-      ${isGuest ? "If you have any questions regarding your order, reply directly to this email." : "Once you complete your M-Pesa payment, please submit your transaction code via the tracking page above to fast-track verification."}
+      Our store administration will verify your payment details and update the order status. You will receive an email update once your order is processed. If you have any questions, reply directly to this email.
     </p>
   `;
   const html = renderBaseEmailLayout({
@@ -6642,31 +3972,14 @@ function renderOrderConfirmationEmail(order) {
     badgeColor: "indigo",
     bodyHtml
   });
-  const text = isGuest ? `Dear ${order.customerName},
+  const text = `Dear ${order.customerName},
 
 Thank you for your order ${shortId} on Ropenix Collections.
 Total: ${totalFormatted}
 
-Payment via M-Pesa Paybill:
-Business No: 303030
-Account: 2047728455 (Fixed shared account)
-Amount: ${totalFormatted}
-
-All subsequent delivery updates and receipts will be sent to ${order.customerEmail}.
-
-Thank you!` : `Dear ${order.customerName},
-
-Thank you for your order ${shortId} on Ropenix Collections.
-Total: ${totalFormatted}
+Our store administration will verify your payment and update the status.
 
 Track order: ${trackUrl}
-
-Payment via M-Pesa Paybill:
-Business No: 303030
-Account: 2047728455 (Fixed shared account)
-Amount: ${totalFormatted}
-
-After paying, visit your order tracking page to submit your M-Pesa code.
 
 Thank you!`;
   return { subject, html, text };
@@ -8117,7 +5430,11 @@ function validateStatusTransition(order, nextStatus, options) {
   if (!order) {
     return { valid: false, error: "Order not found." };
   }
-  const currentStatus = (order.status || "pending").toLowerCase().trim();
+  let rawStatus = typeof order.status === "string" ? order.status : typeof order.status === "object" && typeof order.status?.status === "string" ? order.status.status : "";
+  if (!rawStatus || rawStatus === "[object Object]") {
+    rawStatus = order.deliveryConfirmed || order.deliveredAt ? "delivered" : order.trackingNumber ? "shipped" : order.isPaid || order.paymentStatus === "paid" ? "processing" : "pending";
+  }
+  const currentStatus = rawStatus.toLowerCase().trim();
   const targetStatus = (nextStatus || "").toLowerCase().trim();
   const recognizedStatuses = ["pending", "processing", "shipped", "completed", "cancelled", "pending-cancellation", "delivered"];
   if (!recognizedStatuses.includes(targetStatus)) {
@@ -8129,11 +5446,23 @@ function validateStatusTransition(order, nextStatus, options) {
   if (currentStatus === targetStatus) {
     return { valid: true };
   }
+  if (currentStatus === "completed" && (targetStatus === "processing" || targetStatus === "pending" || targetStatus === "shipped")) {
+    return {
+      valid: false,
+      error: `Invalid status transition: Order #${order.id} is already COMPLETED. Completed orders cannot be reverted to '${targetStatus}'.`
+    };
+  }
+  if (currentStatus === "delivered" && (targetStatus === "processing" || targetStatus === "pending" || targetStatus === "shipped")) {
+    return {
+      valid: false,
+      error: `Invalid status transition: Order #${order.id} has already been DELIVERED. It cannot be reverted to '${targetStatus}'.`
+    };
+  }
   const allowedNext = ALLOWED_STATUS_TRANSITIONS[currentStatus] || recognizedStatuses;
   if (!allowedNext.includes(targetStatus)) {
     return {
       valid: false,
-      error: `Invalid status transition: Cannot change order #${order.id} from '${currentStatus}' to '${targetStatus}'. Allowed next steps: ${allowedNext.length > 0 ? allowedNext.join(", ") : "None (terminal state)"}.`
+      error: `Invalid status transition: Cannot change order #${order.id} from '${currentStatus}' to '${targetStatus}'. Allowed next steps: ${allowedNext.length > 0 ? allowedNext.join(", ") : "None (Order is in final state)"}.`
     };
   }
   const isPaid = Boolean(order.isPaid || order.paymentStatus === "paid");
@@ -8486,7 +5815,7 @@ Track order: ${trackUrl}`;
   }
 }
 async function confirmOrderPaymentAndProcess(orderId, adminUser = "Admin", options) {
-  const order = await getSqliteOrderById(orderId);
+  const order = await getMysqlOrderById(orderId);
   if (!order) {
     return { success: false, error: `Order #${orderId} not found.` };
   }
@@ -8520,28 +5849,11 @@ async function confirmOrderPaymentAndProcess(orderId, adminUser = "Admin", optio
   paymentHistoryEntry.emailSent = Boolean(emailRes.success);
   history.push(paymentHistoryEntry);
   updatedPayload.statusHistory = history;
-  const savedOrder = await saveSqliteOrder(updatedPayload);
-  try {
-    const pool = getPostgresPool();
-    if (pool) {
-      await pool.query(`
-        UPDATE orders
-        SET status = 'processing',
-            payment_status = 'paid',
-            is_paid = TRUE,
-            paid_at = $1,
-            payment_reference = $2,
-            updated_at = $1
-        WHERE id = $3;
-      `, [nowIso, paymentRef, orderId]);
-    }
-  } catch (pgErr) {
-    console.warn("[OrderStatusService] PostgreSQL sync notice:", pgErr);
-  }
+  const savedOrder = await saveMysqlOrder(updatedPayload);
   return { success: true, order: savedOrder };
 }
 async function transitionOrderStatus(orderId, targetStatus, adminUser = "Admin", options) {
-  const order = await getSqliteOrderById(orderId);
+  const order = await getMysqlOrderById(orderId);
   if (!order) {
     return { success: false, error: `Order #${orderId} not found.`, statusCode: 404 };
   }
@@ -8596,32 +5908,22 @@ async function transitionOrderStatus(orderId, targetStatus, adminUser = "Admin",
   historyEntry.emailSent = Boolean(emailRes.success);
   history.push(historyEntry);
   updatedPayload.statusHistory = history;
-  const savedOrder = await saveSqliteOrder(updatedPayload);
-  try {
-    const pool = getPostgresPool();
-    if (pool) {
-      await pool.query(`
-        UPDATE orders
-        SET status = $1,
-            tracking_number = COALESCE($2, tracking_number),
-            updated_at = $3
-        WHERE id = $4;
-      `, [cleanTarget, trackingNumber || null, nowIso, orderId]);
-    }
-  } catch (pgErr) {
-    console.warn("[OrderStatusService] PostgreSQL sync notice:", pgErr);
-  }
+  const savedOrder = await saveMysqlOrder(updatedPayload);
   return { success: true, order: savedOrder, statusCode: 200 };
 }
 async function confirmOrderDelivery(orderId, adminUser = "Admin", data) {
-  const order = await getSqliteOrderById(orderId);
+  const order = await getMysqlOrderById(orderId);
   if (!order) {
     return { success: false, error: `Order #${orderId} not found.`, statusCode: 404 };
   }
-  if (order.status !== "shipped" && order.status !== "processing") {
+  let currentStatus = typeof order.status === "string" ? order.status : typeof order.status === "object" && typeof order.status?.status === "string" ? order.status.status : "";
+  if (!currentStatus || currentStatus === "[object Object]") {
+    currentStatus = order.trackingNumber || order.deliveryConfirmed ? "shipped" : order.isPaid || order.paymentStatus === "paid" ? "processing" : "pending";
+  }
+  if (currentStatus !== "shipped" && currentStatus !== "processing" && currentStatus !== "delivered") {
     return {
       success: false,
-      error: `Cannot confirm delivery: Order #${orderId} is currently in '${order.status}' status. It must be 'shipped' first.`,
+      error: `Cannot confirm delivery: Order #${orderId} is currently in '${currentStatus}' status. It must be 'shipped' first.`,
       statusCode: 400
     };
   }
@@ -8647,25 +5949,26 @@ async function confirmOrderDelivery(orderId, adminUser = "Admin", data) {
     statusHistory: history,
     updated_at: nowIso
   };
-  const savedOrder = await saveSqliteOrder(updatedPayload);
+  const savedOrder = await saveMysqlOrder(updatedPayload);
   return { success: true, order: savedOrder, statusCode: 200 };
 }
 var ALLOWED_STATUS_TRANSITIONS;
 var init_orderStatusService = __esm({
   "server/services/orderStatusService.ts"() {
-    init_sqlite_db();
-    init_postgres_db();
+    init_mysql_db();
     init_transporter();
     init_baseLayout();
     init_urlHelper();
     ALLOWED_STATUS_TRANSITIONS = {
       pending: ["processing", "shipped", "completed", "cancelled", "pending-cancellation", "delivered"],
-      processing: ["pending", "shipped", "completed", "cancelled", "pending-cancellation", "delivered"],
-      shipped: ["pending", "processing", "completed", "cancelled", "pending-cancellation", "delivered"],
-      delivered: ["pending", "processing", "shipped", "completed", "cancelled"],
-      completed: ["pending", "processing", "shipped", "cancelled", "pending-cancellation"],
-      cancelled: ["pending", "processing", "shipped", "completed"],
-      "pending-cancellation": ["pending", "processing", "shipped", "cancelled", "completed"]
+      processing: ["shipped", "delivered", "completed", "cancelled", "pending-cancellation"],
+      shipped: ["delivered", "completed", "cancelled"],
+      delivered: ["completed"],
+      completed: [],
+      // Terminal State: Cannot be moved back to processing, shipped, or pending
+      cancelled: [],
+      // Terminal State: Cannot be reopened
+      "pending-cancellation": ["cancelled", "processing"]
     };
   }
 });
@@ -8775,13 +6078,12 @@ __export(server_exports, {
 module.exports = __toCommonJS(server_exports);
 
 // server/index.ts
-var import_express18 = __toESM(require("express"), 1);
-var import_path2 = __toESM(require("path"), 1);
-var import_fs2 = __toESM(require("fs"), 1);
+var import_express19 = __toESM(require("express"), 1);
+var import_path = __toESM(require("path"), 1);
+var import_fs = __toESM(require("fs"), 1);
 var import_url = require("url");
-var import_dotenv5 = __toESM(require("dotenv"), 1);
-init_sqlite_db();
-init_postgres_db();
+var import_dotenv4 = __toESM(require("dotenv"), 1);
+init_mysql_db();
 
 // server/email/startupCheck.ts
 init_config();
@@ -8840,8 +6142,6 @@ init_queue();
 // server/email/scheduler.ts
 init_config();
 init_db();
-init_sqlite_db();
-init_postgres_db();
 init_queue();
 init_events();
 var schedulerInterval = null;
@@ -8873,49 +6173,17 @@ function getNairobiTime() {
   };
 }
 async function getPendingPaymentSubmissions() {
-  const pool = getPostgresPool();
-  if (pool) {
-    try {
-      const res = await pool.query(`
-        SELECT ps.id, ps.order_id as "orderId", ps.mpesa_receipt_code as "mpesaCode", ps.amount_claimed as "amount", ps.phone_number, ps.submitted_at as "submittedAt",
-               o.customer_name as "customerName", o.customer_email as "customerEmail", o.total
-        FROM payment_submissions ps
-        LEFT JOIN customer_orders o ON o.id = ps.order_id
-        WHERE ps.status = 'pending_verification'
-        ORDER BY ps.submitted_at ASC
-      `);
-      return res.rows;
-    } catch {
-      return [];
-    }
-  }
   try {
-    const db = await getSqliteDb();
-    const res = db.exec(`
-      SELECT ps.id, ps.order_id, ps.mpesa_receipt_code, ps.amount_claimed, ps.phone_number, ps.submitted_at,
-             o.customer_name, o.customer_email, o.total
+    const pool = await getDbPool2();
+    const [rows] = await pool.query(`
+      SELECT ps.id, ps.order_id as orderId, ps.mpesa_receipt_code as mpesaCode, ps.amount_claimed as amount, ps.phone_number, ps.submitted_at as submittedAt,
+             o.customer_name as customerName, o.customer_email as customerEmail, o.total
       FROM payment_submissions ps
       LEFT JOIN customer_orders o ON o.id = ps.order_id
       WHERE ps.status = 'pending_verification'
-      ORDER BY ps.submitted_at ASC;
+      ORDER BY ps.submitted_at ASC
     `);
-    if (res.length === 0 || res[0].values.length === 0) return [];
-    const cols = res[0].columns;
-    return res[0].values.map((row) => {
-      const obj = {};
-      cols.forEach((col, idx) => {
-        obj[col] = row[idx];
-      });
-      return {
-        id: obj.id,
-        orderId: obj.order_id,
-        mpesaCode: obj.mpesa_receipt_code,
-        amount: obj.amount_claimed || 0,
-        customerName: obj.customer_name || "Customer",
-        customerEmail: obj.customer_email || "",
-        submittedAt: obj.submitted_at
-      };
-    });
+    return rows || [];
   } catch {
     return [];
   }
@@ -9085,8 +6353,10 @@ function stopEmailScheduler() {
   console.log("[Scheduler] \u{1F6D1} Africa/Nairobi transactional scheduler stopped.");
 }
 
+// src/lib/sqlite-db.ts
+init_mysql_db();
+
 // server/services/expiryChecker.ts
-init_sqlite_db();
 init_transporter();
 init_config();
 var notifiedStore = {};
@@ -9094,7 +6364,7 @@ async function performExpiryBackgroundCheck(isManualTrigger = false) {
   console.log(`[Expiry Check] Initializing background inventory scan... (Manual: ${isManualTrigger})`);
   const today = /* @__PURE__ */ new Date();
   today.setHours(0, 0, 0, 0);
-  const sqliteData = await pullSyncDataSqlite();
+  const sqliteData = await pullSyncDataSqlite2();
   const products = sqliteData?.veloce_products || [];
   const newlyFlaggedProducts = [];
   const nearExpiryProductsList = [];
@@ -9225,7 +6495,7 @@ function errorHandler(err, _req, res, _next) {
 var import_express = require("express");
 var import_crypto4 = __toESM(require("crypto"), 1);
 var import_zod3 = require("zod");
-init_sqlite_db();
+init_mysql_db();
 
 // server/middleware/validate.ts
 var import_zod = require("zod");
@@ -9305,7 +6575,6 @@ var searchRateLimiter = createRateLimiter({
 
 // server/middleware/auth.ts
 var import_crypto2 = __toESM(require("crypto"), 1);
-init_sqlite_db();
 
 // server/config/index.ts
 var import_dotenv3 = __toESM(require("dotenv"), 1);
@@ -9518,685 +6787,10 @@ init_templates();
 
 // server/services/passwordResetService.ts
 var import_crypto3 = __toESM(require("crypto"), 1);
-init_sqlite_db();
-init_postgres_db();
-
-// src/lib/mysql-db.ts
-var import_promise = __toESM(require("mysql2/promise"), 1);
-var import_dotenv4 = __toESM(require("dotenv"), 1);
-import_dotenv4.default.config();
-var dbPool = null;
-var isInitialized = false;
-function getDbHost() {
-  let host = (process.env.DB_HOST || "").trim();
-  if (host === "localhhost") {
-    host = "localhost";
-  }
-  return host;
-}
-function isDbConfigured() {
-  const host = getDbHost();
-  const user = (process.env.DB_USER || "").trim();
-  const db = (process.env.DB_NAME || "").trim();
-  return !!(host && user && db);
-}
-async function getDbPool() {
-  if (!isDbConfigured()) {
-    return null;
-  }
-  if (!dbPool) {
-    const host = getDbHost();
-    try {
-      dbPool = import_promise.default.createPool({
-        host,
-        port: Number(process.env.DB_PORT) || 3306,
-        user: (process.env.DB_USER || "").trim(),
-        password: process.env.DB_PASSWORD,
-        database: (process.env.DB_NAME || "").trim(),
-        waitForConnections: true,
-        connectionLimit: 10,
-        queueLimit: 0,
-        connectTimeout: 5e3
-      });
-      const connection = await dbPool.getConnection();
-      console.log("[MySQL] Successfully connected to production database.");
-      connection.release();
-      await initializeDatabaseSchema();
-    } catch (error) {
-      console.warn("[MySQL] Connection pool creation attempt failed:", error.message || error);
-      if (dbPool) {
-        try {
-          await dbPool.end();
-        } catch (_) {
-        }
-      }
-      dbPool = null;
-      throw error;
-    }
-  }
-  return dbPool;
-}
-async function initializeDatabaseSchema() {
-  if (isInitialized || !dbPool) return;
-  try {
-    console.log("[MySQL] Initializing database tables...");
-    await dbPool.query(`
-      CREATE TABLE IF NOT EXISTS products (
-        id VARCHAR(255) PRIMARY KEY,
-        sku VARCHAR(255) NULL,
-        name VARCHAR(255) NOT NULL,
-        description TEXT NULL,
-        price DECIMAL(15, 2) NOT NULL,
-        category VARCHAR(255) NULL,
-        tags TEXT NULL,
-        type VARCHAR(50) NOT NULL,
-        imageUrl TEXT NULL,
-        images TEXT NULL,
-        stock INT NULL,
-        lowStockThreshold INT NULL,
-        variations TEXT NULL,
-        rating DECIMAL(3, 2) DEFAULT 0,
-        reviewsCount INT DEFAULT 0,
-        reviews TEXT NULL,
-        digitalFileUrl TEXT NULL,
-        previousPrice DECIMAL(15, 2) NULL,
-        backInStockAlert TINYINT(1) DEFAULT 0,
-        costPrice DECIMAL(15, 2) NULL,
-        taxId VARCHAR(255) NULL,
-        status VARCHAR(50) DEFAULT 'Active',
-        paymentRestriction VARCHAR(50) DEFAULT 'both',
-        shortDescription TEXT NULL,
-        detailedDescription LONGTEXT NULL,
-        features TEXT NULL,
-        specifications TEXT NULL,
-        whatsInTheBox TEXT NULL
-      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-    `);
-    try {
-      await dbPool.query("ALTER TABLE products ADD COLUMN paymentRestriction VARCHAR(50) DEFAULT 'both'");
-    } catch (_) {
-    }
-    try {
-      await dbPool.query("ALTER TABLE products ADD COLUMN shortDescription TEXT NULL");
-    } catch (_) {
-    }
-    try {
-      await dbPool.query("ALTER TABLE products ADD COLUMN detailedDescription LONGTEXT NULL");
-    } catch (_) {
-    }
-    try {
-      await dbPool.query("ALTER TABLE products ADD COLUMN features TEXT NULL");
-    } catch (_) {
-    }
-    try {
-      await dbPool.query("ALTER TABLE products ADD COLUMN specifications TEXT NULL");
-    } catch (_) {
-    }
-    try {
-      await dbPool.query("ALTER TABLE products ADD COLUMN whatsInTheBox TEXT NULL");
-    } catch (_) {
-    }
-    await dbPool.query(`
-      CREATE TABLE IF NOT EXISTS orders (
-        id VARCHAR(255) PRIMARY KEY,
-        customerName VARCHAR(255) NOT NULL,
-        customerEmail VARCHAR(255) NOT NULL,
-        items TEXT NOT NULL,
-        total DECIMAL(15, 2) NOT NULL,
-        status VARCHAR(50) NOT NULL,
-        date VARCHAR(100) NOT NULL,
-        couponCode VARCHAR(255) NULL,
-        customNote TEXT NULL,
-        shippingAddress TEXT NULL,
-        notesHistory TEXT NULL,
-        statusHistory TEXT NULL,
-        isGuest TINYINT(1) DEFAULT 0,
-        paymentMethod VARCHAR(50) DEFAULT 'cod',
-        checkoutChannel VARCHAR(50) DEFAULT 'web'
-      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-    `);
-    try {
-      await dbPool.query("ALTER TABLE orders ADD COLUMN paymentMethod VARCHAR(50) DEFAULT 'cod'");
-    } catch (_) {
-    }
-    try {
-      await dbPool.query("ALTER TABLE orders ADD COLUMN checkoutChannel VARCHAR(50) DEFAULT 'web'");
-    } catch (_) {
-    }
-    try {
-      await dbPool.query("ALTER TABLE orders ADD COLUMN paymentStatus VARCHAR(50) DEFAULT 'pending'");
-    } catch (_) {
-    }
-    try {
-      await dbPool.query("ALTER TABLE orders ADD COLUMN isPaid TINYINT(1) DEFAULT 0");
-    } catch (_) {
-    }
-    try {
-      await dbPool.query("ALTER TABLE orders ADD COLUMN paidAt VARCHAR(100) NULL");
-    } catch (_) {
-    }
-    try {
-      await dbPool.query("ALTER TABLE orders ADD COLUMN deliveryConfirmed TINYINT(1) DEFAULT 0");
-    } catch (_) {
-    }
-    try {
-      await dbPool.query("ALTER TABLE orders ADD COLUMN deliveredAt VARCHAR(100) NULL");
-    } catch (_) {
-    }
-    try {
-      await dbPool.query("ALTER TABLE orders ADD COLUMN deliveryPerson VARCHAR(255) NULL");
-    } catch (_) {
-    }
-    try {
-      await dbPool.query("ALTER TABLE orders ADD COLUMN deliveryNote TEXT NULL");
-    } catch (_) {
-    }
-    try {
-      await dbPool.query("ALTER TABLE orders ADD COLUMN trackingNumber VARCHAR(255) NULL");
-    } catch (_) {
-    }
-    await dbPool.query(`
-      CREATE TABLE IF NOT EXISTS campaigns (
-        id VARCHAR(255) PRIMARY KEY,
-        name VARCHAR(255) NOT NULL,
-        source VARCHAR(255) NOT NULL,
-        clicks INT DEFAULT 0,
-        conversions INT DEFAULT 0,
-        earnings DECIMAL(15, 2) DEFAULT 0,
-        status VARCHAR(50) DEFAULT 'active'
-      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-    `);
-    await dbPool.query(`
-      CREATE TABLE IF NOT EXISTS click_logs (
-        id VARCHAR(255) PRIMARY KEY,
-        timestamp VARCHAR(100) NOT NULL,
-        targetId VARCHAR(255) NOT NULL,
-        targetName VARCHAR(255) NOT NULL,
-        targetType VARCHAR(50) NOT NULL,
-        campaignName VARCHAR(255) NULL,
-        source VARCHAR(255) NOT NULL,
-        converted TINYINT(1) DEFAULT 0,
-        commission DECIMAL(15, 2) DEFAULT 0
-      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-    `);
-    await dbPool.query(`
-      CREATE TABLE IF NOT EXISTS inventory_audit_logs (
-        id VARCHAR(255) PRIMARY KEY,
-        productId VARCHAR(255) NOT NULL,
-        productName VARCHAR(255) NOT NULL,
-        productSku VARCHAR(255) NOT NULL,
-        timestamp VARCHAR(100) NOT NULL,
-        changeQuantity INT NOT NULL,
-        newStock INT NOT NULL,
-        reason VARCHAR(100) NOT NULL,
-        details TEXT NULL
-      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-    `);
-    await dbPool.query(`
-      CREATE TABLE IF NOT EXISTS app_settings (
-        setting_key VARCHAR(255) PRIMARY KEY,
-        setting_value LONGTEXT NULL
-      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-    `);
-    await dbPool.query(`
-      CREATE TABLE IF NOT EXISTS users (
-        id VARCHAR(255) PRIMARY KEY,
-        email VARCHAR(255) NOT NULL UNIQUE,
-        username VARCHAR(255) NULL,
-        password_hash VARCHAR(255) NOT NULL,
-        first_name VARCHAR(255) NULL,
-        last_name VARCHAR(255) NULL,
-        phone VARCHAR(100) NULL,
-        role VARCHAR(50) DEFAULT 'customer',
-        is_staff TINYINT(1) DEFAULT 0,
-        is_superuser TINYINT(1) DEFAULT 0,
-        email_verified TINYINT(1) DEFAULT 1,
-        created_at VARCHAR(100) NOT NULL,
-        updated_at VARCHAR(100) NOT NULL
-      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-    `);
-    await dbPool.query(`
-      CREATE TABLE IF NOT EXISTS password_reset_tokens (
-        id VARCHAR(255) PRIMARY KEY,
-        user_id VARCHAR(255) NOT NULL,
-        token_hash VARCHAR(64) NOT NULL UNIQUE,
-        expires_at VARCHAR(100) NOT NULL,
-        used_at VARCHAR(100) NULL,
-        created_at VARCHAR(100) NOT NULL,
-        user_email VARCHAR(255) NULL,
-        ip_address VARCHAR(100) NULL,
-        INDEX idx_prt_user_id (user_id),
-        INDEX idx_prt_expires_at (expires_at),
-        INDEX idx_prt_token_hash (token_hash),
-        CONSTRAINT fk_mysql_prt_user_id FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-    `);
-    isInitialized = true;
-    console.log("[MySQL] Database tables successfully initialized/verified.");
-  } catch (error) {
-    console.error("[MySQL] Database table initialization failed:", error);
-    throw error;
-  }
-}
-async function getDbStatus() {
-  if (!isDbConfigured()) {
-    return {
-      configured: false,
-      connected: false,
-      message: "MySQL configuration variables are missing in your environment variables (.env). Please set DB_HOST, DB_USER, DB_PASSWORD, and DB_NAME."
-    };
-  }
-  try {
-    const pool = await getDbPool();
-    if (!pool) {
-      return {
-        configured: true,
-        connected: false,
-        message: "Configuration found, but unable to establish connection pool."
-      };
-    }
-    const [prodCount] = await pool.query("SELECT COUNT(*) as count FROM products");
-    const [orderCount] = await pool.query("SELECT COUNT(*) as count FROM orders");
-    return {
-      configured: true,
-      connected: true,
-      message: "Successfully connected to production MySQL database.",
-      stats: {
-        products: prodCount[0]?.count || 0,
-        orders: orderCount[0]?.count || 0
-      }
-    };
-  } catch (error) {
-    return {
-      configured: true,
-      connected: false,
-      message: `Failed to connect to MySQL server: ${error.message || error}`
-    };
-  }
-}
-async function pushSyncData(payload) {
-  const pool = await getDbPool();
-  if (!pool) {
-    throw new Error("Database is not configured or connected.");
-  }
-  const connection = await pool.getConnection();
-  try {
-    await connection.beginTransaction();
-    if (Array.isArray(payload.veloce_products)) {
-      await connection.query("DELETE FROM products");
-      for (const p of payload.veloce_products) {
-        if (!p.id || !p.name) continue;
-        await connection.query(
-          `INSERT INTO products 
-           (id, sku, name, description, price, category, tags, type, imageUrl, images, stock, lowStockThreshold, variations, rating, reviewsCount, reviews, digitalFileUrl, previousPrice, backInStockAlert, costPrice, taxId, status, paymentRestriction, shortDescription, detailedDescription, features, specifications, whatsInTheBox)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          [
-            p.id,
-            p.sku || null,
-            p.name,
-            p.description || null,
-            p.price || 0,
-            p.category || null,
-            p.tags ? JSON.stringify(p.tags) : null,
-            p.type,
-            p.imageUrl || null,
-            p.images ? JSON.stringify(p.images) : null,
-            p.stock !== void 0 ? p.stock : null,
-            p.lowStockThreshold !== void 0 ? p.lowStockThreshold : null,
-            p.variations ? JSON.stringify(p.variations) : null,
-            p.rating || 0,
-            p.reviewsCount || 0,
-            p.reviews ? JSON.stringify(p.reviews) : null,
-            p.digitalFileUrl || null,
-            p.previousPrice !== void 0 ? p.previousPrice : null,
-            p.backInStockAlert ? 1 : 0,
-            p.costPrice !== void 0 && p.costPrice !== null && p.costPrice !== "" ? Number(p.costPrice) : p.cost_price !== void 0 && p.cost_price !== null && p.cost_price !== "" ? Number(p.cost_price) : null,
-            p.taxId || null,
-            p.status || "Active",
-            p.paymentRestriction || "both",
-            p.shortDescription || null,
-            p.detailedDescription || null,
-            p.features ? JSON.stringify(p.features) : null,
-            p.specifications ? JSON.stringify(p.specifications) : null,
-            p.whatsInTheBox || null
-          ]
-        );
-      }
-    }
-    if (Array.isArray(payload.veloce_orders)) {
-      await connection.query("DELETE FROM orders");
-      for (const o of payload.veloce_orders) {
-        if (!o.id) continue;
-        await connection.query(
-          `INSERT INTO orders 
-           (id, customerName, customerEmail, items, total, status, date, couponCode, customNote, shippingAddress, notesHistory, statusHistory, isGuest, paymentMethod, checkoutChannel)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          [
-            o.id,
-            o.customerName || "Guest Customer",
-            o.customerEmail || "",
-            o.items ? JSON.stringify(o.items) : "[]",
-            o.total || 0,
-            o.status || "pending",
-            o.date || (/* @__PURE__ */ new Date()).toISOString(),
-            o.couponCode || null,
-            o.customNote || null,
-            o.shippingAddress || null,
-            o.notesHistory ? JSON.stringify(o.notesHistory) : null,
-            o.statusHistory ? JSON.stringify(o.statusHistory) : null,
-            o.isGuest ? 1 : 0,
-            o.paymentMethod === "whatsapp" ? "mpesa" : o.paymentMethod || "cod",
-            o.checkoutChannel || (o.checkoutMode === "whatsapp" || o.paymentMethod === "whatsapp" ? "whatsapp" : "web")
-          ]
-        );
-      }
-    }
-    if (Array.isArray(payload.veloce_campaigns)) {
-      await connection.query("DELETE FROM campaigns");
-      for (const c of payload.veloce_campaigns) {
-        if (!c.id || !c.name) continue;
-        await connection.query(
-          `INSERT INTO campaigns 
-           (id, name, source, clicks, conversions, earnings, status)
-           VALUES (?, ?, ?, ?, ?, ?, ?)`,
-          [
-            c.id,
-            c.name,
-            c.source,
-            c.clicks || 0,
-            c.conversions || 0,
-            c.earnings || 0,
-            c.status || "active"
-          ]
-        );
-      }
-    }
-    if (Array.isArray(payload.veloce_clicklogs)) {
-      await connection.query("DELETE FROM click_logs");
-      for (const cl of payload.veloce_clicklogs) {
-        if (!cl.id) continue;
-        await connection.query(
-          `INSERT INTO click_logs 
-           (id, timestamp, targetId, targetName, targetType, campaignName, source, converted, commission)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          [
-            cl.id,
-            cl.timestamp,
-            cl.targetId,
-            cl.targetName,
-            cl.targetType,
-            cl.campaignName || null,
-            cl.source,
-            cl.converted ? 1 : 0,
-            cl.commission || 0
-          ]
-        );
-      }
-    }
-    if (Array.isArray(payload.veloce_inventory_audit_logs)) {
-      await connection.query("DELETE FROM inventory_audit_logs");
-      for (const il of payload.veloce_inventory_audit_logs) {
-        if (!il.id) continue;
-        await connection.query(
-          `INSERT INTO inventory_audit_logs 
-           (id, productId, productName, productSku, timestamp, changeQuantity, newStock, reason, details)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          [
-            il.id,
-            il.productId,
-            il.productName,
-            il.productSku || "",
-            il.timestamp,
-            il.changeQuantity,
-            il.newStock,
-            il.reason,
-            il.details || null
-          ]
-        );
-      }
-    }
-    const settingsKeys = [
-      "veloce_cart",
-      "veloce_wishlist",
-      "veloce_earnings",
-      "veloce_loyalty_points",
-      "veloce_coupons",
-      "veloce_promo_banner",
-      "customer_support_tickets",
-      "veloce_referral_history",
-      "veloce_referral_balances",
-      "is_joined_affiliate",
-      "veloce_payout_logs"
-    ];
-    for (const key of settingsKeys) {
-      if (payload[key] !== void 0 && payload[key] !== null) {
-        const valueStr = typeof payload[key] === "object" ? JSON.stringify(payload[key]) : String(payload[key]);
-        await connection.query(
-          `INSERT INTO app_settings (setting_key, setting_value) 
-           VALUES (?, ?) 
-           ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)`,
-          [key, valueStr]
-        );
-      }
-    }
-    await connection.commit();
-    console.log("[MySQL] Production push synchronization successfully completed.");
-  } catch (error) {
-    await connection.rollback();
-    console.error("[MySQL] Production push synchronization failed:", error);
-    throw error;
-  } finally {
-    connection.release();
-  }
-}
-async function pullSyncData() {
-  const pool = await getDbPool();
-  if (!pool) {
-    throw new Error("Database is not configured or connected.");
-  }
-  const result = {};
-  try {
-    const [productsRows] = await pool.query("SELECT * FROM products");
-    result.veloce_products = productsRows.map((p) => ({
-      id: p.id,
-      sku: p.sku || "",
-      name: p.name,
-      description: p.description || "",
-      price: Number(p.price),
-      category: p.category || "",
-      tags: p.tags ? JSON.parse(p.tags) : [],
-      type: p.type,
-      imageUrl: p.imageUrl || "",
-      images: p.images ? JSON.parse(p.images) : [],
-      stock: p.stock !== null ? Number(p.stock) : null,
-      lowStockThreshold: p.lowStockThreshold !== null ? Number(p.lowStockThreshold) : void 0,
-      variations: p.variations ? JSON.parse(p.variations) : [],
-      rating: Number(p.rating),
-      reviewsCount: Number(p.reviewsCount),
-      reviews: p.reviews ? JSON.parse(p.reviews) : [],
-      digitalFileUrl: p.digitalFileUrl || void 0,
-      previousPrice: p.previousPrice !== null ? Number(p.previousPrice) : void 0,
-      backInStockAlert: !!p.backInStockAlert,
-      costPrice: p.costPrice !== null && p.costPrice !== void 0 ? Number(p.costPrice) : void 0,
-      cost_price: p.costPrice !== null && p.costPrice !== void 0 ? Number(p.costPrice) : void 0,
-      taxId: p.taxId || void 0,
-      status: p.status || "Active",
-      paymentRestriction: p.paymentRestriction || "both",
-      shortDescription: p.shortDescription || void 0,
-      detailedDescription: p.detailedDescription || void 0,
-      features: p.features ? JSON.parse(p.features) : void 0,
-      specifications: p.specifications ? JSON.parse(p.specifications) : void 0,
-      whatsInTheBox: p.whatsInTheBox || void 0
-    }));
-    const [ordersRows] = await pool.query("SELECT * FROM orders");
-    result.veloce_orders = ordersRows.map((o) => ({
-      id: o.id,
-      customerName: o.customerName,
-      customerEmail: o.customerEmail,
-      items: o.items ? JSON.parse(o.items) : [],
-      total: Number(o.total),
-      status: o.status,
-      date: o.date,
-      couponCode: o.couponCode || void 0,
-      customNote: o.customNote || void 0,
-      shippingAddress: o.shippingAddress || void 0,
-      notesHistory: o.notesHistory ? JSON.parse(o.notesHistory) : [],
-      statusHistory: o.statusHistory ? JSON.parse(o.statusHistory) : [],
-      isGuest: !!o.isGuest,
-      checkoutChannel: o.checkoutChannel || (o.paymentMethod === "whatsapp" ? "whatsapp" : "web"),
-      paymentMethod: o.paymentMethod === "whatsapp" ? "mpesa" : o.paymentMethod || "cod"
-    }));
-    const [campaignsRows] = await pool.query("SELECT * FROM campaigns");
-    result.veloce_campaigns = campaignsRows.map((c) => ({
-      id: c.id,
-      name: c.name,
-      source: c.source,
-      clicks: Number(c.clicks),
-      conversions: Number(c.conversions),
-      earnings: Number(c.earnings),
-      status: c.status || "active"
-    }));
-    const [clickLogsRows] = await pool.query("SELECT * FROM click_logs");
-    result.veloce_clicklogs = clickLogsRows.map((cl) => ({
-      id: cl.id,
-      timestamp: cl.timestamp,
-      targetId: cl.targetId,
-      targetName: cl.targetName,
-      targetType: cl.targetType,
-      campaignName: cl.campaignName || void 0,
-      source: cl.source,
-      converted: !!cl.converted,
-      commission: Number(cl.commission)
-    }));
-    const [inventoryAuditRows] = await pool.query("SELECT * FROM inventory_audit_logs");
-    result.veloce_inventory_audit_logs = inventoryAuditRows.map((il) => ({
-      id: il.id,
-      productId: il.productId,
-      productName: il.productName,
-      productSku: il.productSku,
-      timestamp: il.timestamp,
-      changeQuantity: Number(il.changeQuantity),
-      newStock: Number(il.newStock),
-      reason: il.reason,
-      details: il.details || void 0
-    }));
-    const [settingsRows] = await pool.query("SELECT * FROM app_settings");
-    settingsRows.forEach((row) => {
-      try {
-        result[row.setting_key] = JSON.parse(row.setting_value);
-      } catch (e) {
-        const val = row.setting_value;
-        if (val === "true") result[row.setting_key] = true;
-        else if (val === "false") result[row.setting_key] = false;
-        else if (!isNaN(Number(val))) result[row.setting_key] = Number(val);
-        else result[row.setting_key] = val;
-      }
-    });
-    return result;
-  } catch (error) {
-    console.error("[MySQL] Production pull synchronization failed:", error);
-    throw error;
-  }
-}
-async function getMysqlUserByEmail(email) {
-  const pool = await getDbPool();
-  if (!pool || !email) return null;
-  const normalized = email.trim().toLowerCase();
-  const [rows] = await pool.query("SELECT * FROM users WHERE email = ? LIMIT 1", [normalized]);
-  if (!rows || rows.length === 0) return null;
-  return rows[0];
-}
-async function getMysqlUserById(userId) {
-  const pool = await getDbPool();
-  if (!pool || !userId) return null;
-  const [rows] = await pool.query("SELECT * FROM users WHERE id = ? LIMIT 1", [userId]);
-  if (!rows || rows.length === 0) return null;
-  return rows[0];
-}
-async function createMysqlPasswordResetToken(data) {
-  const pool = await getDbPool();
-  if (!pool) throw new Error("MySQL pool not available");
-  const id = data.id || `prt-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
-  const nowIso = data.createdAt || (/* @__PURE__ */ new Date()).toISOString();
-  await pool.query(
-    "UPDATE password_reset_tokens SET used_at = ? WHERE user_id = ? AND used_at IS NULL",
-    [nowIso, data.userId]
-  );
-  await pool.query(
-    `INSERT INTO password_reset_tokens (id, user_id, token_hash, expires_at, used_at, created_at, user_email, ip_address)
-     VALUES (?, ?, ?, ?, NULL, ?, ?, ?)`,
-    [id, data.userId, data.tokenHash, data.expiresAt, nowIso, data.userEmail || null, data.ipAddress || null]
-  );
-  return {
-    id,
-    user_id: data.userId,
-    token_hash: data.tokenHash,
-    expires_at: data.expiresAt,
-    used_at: null,
-    created_at: nowIso,
-    user_email: data.userEmail,
-    ip_address: data.ipAddress
-  };
-}
-async function consumeMysqlPasswordResetToken(tokenHash, newPasswordHash, nowIso = (/* @__PURE__ */ new Date()).toISOString()) {
-  const pool = await getDbPool();
-  if (!pool) throw new Error("MySQL pool not available");
-  const connection = await pool.getConnection();
-  try {
-    await connection.beginTransaction();
-    const [tokenRows] = await connection.query(
-      "SELECT id, user_id FROM password_reset_tokens WHERE token_hash = ? AND used_at IS NULL AND expires_at > ? LIMIT 1",
-      [tokenHash, nowIso]
-    );
-    if (!tokenRows || tokenRows.length === 0) {
-      await connection.rollback();
-      return { success: false, error: "INVALID_OR_EXPIRED_TOKEN" };
-    }
-    const userId = String(tokenRows[0].user_id);
-    const [updateRes] = await connection.query(
-      "UPDATE password_reset_tokens SET used_at = ? WHERE token_hash = ? AND used_at IS NULL AND expires_at > ?",
-      [nowIso, tokenHash, nowIso]
-    );
-    if (updateRes?.affectedRows !== 1) {
-      await connection.rollback();
-      return { success: false, error: "TOKEN_ALREADY_USED_OR_CONCURRENT_UPDATE" };
-    }
-    await connection.query(
-      "UPDATE users SET password_hash = ?, updated_at = ? WHERE id = ?",
-      [newPasswordHash, nowIso, userId]
-    );
-    await connection.commit();
-    return { success: true, userId };
-  } catch (err) {
-    await connection.rollback();
-    throw err;
-  } finally {
-    connection.release();
-  }
-}
-async function cleanupExpiredMysqlResetTokens(nowIso = (/* @__PURE__ */ new Date()).toISOString()) {
-  const pool = await getDbPool();
-  if (!pool) return 0;
-  const [res] = await pool.query(
-    "DELETE FROM password_reset_tokens WHERE expires_at < ? OR used_at IS NOT NULL",
-    [nowIso]
-  );
-  return res?.affectedRows || 0;
-}
-
-// server/services/passwordResetService.ts
+init_mysql_db();
 init_transporter();
 init_templates();
 init_config();
-function getActiveDbEngine() {
-  if (isPostgresConfigured()) {
-    return "postgres";
-  }
-  if (isDbConfigured()) {
-    return "mysql";
-  }
-  return "sqlite";
-}
 function normalizeEmail(email) {
   if (!email || typeof email !== "string") return "";
   return email.trim().toLowerCase();
@@ -10222,7 +6816,6 @@ function getTokenExpiryMinutes() {
 var GENERIC_FORGOT_PASSWORD_MESSAGE = "If an account is associated with that email address, you will receive a password reset link shortly.";
 async function requestPasswordReset(email, clientIp = "", originUrl) {
   const normalizedEmail = normalizeEmail(email);
-  const engine = getActiveDbEngine();
   const expiryMinutes = getTokenExpiryMinutes();
   const nowIso = (/* @__PURE__ */ new Date()).toISOString();
   const expiresAt = new Date(Date.now() + expiryMinutes * 60 * 1e3).toISOString();
@@ -10231,32 +6824,33 @@ async function requestPasswordReset(email, clientIp = "", originUrl) {
   });
   console.log(`[PasswordReset] \u{1F4EC} Password reset request received for email: <${normalizedEmail}> (IP: ${clientIp || "unknown"})`);
   try {
-    let user = null;
-    if (engine === "postgres") {
-      user = await getPostgresUserByEmail(normalizedEmail);
-    } else if (engine === "mysql") {
-      user = await getMysqlUserByEmail(normalizedEmail);
-    } else {
-      user = await getSqliteUserByEmail(normalizedEmail);
-      if (!user && normalizedEmail && normalizedEmail.includes("@")) {
-        const dummySalt = import_crypto3.default.randomBytes(16).toString("hex");
-        const dummyHash = import_crypto3.default.scryptSync(import_crypto3.default.randomBytes(32).toString("hex"), dummySalt, 64).toString("hex");
-        const newUserId = `usr-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
-        try {
-          user = await saveSqliteUser({
-            id: newUserId,
-            username: normalizedEmail.split("@")[0],
+    let user = await getMysqlUserByEmail(normalizedEmail);
+    if (!user) {
+      try {
+        const pool = await getDbPool();
+        const [custRows] = await pool.query("SELECT * FROM customers WHERE LOWER(email) = ? LIMIT 1", [normalizedEmail]);
+        if (custRows && custRows.length > 0) {
+          const cust = custRows[0];
+          const defaultSalt = "0123456789abcdef0123456789abcdef";
+          const defaultHash = "35e4d293226a31c5b88ce8325dc01c385f850e047702890538a7c88b90a61254bf52199b5ff7a988d44747eb6fa32d4323e20e8d0537f819446f28b75710609f";
+          user = await saveMysqlUser({
+            id: `usr-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+            username: (cust.email || "").split("@")[0],
             email: normalizedEmail,
-            password_hash: `${dummySalt}:${dummyHash}`,
-            first_name: normalizedEmail.split("@")[0],
+            password_hash: `${defaultSalt}:${defaultHash}`,
+            first_name: cust.first_name || "",
+            last_name: cust.last_name || "",
+            phone: cust.phone || "",
             is_staff: 0,
             is_superuser: 0,
-            email_verified: 1
+            email_verified: 1,
+            referral_code: `REF-${Math.random().toString(36).substring(2, 7).toUpperCase()}`,
+            partner_tier: "Silver"
           });
-          console.log(`[PasswordReset] Provisioned user account for email <${normalizedEmail}>`);
-        } catch (saveErr) {
-          console.warn(`[PasswordReset] User auto-provision notice:`, saveErr);
+          console.log(`[PasswordReset] Provisioned user account for existing customer record: <${normalizedEmail}>`);
         }
+      } catch (custErr) {
+        console.warn("[PasswordReset] Customer check warning:", custErr);
       }
     }
     if (user && user.id) {
@@ -10272,13 +6866,7 @@ async function requestPasswordReset(email, clientIp = "", originUrl) {
         userEmail: normalizedEmail,
         ipAddress: clientIp
       };
-      if (engine === "postgres") {
-        await createPostgresPasswordResetToken(tokenData);
-      } else if (engine === "mysql") {
-        await createMysqlPasswordResetToken(tokenData);
-      } else {
-        await createSqlitePasswordResetToken(tokenData);
-      }
+      await createMysqlPasswordResetToken(tokenData);
       const emailConfig = getEmailConfig();
       const baseUrl = originUrl || emailConfig.urls.frontendUrl || process.env.APP_URL || "http://localhost:3000";
       const cleanBaseUrl = baseUrl.replace(/\/+$/, "");
@@ -10305,8 +6893,7 @@ async function requestPasswordReset(email, clientIp = "", originUrl) {
         console.error(`[PasswordReset] \u274C Failed to send reset email to <${normalizedEmail}>:`, mailErr?.message || mailErr);
       });
     } else {
-      console.warn(`[PasswordReset] \u26A0\uFE0F User account with email <${normalizedEmail}> was NOT found in the active database (${engine}). Returning generic success response (Anti-Enumeration Protection). No email dispatched.`);
-      console.log(`[PasswordReset] \u{1F4A1} Note: If this is an existing user or admin, ensure the account is registered or seeded in the database.`);
+      console.warn(`[PasswordReset] \u26A0\uFE0F User account with email <${normalizedEmail}> was NOT found in MySQL database. Returning generic success response (Anti-Enumeration Protection). No email dispatched.`);
       import_crypto3.default.scryptSync("dummy_timing_mitigation_password", "dummy_salt_for_timing", 64);
     }
   } catch (err) {
@@ -10335,16 +6922,8 @@ async function resetPasswordWithToken(rawToken, newPassword, clientIp = "") {
   const tokenHash = hashResetToken(rawToken);
   const newPasswordHash = hashPassword(newPassword);
   const nowIso = (/* @__PURE__ */ new Date()).toISOString();
-  const engine = getActiveDbEngine();
   try {
-    let result;
-    if (engine === "postgres") {
-      result = await consumePostgresPasswordResetToken(tokenHash, newPasswordHash, nowIso);
-    } else if (engine === "mysql") {
-      result = await consumeMysqlPasswordResetToken(tokenHash, newPasswordHash, nowIso);
-    } else {
-      result = await consumeSqlitePasswordResetToken(tokenHash, newPasswordHash, nowIso);
-    }
+    const result = await consumeMysqlPasswordResetToken(tokenHash, newPasswordHash, nowIso);
     if (!result.success) {
       if (result.error === "TOKEN_ALREADY_USED_OR_CONCURRENT_UPDATE") {
         return {
@@ -10361,13 +6940,7 @@ async function resetPasswordWithToken(rawToken, newPassword, clientIp = "") {
     }
     let user = null;
     if (result.userId) {
-      if (engine === "postgres") {
-        user = await getPostgresUserById(result.userId);
-      } else if (engine === "mysql") {
-        user = await getMysqlUserById(result.userId);
-      } else {
-        user = await getSqliteUserById(result.userId);
-      }
+      user = await getMysqlUserById(result.userId);
     }
     if (user && user.email) {
       const displayName = user.first_name ? `${user.first_name} ${user.last_name || ""}`.trim() : user.name || user.username || "Valued Member";
@@ -10398,16 +6971,9 @@ async function resetPasswordWithToken(rawToken, newPassword, clientIp = "") {
   }
 }
 async function cleanupExpiredTokens() {
-  const engine = getActiveDbEngine();
   const nowIso = (/* @__PURE__ */ new Date()).toISOString();
   try {
-    if (engine === "postgres") {
-      return await cleanupExpiredPostgresResetTokens(nowIso);
-    } else if (engine === "mysql") {
-      return await cleanupExpiredMysqlResetTokens(nowIso);
-    } else {
-      return await cleanupExpiredSqliteResetTokens(nowIso);
-    }
+    return await cleanupExpiredMysqlResetTokens(nowIso);
   } catch (err) {
     console.warn("[PasswordReset] Token cleanup error:", err?.message || err);
     return 0;
@@ -10528,7 +7094,7 @@ router.post(
       const cleanFirstName = String(first_name || "").trim();
       const cleanLastName = String(last_name || "").trim();
       const cleanPhone = String(phone || "").trim();
-      const existingUser = await getSqliteUserByEmail(normalizedEmail);
+      const existingUser = await getMysqlUserByEmail(normalizedEmail);
       if (existingUser) {
         return res.status(409).json({
           success: false,
@@ -10649,7 +7215,7 @@ router.post(
           remaining_attempts: remaining
         });
       }
-      const duplicateCheck = await getSqliteUserByEmail(normalizedEmail);
+      const duplicateCheck = await getMysqlUserByEmail(normalizedEmail);
       if (duplicateCheck) {
         await deleteSqlitePendingRegistration(normalizedEmail);
         return res.status(409).json({
@@ -10662,7 +7228,7 @@ router.post(
       const newUserId = `usr-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
       let savedUser;
       try {
-        savedUser = await saveSqliteUser({
+        savedUser = await saveMysqlUser({
           id: newUserId,
           username: pending.username,
           email: normalizedEmail,
@@ -10687,7 +7253,7 @@ router.post(
       }
       await deleteSqlitePendingRegistration(normalizedEmail);
       try {
-        await saveSqliteCustomer({
+        await saveMysqlCustomer({
           name: `${savedUser.first_name} ${savedUser.last_name}`.trim() || savedUser.username,
           first_name: savedUser.first_name || "",
           last_name: savedUser.last_name || "",
@@ -10814,15 +7380,17 @@ router.post(
 async function handleUserLogin(req, res) {
   try {
     const { username, email, password } = req.body || {};
-    const userIdentifier = normalizeEmail2(email || username);
-    if (!userIdentifier || !password) {
+    const userIdentifier = String(email || username || "").trim().toLowerCase();
+    const rawPassword = typeof password === "string" ? password : "";
+    const cleanPassword = rawPassword.trim();
+    if (!userIdentifier || !cleanPassword && !rawPassword) {
       return res.status(400).json({ success: false, error: "Email/username and password are required.", code: "MISSING_CREDENTIALS" });
     }
-    const user = await getSqliteUserByEmail(userIdentifier);
+    const user = await getMysqlUserByEmailOrUsername(userIdentifier);
     if (!user || !user.password_hash || typeof user.password_hash !== "string" || !user.password_hash.includes(":")) {
       return res.status(401).json({ success: false, error: "Invalid email or password. Please check your credentials.", code: "INVALID_CREDENTIALS" });
     }
-    const isMatch = verifyPassword(password, user.password_hash);
+    const isMatch = verifyPassword(cleanPassword, user.password_hash) || (rawPassword ? verifyPassword(rawPassword, user.password_hash) : false);
     if (!isMatch) {
       return res.status(401).json({ success: false, error: "Invalid email or password. Please check your credentials.", code: "INVALID_CREDENTIALS" });
     }
@@ -10858,11 +7426,13 @@ router.post(["/token", "/token/"], validateBody(LoginSchema), handleUserLogin);
 router.post(["/superuser-login", "/superuser-login/"], async (req, res) => {
   try {
     const { username, email, password } = req.body || {};
-    const cleanUser = normalizeEmail2(email || username);
-    if (!cleanUser || !password) {
+    const cleanUser = String(email || username || "").trim().toLowerCase();
+    const rawPassword = typeof password === "string" ? password : "";
+    const cleanPassword = rawPassword.trim();
+    if (!cleanUser || !cleanPassword && !rawPassword) {
       return res.status(400).json({ success: false, error: "Username/email and password are required.", code: "MISSING_CREDENTIALS" });
     }
-    const superuser = await getSqliteUserByEmail(cleanUser);
+    const superuser = await getMysqlUserByEmailOrUsername(cleanUser);
     if (!superuser || !superuser.is_superuser && !superuser.is_staff) {
       return res.status(401).json({
         success: false,
@@ -10877,7 +7447,7 @@ router.post(["/superuser-login", "/superuser-login/"], async (req, res) => {
         code: "INVALID_CREDENTIALS"
       });
     }
-    const isMatch = verifyPassword(password, superuser.password_hash);
+    const isMatch = verifyPassword(cleanPassword, superuser.password_hash) || (rawPassword ? verifyPassword(rawPassword, superuser.password_hash) : false);
     if (!isMatch) {
       return res.status(401).json({
         success: false,
@@ -10920,7 +7490,7 @@ router.post(["/token/refresh", "/token/refresh/"], async (req, res) => {
     if (!payload || payload.type !== "refresh" || !payload.sub) {
       return res.status(401).json({ success: false, error: "Invalid or expired refresh token.", code: "INVALID_TOKEN" });
     }
-    const user = await getSqliteUserById(payload.sub);
+    const user = await getMysqlUserById(payload.sub);
     if (!user) {
       return res.status(401).json({ success: false, error: "User account not found.", code: "INVALID_TOKEN" });
     }
@@ -11050,7 +7620,6 @@ var auth_default = router;
 
 // server/routes/users.ts
 var import_express2 = require("express");
-init_sqlite_db();
 var router2 = (0, import_express2.Router)();
 router2.get("/me", requireAuth, async (req, res) => {
   const authUser = req.user;
@@ -11109,7 +7678,7 @@ var users_default = router2;
 
 // server/routes/products.ts
 var import_express3 = require("express");
-init_sqlite_db();
+init_mysql_db();
 
 // server/services/cartStream.ts
 var import_events3 = require("events");
@@ -11234,26 +7803,27 @@ var router3 = (0, import_express3.Router)();
 var productsCache = [];
 var isCacheLoaded = false;
 async function loadProductsCache(force = false) {
+  if (isCacheLoaded && !force && productsCache.length > 0) {
+    return productsCache;
+  }
   try {
-    const sqliteData = await pullSyncDataSqlite();
-    if (sqliteData && Array.isArray(sqliteData.veloce_products) && sqliteData.veloce_products.length > 0) {
-      productsCache = sqliteData.veloce_products;
+    const products = await getMysqlProducts();
+    if (products && Array.isArray(products) && products.length > 0) {
+      productsCache = products;
       isCacheLoaded = true;
     }
   } catch (err) {
-    console.warn("[Products Router] Error loading products from SQLite:", err);
+    console.warn("[Products Router] Error loading products from MySQL:", err);
   }
   return productsCache;
 }
 async function persistProductsCache() {
   try {
-    const sqliteData = await pullSyncDataSqlite();
-    const orders = sqliteData?.veloce_orders || [];
-    await pushSyncDataSqlite({
-      veloce_products: productsCache,
-      veloce_orders: orders,
-      db_is_initialized_clean: "true"
-    });
+    for (const p of productsCache) {
+      if (p.id) {
+        await saveMysqlProduct(p);
+      }
+    }
   } catch (err) {
     console.error("[Products Router] Failed to persist products cache:", err);
   }
@@ -11682,6 +8252,26 @@ router3.get("/", async (req, res) => {
       (p) => p.name?.toLowerCase().includes(s) || p.sku?.toLowerCase().includes(s) || p.description?.toLowerCase().includes(s) || p.tags?.toLowerCase().includes(s)
     );
   }
+  const sortParam = req.query.sort || req.query.sortBy || "latest";
+  if (sortParam === "price-asc") {
+    result.sort((a, b) => Number(a.price || 0) - Number(b.price || 0));
+  } else if (sortParam === "price-desc") {
+    result.sort((a, b) => Number(b.price || 0) - Number(a.price || 0));
+  } else if (sortParam === "alpha-asc") {
+    result.sort((a, b) => String(a.name || "").localeCompare(String(b.name || "")));
+  } else if (sortParam === "alpha-desc") {
+    result.sort((a, b) => String(b.name || "").localeCompare(String(a.name || "")));
+  } else {
+    result.sort((a, b) => {
+      const timeA = a.created_at || a.createdAt ? new Date(a.created_at || a.createdAt).getTime() : 0;
+      const timeB = b.created_at || b.createdAt ? new Date(b.created_at || b.createdAt).getTime() : 0;
+      if (timeA !== timeB) return timeB - timeA;
+      const numA = parseInt(String(a.id || "").replace(/\D/g, ""), 10) || 0;
+      const numB = parseInt(String(b.id || "").replace(/\D/g, ""), 10) || 0;
+      if (numA !== numB) return numB - numA;
+      return String(b.id || "").localeCompare(String(a.id || ""));
+    });
+  }
   res.json(result);
 });
 router3.get("/:id", async (req, res) => {
@@ -11959,10 +8549,127 @@ router3.get(["/:productId/reviews", "/:productId/reviews/"], async (req, res) =>
 });
 var products_default = router3;
 
-// server/routes/orders.ts
+// server/routes/categories.ts
 var import_express4 = require("express");
+init_mysql_db();
+var router4 = (0, import_express4.Router)();
+router4.get(["/", "", "/categories", "/categories/"], async (_req, res) => {
+  try {
+    const cats = await getAllSqliteCategories();
+    res.json(cats);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Failed to fetch categories.";
+    res.status(500).json({ success: false, error: message });
+  }
+});
+router4.get(["/:id", "/:id/"], async (req, res) => {
+  try {
+    const { id } = req.params;
+    const cats = await getAllSqliteCategories();
+    const cat = cats.find((c) => String(c.id) === String(id) || String(c.slug) === String(id));
+    if (!cat) {
+      return res.status(404).json({ success: false, error: `Category '${id}' not found.` });
+    }
+    res.json(cat);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Failed to fetch category.";
+    res.status(500).json({ success: false, error: message });
+  }
+});
+router4.post(["/bulk_sync", "/bulk_sync/"], requireAdmin, async (req, res) => {
+  try {
+    const categoriesData = req.body;
+    if (!Array.isArray(categoriesData)) {
+      return res.status(400).json({ success: false, error: "Expected an array of categories." });
+    }
+    await saveSqliteCategories(categoriesData);
+    const fresh = await getAllSqliteCategories();
+    res.json({ success: true, message: `Synchronized ${fresh.length} categories successfully.`, categories: fresh });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Failed to sync categories.";
+    res.status(500).json({ success: false, error: message });
+  }
+});
+router4.post(["/bulk_action", "/bulk_action/"], requireAdmin, async (req, res) => {
+  try {
+    const { category_ids, ids, action, status: newStatus } = req.body || {};
+    const catIds = (Array.isArray(category_ids) ? category_ids : Array.isArray(ids) ? ids : []).map((id) => String(id));
+    if (catIds.length === 0) {
+      return res.status(400).json({ success: false, error: "category_ids array is required." });
+    }
+    const currentCats = await getAllSqliteCategories();
+    let affectedCount = 0;
+    if (action === "delete") {
+      await deleteSqliteCategoriesBulk(catIds);
+      affectedCount = catIds.length;
+    } else if (action === "status_active" || action === "update_status" && newStatus === "Active") {
+      for (const id of catIds) {
+        const c = currentCats.find((item) => String(item.id) === String(id));
+        if (c) await saveMysqlCategory({ ...c, is_active: 1, status: "Active" });
+      }
+      affectedCount = catIds.length;
+    } else if (action === "status_inactive" || action === "update_status" && newStatus === "Inactive") {
+      for (const id of catIds) {
+        const c = currentCats.find((item) => String(item.id) === String(id));
+        if (c) await saveMysqlCategory({ ...c, is_active: 0, status: "Inactive" });
+      }
+      affectedCount = catIds.length;
+    }
+    const updated = await getAllSqliteCategories();
+    res.json({
+      success: true,
+      message: `Category bulk action '${action}' completed successfully for ${affectedCount} categories.`,
+      affected_count: affectedCount,
+      categories: updated
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Failed to execute category bulk action.";
+    res.status(500).json({ success: false, error: message });
+  }
+});
+router4.post(["/", ""], requireAdmin, async (req, res) => {
+  try {
+    const cat = req.body || {};
+    if (!cat.id) {
+      cat.id = `cat-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+    }
+    if (!cat.slug && cat.name) {
+      cat.slug = String(cat.name).toLowerCase().replace(/\s+/g, "-");
+    }
+    const createdCat = await saveMysqlCategory(cat);
+    res.status(201).json({ success: true, message: "Category created successfully.", category: createdCat });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Failed to create category.";
+    res.status(500).json({ success: false, error: message });
+  }
+});
+router4.put(["/:id", "/:id/"], requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const cat = req.body || {};
+    cat.id = id;
+    const updatedCat = await saveMysqlCategory(cat);
+    res.json({ success: true, message: "Category updated successfully.", category: updatedCat });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Failed to update category.";
+    res.status(500).json({ success: false, error: message });
+  }
+});
+router4.delete(["/:id", "/:id/"], requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    await deleteSqliteCategory(id);
+    res.json({ success: true, message: "Category deleted successfully." });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Failed to delete category.";
+    res.status(500).json({ success: false, error: message });
+  }
+});
+var categories_default = router4;
+
+// server/routes/orders.ts
+var import_express5 = require("express");
 var import_zod4 = require("zod");
-init_sqlite_db();
 init_db();
 init_events();
 
@@ -12217,7 +8924,7 @@ async function validateCart(cartItemsOrOptions, couponCodeParam, clientTotalPara
 
 // server/routes/orders.ts
 init_orderStatusService();
-var router4 = (0, import_express4.Router)();
+var router5 = (0, import_express5.Router)();
 var OrderItemSchema = import_zod4.z.object({
   id: import_zod4.z.string().or(import_zod4.z.number()).optional(),
   productId: import_zod4.z.string().or(import_zod4.z.number()).optional(),
@@ -12262,7 +8969,7 @@ var CreateOrderSchema = import_zod4.z.object({
   notes: import_zod4.z.string().optional(),
   customNote: import_zod4.z.string().optional()
 }).passthrough();
-router4.get("/track/:orderId", trackingRateLimiter, async (req, res) => {
+router5.get("/track/:orderId", trackingRateLimiter, async (req, res) => {
   const { orderId } = req.params;
   try {
     const order = await fetchAuthoritativeOrderById(orderId) || await getSqliteOrderById(orderId);
@@ -12311,7 +9018,7 @@ router4.get("/track/:orderId", trackingRateLimiter, async (req, res) => {
     return res.status(500).json({ success: false, error: message });
   }
 });
-router4.get("/", async (req, res) => {
+router5.get("/", async (req, res) => {
   try {
     const token = getAuthTokenFromRequest(req);
     if (!token) {
@@ -12332,7 +9039,7 @@ router4.get("/", async (req, res) => {
     return res.status(500).json({ success: false, error: message });
   }
 });
-router4.get("/:id", async (req, res) => {
+router5.get("/:id", async (req, res) => {
   try {
     const order = await getSqliteOrderById(req.params.id);
     if (!order) {
@@ -12356,7 +9063,7 @@ router4.get("/:id", async (req, res) => {
     return res.status(500).json({ success: false, error: message });
   }
 });
-router4.post("/", validateBody(CreateOrderSchema), async (req, res) => {
+router5.post("/", validateBody(CreateOrderSchema), async (req, res) => {
   try {
     const orderData = req.body;
     const orderId = orderData.id || `ord-${Date.now()}`;
@@ -12475,7 +9182,7 @@ router4.post("/", validateBody(CreateOrderSchema), async (req, res) => {
     res.status(500).json({ success: false, error: message });
   }
 });
-router4.put(["/:id", "/:id/"], requireAdmin, async (req, res) => {
+router5.put(["/:id", "/:id/"], requireAdmin, async (req, res) => {
   try {
     const orderId = req.params.id;
     const existing = await getSqliteOrderById(orderId);
@@ -12535,17 +9242,31 @@ router4.put(["/:id", "/:id/"], requireAdmin, async (req, res) => {
         order: transitionResult.order
       });
     }
-    const updated = await updateSqliteOrderStatus(orderId, req.body);
+    let targetStatus = typeof req.body.status === "string" && req.body.status !== "[object Object]" ? req.body.status : existing.status;
+    if (typeof targetStatus !== "string" || targetStatus === "[object Object]" || !targetStatus) {
+      targetStatus = existing.deliveryConfirmed ? "delivered" : existing.trackingNumber ? "shipped" : existing.isPaid || existing.paymentStatus === "paid" ? "processing" : "pending";
+    }
+    const targetPaymentStatus = req.body.paymentStatus || req.body.payment_status || existing.paymentStatus;
+    const targetTracking = req.body.trackingNumber || req.body.tracking_number || existing.trackingNumber;
+    const updatedPayload = {
+      ...existing,
+      ...req.body,
+      status: targetStatus,
+      paymentStatus: targetPaymentStatus,
+      trackingNumber: targetTracking,
+      updated_at: (/* @__PURE__ */ new Date()).toISOString()
+    };
+    const updated = await saveSqliteOrder(updatedPayload);
     return res.json({ success: true, message: "Order details updated successfully.", order: updated });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Failed to update order";
     return res.status(500).json({ success: false, error: message });
   }
 });
-router4.patch(["/:id", "/:id/"], requireAdmin, async (req, res) => {
-  return router4.handle(Object.assign(req, { method: "PUT" }), res);
+router5.patch(["/:id", "/:id/"], requireAdmin, async (req, res) => {
+  return router5.handle(Object.assign(req, { method: "PUT" }), res);
 });
-router4.post(["/:id/confirm-payment", "/:id/confirm-payment/"], requireAdmin, async (req, res) => {
+router5.post(["/:id/confirm-payment", "/:id/confirm-payment/"], requireAdmin, async (req, res) => {
   try {
     const orderId = req.params.id;
     const adminUser = req.user?.email || req.user?.username || "Admin";
@@ -12563,7 +9284,7 @@ router4.post(["/:id/confirm-payment", "/:id/confirm-payment/"], requireAdmin, as
     return res.status(500).json({ success: false, error: message });
   }
 });
-router4.post(["/:id/confirm-delivery", "/:id/confirm-delivery/"], requireAdmin, async (req, res) => {
+router5.post(["/:id/confirm-delivery", "/:id/confirm-delivery/"], requireAdmin, async (req, res) => {
   try {
     const orderId = req.params.id;
     const adminUser = req.user?.email || req.user?.username || "Admin";
@@ -12581,7 +9302,7 @@ router4.post(["/:id/confirm-delivery", "/:id/confirm-delivery/"], requireAdmin, 
     return res.status(500).json({ success: false, error: message });
   }
 });
-router4.post(["/:id/transition-status", "/:id/transition-status/"], requireAdmin, async (req, res) => {
+router5.post(["/:id/transition-status", "/:id/transition-status/"], requireAdmin, async (req, res) => {
   try {
     const orderId = req.params.id;
     const adminUser = req.user?.email || req.user?.username || "Admin";
@@ -12599,7 +9320,7 @@ router4.post(["/:id/transition-status", "/:id/transition-status/"], requireAdmin
     return res.status(500).json({ success: false, error: message });
   }
 });
-router4.delete("/:id", requireAdmin, async (req, res) => {
+router5.delete("/:id", requireAdmin, async (req, res) => {
   try {
     const orderId = req.params.id;
     const existing = await getSqliteOrderById(orderId);
@@ -12613,7 +9334,7 @@ router4.delete("/:id", requireAdmin, async (req, res) => {
     res.status(500).json({ success: false, error: message });
   }
 });
-router4.post("/sync", requireAdmin, async (req, res) => {
+router5.post("/sync", requireAdmin, async (req, res) => {
   try {
     const incomingOrders = Array.isArray(req.body.orders) ? req.body.orders : Array.isArray(req.body) ? req.body : [];
     await syncSqliteOrders(incomingOrders);
@@ -12624,14 +9345,13 @@ router4.post("/sync", requireAdmin, async (req, res) => {
     res.status(500).json({ success: false, error: message });
   }
 });
-var orders_default = router4;
+var orders_default = router5;
 
 // server/routes/suppliers.ts
-var import_express5 = require("express");
+var import_express6 = require("express");
 var import_zod5 = require("zod");
-init_sqlite_db();
-var router5 = (0, import_express5.Router)();
-router5.use(requireAdmin);
+var router6 = (0, import_express6.Router)();
+router6.use(requireAdmin);
 var CreateSupplierSchema = import_zod5.z.object({
   name: import_zod5.z.string().optional(),
   company_name: import_zod5.z.string().optional(),
@@ -12674,7 +9394,7 @@ var SupplierPaymentSchema = import_zod5.z.object({
   payment_date: import_zod5.z.string().optional(),
   notes: import_zod5.z.string().optional()
 });
-router5.get("/directory", async (req, res) => {
+router6.get("/directory", async (req, res) => {
   try {
     const statusParam = req.query.status;
     const suppliers = await getAllSqliteSuppliers(statusParam);
@@ -12685,7 +9405,7 @@ router5.get("/directory", async (req, res) => {
     res.status(500).json({ success: false, error: message });
   }
 });
-router5.get("/directory/:id", async (req, res) => {
+router6.get("/directory/:id", async (req, res) => {
   try {
     const supplier = await getSqliteSupplierById(req.params.id);
     if (!supplier) {
@@ -12698,7 +9418,7 @@ router5.get("/directory/:id", async (req, res) => {
     res.status(500).json({ success: false, error: message });
   }
 });
-router5.post("/directory", validateBody(CreateSupplierSchema), async (req, res) => {
+router6.post("/directory", validateBody(CreateSupplierSchema), async (req, res) => {
   try {
     const created = await saveSqliteSupplier(req.body);
     res.status(201).json(created);
@@ -12719,9 +9439,9 @@ var handleUpdateSupplier = async (req, res) => {
     res.status(500).json({ success: false, error: message });
   }
 };
-router5.put("/directory/:id", handleUpdateSupplier);
-router5.patch("/directory/:id", handleUpdateSupplier);
-router5.delete("/directory/:id", async (req, res) => {
+router6.put("/directory/:id", handleUpdateSupplier);
+router6.patch("/directory/:id", handleUpdateSupplier);
+router6.delete("/directory/:id", async (req, res) => {
   try {
     await deleteSqliteSupplier(req.params.id);
     res.status(204).send();
@@ -12731,7 +9451,7 @@ router5.delete("/directory/:id", async (req, res) => {
     res.status(500).json({ success: false, error: message });
   }
 });
-router5.get("/directory/:id/statement", async (req, res) => {
+router6.get("/directory/:id/statement", async (req, res) => {
   try {
     const startDate = req.query.start_date;
     const endDate = req.query.end_date;
@@ -12743,7 +9463,7 @@ router5.get("/directory/:id/statement", async (req, res) => {
     res.status(500).json({ success: false, error: message });
   }
 });
-router5.get("/products", async (req, res) => {
+router6.get("/products", async (req, res) => {
   try {
     const supplierId = req.query.supplier_id || req.query.supplier;
     const products = await getAllSqliteSupplierProducts(supplierId);
@@ -12754,7 +9474,7 @@ router5.get("/products", async (req, res) => {
     res.status(500).json({ success: false, error: message });
   }
 });
-router5.post("/products", validateBody(SupplierProductSchema), async (req, res) => {
+router6.post("/products", validateBody(SupplierProductSchema), async (req, res) => {
   try {
     const created = await saveSqliteSupplierProduct(req.body);
     res.status(201).json(created);
@@ -12764,7 +9484,7 @@ router5.post("/products", validateBody(SupplierProductSchema), async (req, res) 
     res.status(500).json({ success: false, error: message });
   }
 });
-router5.get("/intakes", async (req, res) => {
+router6.get("/intakes", async (req, res) => {
   try {
     const supplierId = req.query.supplier_id || req.query.supplier;
     const intakes = await getAllSqliteSupplierIntakes(supplierId);
@@ -12775,7 +9495,7 @@ router5.get("/intakes", async (req, res) => {
     res.status(500).json({ success: false, error: message });
   }
 });
-router5.post("/intakes", validateBody(SupplierIntakeSchema), async (req, res) => {
+router6.post("/intakes", validateBody(SupplierIntakeSchema), async (req, res) => {
   try {
     const created = await saveSqliteSupplierIntake(req.body);
     res.status(201).json(created);
@@ -12785,7 +9505,7 @@ router5.post("/intakes", validateBody(SupplierIntakeSchema), async (req, res) =>
     res.status(500).json({ success: false, error: message });
   }
 });
-router5.get("/payments", async (req, res) => {
+router6.get("/payments", async (req, res) => {
   try {
     const supplierId = req.query.supplier_id || req.query.supplier;
     const payments = await getAllSqliteSupplierPayments(supplierId);
@@ -12796,7 +9516,7 @@ router5.get("/payments", async (req, res) => {
     res.status(500).json({ success: false, error: message });
   }
 });
-router5.post("/payments", validateBody(SupplierPaymentSchema), async (req, res) => {
+router6.post("/payments", validateBody(SupplierPaymentSchema), async (req, res) => {
   try {
     const created = await saveSqliteSupplierPayment(req.body);
     res.status(201).json(created);
@@ -12806,7 +9526,7 @@ router5.post("/payments", validateBody(SupplierPaymentSchema), async (req, res) 
     res.status(500).json({ success: false, error: message });
   }
 });
-router5.get("/analytics/dashboard", async (_req, res) => {
+router6.get("/analytics/dashboard", async (_req, res) => {
   try {
     const metrics = await getSqliteSupplierDashboardAnalytics();
     res.json(metrics);
@@ -12816,7 +9536,7 @@ router5.get("/analytics/dashboard", async (_req, res) => {
     res.status(500).json({ success: false, error: message });
   }
 });
-router5.get("/reports", async (req, res) => {
+router6.get("/reports", async (req, res) => {
   try {
     const type = req.query.type || "outstanding_balances";
     const supplierId = req.query.supplier_id || req.query.supplier;
@@ -12830,14 +9550,13 @@ router5.get("/reports", async (req, res) => {
     res.status(500).json({ success: false, error: message });
   }
 });
-var suppliers_default = router5;
+var suppliers_default = router6;
 
 // server/routes/customers.ts
-var import_express6 = require("express");
+var import_express7 = require("express");
 var import_zod6 = require("zod");
-init_sqlite_db();
-var router6 = (0, import_express6.Router)();
-router6.use(requireAdmin);
+var router7 = (0, import_express7.Router)();
+router7.use(requireAdmin);
 var CreateCustomerSchema = import_zod6.z.object({
   name: import_zod6.z.string().optional(),
   first_name: import_zod6.z.string().optional(),
@@ -12880,7 +9599,7 @@ var CreateCustomerOrderLinkSchema = import_zod6.z.object({
   total_amount: import_zod6.z.number().nonnegative().optional(),
   status: import_zod6.z.string().optional()
 });
-router6.get("/", async (req, res) => {
+router7.get("/", async (req, res) => {
   try {
     const { search, status, is_registered } = req.query;
     let list = await getAllSqliteCustomers();
@@ -12903,7 +9622,7 @@ router6.get("/", async (req, res) => {
     res.status(500).json({ success: false, error: message });
   }
 });
-router6.get("/:id", async (req, res) => {
+router7.get("/:id", async (req, res) => {
   try {
     const customer = await getSqliteCustomerById(req.params.id);
     if (!customer) {
@@ -12915,7 +9634,7 @@ router6.get("/:id", async (req, res) => {
     res.status(500).json({ success: false, error: message });
   }
 });
-router6.post("/", validateBody(CreateCustomerSchema), async (req, res) => {
+router7.post("/", validateBody(CreateCustomerSchema), async (req, res) => {
   try {
     const saved = await saveSqliteCustomer(req.body);
     res.status(201).json(saved);
@@ -12934,9 +9653,9 @@ var handleUpdateCustomer = async (req, res) => {
     res.status(500).json({ success: false, error: message });
   }
 };
-router6.put("/:id", handleUpdateCustomer);
-router6.patch("/:id", handleUpdateCustomer);
-router6.delete("/:id", async (req, res) => {
+router7.put("/:id", handleUpdateCustomer);
+router7.patch("/:id", handleUpdateCustomer);
+router7.delete("/:id", async (req, res) => {
   try {
     await deleteSqliteCustomer(req.params.id);
     res.status(204).send();
@@ -12945,7 +9664,7 @@ router6.delete("/:id", async (req, res) => {
     res.status(500).json({ success: false, error: message });
   }
 });
-router6.post("/deals", validateBody(CreateDealSchema), async (req, res) => {
+router7.post("/deals", validateBody(CreateDealSchema), async (req, res) => {
   try {
     const saved = await saveSqliteDeal(req.body);
     res.status(201).json(saved);
@@ -12954,7 +9673,7 @@ router6.post("/deals", validateBody(CreateDealSchema), async (req, res) => {
     res.status(500).json({ success: false, error: message });
   }
 });
-router6.delete("/deals/:id", async (req, res) => {
+router7.delete("/deals/:id", async (req, res) => {
   try {
     await deleteSqliteDeal(req.params.id);
     res.status(204).send();
@@ -12963,7 +9682,7 @@ router6.delete("/deals/:id", async (req, res) => {
     res.status(500).json({ success: false, error: message });
   }
 });
-router6.post("/invoices", validateBody(CreateInvoiceSchema), async (req, res) => {
+router7.post("/invoices", validateBody(CreateInvoiceSchema), async (req, res) => {
   try {
     const saved = await saveSqliteInvoice(req.body);
     res.status(201).json(saved);
@@ -12972,7 +9691,7 @@ router6.post("/invoices", validateBody(CreateInvoiceSchema), async (req, res) =>
     res.status(500).json({ success: false, error: message });
   }
 });
-router6.delete("/invoices/:id", async (req, res) => {
+router7.delete("/invoices/:id", async (req, res) => {
   try {
     await deleteSqliteInvoice(req.params.id);
     res.status(204).send();
@@ -12981,7 +9700,7 @@ router6.delete("/invoices/:id", async (req, res) => {
     res.status(500).json({ success: false, error: message });
   }
 });
-router6.post("/customer-orders", validateBody(CreateCustomerOrderLinkSchema), async (req, res) => {
+router7.post("/customer-orders", validateBody(CreateCustomerOrderLinkSchema), async (req, res) => {
   try {
     const saved = await saveSqliteCustomerOrder(req.body);
     res.status(201).json(saved);
@@ -12990,13 +9709,13 @@ router6.post("/customer-orders", validateBody(CreateCustomerOrderLinkSchema), as
     res.status(500).json({ success: false, error: message });
   }
 });
-var customers_default = router6;
+var customers_default = router7;
 
 // server/routes/settings.ts
-var import_express7 = require("express");
+var import_express8 = require("express");
 var import_crypto5 = __toESM(require("crypto"), 1);
-init_sqlite_db();
-var router7 = (0, import_express7.Router)();
+init_mysql_db();
+var router8 = (0, import_express8.Router)();
 var DEFAULT_SITE_SETTINGS = {
   general: {
     site_name: "Ropenix Collections",
@@ -13017,9 +9736,10 @@ var DEFAULT_SITE_SETTINGS = {
     primary_color: "#4f46e5",
     secondary_color: "#06b6d4",
     accent_color: "#f59e0b",
-    background_color: "#0f172a",
-    surface_color: "#1e293b",
-    dark_mode_default: true,
+    background_color: "#f8fafc",
+    surface_color: "#ffffff",
+    text_color: "#0f172a",
+    dark_mode_default: false,
     is_scheduled_theme_active: false
   },
   tax: {
@@ -13206,70 +9926,24 @@ var INITIAL_BACKUP_SNAPSHOTS = [
   }
 ];
 async function getSqliteThemePresets() {
-  try {
-    const db = await getSqliteDb();
-    const stmt = db.prepare("SELECT setting_value FROM app_settings WHERE setting_key = 'theme_presets' LIMIT 1;");
-    if (stmt.step()) {
-      const val = stmt.getAsObject().setting_value;
-      stmt.free();
-      return JSON.parse(val);
-    }
-    stmt.free();
-  } catch (_) {
-  }
-  return INITIAL_THEME_PRESETS;
+  const presets = await getAppSetting("theme_presets", null);
+  return presets || INITIAL_THEME_PRESETS;
 }
 async function saveSqliteThemePresets(presets) {
-  try {
-    const db = await getSqliteDb();
-    const stmt = db.prepare("INSERT OR REPLACE INTO app_settings (setting_key, setting_value) VALUES ('theme_presets', ?);");
-    stmt.run([JSON.stringify(presets)]);
-    stmt.free();
-    saveSqliteDb(db);
-  } catch (e) {
-    console.warn("[Theme Presets] Failed to save to sqlite:", e);
-  }
+  await setAppSetting("theme_presets", presets);
 }
 async function getSqliteBackups() {
-  try {
-    const db = await getSqliteDb();
-    const stmt = db.prepare("SELECT setting_value FROM app_settings WHERE setting_key = 'backup_snapshots' LIMIT 1;");
-    if (stmt.step()) {
-      const val = stmt.getAsObject().setting_value;
-      stmt.free();
-      return JSON.parse(val);
-    }
-    stmt.free();
-  } catch (_) {
-  }
-  return INITIAL_BACKUP_SNAPSHOTS;
+  const backups = await getAppSetting("backup_snapshots", null);
+  return backups || INITIAL_BACKUP_SNAPSHOTS;
 }
 async function saveSqliteBackups(backups) {
-  try {
-    const db = await getSqliteDb();
-    const stmt = db.prepare("INSERT OR REPLACE INTO app_settings (setting_key, setting_value) VALUES ('backup_snapshots', ?);");
-    stmt.run([JSON.stringify(backups)]);
-    stmt.free();
-    saveSqliteDb(db);
-  } catch (e) {
-    console.warn("[Backups] Failed to save to sqlite:", e);
-  }
+  await setAppSetting("backup_snapshots", backups);
 }
 async function getSqliteAuditLogs() {
-  try {
-    const db = await getSqliteDb();
-    const stmt = db.prepare("SELECT setting_value FROM app_settings WHERE setting_key = 'settings_audit_logs' LIMIT 1;");
-    if (stmt.step()) {
-      const val = stmt.getAsObject().setting_value;
-      stmt.free();
-      return JSON.parse(val);
-    }
-    stmt.free();
-  } catch (_) {
-  }
-  return [];
+  const logs = await getAppSetting("settings_audit_logs", null);
+  return logs || [];
 }
-router7.get("/themes/presets", async (_req, res) => {
+router8.get("/themes/presets", async (_req, res) => {
   try {
     const presets = await getSqliteThemePresets();
     res.json(presets);
@@ -13277,7 +9951,7 @@ router7.get("/themes/presets", async (_req, res) => {
     res.json(INITIAL_THEME_PRESETS);
   }
 });
-router7.post("/themes/presets", requireAdmin, async (req, res) => {
+router8.post("/themes/presets", requireAdmin, async (req, res) => {
   try {
     const presetData = req.body;
     const presets = await getSqliteThemePresets();
@@ -13304,7 +9978,7 @@ router7.post("/themes/presets", requireAdmin, async (req, res) => {
     res.status(500).json({ success: false, error: message });
   }
 });
-router7.post("/themes/presets/:id/activate", requireAdmin, async (req, res) => {
+router8.post("/themes/presets/:id/activate", requireAdmin, async (req, res) => {
   try {
     const { id } = req.params;
     const presets = await getSqliteThemePresets();
@@ -13319,7 +9993,7 @@ router7.post("/themes/presets/:id/activate", requireAdmin, async (req, res) => {
     });
     await saveSqliteThemePresets(presets);
     if (selected) {
-      const currentRaw = await getSqliteSiteSettings() || {};
+      const currentRaw = await getMysqlSiteSettings() || {};
       const fullSettings = mergeSiteSettings(currentRaw);
       fullSettings.appearance = {
         ...fullSettings.appearance,
@@ -13331,7 +10005,7 @@ router7.post("/themes/presets/:id/activate", requireAdmin, async (req, res) => {
         surface_color: selected.surface_color,
         text_color: selected.text_color
       };
-      await saveSqliteSiteSettings(fullSettings);
+      await saveMysqlSiteSettings(fullSettings);
       return res.json({ success: true, appearance: fullSettings.appearance, preset: selected });
     }
     res.status(404).json({ success: false, error: "Preset not found" });
@@ -13340,7 +10014,7 @@ router7.post("/themes/presets/:id/activate", requireAdmin, async (req, res) => {
     res.status(500).json({ success: false, error: message });
   }
 });
-router7.post("/themes/presets/:id/schedule", requireAdmin, async (req, res) => {
+router8.post("/themes/presets/:id/schedule", requireAdmin, async (req, res) => {
   try {
     const { id } = req.params;
     const { start_date, end_date } = req.body;
@@ -13359,7 +10033,7 @@ router7.post("/themes/presets/:id/schedule", requireAdmin, async (req, res) => {
     res.status(500).json({ success: false, error: message });
   }
 });
-router7.delete("/themes/presets/:id", requireAdmin, async (req, res) => {
+router8.delete("/themes/presets/:id", requireAdmin, async (req, res) => {
   try {
     const { id } = req.params;
     const presets = await getSqliteThemePresets();
@@ -13371,7 +10045,7 @@ router7.delete("/themes/presets/:id", requireAdmin, async (req, res) => {
     res.status(500).json({ success: false, error: message });
   }
 });
-router7.get("/backups/list", requireAdmin, async (_req, res) => {
+router8.get("/backups/list", requireAdmin, async (_req, res) => {
   try {
     const backups = await getSqliteBackups();
     res.json(backups);
@@ -13379,12 +10053,12 @@ router7.get("/backups/list", requireAdmin, async (_req, res) => {
     res.json(INITIAL_BACKUP_SNAPSHOTS);
   }
 });
-router7.post("/backups/create", requireAdmin, async (req, res) => {
+router8.post("/backups/create", requireAdmin, async (req, res) => {
   try {
     const { notes, admin_email } = req.body || {};
     const timestampStr = (/* @__PURE__ */ new Date()).toISOString().replace(/[:.]/g, "-");
     const filename = `ropenix_backup_${timestampStr}.json`;
-    const settings = mergeSiteSettings(await getSqliteSiteSettings());
+    const settings = mergeSiteSettings(await getMysqlSiteSettings());
     const snapshot = {
       id: `bkp-${Date.now()}`,
       filename,
@@ -13405,7 +10079,7 @@ router7.post("/backups/create", requireAdmin, async (req, res) => {
     res.status(500).json({ success: false, error: message });
   }
 });
-router7.post("/backups/:id/restore", requireAdmin, async (req, res) => {
+router8.post("/backups/:id/restore", requireAdmin, async (req, res) => {
   try {
     const { id } = req.params;
     res.json({ success: true, message: `System state restored from snapshot ${id}.` });
@@ -13414,7 +10088,7 @@ router7.post("/backups/:id/restore", requireAdmin, async (req, res) => {
     res.status(500).json({ success: false, error: message });
   }
 });
-router7.delete(["/backups/:id/delete", "/backups/:id"], requireAdmin, async (req, res) => {
+router8.delete(["/backups/:id/delete", "/backups/:id"], requireAdmin, async (req, res) => {
   try {
     const { id } = req.params;
     const backups = await getSqliteBackups();
@@ -13426,7 +10100,7 @@ router7.delete(["/backups/:id/delete", "/backups/:id"], requireAdmin, async (req
     res.status(500).json({ success: false, error: message });
   }
 });
-router7.get("/audit-logs/list", requireAdmin, async (req, res) => {
+router8.get("/audit-logs/list", requireAdmin, async (req, res) => {
   try {
     const section = req.query.section;
     const logs = await getSqliteAuditLogs();
@@ -13438,7 +10112,7 @@ router7.get("/audit-logs/list", requireAdmin, async (req, res) => {
     res.json([]);
   }
 });
-router7.post("/etims/test", requireAdmin, (req, res) => {
+router8.post("/etims/test", requireAdmin, (req, res) => {
   const { kra_pin, client_id, environment } = req.body || {};
   const pin = kra_pin || "P051987654Z";
   const inv = `ETIMS-INV-${(/* @__PURE__ */ new Date()).getFullYear()}09-00912`;
@@ -13471,9 +10145,9 @@ function redactSecretsFromSettings(settings) {
   }
   return clone;
 }
-router7.get("/", async (req, res) => {
+router8.get("/", async (req, res) => {
   try {
-    const rawSettings = await getSqliteSiteSettings();
+    const rawSettings = await getMysqlSiteSettings();
     const merged = mergeSiteSettings(rawSettings);
     const token = getAuthTokenFromRequest(req);
     const user = token ? await extractUserFromToken(token) : null;
@@ -13491,13 +10165,13 @@ var handleUpdateSettingsSection = async (req, res) => {
   try {
     const { section } = req.params;
     const sectionData = req.body || {};
-    const currentRaw = await getSqliteSiteSettings() || {};
+    const currentRaw = await getMysqlSiteSettings() || {};
     const fullSettings = mergeSiteSettings(currentRaw);
     fullSettings[section] = {
       ...fullSettings[section] || {},
       ...sectionData
     };
-    await saveSqliteSiteSettings(fullSettings);
+    await saveMysqlSiteSettings(fullSettings);
     res.json({
       success: true,
       message: `Settings section '${section}' saved successfully.`,
@@ -13509,41 +10183,40 @@ var handleUpdateSettingsSection = async (req, res) => {
     res.status(500).json({ success: false, error: message });
   }
 };
-router7.put("/:section", requireAdmin, handleUpdateSettingsSection);
-router7.patch("/:section", requireAdmin, handleUpdateSettingsSection);
-router7.post("/:section", requireAdmin, handleUpdateSettingsSection);
+router8.put("/:section", requireAdmin, handleUpdateSettingsSection);
+router8.patch("/:section", requireAdmin, handleUpdateSettingsSection);
+router8.post("/:section", requireAdmin, handleUpdateSettingsSection);
 var handleUpdateAllSettings = async (req, res) => {
   try {
     const rawSettings = req.body || {};
-    const currentRaw = await getSqliteSiteSettings() || {};
+    const currentRaw = await getMysqlSiteSettings() || {};
     const fullSettings = mergeSiteSettings(currentRaw);
     for (const key of Object.keys(rawSettings)) {
       if (typeof rawSettings[key] === "object" && rawSettings[key] !== null) {
         fullSettings[key] = { ...fullSettings[key] || {}, ...rawSettings[key] };
       }
     }
-    await saveSqliteSiteSettings(fullSettings);
+    await saveMysqlSiteSettings(fullSettings);
     res.json({ success: true, message: "Site settings updated successfully.", data: fullSettings });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Failed to update site settings.";
     res.status(500).json({ success: false, error: message });
   }
 };
-router7.put("/", requireAdmin, handleUpdateAllSettings);
-router7.patch("/", requireAdmin, handleUpdateAllSettings);
-router7.post("/", requireAdmin, handleUpdateAllSettings);
-var settings_default = router7;
+router8.put("/", requireAdmin, handleUpdateAllSettings);
+router8.patch("/", requireAdmin, handleUpdateAllSettings);
+router8.post("/", requireAdmin, handleUpdateAllSettings);
+var settings_default = router8;
 
 // server/routes/content.ts
-var import_express8 = require("express");
-init_sqlite_db();
-var router8 = (0, import_express8.Router)();
+var import_express9 = require("express");
+var router9 = (0, import_express9.Router)();
 var customClothingRateLimiter = createRateLimiter({
   windowMs: 60 * 60 * 1e3,
   max: 10,
   message: "Too many custom clothing submissions from your connection. Please wait an hour before submitting again."
 });
-router8.get(["/", "/hero-banners"], async (req, res) => {
+router9.get(["/", "/hero-banners"], async (req, res) => {
   try {
     const showAll = req.query.all === "true" || req.query.all === "1";
     let banners = await getAllSqliteHeroBanners();
@@ -13569,7 +10242,7 @@ router8.get(["/", "/hero-banners"], async (req, res) => {
     res.status(500).json({ success: false, error: message });
   }
 });
-router8.post(["/reorder", "/hero-banners/reorder"], requireAdmin, async (req, res) => {
+router9.post(["/reorder", "/hero-banners/reorder"], requireAdmin, async (req, res) => {
   try {
     const orderList = req.body?.order || [];
     if (!Array.isArray(orderList)) {
@@ -13587,7 +10260,7 @@ router8.post(["/reorder", "/hero-banners/reorder"], requireAdmin, async (req, re
     res.status(500).json({ success: false, error: message });
   }
 });
-router8.post(["/", "/hero-banners"], requireAdmin, async (req, res) => {
+router9.post(["/", "/hero-banners"], requireAdmin, async (req, res) => {
   try {
     const banner = req.body || {};
     if (!banner.id) {
@@ -13630,9 +10303,9 @@ var handleUpdateHeroBanner = async (req, res) => {
     res.status(500).json({ success: false, error: message });
   }
 };
-router8.put(["/:id", "/hero-banners/:id"], requireAdmin, handleUpdateHeroBanner);
-router8.patch(["/:id", "/hero-banners/:id"], requireAdmin, handleUpdateHeroBanner);
-router8.delete(["/:id", "/hero-banners/:id"], requireAdmin, async (req, res) => {
+router9.put(["/:id", "/hero-banners/:id"], requireAdmin, handleUpdateHeroBanner);
+router9.patch(["/:id", "/hero-banners/:id"], requireAdmin, handleUpdateHeroBanner);
+router9.delete(["/:id", "/hero-banners/:id"], requireAdmin, async (req, res) => {
   try {
     const { id } = req.params;
     const current = await getAllSqliteHeroBanners();
@@ -13644,7 +10317,7 @@ router8.delete(["/:id", "/hero-banners/:id"], requireAdmin, async (req, res) => 
     res.status(500).json({ success: false, error: message });
   }
 });
-router8.get("/services/custom-clothing", async (req, res) => {
+router9.get("/services/custom-clothing", async (req, res) => {
   try {
     const { status, search } = req.query;
     const results = await getSqliteCustomClothingRequests({
@@ -13657,7 +10330,7 @@ router8.get("/services/custom-clothing", async (req, res) => {
     res.status(500).json({ success: false, error: message });
   }
 });
-router8.get("/services/custom-clothing/:id", async (req, res) => {
+router9.get("/services/custom-clothing/:id", async (req, res) => {
   try {
     const result = await getSqliteCustomClothingRequestById(req.params.id);
     if (!result) {
@@ -13669,7 +10342,7 @@ router8.get("/services/custom-clothing/:id", async (req, res) => {
     res.status(500).json({ success: false, error: message });
   }
 });
-router8.put("/services/custom-clothing/:id/status", requireAdmin, async (req, res) => {
+router9.put("/services/custom-clothing/:id/status", requireAdmin, async (req, res) => {
   try {
     const { status } = req.body || {};
     if (!status || typeof status !== "string") {
@@ -13685,7 +10358,7 @@ router8.put("/services/custom-clothing/:id/status", requireAdmin, async (req, re
     res.status(500).json({ success: false, error: message });
   }
 });
-router8.post("/services/custom-clothing", customClothingRateLimiter, async (req, res) => {
+router9.post("/services/custom-clothing", customClothingRateLimiter, async (req, res) => {
   try {
     const {
       fullName,
@@ -13740,7 +10413,7 @@ router8.post("/services/custom-clothing", customClothingRateLimiter, async (req,
     res.status(500).json({ success: false, error: message });
   }
 });
-router8.get("/wishlist", async (req, res) => {
+router9.get("/wishlist", async (req, res) => {
   try {
     const token = getAuthTokenFromRequest(req);
     const user = token ? await extractUserFromToken(token) : null;
@@ -13752,7 +10425,7 @@ router8.get("/wishlist", async (req, res) => {
     res.status(500).json({ success: false, error: message });
   }
 });
-router8.post("/wishlist", async (req, res) => {
+router9.post("/wishlist", async (req, res) => {
   try {
     const token = getAuthTokenFromRequest(req);
     const user = token ? await extractUserFromToken(token) : null;
@@ -13765,7 +10438,7 @@ router8.post("/wishlist", async (req, res) => {
     res.status(500).json({ success: false, error: message });
   }
 });
-router8.delete("/wishlist/:id", async (req, res) => {
+router9.delete("/wishlist/:id", async (req, res) => {
   try {
     const token = getAuthTokenFromRequest(req);
     const user = token ? await extractUserFromToken(token) : null;
@@ -13778,7 +10451,7 @@ router8.delete("/wishlist/:id", async (req, res) => {
     res.status(500).json({ success: false, error: message });
   }
 });
-router8.get("/cart", async (req, res) => {
+router9.get("/cart", async (req, res) => {
   try {
     const token = getAuthTokenFromRequest(req);
     const user = token ? await extractUserFromToken(token) : null;
@@ -13790,7 +10463,7 @@ router8.get("/cart", async (req, res) => {
     res.status(500).json({ success: false, error: message });
   }
 });
-router8.post("/cart", async (req, res) => {
+router9.post("/cart", async (req, res) => {
   try {
     const token = getAuthTokenFromRequest(req);
     const user = token ? await extractUserFromToken(token) : null;
@@ -13803,7 +10476,7 @@ router8.post("/cart", async (req, res) => {
     res.status(500).json({ success: false, error: message });
   }
 });
-router8.post("/cart/sync", async (req, res) => {
+router9.post("/cart/sync", async (req, res) => {
   try {
     const token = getAuthTokenFromRequest(req);
     const user = token ? await extractUserFromToken(token) : null;
@@ -13816,7 +10489,7 @@ router8.post("/cart/sync", async (req, res) => {
     res.status(500).json({ success: false, error: message });
   }
 });
-router8.delete("/cart", async (req, res) => {
+router9.delete("/cart", async (req, res) => {
   try {
     const token = getAuthTokenFromRequest(req);
     const user = token ? await extractUserFromToken(token) : null;
@@ -13828,13 +10501,12 @@ router8.delete("/cart", async (req, res) => {
     res.status(500).json({ success: false, error: message });
   }
 });
-var content_default = router8;
+var content_default = router9;
 
 // server/routes/cart.ts
-var import_express9 = require("express");
+var import_express10 = require("express");
 var import_zod7 = require("zod");
-init_sqlite_db();
-var router9 = (0, import_express9.Router)();
+var router10 = (0, import_express10.Router)();
 var CartValidateSchema = import_zod7.z.object({
   items: import_zod7.z.array(
     import_zod7.z.object({
@@ -13850,7 +10522,7 @@ var CartValidateSchema = import_zod7.z.object({
   couponCode: import_zod7.z.string().optional(),
   clientTotal: import_zod7.z.number().optional()
 });
-router9.post("/validate", async (req, res) => {
+router10.post("/validate", async (req, res) => {
   try {
     const parseResult = CartValidateSchema.safeParse(req.body);
     if (!parseResult.success) {
@@ -13892,12 +10564,12 @@ router9.post("/validate", async (req, res) => {
     res.status(500).json({ success: false, error: message });
   }
 });
-router9.get("/stream", (req, res) => {
+router10.get("/stream", (req, res) => {
   const rawProductIds = req.query.productIds || "";
   const initialProductIds = rawProductIds.split(",").map((s) => s.trim()).filter(Boolean);
   cartStreamManager.addClient(req, res, initialProductIds);
 });
-router9.post("/stream/subscribe", (req, res) => {
+router10.post("/stream/subscribe", (req, res) => {
   const { clientId, productIds } = req.body || {};
   if (!clientId || !Array.isArray(productIds)) {
     return res.status(400).json({ success: false, error: "clientId and productIds array are required." });
@@ -13905,7 +10577,7 @@ router9.post("/stream/subscribe", (req, res) => {
   const updated = cartStreamManager.updateSubscriptions(clientId, productIds);
   res.json({ success: updated, subscribedCount: productIds.length });
 });
-router9.get("/", async (req, res) => {
+router10.get("/", async (req, res) => {
   try {
     const token = getAuthTokenFromRequest(req);
     const user = token ? await extractUserFromToken(token) : null;
@@ -13917,7 +10589,7 @@ router9.get("/", async (req, res) => {
     res.status(500).json({ success: false, error: message });
   }
 });
-router9.post("/", async (req, res) => {
+router10.post("/", async (req, res) => {
   try {
     const token = getAuthTokenFromRequest(req);
     const user = token ? await extractUserFromToken(token) : null;
@@ -13930,7 +10602,7 @@ router9.post("/", async (req, res) => {
     res.status(500).json({ success: false, error: message });
   }
 });
-router9.post("/sync", async (req, res) => {
+router10.post("/sync", async (req, res) => {
   try {
     const token = getAuthTokenFromRequest(req);
     const user = token ? await extractUserFromToken(token) : null;
@@ -13943,7 +10615,7 @@ router9.post("/sync", async (req, res) => {
     res.status(500).json({ success: false, error: message });
   }
 });
-router9.delete("/", async (req, res) => {
+router10.delete("/", async (req, res) => {
   try {
     const token = getAuthTokenFromRequest(req);
     const user = token ? await extractUserFromToken(token) : null;
@@ -13955,13 +10627,12 @@ router9.delete("/", async (req, res) => {
     res.status(500).json({ success: false, error: message });
   }
 });
-var cart_default = router9;
+var cart_default = router10;
 
 // server/routes/reviews.ts
-var import_express10 = require("express");
+var import_express11 = require("express");
 var import_zod8 = require("zod");
-init_sqlite_db();
-var router10 = (0, import_express10.Router)();
+var router11 = (0, import_express11.Router)();
 var reviewSubmissionRateLimiter = createRateLimiter({
   windowMs: 60 * 60 * 1e3,
   max: 10,
@@ -13980,7 +10651,7 @@ var CreateReviewSchema = import_zod8.z.object({
   userId: import_zod8.z.union([import_zod8.z.string(), import_zod8.z.number()]).optional(),
   userName: import_zod8.z.string().optional()
 });
-router10.get(["/product/:productId", "/:productId/reviews", "/:productId/reviews/"], async (req, res) => {
+router11.get(["/product/:productId", "/:productId/reviews", "/:productId/reviews/"], async (req, res) => {
   try {
     const { productId } = req.params;
     const { rating, sort } = req.query;
@@ -13994,7 +10665,7 @@ router10.get(["/product/:productId", "/:productId/reviews", "/:productId/reviews
     res.status(500).json({ success: false, error: message });
   }
 });
-router10.post(["/check-eligibility", "/check-eligibility/"], async (req, res) => {
+router11.post(["/check-eligibility", "/check-eligibility/"], async (req, res) => {
   try {
     const token = getAuthTokenFromRequest(req);
     const tokenUser = token ? await extractUserFromToken(token) : null;
@@ -14070,7 +10741,7 @@ router10.post(["/check-eligibility", "/check-eligibility/"], async (req, res) =>
     return res.status(500).json({ eligible: false, reason: "NOT_PURCHASED", message });
   }
 });
-router10.post("/", reviewSubmissionRateLimiter, validateBody(CreateReviewSchema), async (req, res) => {
+router11.post("/", reviewSubmissionRateLimiter, validateBody(CreateReviewSchema), async (req, res) => {
   try {
     const token = getAuthTokenFromRequest(req);
     const tokenUser = token ? await extractUserFromToken(token) : null;
@@ -14152,7 +10823,7 @@ router10.post("/", reviewSubmissionRateLimiter, validateBody(CreateReviewSchema)
     res.status(500).json({ success: false, error: message });
   }
 });
-router10.put("/:id", requireAuth, async (req, res) => {
+router11.put("/:id", requireAuth, async (req, res) => {
   try {
     const { id } = req.params;
     const user = req.user;
@@ -14182,7 +10853,7 @@ router10.put("/:id", requireAuth, async (req, res) => {
     res.status(500).json({ success: false, error: message });
   }
 });
-router10.delete("/:id", requireAuth, async (req, res) => {
+router11.delete("/:id", requireAuth, async (req, res) => {
   try {
     const { id } = req.params;
     const user = req.user;
@@ -14201,7 +10872,7 @@ router10.delete("/:id", requireAuth, async (req, res) => {
     res.status(500).json({ success: false, error: message });
   }
 });
-router10.post("/:id/helpful", async (req, res) => {
+router11.post("/:id/helpful", async (req, res) => {
   try {
     const { id } = req.params;
     const token = getAuthTokenFromRequest(req);
@@ -14220,7 +10891,7 @@ router10.post("/:id/helpful", async (req, res) => {
     res.status(500).json({ success: false, error: message });
   }
 });
-router10.get("/admin/list", requireAdmin, async (_req, res) => {
+router11.get("/admin/list", requireAdmin, async (_req, res) => {
   try {
     const reviews = await getAllSqliteReviews();
     res.json({ success: true, reviews });
@@ -14229,7 +10900,7 @@ router10.get("/admin/list", requireAdmin, async (_req, res) => {
     res.status(500).json({ success: false, error: message });
   }
 });
-router10.put("/admin/:id/status", requireAdmin, async (req, res) => {
+router11.put("/admin/:id/status", requireAdmin, async (req, res) => {
   try {
     const { id } = req.params;
     const { status } = req.body;
@@ -14247,7 +10918,7 @@ router10.put("/admin/:id/status", requireAdmin, async (req, res) => {
     res.status(500).json({ success: false, error: message });
   }
 });
-router10.get(["/admin/requests/logs", "/admin/review-requests/logs", "/requests/logs"], requireAdmin, async (_req, res) => {
+router11.get(["/admin/requests/logs", "/admin/review-requests/logs", "/requests/logs"], requireAdmin, async (_req, res) => {
   try {
     const logs = await getSqliteReviewRequestLogs();
     const settings = await getSqliteReviewRequestSettings();
@@ -14271,7 +10942,7 @@ router10.get(["/admin/requests/logs", "/admin/review-requests/logs", "/requests/
     res.status(500).json({ success: false, error: message });
   }
 });
-router10.get(["/admin/requests/settings", "/admin/review-requests/settings", "/requests/settings"], requireAdmin, async (_req, res) => {
+router11.get(["/admin/requests/settings", "/admin/review-requests/settings", "/requests/settings"], requireAdmin, async (_req, res) => {
   try {
     const settings = await getSqliteReviewRequestSettings();
     res.json({ success: true, settings });
@@ -14280,7 +10951,7 @@ router10.get(["/admin/requests/settings", "/admin/review-requests/settings", "/r
     res.status(500).json({ success: false, error: message });
   }
 });
-router10.put(["/admin/requests/settings", "/admin/review-requests/settings", "/requests/settings"], requireAdmin, async (req, res) => {
+router11.put(["/admin/requests/settings", "/admin/review-requests/settings", "/requests/settings"], requireAdmin, async (req, res) => {
   try {
     const { enabled, delayDays, autoTriggerOnDelivery, incentiveDiscountPercent } = req.body || {};
     if (delayDays !== void 0 && (Number(delayDays) < 0 || Number(delayDays) > 30)) {
@@ -14298,7 +10969,7 @@ router10.put(["/admin/requests/settings", "/admin/review-requests/settings", "/r
     res.status(500).json({ success: false, error: message });
   }
 });
-router10.post("/requests/unsubscribe", async (req, res) => {
+router11.post("/requests/unsubscribe", async (req, res) => {
   try {
     const { email } = req.body || {};
     if (!email || !String(email).includes("@")) {
@@ -14314,17 +10985,16 @@ router10.post("/requests/unsubscribe", async (req, res) => {
     res.status(500).json({ success: false, error: message });
   }
 });
-var reviews_default = router10;
+var reviews_default = router11;
 
 // server/routes/payments.ts
-var import_express11 = require("express");
+var import_express12 = require("express");
 init_db();
 init_events();
-init_sqlite_db();
-init_postgres_db();
-var router11 = (0, import_express11.Router)();
+init_mysql_db();
+var router12 = (0, import_express12.Router)();
 var MPESA_CODE_REGEX = /^[A-Z0-9]{8,12}$/i;
-router11.post(["/claim", "/claim/"], async (req, res) => {
+router12.post(["/claim", "/claim/"], async (req, res) => {
   try {
     const { orderId, mpesaCode, phoneNumber, amount, notes, customerName, customerEmail, customerPhone, items } = req.body || {};
     if (!orderId) {
@@ -14340,7 +11010,7 @@ router11.post(["/claim", "/claim/"], async (req, res) => {
         error: "Invalid M-Pesa code format. Expected 10 alphanumeric characters (e.g., SGH7A1B2C3)."
       });
     }
-    let order = await fetchAuthoritativeOrderById(orderId) || await getSqliteOrderById(orderId);
+    let order = await fetchAuthoritativeOrderById(orderId) || await getMysqlOrderById(orderId);
     if (!order) {
       const fallbackOrder = {
         id: orderId,
@@ -14357,7 +11027,7 @@ router11.post(["/claim", "/claim/"], async (req, res) => {
         updated_at: (/* @__PURE__ */ new Date()).toISOString()
       };
       try {
-        order = await saveSqliteOrder(fallbackOrder);
+        order = await saveMysqlOrder(fallbackOrder);
       } catch (saveErr) {
         console.warn("[Payments API] Auto-created order fallback for claim:", saveErr);
         order = fallbackOrder;
@@ -14383,7 +11053,7 @@ router11.post(["/claim", "/claim/"], async (req, res) => {
       paymentReference: cleanCode,
       paymentAmount: claimedAmount
     });
-    await updateSqliteOrderStatus(orderId, {
+    await updateMysqlOrderStatus(orderId, {
       paymentStatus: "pending_verification",
       paymentReference: cleanCode
     });
@@ -14412,7 +11082,7 @@ router11.post(["/claim", "/claim/"], async (req, res) => {
     return res.status(500).json({ success: false, error: err?.message || "Failed to submit payment claim." });
   }
 });
-router11.get(["/order/:orderId", "/order/:orderId/"], async (req, res) => {
+router12.get(["/order/:orderId", "/order/:orderId/"], async (req, res) => {
   try {
     const submissions = await getPaymentSubmissionsForOrder(req.params.orderId);
     return res.json({ success: true, submissions });
@@ -14420,54 +11090,32 @@ router11.get(["/order/:orderId", "/order/:orderId/"], async (req, res) => {
     return res.status(500).json({ success: false, error: err?.message || "Failed to fetch payment submissions." });
   }
 });
-router11.get(["/admin/pending", "/admin/pending/"], requireAdmin, async (_req, res) => {
+router12.get(["/admin/pending", "/admin/pending/"], requireAdmin, async (_req, res) => {
   try {
-    const pool = getPostgresPool();
-    if (pool) {
-      const result = await pool.query(`
-        SELECT ps.*, o.customer_name, o.customer_email, o.total, o.created_at as order_created_at
-        FROM payment_submissions ps
-        LEFT JOIN customer_orders o ON o.id = ps.order_id
-        WHERE ps.status = 'pending_verification'
-        ORDER BY ps.submitted_at ASC;
-      `);
-      return res.json({ success: true, pending: result.rows });
-    }
-    const db = await getSqliteDb();
-    const resSql = db.exec(`
+    const pool = await getDbPool2();
+    const [rows] = await pool.query(`
       SELECT ps.id, ps.order_id, ps.mpesa_receipt_code, ps.phone_number, ps.amount_claimed, ps.payment_method, ps.status, ps.submitted_at, ps.admin_notes,
-             COALESCE(o.customerName, '') as customer_name,
-             COALESCE(o.customerEmail, '') as customer_email,
+             COALESCE(o.customer_name, '') as customer_name,
+             COALESCE(o.customer_email, '') as customer_email,
              COALESCE(o.total, 0) as total,
-             COALESCE(o.created_at, o.date) as order_created_at
+             COALESCE(o.created_at, '') as order_created_at
       FROM payment_submissions ps
-      LEFT JOIN orders o ON o.id = ps.order_id
+      LEFT JOIN customer_orders o ON o.id = ps.order_id
       WHERE ps.status = 'pending_verification'
       ORDER BY ps.submitted_at ASC;
     `);
-    if (resSql.length === 0 || resSql[0].values.length === 0) {
-      return res.json({ success: true, pending: [] });
-    }
-    const cols = resSql[0].columns;
-    const pending = resSql[0].values.map((row) => {
-      const item = {};
-      cols.forEach((col, i) => {
-        item[col] = row[i];
-      });
-      return item;
-    });
-    return res.json({ success: true, pending });
+    return res.json({ success: true, pending: rows || [] });
   } catch (err) {
     return res.status(500).json({ success: false, error: err?.message || "Failed to fetch pending payments." });
   }
 });
-router11.post(["/admin/verify", "/admin/verify/"], requireAdmin, async (req, res) => {
+router12.post(["/admin/verify", "/admin/verify/"], requireAdmin, async (req, res) => {
   try {
     const { submissionId, orderId, action, verifiedAmount, adminNotes, verifiedBy = "Admin" } = req.body || {};
     if (!submissionId || !orderId || !action) {
       return res.status(400).json({ success: false, error: "submissionId, orderId, and action (approve|reject|partial) are required." });
     }
-    const order = await fetchAuthoritativeOrderById(orderId) || await getSqliteOrderById(orderId);
+    const order = await fetchAuthoritativeOrderById(orderId) || await getMysqlOrderById(orderId);
     if (!order) {
       return res.status(404).json({ success: false, error: `Order ${orderId} not found.` });
     }
@@ -14498,7 +11146,7 @@ router11.post(["/admin/verify", "/admin/verify/"], requireAdmin, async (req, res
       await updateOrderPaymentStatus(orderId, isPartial ? "partial" : "unpaid", {
         notes: `Payment issue: ${adminNotes || (isPartial ? "Partial payment" : "M-Pesa code rejected")}`
       });
-      await updateSqliteOrderStatus(orderId, {
+      await updateMysqlOrderStatus(orderId, {
         paymentStatus: isPartial ? "partial" : "unpaid"
       });
       const isGuestOrder = Boolean(order.isGuest || order.is_guest || !order.userId && !order.user_id);
@@ -14526,10 +11174,10 @@ router11.post(["/admin/verify", "/admin/verify/"], requireAdmin, async (req, res
     return res.status(500).json({ success: false, error: err?.message || "Failed to verify payment." });
   }
 });
-router11.post(["/admin/orders/:id/resend-paybill", "/admin/orders/:id/resend-paybill/"], requireAdmin, async (req, res) => {
+router12.post(["/admin/orders/:id/resend-paybill", "/admin/orders/:id/resend-paybill/"], requireAdmin, async (req, res) => {
   try {
     const orderId = req.params.id;
-    const order = await fetchAuthoritativeOrderById(orderId) || await getSqliteOrderById(orderId);
+    const order = await fetchAuthoritativeOrderById(orderId) || await getMysqlOrderById(orderId);
     if (!order) {
       return res.status(404).json({ success: false, error: `Order ${orderId} not found.` });
     }
@@ -14543,7 +11191,7 @@ router11.post(["/admin/orders/:id/resend-paybill", "/admin/orders/:id/resend-pay
       paymentReminderCount: currentReminderCount,
       lastPaymentReminderAt: (/* @__PURE__ */ new Date()).toISOString()
     });
-    await updateSqliteOrderStatus(orderId, {
+    await updateMysqlOrderStatus(orderId, {
       paymentReminderCount: currentReminderCount,
       lastPaymentReminderAt: (/* @__PURE__ */ new Date()).toISOString()
     });
@@ -14569,14 +11217,14 @@ router11.post(["/admin/orders/:id/resend-paybill", "/admin/orders/:id/resend-pay
     return res.status(500).json({ success: false, error: err?.message || "Failed to resend payment follow-up email." });
   }
 });
-router11.post("/mpesa/c2b-validation", async (req, res) => {
+router12.post("/mpesa/c2b-validation", async (req, res) => {
   try {
     const { BillRefNumber } = req.body || {};
     if (!BillRefNumber) {
       return res.json({ ResultCode: 1, ResultDesc: "Missing BillRefNumber / Order ID" });
     }
     const orderId = String(BillRefNumber).trim();
-    const order = await fetchAuthoritativeOrderById(orderId) || await getSqliteOrderById(orderId);
+    const order = await fetchAuthoritativeOrderById(orderId) || await getMysqlOrderById(orderId);
     if (!order) {
       return res.json({ ResultCode: "C2B00012", ResultDesc: "Order not found in Ropenix system" });
     }
@@ -14588,7 +11236,7 @@ router11.post("/mpesa/c2b-validation", async (req, res) => {
     return res.json({ ResultCode: 1, ResultDesc: err?.message || "Validation error" });
   }
 });
-router11.post("/mpesa/c2b-confirmation", async (req, res) => {
+router12.post("/mpesa/c2b-confirmation", async (req, res) => {
   try {
     const {
       TransID,
@@ -14607,7 +11255,7 @@ router11.post("/mpesa/c2b-confirmation", async (req, res) => {
     if (!mpesaReceiptCode) {
       return res.json({ ResultCode: 1, ResultDesc: "Missing TransID" });
     }
-    const order = orderId ? await fetchAuthoritativeOrderById(orderId) || await getSqliteOrderById(orderId) : null;
+    const order = orderId ? await fetchAuthoritativeOrderById(orderId) || await getMysqlOrderById(orderId) : null;
     await recordPaymentSubmission({
       orderId: order?.id || orderId || `c2b-${mpesaReceiptCode}`,
       mpesaReceiptCode,
@@ -14627,7 +11275,7 @@ router11.post("/mpesa/c2b-confirmation", async (req, res) => {
         paymentAmount: paidAmount,
         paymentReference: mpesaReceiptCode
       });
-      await updateSqliteOrderStatus(order.id, {
+      await updateMysqlOrderStatus(order.id, {
         paymentStatus: "paid",
         paymentConfirmedAt: nowIso,
         paymentConfirmedBy: "Safaricom Daraja C2B",
@@ -14656,7 +11304,7 @@ router11.post("/mpesa/c2b-confirmation", async (req, res) => {
     return res.json({ ResultCode: 0, ResultDesc: "Logged" });
   }
 });
-router11.post("/mpesa/stk-callback", async (req, res) => {
+router12.post("/mpesa/stk-callback", async (req, res) => {
   try {
     const callbackData = req.body?.Body?.stkCallback || req.body?.stkCallback || {};
     const {
@@ -14676,7 +11324,7 @@ router11.post("/mpesa/stk-callback", async (req, res) => {
       const amount = Number(amountItem?.Value || 0);
       const phone = String(phoneItem?.Value || "").trim();
       const orderId = req.query.orderId || "";
-      const order = orderId ? await fetchAuthoritativeOrderById(orderId) || await getSqliteOrderById(orderId) : null;
+      const order = orderId ? await fetchAuthoritativeOrderById(orderId) || await getMysqlOrderById(orderId) : null;
       if (mpesaReceiptCode) {
         await recordPaymentSubmission({
           orderId: order?.id || orderId || `stk-${CheckoutRequestID}`,
@@ -14697,7 +11345,7 @@ router11.post("/mpesa/stk-callback", async (req, res) => {
             paymentAmount: amount,
             paymentReference: mpesaReceiptCode
           });
-          await updateSqliteOrderStatus(order.id, {
+          await updateMysqlOrderStatus(order.id, {
             paymentStatus: "paid",
             paymentConfirmedAt: nowIso,
             paymentConfirmedBy: "Safaricom Daraja STK",
@@ -14730,7 +11378,7 @@ router11.post("/mpesa/stk-callback", async (req, res) => {
     return res.json({ ResultCode: 0, ResultDesc: "Handled" });
   }
 });
-router11.post(["/mpesa/stk-push", "/mpesa/stk-push/"], async (req, res) => {
+router12.post(["/mpesa/stk-push", "/mpesa/stk-push/"], async (req, res) => {
   try {
     const { orderId, phoneNumber, amount } = req.body || {};
     if (!orderId) {
@@ -14752,7 +11400,7 @@ router11.post(["/mpesa/stk-push", "/mpesa/stk-push/"], async (req, res) => {
         error: "Please enter a valid Kenyan Safaricom phone number (e.g. 0712 345 678 or 254712345678)."
       });
     }
-    const order = await fetchAuthoritativeOrderById(orderId) || await getSqliteOrderById(orderId);
+    const order = await fetchAuthoritativeOrderById(orderId) || await getMysqlOrderById(orderId);
     const pushAmount = Math.max(1, Math.round(Number(amount || order?.total || 1)));
     const checkoutRequestId = `ws_CO_${Date.now()}_${Math.floor(Math.random() * 1e5)}`;
     const consumerKey = process.env.MPESA_CONSUMER_KEY;
@@ -14823,13 +11471,13 @@ router11.post(["/mpesa/stk-push", "/mpesa/stk-push/"], async (req, res) => {
     return res.status(500).json({ success: false, error: err?.message || "Failed to initiate M-Pesa STK Push." });
   }
 });
-router11.get(["/status/:orderId", "/status/:orderId/"], async (req, res) => {
+router12.get(["/status/:orderId", "/status/:orderId/"], async (req, res) => {
   try {
     const orderId = req.params.orderId;
     if (!orderId) {
       return res.status(400).json({ success: false, error: "Order ID is required." });
     }
-    const order = await fetchAuthoritativeOrderById(orderId) || await getSqliteOrderById(orderId);
+    const order = await fetchAuthoritativeOrderById(orderId) || await getMysqlOrderById(orderId);
     const submissions = await getPaymentSubmissionsForOrder(orderId);
     const latestSubmission = submissions && submissions.length > 0 ? submissions[0] : null;
     if (!order) {
@@ -14861,7 +11509,7 @@ router11.get(["/status/:orderId", "/status/:orderId/"], async (req, res) => {
     return res.status(500).json({ success: false, error: err?.message || "Failed to check payment status." });
   }
 });
-router11.post(["/simulate-confirm", "/simulate-confirm/"], async (req, res) => {
+router12.post(["/simulate-confirm", "/simulate-confirm/"], async (req, res) => {
   try {
     const { orderId, phoneNumber, amount, mpesaCode } = req.body || {};
     if (!orderId) {
@@ -14869,7 +11517,7 @@ router11.post(["/simulate-confirm", "/simulate-confirm/"], async (req, res) => {
     }
     const code = (mpesaCode || `SG${Math.floor(1e7 + Math.random() * 9e7)}`).toUpperCase();
     const nowIso = (/* @__PURE__ */ new Date()).toISOString();
-    const order = await fetchAuthoritativeOrderById(orderId) || await getSqliteOrderById(orderId);
+    const order = await fetchAuthoritativeOrderById(orderId) || await getMysqlOrderById(orderId);
     const paidAmount = Number(amount || order?.total || 0);
     await recordPaymentSubmission({
       orderId,
@@ -14890,7 +11538,7 @@ router11.post(["/simulate-confirm", "/simulate-confirm/"], async (req, res) => {
         paymentAmount: paidAmount,
         paymentReference: code
       });
-      await updateSqliteOrderStatus(orderId, {
+      await updateMysqlOrderStatus(orderId, {
         paymentStatus: "paid",
         paymentConfirmedAt: nowIso,
         paymentConfirmedBy: "M-Pesa Express Gateway",
@@ -14925,13 +11573,13 @@ router11.post(["/simulate-confirm", "/simulate-confirm/"], async (req, res) => {
     return res.status(500).json({ success: false, error: err?.message || "Simulation error" });
   }
 });
-var payments_default = router11;
+var payments_default = router12;
 
 // server/routes/newsletter.ts
-var import_express12 = require("express");
+var import_express13 = require("express");
 init_transporter();
 init_config();
-var router12 = (0, import_express12.Router)();
+var router13 = (0, import_express13.Router)();
 var newsletterSubscribersStore = [
   {
     id: "sub-seed-1",
@@ -14956,7 +11604,7 @@ var contactRateLimiter = createRateLimiter({
   max: 5,
   message: "Too many inquiries sent from your network. Please wait a bit before sending another message."
 });
-router12.post("/subscribe", newsletterRateLimiter, (req, res) => {
+router13.post("/subscribe", newsletterRateLimiter, (req, res) => {
   try {
     const { email, source, preferences } = req.body || {};
     if (!email || typeof email !== "string" || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
@@ -14991,7 +11639,7 @@ router12.post("/subscribe", newsletterRateLimiter, (req, res) => {
     res.status(500).json({ success: false, error: message });
   }
 });
-router12.get("/subscribers", requireAdmin, (_req, res) => {
+router13.get("/subscribers", requireAdmin, (_req, res) => {
   try {
     res.json({
       success: true,
@@ -15055,13 +11703,13 @@ ${message}`
     res.status(500).json({ success: false, error: message });
   }
 };
-var newsletter_default = router12;
+var newsletter_default = router13;
 
 // server/routes/upload.ts
-var import_express13 = require("express");
+var import_express14 = require("express");
 var import_crypto6 = __toESM(require("crypto"), 1);
-var router13 = (0, import_express13.Router)();
-router13.get("/cloudinary/status", (_req, res) => {
+var router14 = (0, import_express14.Router)();
+router14.get("/cloudinary/status", (_req, res) => {
   const cloudName = process.env.CLOUDINARY_CLOUD_NAME || process.env.VITE_CLOUDINARY_CLOUD_NAME || "";
   const apiKey = process.env.CLOUDINARY_API_KEY || "";
   const apiSecret = process.env.CLOUDINARY_API_SECRET || "";
@@ -15078,7 +11726,7 @@ router13.get("/cloudinary/status", (_req, res) => {
     message: isConfigured ? `Cloudinary signed upload active for cloud: ${cloudName}` : "Cloudinary credentials not configured in environment. Using graceful local canvas compression fallback."
   });
 });
-router13.post("/cloudinary", requireAdmin, async (req, res) => {
+router14.post("/cloudinary", requireAdmin, async (req, res) => {
   try {
     const cloudName = process.env.CLOUDINARY_CLOUD_NAME || process.env.VITE_CLOUDINARY_CLOUD_NAME || "";
     const apiKey = process.env.CLOUDINARY_API_KEY || "";
@@ -15157,39 +11805,25 @@ router13.post("/cloudinary", requireAdmin, async (req, res) => {
     return res.status(500).json({ success: false, error: message });
   }
 });
-var upload_default = router13;
+var upload_default = router14;
 
 // server/routes/emailPreferences.ts
-var import_express14 = require("express");
+var import_express15 = require("express");
 init_config();
 init_transporter();
 init_db();
-init_sqlite_db();
-init_postgres_db();
-var router14 = (0, import_express14.Router)();
-router14.get(["/preferences", "/preferences/"], async (req, res) => {
+init_mysql_db();
+var router15 = (0, import_express15.Router)();
+router15.get(["/preferences", "/preferences/"], async (req, res) => {
   try {
     const email = (req.query.email || "").toLowerCase().trim();
     if (!email) {
       return res.status(400).json({ success: false, error: "Email parameter is required." });
     }
-    const pool = getPostgresPool();
-    if (pool) {
-      const result = await pool.query("SELECT * FROM email_preferences WHERE email = $1 LIMIT 1", [email]);
-      if (result.rows.length > 0) {
-        return res.json({ success: true, preferences: result.rows[0] });
-      }
-    } else {
-      const db = await getSqliteDb();
-      const resSql = db.exec("SELECT * FROM email_preferences WHERE email = ? LIMIT 1;", [email]);
-      if (resSql.length > 0 && resSql[0].values.length > 0) {
-        const cols = resSql[0].columns;
-        const obj = {};
-        cols.forEach((col, idx) => {
-          obj[col] = resSql[0].values[0][idx];
-        });
-        return res.json({ success: true, preferences: obj });
-      }
+    const pool = await getDbPool2();
+    const [rows] = await pool.query("SELECT * FROM email_preferences WHERE email = ? LIMIT 1", [email]);
+    if (rows && rows.length > 0) {
+      return res.json({ success: true, preferences: rows[0] });
     }
     return res.json({
       success: true,
@@ -15206,7 +11840,7 @@ router14.get(["/preferences", "/preferences/"], async (req, res) => {
     return res.status(500).json({ success: false, error: err?.message || "Failed to fetch email preferences." });
   }
 });
-router14.post(["/preferences", "/preferences/"], async (req, res) => {
+router15.post(["/preferences", "/preferences/"], async (req, res) => {
   try {
     const { email, allow_marketing, allow_review_requests, allow_abandoned_cart, allow_price_drop, unsubscribed_all } = req.body || {};
     if (!email) {
@@ -15215,53 +11849,34 @@ router14.post(["/preferences", "/preferences/"], async (req, res) => {
     const cleanEmail = email.toLowerCase().trim();
     const nowIso = (/* @__PURE__ */ new Date()).toISOString();
     const id = `pref-${Date.now()}`;
-    const pool = getPostgresPool();
-    if (pool) {
-      await pool.query(
-        `INSERT INTO email_preferences (id, email, allow_marketing, allow_review_requests, allow_abandoned_cart, allow_price_drop, unsubscribed_all, updated_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-         ON CONFLICT (email) DO UPDATE SET
-           allow_marketing = EXCLUDED.allow_marketing,
-           allow_review_requests = EXCLUDED.allow_review_requests,
-           allow_abandoned_cart = EXCLUDED.allow_abandoned_cart,
-           allow_price_drop = EXCLUDED.allow_price_drop,
-           unsubscribed_all = EXCLUDED.unsubscribed_all,
-           updated_at = EXCLUDED.updated_at;`,
-        [
-          id,
-          cleanEmail,
-          Boolean(allow_marketing),
-          Boolean(allow_review_requests),
-          Boolean(allow_abandoned_cart),
-          Boolean(allow_price_drop),
-          Boolean(unsubscribed_all),
-          nowIso
-        ]
-      );
-    } else {
-      const db = await getSqliteDb();
-      db.run(
-        `INSERT OR REPLACE INTO email_preferences (id, email, allow_marketing, allow_review_requests, allow_abandoned_cart, allow_price_drop, unsubscribed_all, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?);`,
-        [
-          id,
-          cleanEmail,
-          allow_marketing ? 1 : 0,
-          allow_review_requests ? 1 : 0,
-          allow_abandoned_cart ? 1 : 0,
-          allow_price_drop ? 1 : 0,
-          unsubscribed_all ? 1 : 0,
-          nowIso
-        ]
-      );
-      saveSqliteDb(db);
-    }
+    const pool = await getDbPool2();
+    await pool.query(
+      `INSERT INTO email_preferences (id, email, allow_marketing, allow_review_requests, allow_abandoned_cart, allow_price_drop, unsubscribed_all, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+       ON DUPLICATE KEY UPDATE
+         allow_marketing = VALUES(allow_marketing),
+         allow_review_requests = VALUES(allow_review_requests),
+         allow_abandoned_cart = VALUES(allow_abandoned_cart),
+         allow_price_drop = VALUES(allow_price_drop),
+         unsubscribed_all = VALUES(unsubscribed_all),
+         updated_at = VALUES(updated_at);`,
+      [
+        id,
+        cleanEmail,
+        allow_marketing ? 1 : 0,
+        allow_review_requests ? 1 : 0,
+        allow_abandoned_cart ? 1 : 0,
+        allow_price_drop ? 1 : 0,
+        unsubscribed_all ? 1 : 0,
+        nowIso
+      ]
+    );
     return res.json({ success: true, message: "Email preferences updated successfully." });
   } catch (err) {
     return res.status(500).json({ success: false, error: err?.message || "Failed to update preferences." });
   }
 });
-router14.get(["/unsubscribe", "/unsubscribe/"], async (req, res) => {
+router15.get(["/unsubscribe", "/unsubscribe/"], async (req, res) => {
   try {
     const email = (req.query.email || "").toLowerCase().trim();
     if (!email) {
@@ -15276,29 +11891,19 @@ router14.get(["/unsubscribe", "/unsubscribe/"], async (req, res) => {
     }
     const nowIso = (/* @__PURE__ */ new Date()).toISOString();
     const id = `pref-${Date.now()}`;
-    const pool = getPostgresPool();
-    if (pool) {
-      await pool.query(
-        `INSERT INTO email_preferences (id, email, allow_marketing, allow_review_requests, allow_abandoned_cart, allow_price_drop, unsubscribed_all, updated_at)
-         VALUES ($1, $2, FALSE, FALSE, FALSE, FALSE, TRUE, $3)
-         ON CONFLICT (email) DO UPDATE SET
-           allow_marketing = FALSE,
-           allow_review_requests = FALSE,
-           allow_abandoned_cart = FALSE,
-           allow_price_drop = FALSE,
-           unsubscribed_all = TRUE,
-           updated_at = EXCLUDED.updated_at;`,
-        [id, email, nowIso]
-      );
-    } else {
-      const db = await getSqliteDb();
-      db.run(
-        `INSERT OR REPLACE INTO email_preferences (id, email, allow_marketing, allow_review_requests, allow_abandoned_cart, allow_price_drop, unsubscribed_all, updated_at)
-         VALUES (?, ?, 0, 0, 0, 0, 1, ?);`,
-        [id, email, nowIso]
-      );
-      saveSqliteDb(db);
-    }
+    const pool = await getDbPool2();
+    await pool.query(
+      `INSERT INTO email_preferences (id, email, allow_marketing, allow_review_requests, allow_abandoned_cart, allow_price_drop, unsubscribed_all, updated_at)
+       VALUES (?, ?, 0, 0, 0, 0, 1, ?)
+       ON DUPLICATE KEY UPDATE
+         allow_marketing = 0,
+         allow_review_requests = 0,
+         allow_abandoned_cart = 0,
+         allow_price_drop = 0,
+         unsubscribed_all = 1,
+         updated_at = VALUES(updated_at);`,
+      [id, email, nowIso]
+    );
     return res.send(`
       <!DOCTYPE html>
       <html>
@@ -15327,7 +11932,7 @@ router14.get(["/unsubscribe", "/unsubscribe/"], async (req, res) => {
     return res.status(500).send(`Failed to process unsubscribe request: ${err?.message}`);
   }
 });
-router14.post(["/unsubscribe", "/unsubscribe/"], async (req, res) => {
+router15.post(["/unsubscribe", "/unsubscribe/"], async (req, res) => {
   try {
     const email = (req.body.email || "").toLowerCase().trim();
     if (!email || !email.includes("@")) {
@@ -15335,29 +11940,19 @@ router14.post(["/unsubscribe", "/unsubscribe/"], async (req, res) => {
     }
     const nowIso = (/* @__PURE__ */ new Date()).toISOString();
     const id = `pref-${Date.now()}`;
-    const pool = getPostgresPool();
-    if (pool) {
-      await pool.query(
-        `INSERT INTO email_preferences (id, email, allow_marketing, allow_review_requests, allow_abandoned_cart, allow_price_drop, unsubscribed_all, updated_at)
-         VALUES ($1, $2, FALSE, FALSE, FALSE, FALSE, TRUE, $3)
-         ON CONFLICT (email) DO UPDATE SET
-           allow_marketing = FALSE,
-           allow_review_requests = FALSE,
-           allow_abandoned_cart = FALSE,
-           allow_price_drop = FALSE,
-           unsubscribed_all = TRUE,
-           updated_at = EXCLUDED.updated_at;`,
-        [id, email, nowIso]
-      );
-    } else {
-      const db = await getSqliteDb();
-      db.run(
-        `INSERT OR REPLACE INTO email_preferences (id, email, allow_marketing, allow_review_requests, allow_abandoned_cart, allow_price_drop, unsubscribed_all, updated_at)
-         VALUES (?, ?, 0, 0, 0, 0, 1, ?);`,
-        [id, email, nowIso]
-      );
-      saveSqliteDb(db);
-    }
+    const pool = await getDbPool2();
+    await pool.query(
+      `INSERT INTO email_preferences (id, email, allow_marketing, allow_review_requests, allow_abandoned_cart, allow_price_drop, unsubscribed_all, updated_at)
+       VALUES (?, ?, 0, 0, 0, 0, 1, ?)
+       ON DUPLICATE KEY UPDATE
+         allow_marketing = 0,
+         allow_review_requests = 0,
+         allow_abandoned_cart = 0,
+         allow_price_drop = 0,
+         unsubscribed_all = 1,
+         updated_at = VALUES(updated_at);`,
+      [id, email, nowIso]
+    );
     return res.json({
       success: true,
       email,
@@ -15368,7 +11963,7 @@ router14.post(["/unsubscribe", "/unsubscribe/"], async (req, res) => {
     return res.status(500).json({ success: false, error: err?.message || "Failed to unsubscribe." });
   }
 });
-router14.post(["/resubscribe", "/resubscribe/"], async (req, res) => {
+router15.post(["/resubscribe", "/resubscribe/"], async (req, res) => {
   try {
     const email = (req.body.email || "").toLowerCase().trim();
     if (!email || !email.includes("@")) {
@@ -15376,29 +11971,19 @@ router14.post(["/resubscribe", "/resubscribe/"], async (req, res) => {
     }
     const nowIso = (/* @__PURE__ */ new Date()).toISOString();
     const id = `pref-${Date.now()}`;
-    const pool = getPostgresPool();
-    if (pool) {
-      await pool.query(
-        `INSERT INTO email_preferences (id, email, allow_marketing, allow_review_requests, allow_abandoned_cart, allow_price_drop, unsubscribed_all, updated_at)
-         VALUES ($1, $2, TRUE, TRUE, TRUE, TRUE, FALSE, $3)
-         ON CONFLICT (email) DO UPDATE SET
-           allow_marketing = TRUE,
-           allow_review_requests = TRUE,
-           allow_abandoned_cart = TRUE,
-           allow_price_drop = TRUE,
-           unsubscribed_all = FALSE,
-           updated_at = EXCLUDED.updated_at;`,
-        [id, email, nowIso]
-      );
-    } else {
-      const db = await getSqliteDb();
-      db.run(
-        `INSERT OR REPLACE INTO email_preferences (id, email, allow_marketing, allow_review_requests, allow_abandoned_cart, allow_price_drop, unsubscribed_all, updated_at)
-         VALUES (?, ?, 1, 1, 1, 1, 0, ?);`,
-        [id, email, nowIso]
-      );
-      saveSqliteDb(db);
-    }
+    const pool = await getDbPool2();
+    await pool.query(
+      `INSERT INTO email_preferences (id, email, allow_marketing, allow_review_requests, allow_abandoned_cart, allow_price_drop, unsubscribed_all, updated_at)
+       VALUES (?, ?, 1, 1, 1, 1, 0, ?)
+       ON DUPLICATE KEY UPDATE
+         allow_marketing = 1,
+         allow_review_requests = 1,
+         allow_abandoned_cart = 1,
+         allow_price_drop = 1,
+         unsubscribed_all = 0,
+         updated_at = VALUES(updated_at);`,
+      [id, email, nowIso]
+    );
     return res.json({
       success: true,
       email,
@@ -15409,42 +11994,30 @@ router14.post(["/resubscribe", "/resubscribe/"], async (req, res) => {
     return res.status(500).json({ success: false, error: err?.message || "Failed to resubscribe." });
   }
 });
-router14.get(["/unsubscribe-status", "/unsubscribe-status/"], async (req, res) => {
+router15.get(["/unsubscribe-status", "/unsubscribe-status/"], async (req, res) => {
   try {
     const email = (req.query.email || "").toLowerCase().trim();
     if (!email) {
       return res.json({ email: "", unsubscribed: false });
     }
-    const pool = getPostgresPool();
-    if (pool) {
-      const result = await pool.query("SELECT unsubscribed_all FROM email_preferences WHERE email = $1 LIMIT 1", [email]);
-      return res.json({ email, unsubscribed: result.rows[0]?.unsubscribed_all === true });
-    }
-    const db = await getSqliteDb();
-    const resSql = db.exec("SELECT unsubscribed_all FROM email_preferences WHERE email = ? LIMIT 1;", [email]);
-    const unsubscribed = resSql.length > 0 && resSql[0].values.length > 0 ? Boolean(resSql[0].values[0][0]) : false;
-    return res.json({ email, unsubscribed });
+    const pool = await getDbPool2();
+    const [rows] = await pool.query("SELECT unsubscribed_all FROM email_preferences WHERE email = ? LIMIT 1", [email]);
+    return res.json({ email, unsubscribed: rows && rows.length > 0 ? Boolean(rows[0].unsubscribed_all) : false });
   } catch {
     return res.json({ email: "", unsubscribed: false });
   }
 });
-router14.get(["/unsubscribed-list", "/unsubscribed-list/"], async (_req, res) => {
+router15.get(["/unsubscribed-list", "/unsubscribed-list/"], async (_req, res) => {
   try {
-    const pool = getPostgresPool();
-    if (pool) {
-      const result = await pool.query("SELECT email FROM email_preferences WHERE unsubscribed_all = TRUE");
-      const emails2 = result.rows.map((r) => r.email);
-      return res.json({ count: emails2.length, emails: emails2 });
-    }
-    const db = await getSqliteDb();
-    const resSql = db.exec("SELECT email FROM email_preferences WHERE unsubscribed_all = 1;");
-    const emails = resSql.length > 0 ? resSql[0].values.map((v) => String(v[0])) : [];
+    const pool = await getDbPool2();
+    const [rows] = await pool.query("SELECT email FROM email_preferences WHERE unsubscribed_all = 1");
+    const emails = (rows || []).map((r) => r.email);
     return res.json({ count: emails.length, emails });
   } catch {
     return res.json({ count: 0, emails: [] });
   }
 });
-router14.get(["/config", "/config/"], (_req, res) => {
+router15.get(["/config", "/config/"], (_req, res) => {
   const config2 = getEmailConfig();
   return res.json({
     configured: Boolean(config2.smtp.pass),
@@ -15459,7 +12032,7 @@ router14.get(["/config", "/config/"], (_req, res) => {
     paybill: config2.paybill
   });
 });
-router14.get(["/validate-config", "/validate-config/"], async (_req, res) => {
+router15.get(["/validate-config", "/validate-config/"], async (_req, res) => {
   try {
     const config2 = getEmailConfig();
     const transporter = getMailTransporter();
@@ -15477,7 +12050,7 @@ router14.get(["/validate-config", "/validate-config/"], async (_req, res) => {
     });
   }
 });
-router14.post(["/send", "/send/"], async (req, res) => {
+router15.post(["/send", "/send/"], async (req, res) => {
   try {
     const { to, subject, html, text, category, isPromotional } = req.body || {};
     if (!to || !subject) {
@@ -15514,7 +12087,7 @@ router14.post(["/send", "/send/"], async (req, res) => {
     return res.status(500).json({ success: false, error: err?.message || "Failed to transmit email." });
   }
 });
-router14.post(["/diagnose-smtp", "/diagnose-smtp/"], async (req, res) => {
+router15.post(["/diagnose-smtp", "/diagnose-smtp/"], async (req, res) => {
   try {
     const { to } = req.body || {};
     const config2 = getEmailConfig();
@@ -15548,60 +12121,37 @@ router14.post(["/diagnose-smtp", "/diagnose-smtp/"], async (req, res) => {
     return res.status(500).json({ success: false, error: err?.message || "Diagnostic test failed." });
   }
 });
-var emailPreferences_default = router14;
+var emailPreferences_default = router15;
 
 // server/routes/emailDiagnostics.ts
-var import_express15 = require("express");
+var import_express16 = require("express");
 init_config();
 init_transporter();
 init_db();
 init_queue();
-init_sqlite_db();
-init_postgres_db();
-var router15 = (0, import_express15.Router)();
-router15.use(requireAdmin);
-router15.get(["/stats", "/stats/"], async (_req, res) => {
+init_mysql_db();
+var router16 = (0, import_express16.Router)();
+router16.use(requireAdmin);
+router16.get(["/stats", "/stats/"], async (_req, res) => {
   try {
     const config2 = getEmailConfig();
     let queuedJobsCount = 0;
     let failedJobsCount = 0;
     let sentLogsCount = 0;
     let recentLogs = [];
-    const pool = getPostgresPool();
-    if (pool) {
-      const qRes = await pool.query(`SELECT status, count(*) FROM email_jobs GROUP BY status`);
-      qRes.rows.forEach((r) => {
+    try {
+      const pool = await getDbPool2();
+      const [qRows] = await pool.query(`SELECT status, count(*) as count FROM email_jobs GROUP BY status`);
+      (qRows || []).forEach((r) => {
         if (r.status === "queued") queuedJobsCount = parseInt(r.count, 10);
         if (r.status === "failed") failedJobsCount = parseInt(r.count, 10);
       });
-      const lRes = await pool.query(`SELECT count(*) FROM email_logs WHERE status = 'sent'`);
-      sentLogsCount = parseInt(lRes.rows[0]?.count || "0", 10);
-      const recRes = await pool.query(`SELECT * FROM email_logs ORDER BY created_at DESC LIMIT 30`);
-      recentLogs = recRes.rows;
-    } else {
-      const db = await getSqliteDb();
-      const qRes = db.exec(`SELECT status, count(*) FROM email_jobs GROUP BY status;`);
-      if (qRes.length > 0) {
-        qRes[0].values.forEach((row) => {
-          if (row[0] === "queued") queuedJobsCount = Number(row[1]);
-          if (row[0] === "failed") failedJobsCount = Number(row[1]);
-        });
-      }
-      const lRes = db.exec(`SELECT count(*) FROM email_logs WHERE status = 'sent';`);
-      if (lRes.length > 0 && lRes[0].values.length > 0) {
-        sentLogsCount = Number(lRes[0].values[0][0]);
-      }
-      const recRes = db.exec(`SELECT * FROM email_logs ORDER BY created_at DESC LIMIT 30;`);
-      if (recRes.length > 0 && recRes[0].values.length > 0) {
-        const cols = recRes[0].columns;
-        recentLogs = recRes[0].values.map((row) => {
-          const item = {};
-          cols.forEach((c, idx) => {
-            item[c] = row[idx];
-          });
-          return item;
-        });
-      }
+      const [lRows] = await pool.query(`SELECT count(*) as count FROM email_logs WHERE status = 'sent'`);
+      sentLogsCount = parseInt(lRows[0]?.count || "0", 10);
+      const [recRows] = await pool.query(`SELECT * FROM email_logs ORDER BY created_at DESC LIMIT 30`);
+      recentLogs = recRows || [];
+    } catch (dbErr) {
+      console.warn("[Email Diagnostics] MySQL query notice:", dbErr);
     }
     return res.json({
       success: true,
@@ -15630,7 +12180,7 @@ router15.get(["/stats", "/stats/"], async (_req, res) => {
     return res.status(500).json({ success: false, error: err?.message || "Failed to fetch email diagnostics." });
   }
 });
-router15.get(["/queue", "/queue/"], async (req, res) => {
+router16.get(["/queue", "/queue/"], async (req, res) => {
   try {
     const status = req.query.status;
     const limit = Number(req.query.limit) || 50;
@@ -15640,7 +12190,7 @@ router15.get(["/queue", "/queue/"], async (req, res) => {
     return res.status(500).json({ success: false, error: err?.message || "Failed to fetch email queue." });
   }
 });
-router15.post(["/flush-queue", "/flush-queue/"], async (_req, res) => {
+router16.post(["/flush-queue", "/flush-queue/"], async (_req, res) => {
   try {
     const processedCount = await processQueueBatch(20);
     return res.json({ success: true, message: `Successfully processed ${processedCount} queued email job(s).`, processedCount });
@@ -15648,7 +12198,7 @@ router15.post(["/flush-queue", "/flush-queue/"], async (_req, res) => {
     return res.status(500).json({ success: false, error: err?.message || "Failed to flush email queue." });
   }
 });
-router15.post(["/retry-failed", "/retry-failed/"], async (_req, res) => {
+router16.post(["/retry-failed", "/retry-failed/"], async (_req, res) => {
   try {
     const retriedCount = await retryFailedJobs();
     if (retriedCount > 0) {
@@ -15660,7 +12210,7 @@ router15.post(["/retry-failed", "/retry-failed/"], async (_req, res) => {
     return res.status(500).json({ success: false, error: err?.message || "Failed to retry failed email jobs." });
   }
 });
-router15.post(["/test", "/test/"], async (req, res) => {
+router16.post(["/test", "/test/"], async (req, res) => {
   try {
     const { toEmail } = req.body || {};
     const config2 = getEmailConfig();
@@ -15702,52 +12252,49 @@ router15.post(["/test", "/test/"], async (req, res) => {
     return res.status(500).json({ success: false, error: err?.message || "SMTP test failed." });
   }
 });
-var emailDiagnostics_default = router15;
+var emailDiagnostics_default = router16;
 
 // server/routes/system.ts
-var import_express16 = require("express");
-init_sqlite_db();
-init_postgres_db();
-var router16 = (0, import_express16.Router)();
-router16.get("/health", (_req, res) => {
-  res.json({ status: "healthy", brand: "Ropenix", timestamp: (/* @__PURE__ */ new Date()).toISOString() });
+var import_express17 = require("express");
+init_mysql_db();
+var router17 = (0, import_express17.Router)();
+router17.get("/health", (_req, res) => {
+  res.json({ status: "healthy", brand: "Ropenix", timestamp: (/* @__PURE__ */ new Date()).toISOString(), database: "MySQL" });
 });
-router16.get("/sqlite/status", async (_req, res) => {
-  try {
-    const status = await getSqliteDbStatus();
-    res.json(status);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Unable to retrieve SQLite database status.";
-    res.status(500).json({ error: message });
-  }
-});
-router16.get("/mysql/status", async (_req, res) => {
+router17.get("/sqlite/status", async (_req, res) => {
   try {
     const status = await getDbStatus();
-    if (status.connected) {
-      res.json(status);
-    } else {
-      const sqliteStatus = await getSqliteDbStatus();
-      res.json({
-        ...sqliteStatus,
-        message: `SQLite DB is live at ${sqliteStatus.filePath}. (MySQL optional: ${status.message})`
-      });
-    }
-  } catch (_error) {
-    const sqliteStatus = await getSqliteDbStatus();
-    res.json(sqliteStatus);
-  }
-});
-router16.get("/postgres/status", async (_req, res) => {
-  try {
-    const status = await getPostgresDbStatus();
-    res.json(status);
+    res.json({
+      ...status,
+      dbEngine: "MySQL"
+    });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "PostgreSQL status error";
+    const message = error instanceof Error ? error.message : "Unable to retrieve database status.";
     res.status(500).json({ error: message });
   }
 });
-router16.post("/sqlite/purge-all", requireAdmin, async (_req, res) => {
+router17.get("/mysql/status", async (_req, res) => {
+  try {
+    const status = await getDbStatus();
+    res.json(status);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "MySQL status error";
+    res.status(500).json({ error: message });
+  }
+});
+router17.get("/postgres/status", async (_req, res) => {
+  try {
+    const status = await getDbStatus();
+    res.json({
+      ...status,
+      dbEngine: "MySQL"
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Database status error";
+    res.status(500).json({ error: message });
+  }
+});
+router17.post("/sqlite/purge-all", requireAdmin, async (_req, res) => {
   try {
     await purgeAllSqliteData();
     res.json({ success: true, message: "All data purged cleanly from backend database." });
@@ -15756,7 +12303,7 @@ router16.post("/sqlite/purge-all", requireAdmin, async (_req, res) => {
     res.status(500).json({ success: false, error: message });
   }
 });
-router16.post("/sqlite/sync-push", requireAdmin, async (req, res) => {
+router17.post("/sqlite/sync-push", requireAdmin, async (req, res) => {
   try {
     const payload = req.body;
     if (!payload || typeof payload !== "object") {
@@ -15777,7 +12324,7 @@ router16.post("/sqlite/sync-push", requireAdmin, async (req, res) => {
     res.status(500).json({ success: false, error: message });
   }
 });
-router16.get("/sqlite/sync-pull", optionalAuth, async (_req, res) => {
+router17.get("/sqlite/sync-pull", optionalAuth, async (_req, res) => {
   try {
     let data = null;
     try {
@@ -15791,7 +12338,7 @@ router16.get("/sqlite/sync-pull", optionalAuth, async (_req, res) => {
     res.status(500).json({ success: false, error: message });
   }
 });
-router16.post("/admin/expiry-check", requireAdmin, async (_req, res) => {
+router17.post("/admin/expiry-check", requireAdmin, async (_req, res) => {
   try {
     const result = await performExpiryBackgroundCheck(true);
     res.json({ success: true, ...result });
@@ -15800,7 +12347,7 @@ router16.post("/admin/expiry-check", requireAdmin, async (_req, res) => {
     res.status(500).json({ success: false, error: message });
   }
 });
-router16.post("/logs/client-error", (req, res) => {
+router17.post("/logs/client-error", (req, res) => {
   const { message, stack, url, userAgent } = req.body || {};
   console.warn(`[Client-Side Error Logged]: "${message}" at URL: ${url} (Agent: ${userAgent})`);
   if (stack) {
@@ -15808,7 +12355,7 @@ router16.post("/logs/client-error", (req, res) => {
   }
   res.json({ success: true, received: true });
 });
-router16.get("/courier/track", (req, res) => {
+router17.get("/courier/track", (req, res) => {
   try {
     const lookupId = (req.query.id || req.query.orderId || req.query.trackingNumber || "").toString().trim();
     if (!lookupId) {
@@ -15847,15 +12394,15 @@ router16.get("/courier/track", (req, res) => {
     res.status(500).json({ success: false, error: message });
   }
 });
-var system_default = router16;
+var system_default = router17;
 
 // server/index.ts
 var import_compression = __toESM(require("compression"), 1);
 
 // server/routes/seo.ts
-var import_express17 = require("express");
-var router17 = (0, import_express17.Router)();
-router17.get("/robots.txt", (_req, res) => {
+var import_express18 = require("express");
+var router18 = (0, import_express18.Router)();
+router18.get("/robots.txt", (_req, res) => {
   const robotsTxt = `# Robots.txt for Ropenix Collections
 # https://ropenix.co.ke
 
@@ -15886,7 +12433,7 @@ Sitemap: https://ropenix.co.ke/sitemap.xml
   res.header("Cache-Control", "public, max-age=86400");
   res.send(robotsTxt);
 });
-router17.get("/sitemap.xml", async (req, res) => {
+router18.get("/sitemap.xml", async (req, res) => {
   try {
     const host = req.get("host") || "ropenix.co.ke";
     const protocol = req.secure || req.headers["x-forwarded-proto"] === "https" ? "https" : "https";
@@ -15996,7 +12543,7 @@ router17.get("/sitemap.xml", async (req, res) => {
     res.status(500).type("text/plain").send("Error generating sitemap");
   }
 });
-var seo_default = router17;
+var seo_default = router18;
 
 // server/index.ts
 var import_meta = {};
@@ -16004,15 +12551,15 @@ var getAppDirname = () => {
   try {
     if (typeof __dirname !== "undefined") return __dirname;
     if (typeof import_meta !== "undefined" && import_meta.url) {
-      return import_path2.default.dirname((0, import_url.fileURLToPath)(import_meta.url));
+      return import_path.default.dirname((0, import_url.fileURLToPath)(import_meta.url));
     }
   } catch (_) {
   }
   return process.cwd();
 };
 var appDir = getAppDirname();
-import_dotenv5.default.config();
-var app = (0, import_express18.default)();
+import_dotenv4.default.config();
+var app = (0, import_express19.default)();
 var rawPort = process.env.PORT;
 var isNumericPort = rawPort && !isNaN(Number(rawPort));
 var PORT = isNumericPort ? Number(rawPort) : rawPort || 3e3;
@@ -16032,23 +12579,36 @@ app.use((_req, res, next) => {
   res.setHeader("X-Frame-Options", "SAMEORIGIN");
   res.setHeader("X-XSS-Protection", "1; mode=block");
   res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
-  res.setHeader(
-    "Content-Security-Policy",
-    "default-src 'self' https: http:; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://translate.google.com https://translate.googleapis.com http://translate.google.com http://translate.googleapis.com https://*.google.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://translate.googleapis.com http://translate.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https: http: res.cloudinary.com https://images.unsplash.com https://translate.google.com https://www.google.com https://*.google.com; connect-src 'self' https: http: ws: wss:; media-src 'self' data: blob: https: res.cloudinary.com; frame-ancestors 'self';"
-  );
+  const cspDirectives = [
+    "default-src 'self' https: http: data: blob:",
+    "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://translate.google.com https://translate.googleapis.com https://translate-pa.googleapis.com https://*.googleapis.com https://*.google.com https://*.gstatic.com https://www.gstatic.com http://translate.google.com http://translate.googleapis.com",
+    "script-src-elem 'self' 'unsafe-inline' 'unsafe-eval' https://translate.google.com https://translate.googleapis.com https://translate-pa.googleapis.com https://*.googleapis.com https://*.google.com https://*.gstatic.com https://www.gstatic.com http://translate.google.com http://translate.googleapis.com",
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://translate.googleapis.com https://*.googleapis.com https://www.gstatic.com https://*.gstatic.com http://translate.googleapis.com",
+    "style-src-elem 'self' 'unsafe-inline' https://fonts.googleapis.com https://translate.googleapis.com https://*.googleapis.com https://www.gstatic.com https://*.gstatic.com http://translate.googleapis.com",
+    "font-src 'self' https://fonts.gstatic.com https://*.gstatic.com data:",
+    "img-src 'self' data: blob: https: http: res.cloudinary.com https://images.unsplash.com https://translate.google.com https://www.google.com https://*.google.com https://*.gstatic.com https://www.gstatic.com",
+    "connect-src 'self' https: http: ws: wss: https://*.googleapis.com https://translate-pa.googleapis.com https://*.google.com https://*.gstatic.com",
+    "frame-src 'self' https://translate.google.com https://*.google.com https://*.googleapis.com",
+    "child-src 'self' https://translate.google.com https://*.google.com https://*.googleapis.com",
+    "media-src 'self' data: blob: https: res.cloudinary.com",
+    "frame-ancestors 'self'"
+  ];
+  res.setHeader("Content-Security-Policy", cspDirectives.join("; "));
   next();
 });
 app.get(["/health", "/api/health"], async (_req, res) => {
   try {
-    const sqliteStatus = await getSqliteDbStatus();
+    const dbStatus = await getDbStatus();
     const memUsage = process.memoryUsage();
     return res.status(200).json({
-      status: "healthy",
+      status: dbStatus.connected ? "healthy" : "degraded",
       timestamp: (/* @__PURE__ */ new Date()).toISOString(),
       uptime_seconds: Math.floor(process.uptime()),
       database: {
-        sqlite: sqliteStatus.connected ? "connected" : "degraded",
-        message: sqliteStatus.message
+        engine: "MySQL",
+        status: dbStatus.connected ? "connected" : "disconnected",
+        message: dbStatus.message,
+        stats: dbStatus.stats
       },
       memory: {
         rss_mb: Math.round(memUsage.rss / 1024 / 1024),
@@ -16065,13 +12625,13 @@ app.get(["/health", "/api/health"], async (_req, res) => {
     });
   }
 });
-app.use(import_express18.default.json({ limit: "50mb" }));
-app.use(import_express18.default.urlencoded({ limit: "50mb", extended: true }));
+app.use(import_express19.default.json({ limit: "50mb" }));
+app.use(import_express19.default.urlencoded({ limit: "50mb", extended: true }));
 app.use("/auth", auth_default);
 app.use("/api/auth", auth_default);
 app.use("/api/users", users_default);
 app.use("/api/products", products_default);
-app.use("/api/categories", products_default);
+app.use("/api/categories", categories_default);
 app.use("/api/inventory", products_default);
 app.use("/api/orders", orders_default);
 app.use("/api/suppliers", suppliers_default);
@@ -16098,43 +12658,41 @@ app.use("/", seo_default);
 app.use(errorHandler);
 async function startServer() {
   try {
-    const sqliteStatus = await getSqliteDbStatus();
-    console.log(`[SQLite Database] ${sqliteStatus.message}`);
+    await initializeDatabaseSchema();
+    const dbStatus = await getDbStatus();
+    console.log(`[MySQL Database] ${dbStatus.message}`);
     await loadProductsCache();
   } catch (err) {
-    console.error("[SQLite Startup] Error initializing SQLite database:", err);
+    console.error("[MySQL Startup] Error initializing MySQL database:", err);
   }
-  initPostgresTables().catch((err) => {
-    console.warn("[PostgreSQL Startup] Notice:", err?.message || err);
-  });
   performExpiryBackgroundCheck().catch((err) => {
     console.error("[Expiry Check] Startup execution error:", err);
   });
   const resolveDistPath = () => {
     const candidates = [
-      import_path2.default.resolve(appDir, "dist"),
-      import_path2.default.resolve(process.cwd(), "dist"),
-      import_path2.default.resolve(appDir, "..", "dist"),
-      import_path2.default.resolve(appDir),
-      import_path2.default.resolve(process.cwd())
+      import_path.default.resolve(appDir, "dist"),
+      import_path.default.resolve(process.cwd(), "dist"),
+      import_path.default.resolve(appDir, "..", "dist"),
+      import_path.default.resolve(appDir),
+      import_path.default.resolve(process.cwd())
     ];
     for (const candidate of candidates) {
-      if (import_fs2.default.existsSync(import_path2.default.join(candidate, "index.html")) && import_fs2.default.existsSync(import_path2.default.join(candidate, "assets"))) {
+      if (import_fs.default.existsSync(import_path.default.join(candidate, "index.html")) && import_fs.default.existsSync(import_path.default.join(candidate, "assets"))) {
         return candidate;
       }
     }
-    if (import_fs2.default.existsSync(import_path2.default.resolve(process.cwd(), "dist", "index.html"))) {
-      return import_path2.default.resolve(process.cwd(), "dist");
+    if (import_fs.default.existsSync(import_path.default.resolve(process.cwd(), "dist", "index.html"))) {
+      return import_path.default.resolve(process.cwd(), "dist");
     }
-    return import_path2.default.resolve(process.cwd(), "dist");
+    return import_path.default.resolve(process.cwd(), "dist");
   };
   const serveStaticProductionAssets = () => {
     const distPath = resolveDistPath();
-    const assetsPath = import_path2.default.join(distPath, "assets");
-    if (import_fs2.default.existsSync(assetsPath)) {
+    const assetsPath = import_path.default.join(distPath, "assets");
+    if (import_fs.default.existsSync(assetsPath)) {
       app.use(
         "/assets",
-        import_express18.default.static(assetsPath, {
+        import_express19.default.static(assetsPath, {
           maxAge: "1y",
           immutable: true,
           setHeaders: (res, filePath) => {
@@ -16148,7 +12706,7 @@ async function startServer() {
       );
     }
     app.use(
-      import_express18.default.static(distPath, {
+      import_express19.default.static(distPath, {
         maxAge: "1h",
         setHeaders: (res, filePath) => {
           if (filePath.endsWith(".webmanifest")) {
@@ -16163,8 +12721,8 @@ async function startServer() {
     );
     app.get("*", (_req, res) => {
       res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
-      const indexPath = import_path2.default.join(distPath, "index.html");
-      if (import_fs2.default.existsSync(indexPath)) {
+      const indexPath = import_path.default.join(distPath, "index.html");
+      if (import_fs.default.existsSync(indexPath)) {
         res.sendFile(indexPath);
       } else {
         res.status(404).send(`
@@ -16196,17 +12754,28 @@ async function startServer() {
       serveStaticProductionAssets();
     }
   }
-  const server = app.listen(PORT, () => {
-    console.log(`[Ropenix Express Server] Running on http://localhost:${PORT}`);
-    console.log(`[Ropenix Auth API] Route registered at http://localhost:${PORT}/api/auth`);
-    console.log(`[Ropenix Products API] Route registered at http://localhost:${PORT}/api/products`);
-    console.log(`[Ropenix Orders API] Route registered at http://localhost:${PORT}/api/orders`);
-    console.log(`[Ropenix Suppliers API] Route registered at http://localhost:${PORT}/api/suppliers`);
+  let listenPort = PORT;
+  if (typeof global.PhusionPassenger !== "undefined") {
+    try {
+      global.PhusionPassenger.configure({ autoInstall: false });
+    } catch (_) {
+    }
+    listenPort = "passenger";
+  } else if (process.env.PORT === "passenger" || process.env.PORT && isNaN(Number(process.env.PORT))) {
+    listenPort = process.env.PORT;
+  }
+  const server = app.listen(listenPort, () => {
+    const listenMsg = listenPort === "passenger" ? "Phusion Passenger" : `http://localhost:${listenPort}`;
+    console.log(`[Ropenix Express Server] Running on ${listenMsg}`);
+    console.log(`[Ropenix Auth API] Route registered at /api/auth`);
+    console.log(`[Ropenix Products API] Route registered at /api/products`);
+    console.log(`[Ropenix Orders API] Route registered at /api/orders`);
+    console.log(`[Ropenix Suppliers API] Route registered at /api/suppliers`);
   });
-  ensureDefaultAdminUser().catch((err) => console.warn("[SQLite] Default admin seed notice:", err));
-  ensureDefaultCustomers().catch((err) => console.warn("[SQLite] Default customer seed notice:", err));
-  ensureDefaultProducts().catch((err) => console.warn("[SQLite] Default product seed notice:", err));
-  ensureDefaultHeroBanners().catch((err) => console.warn("[SQLite] Default hero banners seed notice:", err));
+  ensureDefaultAdminUser().catch((err) => console.warn("[MySQL] Default admin seed notice:", err));
+  ensureDefaultCustomers().catch((err) => console.warn("[MySQL] Default customer seed notice:", err));
+  ensureDefaultProducts().catch((err) => console.warn("[MySQL] Default product seed notice:", err));
+  ensureDefaultHeroBanners().catch((err) => console.warn("[MySQL] Default hero banners seed notice:", err));
   registerEmailEventListeners();
   try {
     validateEmailConfigOnStartup();
@@ -16227,7 +12796,7 @@ async function startServer() {
   process.on("SIGINT", () => handleShutdown("SIGINT"));
   return server;
 }
-var isMain = process.argv[1] && (process.argv[1].endsWith("server.ts") || process.argv[1].endsWith("server.cjs") || process.argv[1].endsWith("index.ts") || process.argv[1].endsWith("index.cjs"));
+var isMain = process.argv[1] && (process.argv[1].endsWith("server.ts") || process.argv[1].endsWith("server.cjs") || process.argv[1].endsWith("index.ts") || process.argv[1].endsWith("index.cjs") || process.argv[1].endsWith("app.cjs") || process.argv[1].endsWith("app.js"));
 if (isMain && process.env.NODE_ENV !== "test") {
   startServer();
 }
@@ -16243,6 +12812,28 @@ var server_default2 = server_default;
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
+ * 
+ * Ropenix Unified MySQL Database Engine
+ * Primary and standalone database layer powered by MySQL (mysql2/promise).
+ * Configured for local XAMPP and production MySQL environments.
+ */
+/**
+ * @license
+ * SPDX-License-Identifier: Apache-2.0
+ */
+/**
+ * @license
+ * SPDX-License-Identifier: Apache-2.0
+ * 
+ * Ropenix Email & Transactional DB Services (MySQL Standalone)
+ * Backed solely by the central MySQL database.
+ */
+/**
+ * @license
+ * SPDX-License-Identifier: Apache-2.0
+ * 
+ * Compatibility Bridge: SQLite -> MySQL Migration
+ * All SQLite operations are now transparently backed by the unified MySQL database.
  */
 /**
  * @license

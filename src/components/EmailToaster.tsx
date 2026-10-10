@@ -53,7 +53,7 @@ export default function EmailToaster({ toasts, onDismiss, isAdminView = false }:
   }, [toasts, isAdminView]);
 
   return (
-    <aside aria-label="System Notifications" className="fixed bottom-5 right-5 z-[9999] flex flex-col gap-2.5 max-w-[370px] w-full pointer-events-none no-print">
+    <aside aria-label="System Notifications" className="fixed bottom-16 sm:bottom-5 right-3 sm:right-5 left-3 sm:left-auto z-[9999] flex flex-col gap-2.5 w-auto max-w-[calc(100%-1.5rem)] sm:max-w-[370px] pointer-events-none no-print">
       <AnimatePresence mode="popLayout">
         {visibleToasts.map((toast) => (
           <EmailToastItem key={toast.id} toast={toast} onDismiss={onDismiss} />

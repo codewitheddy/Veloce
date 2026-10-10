@@ -205,7 +205,7 @@ export default function NewsletterSubscription({
           </motion.div>
         ) : (
           <form onSubmit={(e) => handleSubscribe(e)} className="flex flex-col gap-2">
-            <div className="relative flex items-center">
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
               <input
                 type="email"
                 required
@@ -213,26 +213,26 @@ export default function NewsletterSubscription({
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="Enter your email"
                 disabled={isLoading}
-                className="h-10 w-full rounded-lg border border-gray-700 bg-gray-900/90 px-3.5 pr-24 text-xs text-white placeholder-gray-400 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                className="h-10 w-full rounded-xl border border-slate-700 bg-slate-900/90 px-3.5 text-xs text-white placeholder-slate-400 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 transition-colors"
               />
               <button
                 type="submit"
                 disabled={isLoading}
-                className="absolute right-1 h-8 rounded-md bg-indigo-600 hover:bg-indigo-500 px-3 text-xs font-semibold text-white transition flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                className="h-10 sm:h-10 sm:w-auto w-full rounded-xl bg-[#000000] hover:bg-[#111111] border border-[#383838] hover:border-[#555555] px-4 text-xs font-semibold text-white transition flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50 shrink-0 shadow-sm active:scale-[0.98]"
               >
                 {isLoading ? (
                   <RefreshCw className="h-3.5 w-3.5 animate-spin" />
                 ) : (
                   <>
                     <span>Join</span>
-                    <ArrowRight className="h-3 w-3" />
+                    <ArrowRight className="h-3.5 w-3.5" />
                   </>
                 )}
               </button>
             </div>
             {error && <p className="text-[10px] text-rose-400">{error}</p>}
-            <p className="text-[10px] text-gray-400 flex items-center gap-1">
-              <Lock className="h-2.5 w-2.5 text-gray-400" /> Free 10% welcome code on join. Zero spam.
+            <p className="text-[10px] text-slate-400 flex items-center gap-1">
+              <Lock className="h-2.5 w-2.5 text-slate-400 shrink-0" /> Free 10% welcome code on join. Zero spam.
             </p>
           </form>
         )}

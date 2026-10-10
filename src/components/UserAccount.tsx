@@ -59,7 +59,6 @@ import { getProductDiscountInfo } from '../utils/productUtils';
 import OrderReceiptModal from './OrderReceiptModal';
 import TaxInvoiceModal from './TaxInvoiceModal';
 import ReturnRequestModal from './ReturnRequestModal';
-import CustomerPaymentClaimModal from './CustomerPaymentClaimModal';
 import EditProfileModal from './EditProfileModal';
 import { exportSingleReceiptPDF, exportOrderHistoryPDF } from '../lib/pdfGenerator';
 import api, { authService, setAuthTokens } from '../services/api';
@@ -167,12 +166,10 @@ export default function UserAccount({
   const [tempNoteText, setTempNoteText] = useState('');
   const [copiedOrderId, setCopiedOrderId] = useState<string | null>(null);
 
-  // Modals state
   const [selectedPrintOrder, setSelectedPrintOrder] = useState<Order | null>(null);
   const [selectedInvoiceOrder, setSelectedInvoiceOrder] = useState<Order | null>(null);
   const [autoPrintOnce, setAutoPrintOnce] = useState(false);
   const [returnOrder, setReturnOrder] = useState<Order | null>(null);
-  const [claimPaymentOrder, setClaimPaymentOrder] = useState<Order | null>(null);
 
   // Wishlist state
   const [wishlistViewMode, setWishlistViewMode] = useState<'grid' | 'list'>('grid');
@@ -614,7 +611,13 @@ export default function UserAccount({
   const filteredOrders = useMemo(() => {
     return customerOrders.filter((order) => {
       if (!order) return false;
-      if (statusFilter !== 'all' && order.status !== statusFilter) return false;
+      if (statusFilter !== 'all') {
+        if (statusFilter === 'completed') {
+          if (order.status !== 'completed' && order.status !== 'delivered') return false;
+        } else if (order.status !== statusFilter) {
+          return false;
+        }
+      }
       if (searchQuery.trim()) {
         const query = searchQuery.toLowerCase();
         const matchesId = (order.id || '').toLowerCase().includes(query);
@@ -1392,7 +1395,7 @@ export default function UserAccount({
 
             {/* Filter pills */}
             <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0">
-              {(['all', 'pending', 'shipped', 'completed', 'cancelled'] as const).map((status) => (
+              {(['all', 'pending', 'processing', 'shipped', 'completed', 'cancelled'] as const).map((status) => (
                 <button
                   key={status}
                   onClick={() => setStatusFilter(status)}
@@ -1503,10 +1506,14 @@ export default function UserAccount({
                 const orderTotal = order.total || order.items.reduce((s, it) => s + it.price * it.quantity, 0);
                 const totalItemCount = order.items.reduce((sum, it) => sum + it.quantity, 0);
 
-                const statusStyles = {
+                const statusStyles: Record<string, string> = {
                   completed: 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-400 border-emerald-200/60 dark:border-emerald-900/40',
+                  delivered: 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-400 border-emerald-200/60 dark:border-emerald-900/40',
+                  processing: 'bg-purple-50 dark:bg-purple-950/40 text-purple-700 dark:text-purple-400 border-purple-200/60 dark:border-purple-900/40',
                   shipped: 'bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-400 border-blue-200/60 dark:border-blue-900/40',
                   pending: 'bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400 border-amber-200/60 dark:border-amber-900/40',
+                  awaiting_delivery_quote: 'bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400 border-amber-200/60 dark:border-amber-900/40',
+                  delivery_quoted: 'bg-sky-50 dark:bg-sky-950/40 text-sky-700 dark:text-sky-400 border-sky-200/60 dark:border-sky-900/40',
                   'pending-cancellation': 'bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-400 border-rose-200/60 dark:border-rose-900/40',
                   cancelled: 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-700'
                 };
@@ -1526,9 +1533,9 @@ export default function UserAccount({
                     {/* Row Main Bar */}
                     <div className="p-4 sm:p-4.5 flex flex-col xl:flex-row xl:items-center justify-between gap-3.5 sm:gap-4">
                       {/* Left: Order ID, Date & Items Preview */}
-                      <div className="flex items-center gap-3.5 sm:gap-4 min-w-0 flex-1">
+                      <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4 min-w-0 flex-1">
                         {/* Order ID & Date */}
-                        <div className="shrink-0 space-y-1 min-w-[105px]">
+                        <div className="shrink-0 space-y-1 min-w-0 sm:min-w-[105px]">
                           <div className="flex items-center gap-1.5">
                             <button
                               onClick={() => copyOrderId(order.id)}
@@ -1549,7 +1556,7 @@ export default function UserAccount({
                         </div>
 
                         {/* Items Summary Preview */}
-                        <div className="flex items-center gap-3 min-w-0 flex-1 border-l border-slate-150 dark:border-slate-800 pl-3.5">
+                        <div className="flex items-center gap-3 min-w-0 flex-1 sm:border-l sm:border-slate-150 sm:dark:border-slate-800 sm:pl-3.5">
                           {/* Thumbnails Cluster */}
                           <div className="flex items-center -space-x-2 shrink-0">
                             {visibleThumbnails.map((item, idx) => {
@@ -1816,16 +1823,6 @@ export default function UserAccount({
                               </button>
                             )}
                           </div>
-
-                          {order.paymentStatus !== 'paid' && order.status !== 'cancelled' && (
-                            <button
-                              onClick={() => setClaimPaymentOrder(order)}
-                              className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white px-3 text-xs font-semibold transition-colors cursor-pointer shadow-xs"
-                            >
-                              <CreditCard className="h-3.5 w-3.5" />
-                              <span>Submit M-Pesa Code</span>
-                            </button>
-                          )}
                         </div>
                       </div>
                     )}
@@ -1985,16 +1982,6 @@ export default function UserAccount({
                             </button>
                           )}
                         </div>
-
-                        {order.paymentStatus !== 'paid' && order.status !== 'cancelled' && (
-                          <button
-                            onClick={() => setClaimPaymentOrder(order)}
-                            className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white px-3 text-xs font-semibold transition-colors cursor-pointer shadow-xs"
-                          >
-                            <CreditCard className="h-3.5 w-3.5" />
-                            <span>Submit M-Pesa Code</span>
-                          </button>
-                        )}
                       </div>
                     </div>
 
@@ -2774,21 +2761,6 @@ export default function UserAccount({
             if (onCreateReturnRequest) onCreateReturnRequest(request);
             setActiveDashboardTab('returns');
           }}
-        />
-      )}
-
-      {claimPaymentOrder && (
-        <CustomerPaymentClaimModal
-          isOpen={!!claimPaymentOrder}
-          onClose={() => setClaimPaymentOrder(null)}
-          orderId={claimPaymentOrder.id}
-          orderTotal={claimPaymentOrder.total}
-          customerName={claimPaymentOrder.customerName || name}
-          customerEmail={claimPaymentOrder.customerEmail || email}
-          customerPhone={claimPaymentOrder.phone || phone}
-          currency={currency}
-          onNavigateToOrders={() => { setClaimPaymentOrder(null); setActiveDashboardTab('orders'); }}
-          onClaimSuccess={() => { setClaimPaymentOrder(null); setActiveDashboardTab('orders'); }}
         />
       )}
     </div>

@@ -1942,7 +1942,11 @@ export function ProductFormEditor({
         <div>
           <button
             type="button"
-            onClick={onCancel}
+            id="btn-back-to-product-catalog"
+            onClick={(e) => {
+              e.preventDefault();
+              if (onCancel) onCancel();
+            }}
             className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-500 hover:text-indigo-600 transition-colors uppercase tracking-wider mb-2.5 cursor-pointer"
           >
             <ArrowLeft className="h-4 w-4" /> Back to Product Catalog
@@ -5490,6 +5494,7 @@ export function ProductFormEditor({
             <div className="mt-4 pt-3 border-t border-slate-100 flex flex-col gap-2">
               <button
                 type="button"
+                id="btn-save-publish-product-sidebar"
                 onClick={() => handleSaveSubmit(true)}
                 disabled={!canPublishDirectly}
                 className={`w-full py-2.5 rounded-xl font-bold text-xs transition flex items-center justify-center gap-1.5 cursor-pointer shadow-xs ${
@@ -5503,11 +5508,24 @@ export function ProductFormEditor({
               </button>
               <button
                 type="button"
+                id="btn-save-draft-product-sidebar"
                 onClick={() => handleSaveSubmit(false)}
                 className="w-full py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs cursor-pointer transition flex items-center justify-center gap-1.5"
               >
                 <Save className="h-3.5 w-3.5 text-slate-500" />
                 <span>Save as Draft</span>
+              </button>
+              <button
+                type="button"
+                id="btn-discard-back-product-sidebar"
+                onClick={(e) => {
+                  e.preventDefault();
+                  if (onCancel) onCancel();
+                }}
+                className="w-full py-2 rounded-xl bg-white hover:bg-slate-50 text-slate-600 font-bold text-xs cursor-pointer transition flex items-center justify-center gap-1.5 border border-slate-200"
+              >
+                <ArrowLeft className="h-3.5 w-3.5 text-slate-400" />
+                <span>Discard &amp; Back to Catalog</span>
               </button>
             </div>
           </div>

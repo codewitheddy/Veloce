@@ -37,7 +37,6 @@ import {
 import { Order } from '../types';
 import { CurrencyType, formatPrice } from '../lib/currency';
 import { useSiteSettings } from '../context/SiteSettingsContext';
-import CustomerPaymentClaimModal from './CustomerPaymentClaimModal';
 import { getAuthHeaders } from '../utils/authTokens';
 
 export interface OrderReceiptPageProps {
@@ -78,7 +77,6 @@ export default function OrderReceiptPage({
   const [copiedField, setCopiedField] = useState<'paybill' | 'account' | 'orderId' | null>(null);
   const [isSendingFollowup, setIsSendingFollowup] = useState(false);
   const [followupMsg, setFollowupMsg] = useState<string | null>(null);
-  const [isPaymentClaimOpen, setIsPaymentClaimOpen] = useState(false);
   const printableAreaRef = useRef<HTMLDivElement>(null);
 
   const handleSendFollowup = async () => {
@@ -225,18 +223,6 @@ export default function OrderReceiptPage({
 
         {/* Action Controls */}
         <div className="flex flex-wrap items-center gap-2">
-          {!isPaid && (
-            <button
-              type="button"
-              onClick={() => setIsPaymentClaimOpen(true)}
-              className="px-3.5 py-2 text-xs font-bold rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white transition-all cursor-pointer shadow-sm flex items-center gap-1.5 active:scale-95"
-              title="Submit your M-Pesa transaction code for admin verification"
-            >
-              <Smartphone className="h-3.5 w-3.5" />
-              <span>I Have Paid (Confirm Payment)</span>
-            </button>
-          )}
-
           {onUpdateOrderPaymentStatus && (
             <button
               type="button"
@@ -800,28 +786,6 @@ export default function OrderReceiptPage({
           </p>
         </div>
       </div>
-
-      {/* Customer Payment Claim Modal */}
-      {isPaymentClaimOpen && (
-        <CustomerPaymentClaimModal
-          isOpen={isPaymentClaimOpen}
-          onClose={() => setIsPaymentClaimOpen(false)}
-          orderId={order.id}
-          orderTotal={order.total}
-          customerName={order.customerName}
-          customerEmail={order.customerEmail}
-          customerPhone={order.phone}
-          currency={currency}
-          onNavigateToOrders={() => {
-            setIsPaymentClaimOpen(false);
-            if (onNavigateToOrders) onNavigateToOrders();
-            else window.dispatchEvent(new CustomEvent('veloce_navigate_tab', { detail: 'user' }));
-          }}
-          onClaimSuccess={(data) => {
-            setFollowupMsg(`Payment claim for M-Pesa ${data.mpesaCode} submitted! Admin has been notified via email.`);
-          }}
-        />
-      )}
     </div>
   );
 }

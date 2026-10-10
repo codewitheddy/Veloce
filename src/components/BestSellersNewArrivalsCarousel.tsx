@@ -173,7 +173,7 @@ export default function BestSellersNewArrivalsCarousel({
 
   return (
     <section 
-      className={`rounded-2xl border border-indigo-100/70 dark:border-gray-800 bg-linear-to-b from-indigo-50/30 via-white to-white dark:from-gray-950 dark:via-gray-900 dark:to-gray-900 p-5 sm:p-7 shadow-[0_4px_24px_rgba(37,44,139,0.03)] dark:shadow-none font-sans ${className}`}
+      className={`rounded-2xl border border-indigo-100/70 dark:border-gray-800 bg-linear-to-b from-indigo-50/30 via-white to-white dark:from-gray-950 dark:via-gray-900 dark:to-gray-900 p-4 sm:p-7 shadow-[0_4px_24px_rgba(37,44,139,0.03)] dark:shadow-none font-sans w-full max-w-full overflow-hidden ${className}`}
       id="best-sellers-new-arrivals-carousel"
     >
       {/* Top Header & Navigation Bar */}
@@ -209,10 +209,10 @@ export default function BestSellersNewArrivalsCarousel({
         </div>
 
         {/* Tab Controls & Slide Chevron Nav */}
-        <div className="flex items-center justify-between sm:justify-end gap-2 sm:gap-3 w-full sm:w-auto">
+        <div className="flex flex-wrap items-center justify-between sm:justify-end gap-2 sm:gap-3 w-full sm:w-auto">
           
           {/* Tabs Selector */}
-          <div className="flex items-center gap-1 bg-gray-100/80 dark:bg-gray-800/90 p-1 rounded-xl text-xs border border-gray-200/60 dark:border-gray-700 overflow-x-auto scrollbar-none max-w-full">
+          <div className="flex items-center gap-1 bg-gray-100/80 dark:bg-gray-800/90 p-1 rounded-xl text-xs border border-gray-200/60 dark:border-gray-700 overflow-x-auto scrollbar-none max-w-full shrink">
             <button
               type="button"
               onClick={() => setActiveTab('bestsellers')}
@@ -314,6 +314,10 @@ export default function BestSellersNewArrivalsCarousel({
                     <LazyImage
                       src={p.imageUrl}
                       alt={p.name}
+                      width={280}
+                      height={210}
+                      aspectRatio="4/3"
+                      responsiveType="carousel"
                       className="h-full w-full object-contain object-center transition-transform duration-500 group-hover:scale-105"
                     />
 

@@ -11,10 +11,10 @@ import {
   updatePaymentSubmissionStatus,
   updateOrderPaymentStatus,
   fetchAuthoritativeOrderById,
+  getDbPool,
 } from '../email/db';
 import { emailEvents } from '../email/events';
-import { getSqliteDb, getSqliteOrderById, updateSqliteOrderStatus, saveSqliteOrder } from '../../src/lib/sqlite-db';
-import { getPostgresPool } from '../../src/lib/postgres-db';
+import { getMysqlOrderById as getSqliteOrderById, updateMysqlOrderStatus as updateSqliteOrderStatus, saveMysqlOrder as saveSqliteOrder } from '../../src/lib/mysql-db';
 import { requireAdmin } from '../middleware/auth';
 
 const router = Router();
@@ -151,45 +151,20 @@ router.get(['/order/:orderId', '/order/:orderId/'], async (req: Request, res: Re
  */
 router.get(['/admin/pending', '/admin/pending/'], requireAdmin, async (_req: Request, res: Response) => {
   try {
-    const pool = getPostgresPool();
-    if (pool) {
-      const result = await pool.query(`
-        SELECT ps.*, o.customer_name, o.customer_email, o.total, o.created_at as order_created_at
-        FROM payment_submissions ps
-        LEFT JOIN customer_orders o ON o.id = ps.order_id
-        WHERE ps.status = 'pending_verification'
-        ORDER BY ps.submitted_at ASC;
-      `);
-      return res.json({ success: true, pending: result.rows });
-    }
-
-    const db = await getSqliteDb();
-    const resSql = db.exec(`
+    const pool = await getDbPool();
+    const [rows]: any = await pool.query(`
       SELECT ps.id, ps.order_id, ps.mpesa_receipt_code, ps.phone_number, ps.amount_claimed, ps.payment_method, ps.status, ps.submitted_at, ps.admin_notes,
-             COALESCE(o.customerName, '') as customer_name,
-             COALESCE(o.customerEmail, '') as customer_email,
+             COALESCE(o.customer_name, '') as customer_name,
+             COALESCE(o.customer_email, '') as customer_email,
              COALESCE(o.total, 0) as total,
-             COALESCE(o.created_at, o.date) as order_created_at
+             COALESCE(o.created_at, '') as order_created_at
       FROM payment_submissions ps
-      LEFT JOIN orders o ON o.id = ps.order_id
+      LEFT JOIN customer_orders o ON o.id = ps.order_id
       WHERE ps.status = 'pending_verification'
       ORDER BY ps.submitted_at ASC;
     `);
 
-    if (resSql.length === 0 || resSql[0].values.length === 0) {
-      return res.json({ success: true, pending: [] });
-    }
-
-    const cols = resSql[0].columns;
-    const pending = resSql[0].values.map((row) => {
-      const item: any = {};
-      cols.forEach((col, i) => {
-        item[col] = row[i];
-      });
-      return item;
-    });
-
-    return res.json({ success: true, pending });
+    return res.json({ success: true, pending: rows || [] });
   } catch (err: any) {
     return res.status(500).json({ success: false, error: err?.message || 'Failed to fetch pending payments.' });
   }

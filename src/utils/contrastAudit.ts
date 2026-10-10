@@ -43,10 +43,9 @@ function getEffectiveBackgroundColor(element: HTMLElement): { r: number; g: numb
   let baseColor = { r: 255, g: 255, b: 255 }; // Light mode default
   if (typeof document !== 'undefined') {
     const isDark = document.documentElement.classList.contains('dark') ||
-                   document.body.classList.contains('dark') ||
-                   (typeof window !== 'undefined' && window.matchMedia?.('(prefers-color-scheme: dark)').matches);
+                   document.body.classList.contains('dark');
     if (isDark) {
-      baseColor = { r: 15, g: 23, b: 42 }; // Dark mode slate-900 baseline
+      baseColor = { r: 15, g: 23, b: 42 };
     }
     
     // Check computed body / documentElement background

@@ -9,6 +9,7 @@ import { Star, TrendingUp, ArrowRight, ShoppingBag, Award } from 'lucide-react';
 import { getProductDiscountInfo } from '../utils/productUtils';
 import { cleanDescriptionExcerpt } from '../utils/formatDescription';
 import { CurrencyType, formatPrice } from '../lib/currency';
+import LazyImage from './LazyImage';
 
 interface BestSellingByCategoryProps {
   products: Product[];
@@ -106,7 +107,7 @@ export default function BestSellingByCategory({
   }
 
   return (
-    <section className="bg-slate-50/50 dark:bg-[#090D16] py-16 border-t border-slate-200 dark:border-slate-800 transition-colors" id="best-selling-by-category-section">
+    <section className="bg-slate-50/50 dark:bg-[#090D16] py-16 border-t border-slate-200 dark:border-slate-800 transition-colors w-full max-w-full overflow-hidden" id="best-selling-by-category-section">
       <div className="w-full max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8">
         {/* Header */}
         <div className="flex flex-col md:flex-row md:items-end md:justify-between border-b border-slate-200 dark:border-slate-800 pb-5 mb-10">
@@ -194,11 +195,14 @@ export default function BestSellingByCategory({
                       <div>
                         {/* Image Container with Rank Badge */}
                         <div className="relative h-32 sm:h-44 w-full overflow-hidden rounded-lg bg-gray-50 dark:bg-slate-900 border border-slate-100 dark:border-slate-800 flex items-center justify-center p-2">
-                          <img
+                          <LazyImage
                             src={product.imageUrl}
                             alt={product.name}
+                            width={240}
+                            height={176}
+                            aspectRatio="240/176"
+                            responsiveType="grid_card"
                             className="h-full w-full object-contain object-center group-hover:scale-105 transition-transform duration-500"
-                            referrerPolicy="no-referrer"
                           />
                           
                           {/* Rank Badge */}

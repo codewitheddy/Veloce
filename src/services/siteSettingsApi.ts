@@ -39,9 +39,10 @@ export const INITIAL_DEFAULT_SETTINGS: FullSiteSettings = {
     primary_color: '#4f46e5',
     secondary_color: '#06b6d4',
     accent_color: '#f59e0b',
-    background_color: '#0f172a',
-    surface_color: '#1e293b',
-    dark_mode_default: true,
+    background_color: '#f8fafc',
+    surface_color: '#ffffff',
+    text_color: '#0f172a',
+    dark_mode_default: false,
     is_scheduled_theme_active: false
   },
   tax: {
@@ -141,9 +142,9 @@ export const INITIAL_THEME_PRESETS: ThemePreset[] = [
     primary_color: '#4f46e5',
     secondary_color: '#06b6d4',
     accent_color: '#f59e0b',
-    background_color: '#0f172a',
-    surface_color: '#1e293b',
-    text_color: '#f8fafc',
+    background_color: '#f8fafc',
+    surface_color: '#ffffff',
+    text_color: '#0f172a',
     is_active: true,
     is_scheduled: false,
     is_system_preset: true
@@ -524,6 +525,19 @@ export const siteSettingsApi = {
       seo: { ...INITIAL_DEFAULT_SETTINGS.seo, ...(rawData?.seo || {}) },
       access_control: { ...INITIAL_DEFAULT_SETTINGS.access_control, ...(rawData?.access_control || {}) },
     };
+
+    if (merged.appearance) {
+      if (merged.appearance.background_color === '#0f172a' || merged.appearance.background_color === '#090d16') {
+        merged.appearance.background_color = '#f8fafc';
+      }
+      if (merged.appearance.surface_color === '#1e293b' || merged.appearance.surface_color === '#111827') {
+        merged.appearance.surface_color = '#ffffff';
+      }
+      if (merged.appearance.text_color === '#f8fafc') {
+        merged.appearance.text_color = '#0f172a';
+      }
+      merged.appearance.dark_mode_default = false;
+    }
 
     if (merged.general && (merged.general.support_phone === '+254 700 000 000' || merged.general.support_phone === '+254 717 147 007')) {
       merged.general.support_phone = '+254 182 180 965';

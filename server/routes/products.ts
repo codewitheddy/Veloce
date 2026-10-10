@@ -20,38 +20,41 @@ import {
   deleteSqliteCategory,
   deleteSqliteCategoriesBulk,
   updateSqliteCategoriesBulk,
-} from '../../src/lib/sqlite-db';
+  getMysqlProducts,
+  saveMysqlProduct,
+} from '../../src/lib/mysql-db';
 import { requireAdmin } from '../middleware/auth';
 import { cartStreamManager } from '../services/cartStream';
 
 const router = Router();
 
-// In-Memory cache for low-latency storefront queries, synchronized with SQLite
+// In-Memory cache for low-latency storefront queries, synchronized with MySQL
 let productsCache: any[] = [];
 let isCacheLoaded = false;
 
 export async function loadProductsCache(force: boolean = false): Promise<any[]> {
+  if (isCacheLoaded && !force && productsCache.length > 0) {
+    return productsCache;
+  }
   try {
-    const sqliteData = await pullSyncDataSqlite();
-    if (sqliteData && Array.isArray(sqliteData.veloce_products) && sqliteData.veloce_products.length > 0) {
-      productsCache = sqliteData.veloce_products;
+    const products = await getMysqlProducts();
+    if (products && Array.isArray(products) && products.length > 0) {
+      productsCache = products;
       isCacheLoaded = true;
     }
   } catch (err) {
-    console.warn('[Products Router] Error loading products from SQLite:', err);
+    console.warn('[Products Router] Error loading products from MySQL:', err);
   }
   return productsCache;
 }
 
 export async function persistProductsCache(): Promise<void> {
   try {
-    const sqliteData = await pullSyncDataSqlite();
-    const orders = sqliteData?.veloce_orders || [];
-    await pushSyncDataSqlite({
-      veloce_products: productsCache,
-      veloce_orders: orders,
-      db_is_initialized_clean: 'true',
-    });
+    for (const p of productsCache) {
+      if (p.id) {
+        await saveMysqlProduct(p);
+      }
+    }
   } catch (err) {
     console.error('[Products Router] Failed to persist products cache:', err);
   }
@@ -557,6 +560,29 @@ router.get('/', async (req: Request, res: Response) => {
       p.description?.toLowerCase().includes(s) ||
       p.tags?.toLowerCase().includes(s)
     );
+  }
+
+  // Ensure categories and catalog always return latest/newest products first by default
+  const sortParam = (req.query.sort as string) || (req.query.sortBy as string) || 'latest';
+  if (sortParam === 'price-asc') {
+    result.sort((a, b) => Number(a.price || 0) - Number(b.price || 0));
+  } else if (sortParam === 'price-desc') {
+    result.sort((a, b) => Number(b.price || 0) - Number(a.price || 0));
+  } else if (sortParam === 'alpha-asc') {
+    result.sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
+  } else if (sortParam === 'alpha-desc') {
+    result.sort((a, b) => String(b.name || '').localeCompare(String(a.name || '')));
+  } else {
+    // Default: 'latest' / 'newest'
+    result.sort((a, b) => {
+      const timeA = a.created_at || a.createdAt ? new Date(a.created_at || a.createdAt).getTime() : 0;
+      const timeB = b.created_at || b.createdAt ? new Date(b.created_at || b.createdAt).getTime() : 0;
+      if (timeA !== timeB) return timeB - timeA;
+      const numA = parseInt(String(a.id || '').replace(/\D/g, ''), 10) || 0;
+      const numB = parseInt(String(b.id || '').replace(/\D/g, ''), 10) || 0;
+      if (numA !== numB) return numB - numA;
+      return String(b.id || '').localeCompare(String(a.id || ''));
+    });
   }
 
   res.json(result);

@@ -83,8 +83,8 @@ export default function InventoryProductsTable({
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'low_stock' | 'out_of_stock' | 'draft' | 'archived'>('all');
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
   const [typeFilter, setTypeFilter] = useState<'all' | 'physical' | 'digital' | 'service'>('all');
-  const [sortField, setSortField] = useState<'name' | 'sku' | 'price' | 'stock' | 'category'>('name');
-  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
+  const [sortField, setSortField] = useState<'created_at' | 'name' | 'sku' | 'price' | 'stock' | 'category'>('created_at');
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
 
   // Pagination State
   const [currentPage, setCurrentPage] = useState(1);
@@ -178,7 +178,17 @@ export default function InventoryProductsTable({
       return true;
     }).sort((a, b) => {
       let comparison = 0;
-      if (sortField === 'name') {
+      if (sortField === 'created_at') {
+        const timeA = a.createdAt || (a as any).created_at ? new Date(a.createdAt || (a as any).created_at).getTime() : 0;
+        const timeB = b.createdAt || (b as any).created_at ? new Date(b.createdAt || (b as any).created_at).getTime() : 0;
+        if (timeA !== timeB) {
+          comparison = timeA - timeB;
+        } else {
+          const numA = parseInt(String(a.id || '').replace(/\D/g, ''), 10) || 0;
+          const numB = parseInt(String(b.id || '').replace(/\D/g, ''), 10) || 0;
+          comparison = numA - numB;
+        }
+      } else if (sortField === 'name') {
         comparison = (a.name || '').localeCompare(b.name || '');
       } else if (sortField === 'sku') {
         comparison = (a.sku || '').localeCompare(b.sku || '');

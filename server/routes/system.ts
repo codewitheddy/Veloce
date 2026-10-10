@@ -5,13 +5,11 @@
 
 import { Router, Request, Response } from 'express';
 import { 
-  getSqliteDbStatus, 
-  pushSyncDataSqlite, 
-  pullSyncDataSqlite, 
-  purgeAllSqliteData 
-} from '../../src/lib/sqlite-db';
-import { getDbStatus, pushSyncData, pullSyncData } from '../../src/lib/mysql-db';
-import { getPostgresDbStatus } from '../../src/lib/postgres-db';
+  getDbStatus, 
+  pushSyncData, 
+  pullSyncData, 
+  purgeAllMysqlData 
+} from '../../src/lib/mysql-db';
 import { performExpiryBackgroundCheck } from '../services/expiryChecker';
 import { requireAdmin, optionalAuth } from '../middleware/auth';
 import { loadProductsCache } from './products';
@@ -22,15 +20,18 @@ const router = Router();
 // 1. Health & Status Endpoints
 // ============================================================================
 router.get('/health', (_req: Request, res: Response) => {
-  res.json({ status: 'healthy', brand: 'Ropenix', timestamp: new Date().toISOString() });
+  res.json({ status: 'healthy', brand: 'Ropenix', timestamp: new Date().toISOString(), database: 'MySQL' });
 });
 
 router.get('/sqlite/status', async (_req: Request, res: Response) => {
   try {
-    const status = await getSqliteDbStatus();
-    res.json(status);
+    const status = await getDbStatus();
+    res.json({
+      ...status,
+      dbEngine: 'MySQL',
+    });
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : 'Unable to retrieve SQLite database status.';
+    const message = error instanceof Error ? error.message : 'Unable to retrieve database status.';
     res.status(500).json({ error: message });
   }
 });
@@ -38,27 +39,22 @@ router.get('/sqlite/status', async (_req: Request, res: Response) => {
 router.get('/mysql/status', async (_req: Request, res: Response) => {
   try {
     const status = await getDbStatus();
-    if (status.connected) {
-      res.json(status);
-    } else {
-      const sqliteStatus = await getSqliteDbStatus();
-      res.json({
-        ...sqliteStatus,
-        message: `SQLite DB is live at ${sqliteStatus.filePath}. (MySQL optional: ${status.message})`,
-      });
-    }
-  } catch (_error) {
-    const sqliteStatus = await getSqliteDbStatus();
-    res.json(sqliteStatus);
+    res.json(status);
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'MySQL status error';
+    res.status(500).json({ error: message });
   }
 });
 
 router.get('/postgres/status', async (_req: Request, res: Response) => {
   try {
-    const status = await getPostgresDbStatus();
-    res.json(status);
+    const status = await getDbStatus();
+    res.json({
+      ...status,
+      dbEngine: 'MySQL',
+    });
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : 'PostgreSQL status error';
+    const message = error instanceof Error ? error.message : 'Database status error';
     res.status(500).json({ error: message });
   }
 });

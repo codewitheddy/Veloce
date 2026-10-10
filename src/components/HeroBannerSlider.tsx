@@ -9,6 +9,7 @@ import {
   ArrowRight
 } from 'lucide-react';
 import { HeroBanner } from '../types';
+import { getOptimizedImageUrl, generateSrcSet } from '../utils/imageUtils';
 
 export const DEFAULT_HERO_SLIDES: HeroBanner[] = [
   {
@@ -487,10 +488,18 @@ export function HeroBannerSlider({
               {/* Right Column: Side Product Visual (Only rendered when an image is provided) */}
               {hasHeroImage && (
                 <div className="md:col-span-5 lg:col-span-5 flex items-center justify-center md:justify-end px-2">
-                  <div className="relative w-full max-w-[380px] sm:max-w-[440px] lg:max-w-[480px] flex items-center justify-center md:justify-end">
+                  <div className="relative w-full max-w-[380px] sm:max-w-[440px] lg:max-w-[480px] flex items-center justify-center md:justify-end min-h-[160px] sm:min-h-[220px]">
                     <img
-                      src={heroImage}
+                      src={getOptimizedImageUrl(heroImage, { width: 800 })}
+                      srcSet={!heroImage.startsWith('data:') ? generateSrcSet(heroImage, [320, 480, 640, 800, 1080]) : undefined}
+                      sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 480px"
                       alt={title}
+                      width={480}
+                      height={260}
+                      loading={currentSlideIndex === 0 ? 'eager' : 'lazy'}
+                      decoding="async"
+                      // @ts-ignore fetchpriority attribute
+                      fetchpriority={currentSlideIndex === 0 ? 'high' : 'auto'}
                       referrerPolicy="no-referrer"
                       className="w-full h-auto max-h-[190px] sm:max-h-[230px] lg:max-h-[260px] object-contain drop-shadow-[0_15px_30px_rgba(0,0,0,0.85)] transition-transform duration-500 hover:scale-105"
                     />

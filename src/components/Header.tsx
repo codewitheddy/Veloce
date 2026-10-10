@@ -255,10 +255,10 @@ export default function Header({
   };
 
   return (
-    <header className="sticky top-0 z-50 w-full flex flex-col shadow-xs font-sans">
+    <header className="sticky top-0 z-50 w-full max-w-full flex flex-col shadow-xs font-sans">
       {/* 1. TOP UTILITY BAR (Subtle Slate-900 / Slate-950) */}
-      <div className="w-full bg-slate-900 text-slate-300 text-xs px-2.5 sm:px-6 lg:px-8 py-1.5 border-b border-slate-800 transition-colors">
-        <div className="w-full max-w-[1440px] mx-auto flex items-center justify-between gap-1.5 sm:gap-4">
+      <div className="w-full bg-slate-900 text-slate-300 text-xs px-4 sm:px-6 lg:px-8 py-1.5 border-b border-slate-800 transition-colors">
+        <div className="w-full max-w-[1440px] mx-auto flex items-center justify-between gap-2 sm:gap-4">
           {/* Left: Location & Quick Services */}
           <div className="flex items-center gap-2 sm:gap-5 min-w-0 shrink">
             {/* Location Selector */}
@@ -266,13 +266,13 @@ export default function Header({
               <button
                 type="button"
                 onClick={() => setIsLocationMenuOpen(!isLocationMenuOpen)}
-                className="flex items-center gap-1 sm:gap-1.5 text-slate-300 hover:text-white font-medium cursor-pointer transition-colors text-[10.5px] sm:text-xs whitespace-nowrap"
+                className="flex items-center gap-1 sm:gap-1.5 text-slate-300 hover:text-white font-medium cursor-pointer transition-colors text-[10px] sm:text-xs whitespace-nowrap"
               >
                 <MapPin className="w-3 h-3 text-indigo-400 shrink-0 hidden sm:inline" />
                 <span className="text-slate-400 hidden sm:inline">{t('deliverTo')}</span>
                 <span className="font-semibold text-white flex items-center gap-1">
                   <span>{selectedLocation.flag}</span>
-                  <span className="truncate max-w-[70px] sm:max-w-none">{selectedLocation.city}</span>
+                  <span className="truncate max-w-[65px] sm:max-w-none">{selectedLocation.city}</span>
                 </span>
                 <ChevronDown className="w-2.5 h-2.5 sm:w-3 sm:h-3 text-slate-400 shrink-0" />
               </button>
@@ -326,27 +326,8 @@ export default function Header({
             </button>
           </div>
 
-          {/* Right: Dark Mode Toggle, Currency, Language */}
-          <div className="flex items-center gap-1.5 sm:gap-3 shrink-0">
-            {/* Dark/Light Mode Pill Switch */}
-            <button
-              type="button"
-              onClick={onToggleDarkMode}
-              title={darkMode ? t('switchToLight') : t('switchToDark')}
-              className="flex items-center justify-center bg-slate-800 border border-slate-700 hover:border-slate-500 rounded-full h-6 px-1.5 sm:px-2 py-0.5 text-[10.5px] sm:text-[11px] text-slate-200 transition-all cursor-pointer shrink-0"
-            >
-              {darkMode ? (
-                <>
-                  <Moon className="w-3 h-3 text-indigo-400 shrink-0" />
-                  <span className="hidden sm:inline sm:ml-1">{t('darkMode')}</span>
-                </>
-              ) : (
-                <>
-                  <Sun className="w-3 h-3 text-amber-400 shrink-0" />
-                  <span className="hidden sm:inline sm:ml-1">{t('lightMode')}</span>
-                </>
-              )}
-            </button>
+          {/* Right: Currency, Language */}
+          <div className="flex items-center gap-2 sm:gap-3 shrink-0">
 
             {/* Currency Selector */}
             <div className="relative shrink-0">
@@ -354,7 +335,7 @@ export default function Header({
                 value={currency}
                 onChange={(e) => onChangeCurrency(e.target.value as CurrencyType)}
                 aria-label="Currency Selector"
-                className="bg-slate-800 border border-slate-700 hover:border-slate-500 rounded px-1.5 sm:px-2 py-0.5 text-[10px] sm:text-[11px] font-bold text-white cursor-pointer focus:outline-none appearance-none pr-4 sm:pr-5"
+                className="bg-slate-800 border border-slate-700 hover:border-slate-500 rounded px-2 py-0.5 text-[10px] sm:text-[11px] font-bold text-white cursor-pointer focus:outline-none appearance-none pr-5"
               >
                 <option value="KSh" className="bg-slate-900 text-white">KES</option>
                 <option value="USD" className="bg-slate-900 text-white">USD</option>
@@ -371,7 +352,7 @@ export default function Header({
                 <option value="UGX" className="bg-slate-900 text-white">UGX</option>
                 <option value="TZS" className="bg-slate-900 text-white">TZS</option>
               </select>
-              <ChevronDown className="w-2.5 h-2.5 sm:w-3 sm:h-3 text-slate-400 absolute right-1 sm:right-1.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+              <ChevronDown className="w-2.5 h-2.5 sm:w-3 sm:h-3 text-slate-400 absolute right-1.5 top-1/2 -translate-y-1/2 pointer-events-none" />
             </div>
 
             {/* Multi-Language Selector */}
@@ -380,30 +361,31 @@ export default function Header({
                 value={language}
                 onChange={(e) => setLanguage(e.target.value as any)}
                 aria-label="Select Language"
-                className="bg-slate-800 border border-slate-700 hover:border-slate-500 rounded px-1.5 sm:px-2 py-0.5 text-[10px] sm:text-[11px] font-bold text-white cursor-pointer focus:outline-none appearance-none pr-4 sm:pr-5 max-w-[85px] sm:max-w-none truncate"
+                className="bg-slate-800 border border-slate-700 hover:border-slate-500 rounded px-2 py-0.5 text-[10px] sm:text-[11px] font-bold text-white cursor-pointer focus:outline-none appearance-none pr-5 shrink-0"
               >
                 {supportedLanguages.map((lang) => (
                   <option key={lang.code} value={lang.code} className="bg-slate-900 text-white">
-                    {lang.flag} {lang.nativeName}
+                    {lang.flag} {lang.code.toUpperCase()}
                   </option>
                 ))}
               </select>
-              <ChevronDown className="w-2.5 h-2.5 sm:w-3 sm:h-3 text-slate-400 absolute right-1 sm:right-1.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+              <ChevronDown className="w-2.5 h-2.5 sm:w-3 sm:h-3 text-slate-400 absolute right-1.5 top-1/2 -translate-y-1/2 pointer-events-none" />
             </div>
           </div>
         </div>
       </div>
 
       {/* 2. MAIN NAVBAR (Crisp Surface Background with Indigo Brand Elements) */}
-      <div className="w-full bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white px-4 sm:px-6 lg:px-8 py-3 transition-colors">
-        <div className="w-full max-w-[1440px] mx-auto flex items-center justify-between gap-4 md:gap-8">
-          {/* Brand Logo: VELOCE */}
-          <div className="flex items-center gap-3 shrink-0">
+      <div className="w-full bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white px-4 sm:px-6 lg:px-8 py-2.5 sm:py-3 transition-colors">
+        <div className="w-full max-w-[1440px] mx-auto flex items-center justify-between gap-2 sm:gap-4 md:gap-8">
+          {/* Brand Logo: VELOCE / ROPENIX */}
+          <div className="flex items-center gap-2 shrink-0">
             <button
               onClick={() => setCurrentTab('home')}
-              className="flex items-center gap-2 cursor-pointer text-left focus:outline-none select-none group"
+              className="flex items-center gap-1.5 cursor-pointer text-left focus:outline-none select-none group"
             >
-              <VeloceLogo size="md" light={false} />
+              <VeloceLogo size="sm" className="sm:hidden" light={false} />
+              <VeloceLogo size="md" className="hidden sm:flex" light={false} />
             </button>
           </div>
 
@@ -468,6 +450,10 @@ export default function Header({
                         <img
                           src={product.images?.[0] || (product as any).image || '/placeholder-product.png'}
                           alt={product.name}
+                          width={40}
+                          height={40}
+                          loading="lazy"
+                          decoding="async"
                           referrerPolicy="no-referrer"
                           className="w-10 h-10 object-contain rounded bg-slate-50 dark:bg-slate-800 p-0.5 shrink-0 border border-slate-200 dark:border-slate-700"
                         />
@@ -504,12 +490,12 @@ export default function Header({
           </div>
 
           {/* Right Action Icons: User Account, Wishlist, Your Cart */}
-          <div className="flex items-center gap-4 sm:gap-6 shrink-0">
+          <div className="flex items-center gap-1 sm:gap-4 lg:gap-6 shrink-0">
             {/* Mobile Search Toggle Button */}
             <button
               onClick={() => setIsMobileSearchSelected(true)}
               aria-label="Open mobile search"
-              className="flex md:hidden p-2 text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white"
+              className="flex md:hidden p-1.5 sm:p-2 text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
             >
               <Search className="w-5 h-5" />
             </button>
@@ -519,11 +505,11 @@ export default function Header({
               <button
                 type="button"
                 onClick={() => setIsUserMenuOpen(!isUserMenuOpen)}
-                className="flex items-center gap-2 text-slate-700 dark:text-slate-200 hover:text-indigo-600 dark:hover:text-indigo-400 cursor-pointer focus:outline-none select-none py-1 transition-colors"
+                className="flex items-center gap-1 sm:gap-2 text-slate-700 dark:text-slate-200 hover:text-indigo-600 dark:hover:text-indigo-400 cursor-pointer focus:outline-none select-none py-1 transition-colors"
                 aria-label="User account menu"
               >
-                <div className="w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 flex items-center justify-center text-slate-700 dark:text-slate-200">
-                  <User className="w-4 h-4" />
+                <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 flex items-center justify-center text-slate-700 dark:text-slate-200">
+                  <User className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                 </div>
                 <div className="hidden lg:flex flex-col items-start leading-tight">
                   <span className="text-[10px] text-slate-500 dark:text-slate-400 font-medium">
@@ -732,10 +718,10 @@ export default function Header({
               )}
             </div>
 
-            {/* WISHLIST with Badge */}
+            {/* WISHLIST with Badge (Desktop & Tablet) */}
             <button
               onClick={() => setCurrentTab('user')}
-              className="flex flex-col items-center justify-center cursor-pointer group focus:outline-none select-none relative"
+              className="hidden sm:flex flex-col items-center justify-center cursor-pointer group focus:outline-none select-none relative"
             >
               <div className="relative">
                 <Heart className="w-6 h-6 text-slate-700 dark:text-slate-200 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors" />
@@ -753,17 +739,18 @@ export default function Header({
             {/* YOUR CART with Badge */}
             <button
               onClick={() => setCurrentTab('checkout')}
-              className="flex flex-col items-center justify-center cursor-pointer group focus:outline-none select-none relative"
+              className="flex flex-col items-center justify-center cursor-pointer group focus:outline-none select-none relative p-1 sm:p-0"
+              aria-label="View shopping cart"
             >
               <div className="relative">
-                <ShoppingBag className="w-6 h-6 text-slate-700 dark:text-slate-200 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors" />
+                <ShoppingBag className="w-5 h-5 sm:w-6 sm:h-6 text-slate-700 dark:text-slate-200 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors" />
                 {cartCount > 0 && (
-                  <span className="absolute -top-1.5 -right-2 bg-indigo-600 text-white font-bold text-[10px] w-4 h-4 rounded-full flex items-center justify-center shadow-xs">
+                  <span className="absolute -top-1 -right-1.5 sm:-top-1.5 sm:-right-2 bg-indigo-600 text-white font-bold text-[9px] sm:text-[10px] w-3.5 h-3.5 sm:w-4 sm:h-4 rounded-full flex items-center justify-center shadow-xs">
                     {cartCount}
                   </span>
                 )}
               </div>
-              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 mt-1 transition-colors">
+              <span className="hidden sm:block text-[10px] font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 mt-1 transition-colors">
                 {t('yourCart')}
               </span>
             </button>
@@ -771,7 +758,7 @@ export default function Header({
             {/* Mobile Hamburger Toggle */}
             <button
               onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-              className="flex lg:hidden p-2 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
+              className="flex lg:hidden p-1.5 sm:p-2 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors shrink-0"
               aria-label="Toggle navigation menu"
             >
               {isMobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
@@ -781,18 +768,18 @@ export default function Header({
       </div>
 
       {/* 3. CATEGORY & SPECIALS SUB-NAVBAR */}
-      <div className="w-full bg-slate-50/90 dark:bg-slate-900/90 border-b border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 px-3 sm:px-6 lg:px-8 py-1.5 select-none shadow-2xs">
-        <div className="w-full max-w-[1440px] mx-auto flex items-center justify-between gap-2 sm:gap-4 overflow-x-auto scrollbar-none py-0.5">
+      <div className="w-full max-w-full bg-slate-50/90 dark:bg-slate-900/90 border-b border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 px-2.5 sm:px-6 lg:px-8 py-1.5 select-none shadow-2xs overflow-hidden">
+        <div className="w-full max-w-[1440px] mx-auto flex items-center justify-between gap-1.5 sm:gap-4 overflow-x-auto scrollbar-none py-0.5">
           {/* Left Category Button & Navigation Links */}
           <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0">
             {/* ALL CATEGORIES Button */}
             <button
               ref={categoryButtonRef}
               onClick={() => setIsCategoryDrawerOpen(!isCategoryDrawerOpen)}
-              className="flex items-center gap-1.5 sm:gap-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs sm:text-sm px-3 sm:px-4 py-1.5 rounded-md cursor-pointer transition-all shrink-0 shadow-xs border border-indigo-700"
+              className="flex items-center gap-1.5 sm:gap-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs sm:text-sm px-2.5 sm:px-4 py-1.5 rounded-md cursor-pointer transition-all shrink-0 shadow-xs border border-indigo-700"
             >
               <Menu className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-indigo-100 shrink-0" />
-              <span className="uppercase tracking-wider whitespace-nowrap text-[10.5px] sm:text-xs">{t('allCategories')}</span>
+              <span className="uppercase tracking-wider whitespace-nowrap text-[10px] sm:text-xs">{t('allCategories')}</span>
             </button>
 
             {/* Category Links (hidden on mobile, visible on tablet/desktop) */}
@@ -825,11 +812,11 @@ export default function Header({
             </div>
           </div>
 
-          {/* Right Highlights: NEW RELEASES & CLEARANCE SALE Tabs */}
-          <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0 pl-1 sm:pl-2">
+          {/* Right Highlights: NEW RELEASES (Tablet/Desktop only) & CLEARANCE SALE Tabs */}
+          <div className="flex items-center gap-1 sm:gap-2.5 shrink-0">
             <button
               onClick={() => handleCategoryClick('All')}
-              className="bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/50 border border-indigo-200 dark:border-indigo-800 text-indigo-700 dark:text-indigo-300 font-bold text-[10px] sm:text-xs px-2.5 sm:px-3.5 py-1.5 rounded uppercase tracking-wider cursor-pointer shadow-3xs transition-colors whitespace-nowrap shrink-0"
+              className="hidden sm:inline-flex bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/50 border border-indigo-200 dark:border-indigo-800 text-indigo-700 dark:text-indigo-300 font-bold text-xs px-3.5 py-1.5 rounded uppercase tracking-wider cursor-pointer shadow-3xs transition-colors whitespace-nowrap shrink-0"
             >
               {t('newReleases')}
             </button>
@@ -857,11 +844,11 @@ export default function Header({
           />
           <div
             ref={categoryDrawerRef}
-            className="relative z-50 w-full bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-200 p-6 shadow-2xl animate-in slide-in-from-top-2 duration-200 max-h-[80vh] overflow-y-auto"
+            className="relative z-50 w-full bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-200 p-4 sm:p-6 shadow-2xl animate-in slide-in-from-top-2 duration-200 max-h-[80vh] overflow-y-auto"
           >
             <div className="w-full max-w-[1440px] mx-auto">
               {rootCategories.length > 0 ? (
-                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-6">
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3.5 sm:gap-6">
                   {rootCategories.map((rootCat) => {
                     const childSubs = storedCategories.filter(
                       (c) => c.parentId === rootCat.id && c.status === 'Active'
@@ -1087,6 +1074,11 @@ export default function Header({
                 <img
                   src={p.images?.[0] || (p as any).image || '/placeholder-product.png'}
                   alt={p.name}
+                  width={48}
+                  height={48}
+                  loading="lazy"
+                  decoding="async"
+                  referrerPolicy="no-referrer"
                   className="w-12 h-12 object-contain bg-white rounded p-1 shrink-0"
                 />
                 <div className="flex-1 min-w-0">

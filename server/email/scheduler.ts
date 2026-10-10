@@ -10,9 +10,8 @@ import {
   hasScheduledTaskRun,
   logScheduledTaskRun,
   updateOrderPaymentStatus,
+  getDbPool,
 } from './db';
-import { getSqliteDb } from '../../src/lib/sqlite-db';
-import { getPostgresPool } from '../../src/lib/postgres-db';
 import { enqueueEmail } from './queue';
 import { emailEvents } from './events';
 import { formatKES } from './urlHelper';
@@ -62,51 +61,17 @@ function getNairobiTime(): {
  * Fetches all pending unverified payment submissions from DB
  */
 async function getPendingPaymentSubmissions(): Promise<any[]> {
-  const pool = getPostgresPool();
-  if (pool) {
-    try {
-      const res = await pool.query(`
-        SELECT ps.id, ps.order_id as "orderId", ps.mpesa_receipt_code as "mpesaCode", ps.amount_claimed as "amount", ps.phone_number, ps.submitted_at as "submittedAt",
-               o.customer_name as "customerName", o.customer_email as "customerEmail", o.total
-        FROM payment_submissions ps
-        LEFT JOIN customer_orders o ON o.id = ps.order_id
-        WHERE ps.status = 'pending_verification'
-        ORDER BY ps.submitted_at ASC
-      `);
-      return res.rows;
-    } catch {
-      return [];
-    }
-  }
-
   try {
-    const db = await getSqliteDb();
-    const res = db.exec(`
-      SELECT ps.id, ps.order_id, ps.mpesa_receipt_code, ps.amount_claimed, ps.phone_number, ps.submitted_at,
-             o.customer_name, o.customer_email, o.total
+    const pool = await getDbPool();
+    const [rows]: any = await pool.query(`
+      SELECT ps.id, ps.order_id as orderId, ps.mpesa_receipt_code as mpesaCode, ps.amount_claimed as amount, ps.phone_number, ps.submitted_at as submittedAt,
+             o.customer_name as customerName, o.customer_email as customerEmail, o.total
       FROM payment_submissions ps
       LEFT JOIN customer_orders o ON o.id = ps.order_id
       WHERE ps.status = 'pending_verification'
-      ORDER BY ps.submitted_at ASC;
+      ORDER BY ps.submitted_at ASC
     `);
-
-    if (res.length === 0 || res[0].values.length === 0) return [];
-    const cols = res[0].columns;
-    return res[0].values.map((row) => {
-      const obj: any = {};
-      cols.forEach((col, idx) => {
-        obj[col] = row[idx];
-      });
-      return {
-        id: obj.id,
-        orderId: obj.order_id,
-        mpesaCode: obj.mpesa_receipt_code,
-        amount: obj.amount_claimed || 0,
-        customerName: obj.customer_name || 'Customer',
-        customerEmail: obj.customer_email || '',
-        submittedAt: obj.submitted_at,
-      };
-    });
+    return rows || [];
   } catch {
     return [];
   }

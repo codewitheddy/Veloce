@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Poppins:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap');
 @import "tailwindcss";
 @import "leaflet/dist/leaflet.css";
 
@@ -15,9 +15,9 @@
   --radius-4xl: 2rem;
   --radius-full: 9999px;
 
-  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
-  --font-display: "Space Grotesk", sans-serif;
-  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+  --font-sans: "Inter", "Poppins", system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+  --font-display: "Space Grotesk", "Poppins", "Inter", system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+  --font-mono: "Inter", "Poppins", system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
 
   /* Standard Brand Primary Palette (#4F46E5 / #4338CA / #EEF2FF) */
   --color-indigo-50: #eef2ff;
@@ -171,45 +171,69 @@
   --border-strong: #CBD5E1;
 }
 
-.dark, :root.dark {
-  --primary: #6366F1;
-  --primary-hover: #818CF8;
-  --primary-soft: #1E1B4B;
-
-  --accent: #F59E0B;
-  --accent-hover: #FBBF24;
-  --accent-soft: #451A03;
-
-  --success: #10B981;
-  --success-soft: #064E3B;
-
-  --error: #F87171;
-  --error-soft: #450A0A;
-
-  --warning: #FB923C;
-  --warning-soft: #431407;
-
-  --background: #090D16;
-  --surface: #0F172A;
-  --surface-card: #111827;
-  --surface-subtle: #162032;
-  --surface-muted: #1E293B;
-  --surface-elevated: #1E293B;
-
-  --text-primary: #F8FAFC;
-  --text-secondary: #CBD5E1;
-  --text-muted: #94A3B8;
-
-  --border: #1E293B;
-  --border-subtle: #162032;
-  --border-strong: #334155;
-}
-
 /* Base Typographic Standards */
 @layer base {
-  html, body {
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+  }
+
+  img,
+  video,
+  canvas {
+    max-width: 100%;
+    height: auto;
+  }
+
+  svg {
+    max-width: 100%;
+  }
+
+  html {
+    font-family: var(--font-sans);
+    font-variant-numeric: normal;
+    min-height: 100%;
+    margin: 0;
+    padding: 0;
+    background-color: #020617;
     font-size: 16px;
     line-height: 1.6;
+    overflow-x: hidden;
+    overflow-x: clip;
+    overflow-y: auto;
+    width: 100%;
+    max-width: 100%;
+  }
+
+  body {
+    font-family: var(--font-sans);
+    font-variant-numeric: normal;
+    min-height: 100%;
+    margin: 0;
+    padding: 0;
+    background-color: #020617;
+    top: 0px !important;
+    position: static !important;
+    overflow-x: hidden;
+    overflow-x: clip;
+    width: 100%;
+    max-width: 100%;
+    -webkit-overflow-scrolling: touch;
+    overflow-wrap: break-word;
+  }
+
+  #root {
+    min-height: 100vh;
+    min-height: 100dvh;
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    max-width: 100%;
+    overflow-x: hidden;
+    overflow-x: clip;
+    margin: 0;
+    padding: 0;
   }
 
   p {
@@ -221,6 +245,14 @@
     font-family: var(--font-display);
     line-height: 1.2;
     letter-spacing: -0.02em;
+  }
+
+  button,
+  input,
+  optgroup,
+  select,
+  textarea {
+    font-family: inherit;
   }
 
   /* Universal Crisp Checkbox & Radio Styling (Outline only on default state) */
@@ -269,21 +301,6 @@
     background-image: url("data:image/svg+xml,%3csvg viewBox='0 0 16 16' fill='white' xmlns='http://www.w3.org/2000/svg'%3e%3cpath d='M4 8a1 1 0 011-1h6a1 1 0 110 2H5a1 1 0 01-1-1z'/%3e%3c/svg%3e") !important;
   }
 
-  .dark input[type="checkbox"] {
-    border-color: #475569 !important;
-    background-color: #0f172a !important;
-  }
-
-  .dark input[type="checkbox"]:hover {
-    border-color: #64748b !important;
-  }
-
-  .dark input[type="checkbox"]:checked,
-  .dark input[type="checkbox"]:indeterminate {
-    background-color: #4f46e5 !important;
-    border-color: #4f46e5 !important;
-  }
-
   /* Radio Buttons */
   input[type="radio"] {
     -webkit-appearance: none !important;
@@ -322,17 +339,6 @@
     background-position: center !important;
     background-repeat: no-repeat !important;
     background-size: 100% 100% !important;
-  }
-
-  .dark input[type="radio"] {
-    border-color: #475569 !important;
-    background-color: #0f172a !important;
-  }
-
-  .dark input[type="radio"]:checked {
-    border-color: #6366f1 !important;
-    background-color: #0f172a !important;
-    background-image: url("data:image/svg+xml,%3csvg viewBox='0 0 16 16' fill='%23818cf8' xmlns='http://www.w3.org/2000/svg'%3e%3ccircle cx='8' cy='8' r='4'/%3e%3c/svg%3e") !important;
   }
 }
 
@@ -440,137 +446,6 @@
   }
 }
 
-/* ==========================================================================
-   Automated Elegant Dark Mode Mapping & Surface Elevation
-   ========================================================================== */
-html.dark, html.dark body {
-  background-color: #090d16 !important;
-  color: #f8fafc !important;
-}
-
-.dark {
-  /* Scrollbars in dark mode */
-  ::-webkit-scrollbar-thumb {
-    background: rgba(255, 255, 255, 0.15);
-  }
-  ::-webkit-scrollbar-thumb:hover {
-    background: rgba(255, 255, 255, 0.28);
-  }
-  ::-webkit-scrollbar-track {
-    background: rgba(0, 0, 0, 0.2);
-  }
-
-  /* Custom tab & table scrollbars in dark mode */
-  .custom-tab-scroll {
-    scrollbar-color: rgba(99, 102, 241, 0.6) rgba(15, 23, 42, 0.5);
-  }
-  .custom-tab-scroll::-webkit-scrollbar-track {
-    background: rgba(15, 23, 42, 0.6);
-  }
-  .custom-tab-scroll::-webkit-scrollbar-thumb {
-    background: rgba(99, 102, 241, 0.5);
-  }
-  .custom-tab-scroll::-webkit-scrollbar-thumb:hover {
-    background: rgba(99, 102, 241, 0.8);
-  }
-
-  .custom-table-scroll {
-    scrollbar-color: rgba(255, 255, 255, 0.15) rgba(15, 23, 42, 0.5);
-  }
-  .custom-table-scroll::-webkit-scrollbar-track {
-    background: rgba(15, 23, 42, 0.6);
-  }
-  .custom-table-scroll::-webkit-scrollbar-thumb {
-    background: rgba(255, 255, 255, 0.15);
-  }
-  .custom-table-scroll::-webkit-scrollbar-thumb:hover {
-    background: rgba(255, 255, 255, 0.28);
-  }
-
-  /* Universal Unannotated Light Surface Fallbacks (Non-destructive) */
-  .bg-white:not([class*="dark:bg-"]) {
-    background-color: #0f172a;
-    border-color: #1e293b;
-  }
-  
-  .bg-gray-50:not([class*="dark:bg-"]),
-  .bg-slate-50:not([class*="dark:bg-"]),
-  .bg-\[\#f8faff\]:not([class*="dark:bg-"]),
-  .bg-\[\#F9FAFB\]:not([class*="dark:bg-"]),
-  .bg-\[\#f8fafc\]:not([class*="dark:bg-"]),
-  .bg-\[\#fbfcfd\]\/40:not([class*="dark:bg-"]) {
-    background-color: #090d16;
-  }
-
-  .bg-gray-100:not([class*="dark:bg-"]),
-  .bg-slate-100:not([class*="dark:bg-"]) {
-    background-color: #1e293b;
-    border-color: #334155;
-  }
-
-  .bg-\[\#EEF2F6\]\/55:not([class*="dark:bg-"]) {
-    background-color: #0f172a;
-  }
-
-  /* High-Contrast Typography Mapping for unannotated dark text */
-  .text-gray-950:not([class*="dark:text-"]),
-  .text-gray-900:not([class*="dark:text-"]),
-  .text-slate-950:not([class*="dark:text-"]),
-  .text-slate-900:not([class*="dark:text-"]),
-  .text-gray-850:not([class*="dark:text-"]),
-  .text-gray-800:not([class*="dark:text-"]) {
-    color: #f8fafc;
-  }
-
-  .text-gray-700:not([class*="dark:text-"]),
-  .text-slate-700:not([class*="dark:text-"]),
-  .text-gray-650:not([class*="dark:text-"]),
-  .text-gray-600:not([class*="dark:text-"]),
-  .text-slate-600:not([class*="dark:text-"]) {
-    color: #cbd5e1;
-  }
-
-  .text-gray-500:not([class*="dark:text-"]),
-  .text-gray-400:not([class*="dark:text-"]),
-  .text-slate-500:not([class*="dark:text-"]),
-  .text-slate-400:not([class*="dark:text-"]) {
-    color: #94a3b8;
-  }
-
-  /* Borders fallback for unannotated light borders */
-  .border-gray-50:not([class*="dark:border-"]),
-  .border-gray-100:not([class*="dark:border-"]),
-  .border-gray-150:not([class*="dark:border-"]),
-  .border-gray-200:not([class*="dark:border-"]),
-  .border-slate-100:not([class*="dark:border-"]),
-  .border-slate-200:not([class*="dark:border-"]),
-  .border-indigo-50:not([class*="dark:border-"]),
-  .border-indigo-100:not([class*="dark:border-"]) {
-    border-color: #1e293b;
-  }
-
-  /* Crisp Inputs, Forms, Textareas, Selects */
-  input:not([type="checkbox"]):not([type="radio"]):not([type="button"]):not([type="submit"]):not([class*="dark:bg-"]),
-  textarea:not([class*="dark:bg-"]),
-  select:not([class*="dark:bg-"]) {
-    background-color: #0f172a;
-    color: #f8fafc;
-    border-color: #334155;
-  }
-
-  input:not([type="checkbox"]):not([type="radio"]):focus-visible,
-  textarea:focus-visible,
-  select:focus-visible {
-    border-color: #6366f1;
-    outline: none;
-    box-shadow: 0 0 0 1px #6366f1, 0 0 12px rgba(99, 102, 241, 0.25);
-  }
-
-  ::placeholder {
-    color: #64748b;
-  }
-}
-
 /* ==============================================================================
    Google Translate Seamless Auto-Translation Integration & Widget Resets
    ============================================================================== */
@@ -580,25 +455,24 @@ html.dark, html.dark body {
 
 .goog-te-banner-frame,
 .goog-te-banner-frame.skiptranslate,
-iframe.goog-te-banner-frame {
+iframe.goog-te-banner-frame,
+iframe.skiptranslate,
+iframe[id^=":"],
+.skiptranslate:not(.allow-display),
+#goog-gt-tt,
+.goog-te-balloon-frame,
+.VIpgJd-yAWdnf-hSRGPd {
   display: none !important;
   visibility: hidden !important;
   height: 0 !important;
+  width: 0 !important;
+  max-height: 0 !important;
+  max-width: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
   border: none !important;
-}
-
-body {
-  top: 0px !important;
-  position: static !important;
-}
-
-.skiptranslate:not(.allow-display) {
-  display: none !important;
-}
-
-#goog-gt-tt,
-.goog-te-balloon-frame {
-  display: none !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
 }
 
 .goog-text-highlight {
@@ -616,7 +490,9 @@ body {
 
 html, body {
   -webkit-overflow-scrolling: touch;
-  overscroll-behavior-y: none;
+  overflow-x: clip;
+  width: 100%;
+  max-width: 100%;
 }
 
 /* Safe area inset helpers for modern edge-to-edge mobile screens */

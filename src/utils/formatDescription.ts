@@ -79,7 +79,7 @@ export function formatRichDescription(rawText: string | undefined | null): strin
           currentListItems
             .map(
               (li) =>
-                `<li class="flex items-start gap-2.5 text-xs sm:text-[13px] leading-relaxed"><span class="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-indigo-100/70 dark:bg-indigo-950/80 text-indigo-700 dark:text-indigo-300 font-bold text-[10px] mt-0.5 shadow-5xs">•</span><span>${li}</span></li>`
+                `<li class="flex items-start gap-2.5 text-xs sm:text-sm leading-relaxed"><span class="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-indigo-100/70 dark:bg-indigo-950/80 text-indigo-700 dark:text-indigo-300 font-bold text-[10px] mt-0.5 shadow-5xs">•</span><span>${li}</span></li>`
             )
             .join('') +
           `</ul>`
@@ -146,7 +146,7 @@ export function formatRichDescription(rawText: string | undefined | null): strin
       );
     } else {
       resultBlocks.push(
-        `<p class="text-xs sm:text-[13px] text-slate-600 dark:text-slate-300 font-normal leading-relaxed my-2">${formattedLine}</p>`
+        `<p class="text-xs sm:text-sm text-slate-600 dark:text-slate-300 font-normal leading-relaxed my-2">${formattedLine}</p>`
       );
     }
   }

@@ -52,7 +52,7 @@ export const CardDescription = React.forwardRef<HTMLParagraphElement, React.HTML
     return (
       <p
         ref={ref}
-        className={`text-[11px] text-gray-500 dark:text-gray-400 font-sans leading-normal ${className}`}
+        className={`text-xs text-slate-500 dark:text-slate-400 font-sans leading-normal ${className}`}
         {...props}
       />
     );

@@ -129,7 +129,7 @@ export default function AdminLayout({
   // If not logged in as admin or session has expired, present the dedicated Django Superuser Login view
   if (userRole !== 'admin' || isSessionExpired || !hasValidAdminSession()) {
     return (
-      <div className={`min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white font-sans ${darkMode ? 'dark' : ''}`}>
+      <div className="min-h-screen bg-slate-50 text-slate-900 font-sans">
         <DjangoAdminLogin
           onLoginSuccess={() => {
             setIsSessionExpired(false);
@@ -145,7 +145,7 @@ export default function AdminLayout({
   }
 
   return (
-    <div className={`h-screen overflow-hidden flex flex-col bg-slate-900 text-slate-100 font-sans selection:bg-indigo-600 selection:text-white ${darkMode ? 'dark' : ''}`}>
+    <div className="h-screen overflow-hidden flex flex-col bg-slate-900 text-slate-100 font-sans selection:bg-indigo-600 selection:text-white">
       {/* Real-time Order Alert Notification Banner */}
       <AdminOrderNotificationBanner
         userRole={userRole}

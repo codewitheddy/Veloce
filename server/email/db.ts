@@ -1,11 +1,14 @@
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
+ * 
+ * Ropenix Email & Transactional DB Services (MySQL Standalone)
+ * Backed solely by the central MySQL database.
  */
 
 import crypto from 'crypto';
-import { getSqliteDb, saveSqliteDb } from '../../src/lib/sqlite-db';
-import { getPostgresPool } from '../../src/lib/postgres-db';
+import { getDbPool } from '../../src/lib/mysql-db';
+export { getDbPool };
 
 export interface EmailLogRecord {
   id: string;
@@ -64,71 +67,25 @@ export interface EmailPreferencesRecord {
   updated_at: string;
 }
 
-function isPostgresActive(): boolean {
-  const pool = getPostgresPool();
-  return Boolean(pool);
-}
-
 // ============================================================================
-// 1. EMAIL LOGS & DEDUPLICATION
+// 1. EMAIL LOGS & DEDUPLICATION (MySQL)
 // ============================================================================
 
 export async function logEmail(record: Omit<EmailLogRecord, 'id' | 'created_at'>): Promise<string> {
   const id = `elog-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`;
   const now = new Date().toISOString();
-  const metadataStr = record.metadata ? JSON.stringify(record.metadata) : null;
+  const metadataStr = record.metadata ? (typeof record.metadata === 'string' ? record.metadata : JSON.stringify(record.metadata)) : null;
 
-  if (isPostgresActive()) {
-    const pool = getPostgresPool()!;
-    try {
-      await pool.query(
-        `INSERT INTO email_logs (id, recipient, email_type, subject, status, attempts, error_message, related_order_id, related_user_id, dedupe_key, metadata, created_at, sent_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
-         ON CONFLICT (dedupe_key) DO UPDATE SET
-           status = EXCLUDED.status,
-           attempts = email_logs.attempts + 1,
-           error_message = EXCLUDED.error_message,
-           sent_at = EXCLUDED.sent_at`,
-        [
-          id,
-          record.recipient,
-          record.email_type,
-          record.subject,
-          record.status,
-          record.attempts || 1,
-          record.error_message || null,
-          record.related_order_id || null,
-          record.related_user_id || null,
-          record.dedupe_key || null,
-          metadataStr ? JSON.parse(metadataStr) : null,
-          now,
-          record.sent_at || (record.status === 'sent' ? now : null),
-        ]
-      );
-      return id;
-    } catch (err: any) {
-      console.warn('[Email DB] PG logEmail warning:', err?.message);
-    }
-  }
-
-  // SQLite Fallback
   try {
-    const db = await getSqliteDb();
-    if (record.dedupe_key) {
-      const existing = db.exec("SELECT id FROM email_logs WHERE dedupe_key = ?;", [record.dedupe_key]);
-      if (existing.length > 0 && existing[0].values.length > 0) {
-        db.run(
-          `UPDATE email_logs SET status = ?, attempts = attempts + 1, error_message = ?, sent_at = ? WHERE dedupe_key = ?;`,
-          [record.status, record.error_message || null, record.sent_at || (record.status === 'sent' ? now : null), record.dedupe_key]
-        );
-        saveSqliteDb(db);
-        return String(existing[0].values[0][0]);
-      }
-    }
-
-    db.run(
+    const pool = await getDbPool();
+    await pool.query(
       `INSERT INTO email_logs (id, recipient, email_type, subject, status, attempts, error_message, related_order_id, related_user_id, dedupe_key, metadata, created_at, sent_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       ON DUPLICATE KEY UPDATE
+         status = VALUES(status),
+         attempts = email_logs.attempts + 1,
+         error_message = VALUES(error_message),
+         sent_at = VALUES(sent_at);`,
       [
         id,
         record.recipient,
@@ -145,9 +102,8 @@ export async function logEmail(record: Omit<EmailLogRecord, 'id' | 'created_at'>
         record.sent_at || (record.status === 'sent' ? now : null),
       ]
     );
-    saveSqliteDb(db);
   } catch (err: any) {
-    console.warn('[Email DB] SQLite logEmail warning:', err?.message);
+    console.warn('[Email DB] MySQL logEmail warning:', err?.message || err);
   }
 
   return id;
@@ -156,30 +112,21 @@ export async function logEmail(record: Omit<EmailLogRecord, 'id' | 'created_at'>
 export async function isDedupeKeyProcessed(dedupeKey: string): Promise<boolean> {
   if (!dedupeKey) return false;
 
-  if (isPostgresActive()) {
-    const pool = getPostgresPool()!;
-    try {
-      const res = await pool.query(
-        `SELECT id FROM email_logs WHERE dedupe_key = $1 AND status = 'sent' LIMIT 1`,
-        [dedupeKey]
-      );
-      return res.rows.length > 0;
-    } catch {
-      return false;
-    }
-  }
-
   try {
-    const db = await getSqliteDb();
-    const res = db.exec("SELECT id FROM email_logs WHERE dedupe_key = ? AND status = 'sent' LIMIT 1;", [dedupeKey]);
-    return res.length > 0 && res[0].values.length > 0;
-  } catch {
+    const pool = await getDbPool();
+    const [rows]: any = await pool.query(
+      `SELECT id FROM email_logs WHERE dedupe_key = ? AND status = 'sent' LIMIT 1`,
+      [dedupeKey]
+    );
+    return Boolean(rows && rows.length > 0);
+  } catch (err: any) {
+    console.warn('[Email DB] isDedupeKeyProcessed check warning:', err?.message || err);
     return false;
   }
 }
 
 // ============================================================================
-// 2. EMAIL QUEUE & JOBS
+// 2. EMAIL QUEUE & JOBS (MySQL)
 // ============================================================================
 
 export async function enqueueEmailJob(job: {
@@ -193,7 +140,6 @@ export async function enqueueEmailJob(job: {
 }): Promise<string | null> {
   const dedupeKey = job.dedupeKey || null;
 
-  // Check if job or sent email already exists for this dedupe key
   if (dedupeKey && (await isDedupeKeyProcessed(dedupeKey))) {
     console.log(`[Email Queue] ⏭️ Skipping enqueue: dedupeKey "${dedupeKey}" already sent.`);
     return null;
@@ -203,47 +149,14 @@ export async function enqueueEmailJob(job: {
   const now = new Date();
   const nextAttempt = new Date(now.getTime() + (job.delaySeconds || 0) * 1000).toISOString();
   const nowIso = now.toISOString();
-  const payloadStr = JSON.stringify(job.payload || {});
+  const payloadStr = typeof job.payload === 'string' ? job.payload : JSON.stringify(job.payload || {});
 
-  if (isPostgresActive()) {
-    const pool = getPostgresPool()!;
-    try {
-      const query = `
-        INSERT INTO email_jobs (id, email_type, recipient, subject, payload, status, attempts, max_attempts, next_attempt_at, dedupe_key, created_at, updated_at)
-        VALUES ($1, $2, $3, $4, $5, 'queued', 0, $6, $7, $8, $9, $9)
-        ON CONFLICT (dedupe_key) DO NOTHING
-        RETURNING id;
-      `;
-      const res = await pool.query(query, [
-        id,
-        job.emailType,
-        job.recipient,
-        job.subject,
-        JSON.parse(payloadStr),
-        job.maxAttempts || 5,
-        nextAttempt,
-        dedupeKey,
-        nowIso,
-      ]);
-      return res.rows[0]?.id || null;
-    } catch (err: any) {
-      console.warn('[Email Queue] PG enqueue warning:', err?.message);
-    }
-  }
-
-  // SQLite Fallback
   try {
-    const db = await getSqliteDb();
-    if (dedupeKey) {
-      const existing = db.exec("SELECT id, status FROM email_jobs WHERE dedupe_key = ?;", [dedupeKey]);
-      if (existing.length > 0 && existing[0].values.length > 0) {
-        return null;
-      }
-    }
-
-    db.run(
+    const pool = await getDbPool();
+    await pool.query(
       `INSERT INTO email_jobs (id, email_type, recipient, subject, payload, status, attempts, max_attempts, next_attempt_at, dedupe_key, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, 'queued', 0, ?, ?, ?, ?, ?);`,
+       VALUES (?, ?, ?, ?, ?, 'queued', 0, ?, ?, ?, ?, ?)
+       ON DUPLICATE KEY UPDATE id = id;`,
       [
         id,
         job.emailType,
@@ -257,74 +170,48 @@ export async function enqueueEmailJob(job: {
         nowIso,
       ]
     );
-    saveSqliteDb(db);
     return id;
   } catch (err: any) {
-    console.warn('[Email Queue] SQLite enqueue warning:', err?.message);
+    console.warn('[Email Queue] MySQL enqueue warning:', err?.message || err);
     return null;
   }
 }
 
 export async function fetchDueEmailJobs(limit = 10): Promise<EmailJobRecord[]> {
-  const nowIso = new Date().toISOString();
+  const now = new Date();
+  const nowIso = now.toISOString();
+  const staleThresholdIso = new Date(now.getTime() - 2 * 60 * 1000).toISOString();
 
-  if (isPostgresActive()) {
-    const pool = getPostgresPool()!;
-    try {
-      const query = `
-        SELECT id, email_type, recipient, subject, payload, status, attempts, max_attempts, next_attempt_at, error_message, dedupe_key, created_at, updated_at
-        FROM email_jobs
-        WHERE status = 'queued' AND next_attempt_at <= $1
-        ORDER BY next_attempt_at ASC
-        LIMIT $2
-        FOR UPDATE SKIP LOCKED;
-      `;
-      const res = await pool.query(query, [nowIso, limit]);
-      return res.rows.map((r) => ({
-        ...r,
-        payload: typeof r.payload === 'string' ? JSON.parse(r.payload) : r.payload,
-      }));
-    } catch {
-      // Fallback without FOR UPDATE if not supported
-      const query = `
-        SELECT id, email_type, recipient, subject, payload, status, attempts, max_attempts, next_attempt_at, error_message, dedupe_key, created_at, updated_at
-        FROM email_jobs
-        WHERE status = 'queued' AND next_attempt_at <= $1
-        ORDER BY next_attempt_at ASC
-        LIMIT $2;
-      `;
-      const res = await pool.query(query, [nowIso, limit]);
-      return res.rows.map((r) => ({
-        ...r,
-        payload: typeof r.payload === 'string' ? JSON.parse(r.payload) : r.payload,
-      }));
-    }
-  }
-
-  // SQLite
   try {
-    const db = await getSqliteDb();
-    const res = db.exec(
-      "SELECT id, email_type, recipient, subject, payload, status, attempts, max_attempts, next_attempt_at, error_message, dedupe_key, created_at, updated_at FROM email_jobs WHERE status = 'queued' AND next_attempt_at <= ? ORDER BY next_attempt_at ASC LIMIT ?;",
-      [nowIso, limit]
+    const pool = await getDbPool();
+    const [rows]: any = await pool.query(
+      `SELECT id, email_type, recipient, subject, payload, status, attempts, max_attempts, next_attempt_at, error_message, dedupe_key, created_at, updated_at
+       FROM email_jobs
+       WHERE (status = 'queued' AND next_attempt_at <= ?)
+          OR (status = 'sending' AND updated_at <= ?)
+       ORDER BY next_attempt_at ASC
+       LIMIT ?`,
+      [nowIso, staleThresholdIso, limit]
     );
 
-    if (res.length === 0 || res[0].values.length === 0) return [];
+    if (!rows || rows.length === 0) return [];
 
-    const cols = res[0].columns;
-    return res[0].values.map((row) => {
-      const obj: any = {};
-      cols.forEach((col, idx) => {
-        obj[col] = row[idx];
-      });
-      try {
-        obj.payload = JSON.parse(obj.payload);
-      } catch {
-        obj.payload = {};
+    return rows.map((r: any) => {
+      let payload = r.payload;
+      if (typeof payload === 'string') {
+        try {
+          payload = JSON.parse(payload);
+        } catch {
+          payload = {};
+        }
       }
-      return obj as EmailJobRecord;
+      return {
+        ...r,
+        payload,
+      } as EmailJobRecord;
     });
-  } catch {
+  } catch (err: any) {
+    console.warn('[Email DB] fetchDueEmailJobs error:', err?.message || err);
     return [];
   }
 }
@@ -336,129 +223,68 @@ export async function updateEmailJobStatus(
 ): Promise<void> {
   const nowIso = new Date().toISOString();
 
-  if (isPostgresActive()) {
-    const pool = getPostgresPool()!;
-    try {
-      await pool.query(
-        `UPDATE email_jobs SET
-          status = $1,
-          attempts = COALESCE($2, attempts),
-          next_attempt_at = COALESCE($3, next_attempt_at),
-          error_message = $4,
-          updated_at = $5
-         WHERE id = $6`,
-        [
-          status,
-          details?.attempts ?? null,
-          details?.nextAttemptAt ? new Date(details.nextAttemptAt) : null,
-          details?.errorMessage ?? null,
-          nowIso,
-          jobId,
-        ]
-      );
-      return;
-    } catch (err: any) {
-      console.warn('[Email DB] PG updateEmailJobStatus warning:', err?.message);
-    }
-  }
-
   try {
-    const db = await getSqliteDb();
-    db.run(
+    const pool = await getDbPool();
+    await pool.query(
       `UPDATE email_jobs SET
         status = ?,
-        attempts = CASE WHEN ? IS NOT NULL THEN ? ELSE attempts END,
-        next_attempt_at = CASE WHEN ? IS NOT NULL THEN ? ELSE next_attempt_at END,
+        attempts = COALESCE(?, attempts),
+        next_attempt_at = COALESCE(?, next_attempt_at),
         error_message = ?,
         updated_at = ?
-       WHERE id = ?;`,
+       WHERE id = ?`,
       [
         status,
         details?.attempts ?? null,
-        details?.attempts ?? null,
-        details?.nextAttemptAt ?? null,
-        details?.nextAttemptAt ?? null,
+        details?.nextAttemptAt || null,
         details?.errorMessage ?? null,
         nowIso,
         jobId,
       ]
     );
-    saveSqliteDb(db);
   } catch (err: any) {
-    console.warn('[Email DB] SQLite updateEmailJobStatus warning:', err?.message);
+    console.warn('[Email DB] MySQL updateEmailJobStatus warning:', err?.message || err);
   }
 }
 
 export async function fetchEmailJobs(status?: string, limit = 50): Promise<EmailJobRecord[]> {
-  if (isPostgresActive()) {
-    const pool = getPostgresPool()!;
-    try {
-      const query = status
-        ? `SELECT * FROM email_jobs WHERE status = $1 ORDER BY created_at DESC LIMIT $2`
-        : `SELECT * FROM email_jobs ORDER BY created_at DESC LIMIT $1`;
-      const params = status ? [status, limit] : [limit];
-      const res = await pool.query(query, params);
-      return res.rows.map((r) => ({
-        ...r,
-        payload: typeof r.payload === 'string' ? JSON.parse(r.payload) : r.payload,
-      }));
-    } catch {
-      return [];
-    }
-  }
-
   try {
-    const db = await getSqliteDb();
+    const pool = await getDbPool();
     const query = status
-      ? `SELECT id, email_type, recipient, subject, payload, status, attempts, max_attempts, next_attempt_at, error_message, dedupe_key, created_at, updated_at FROM email_jobs WHERE status = ? ORDER BY created_at DESC LIMIT ?;`
-      : `SELECT id, email_type, recipient, subject, payload, status, attempts, max_attempts, next_attempt_at, error_message, dedupe_key, created_at, updated_at FROM email_jobs ORDER BY created_at DESC LIMIT ?;`;
+      ? `SELECT * FROM email_jobs WHERE status = ? ORDER BY created_at DESC LIMIT ?`
+      : `SELECT * FROM email_jobs ORDER BY created_at DESC LIMIT ?`;
     const params = status ? [status, limit] : [limit];
-    const res = db.exec(query, params);
-    if (res.length === 0 || res[0].values.length === 0) return [];
+    const [rows]: any = await pool.query(query, params);
 
-    const cols = res[0].columns;
-    return res[0].values.map((row) => {
-      const obj: any = {};
-      cols.forEach((col, idx) => { obj[col] = row[idx]; });
-      try { obj.payload = JSON.parse(obj.payload); } catch { obj.payload = {}; }
-      return obj as EmailJobRecord;
-    });
-  } catch {
+    if (!rows || rows.length === 0) return [];
+
+    return rows.map((r: any) => ({
+      ...r,
+      payload: typeof r.payload === 'string' ? JSON.parse(r.payload || '{}') : r.payload,
+    }));
+  } catch (err: any) {
+    console.warn('[Email DB] fetchEmailJobs error:', err?.message || err);
     return [];
   }
 }
 
 export async function retryFailedJobs(): Promise<number> {
   const nowIso = new Date().toISOString();
-  if (isPostgresActive()) {
-    const pool = getPostgresPool()!;
-    try {
-      const res = await pool.query(
-        `UPDATE email_jobs SET status = 'queued', attempts = 0, next_attempt_at = $1, updated_at = $1 WHERE status = 'failed' RETURNING id;`,
-        [nowIso]
-      );
-      return res.rowCount || 0;
-    } catch {
-      return 0;
-    }
-  }
-
   try {
-    const db = await getSqliteDb();
-    const countRes = db.exec("SELECT count(*) FROM email_jobs WHERE status = 'failed';");
-    const count = countRes.length > 0 && countRes[0].values.length > 0 ? Number(countRes[0].values[0][0]) : 0;
-    if (count > 0) {
-      db.run("UPDATE email_jobs SET status = 'queued', attempts = 0, next_attempt_at = ?, updated_at = ? WHERE status = 'failed';", [nowIso, nowIso]);
-      saveSqliteDb(db);
-    }
-    return count;
-  } catch {
+    const pool = await getDbPool();
+    const [result]: any = await pool.query(
+      `UPDATE email_jobs SET status = 'queued', attempts = 0, next_attempt_at = ?, updated_at = ? WHERE status = 'failed'`,
+      [nowIso, nowIso]
+    );
+    return result?.affectedRows || 0;
+  } catch (err: any) {
+    console.warn('[Email DB] retryFailedJobs error:', err?.message || err);
     return 0;
   }
 }
 
 // ============================================================================
-// 3. PAYMENT SUBMISSIONS ("I'VE PAID" CLAIM FLOW)
+// 3. PAYMENT SUBMISSIONS ("I'VE PAID" CLAIM FLOW - MySQL)
 // ============================================================================
 
 export async function createPaymentSubmission(submission: {
@@ -474,7 +300,7 @@ export async function createPaymentSubmission(submission: {
   const id = `claim-${Date.now()}-${crypto.randomBytes(3).toString('hex')}`;
   const nowIso = new Date().toISOString();
 
-  // 1. Verify code uniqueness
+  // Verify code uniqueness
   const existing = await getPaymentSubmissionByMpesaCode(cleanCode);
   if (existing) {
     return {
@@ -484,38 +310,11 @@ export async function createPaymentSubmission(submission: {
     };
   }
 
-  if (isPostgresActive()) {
-    const pool = getPostgresPool()!;
-    try {
-      await pool.query(
-        `INSERT INTO payment_submissions (id, order_id, mpesa_receipt_code, phone_number, amount_claimed, payment_method, status, admin_notes, submitted_at)
-         VALUES ($1, $2, $3, $4, $5, $6, 'pending_verification', $7, $8)`,
-        [
-          id,
-          submission.orderId,
-          cleanCode,
-          cleanPhone,
-          submission.amountClaimed || null,
-          submission.paymentMethod || 'mpesa_paybill',
-          submission.adminNotes || null,
-          nowIso,
-        ]
-      );
-      return { success: true, id };
-    } catch (err: any) {
-      if (err?.code === '23505') {
-        return { success: false, duplicate: true, error: `M-Pesa code "${cleanCode}" has already been used.` };
-      }
-      return { success: false, error: err?.message || 'Failed to record payment submission' };
-    }
-  }
-
-  // SQLite Fallback
   try {
-    const db = await getSqliteDb();
-    db.run(
+    const pool = await getDbPool();
+    await pool.query(
       `INSERT INTO payment_submissions (id, order_id, mpesa_receipt_code, phone_number, amount_claimed, payment_method, status, admin_notes, submitted_at)
-       VALUES (?, ?, ?, ?, ?, ?, 'pending_verification', ?, ?);`,
+       VALUES (?, ?, ?, ?, ?, ?, 'pending_verification', ?, ?)`,
       [
         id,
         submission.orderId,
@@ -527,115 +326,54 @@ export async function createPaymentSubmission(submission: {
         nowIso,
       ]
     );
-    saveSqliteDb(db);
     return { success: true, id };
   } catch (err: any) {
-    if (String(err?.message || '').includes('UNIQUE') || String(err?.message || '').includes('constraint')) {
-      return { success: false, duplicate: true, error: `M-Pesa code "${cleanCode}" is already in use.` };
+    if (String(err?.message || '').includes('Duplicate entry') || String(err?.message || '').includes('UNIQUE')) {
+      return { success: false, duplicate: true, error: `M-Pesa code "${cleanCode}" has already been used.` };
     }
-    return { success: false, error: err?.message || 'Failed to save payment claim' };
+    return { success: false, error: err?.message || 'Failed to save payment submission' };
   }
 }
 
 export async function getPaymentSubmissionByMpesaCode(code: string): Promise<PaymentSubmissionRecord | null> {
   const cleanCode = code.trim().toUpperCase();
 
-  if (isPostgresActive()) {
-    const pool = getPostgresPool()!;
-    try {
-      const res = await pool.query(
-        `SELECT id, order_id, mpesa_receipt_code, phone_number, amount_claimed, payment_method, status, admin_notes, submitted_at, verified_at, verified_by
-         FROM payment_submissions WHERE UPPER(mpesa_receipt_code) = $1 LIMIT 1`,
-        [cleanCode]
-      );
-      return (res.rows[0] as PaymentSubmissionRecord) || null;
-    } catch {
-      return null;
-    }
-  }
-
   try {
-    const db = await getSqliteDb();
-    const res = db.exec(
-      "SELECT id, order_id, mpesa_receipt_code, phone_number, amount_claimed, payment_method, status, admin_notes, submitted_at, verified_at, verified_by FROM payment_submissions WHERE UPPER(mpesa_receipt_code) = ? LIMIT 1;",
+    const pool = await getDbPool();
+    const [rows]: any = await pool.query(
+      `SELECT id, order_id, mpesa_receipt_code, phone_number, amount_claimed, payment_method, status, admin_notes, submitted_at, verified_at, verified_by
+       FROM payment_submissions WHERE UPPER(mpesa_receipt_code) = UPPER(?) LIMIT 1`,
       [cleanCode]
     );
-    if (res.length === 0 || res[0].values.length === 0) return null;
-    const row = res[0].values[0];
-    const cols = res[0].columns;
-    const obj: any = {};
-    cols.forEach((col, idx) => {
-      obj[col] = row[idx];
-    });
-    return obj as PaymentSubmissionRecord;
+    if (!rows || rows.length === 0) return null;
+    return rows[0] as PaymentSubmissionRecord;
   } catch {
     return null;
   }
 }
 
 export async function getPaymentSubmissionsForOrder(orderId: string): Promise<PaymentSubmissionRecord[]> {
-  if (isPostgresActive()) {
-    const pool = getPostgresPool()!;
-    try {
-      const res = await pool.query(
-        `SELECT id, order_id, mpesa_receipt_code, phone_number, amount_claimed, payment_method, status, admin_notes, submitted_at, verified_at, verified_by
-         FROM payment_submissions WHERE order_id = $1 ORDER BY submitted_at DESC`,
-        [orderId]
-      );
-      return res.rows as PaymentSubmissionRecord[];
-    } catch {
-      return [];
-    }
-  }
-
   try {
-    const db = await getSqliteDb();
-    const res = db.exec(
-      "SELECT id, order_id, mpesa_receipt_code, phone_number, amount_claimed, payment_method, status, admin_notes, submitted_at, verified_at, verified_by FROM payment_submissions WHERE order_id = ? ORDER BY submitted_at DESC;",
+    const pool = await getDbPool();
+    const [rows]: any = await pool.query(
+      `SELECT id, order_id, mpesa_receipt_code, phone_number, amount_claimed, payment_method, status, admin_notes, submitted_at, verified_at, verified_by
+       FROM payment_submissions WHERE order_id = ? ORDER BY submitted_at DESC`,
       [orderId]
     );
-    if (res.length === 0 || res[0].values.length === 0) return [];
-    const cols = res[0].columns;
-    return res[0].values.map((row) => {
-      const obj: any = {};
-      cols.forEach((col, idx) => {
-        obj[col] = row[idx];
-      });
-      return obj as PaymentSubmissionRecord;
-    });
+    return rows || [];
   } catch {
     return [];
   }
 }
 
 export async function getAllPendingPaymentSubmissions(): Promise<PaymentSubmissionRecord[]> {
-  if (isPostgresActive()) {
-    const pool = getPostgresPool()!;
-    try {
-      const res = await pool.query(
-        `SELECT id, order_id, mpesa_receipt_code, phone_number, amount_claimed, payment_method, status, admin_notes, submitted_at, verified_at, verified_by
-         FROM payment_submissions WHERE status = 'pending_verification' ORDER BY submitted_at ASC`
-      );
-      return res.rows as PaymentSubmissionRecord[];
-    } catch {
-      return [];
-    }
-  }
-
   try {
-    const db = await getSqliteDb();
-    const res = db.exec(
-      "SELECT id, order_id, mpesa_receipt_code, phone_number, amount_claimed, payment_method, status, admin_notes, submitted_at, verified_at, verified_by FROM payment_submissions WHERE status = 'pending_verification' ORDER BY submitted_at ASC;"
+    const pool = await getDbPool();
+    const [rows]: any = await pool.query(
+      `SELECT id, order_id, mpesa_receipt_code, phone_number, amount_claimed, payment_method, status, admin_notes, submitted_at, verified_at, verified_by
+       FROM payment_submissions WHERE status = 'pending_verification' ORDER BY submitted_at ASC`
     );
-    if (res.length === 0 || res[0].values.length === 0) return [];
-    const cols = res[0].columns;
-    return res[0].values.map((row) => {
-      const obj: any = {};
-      cols.forEach((col, idx) => {
-        obj[col] = row[idx];
-      });
-      return obj as PaymentSubmissionRecord;
-    });
+    return rows || [];
   } catch {
     return [];
   }
@@ -648,43 +386,24 @@ export async function updatePaymentSubmissionStatus(
 ): Promise<void> {
   const nowIso = new Date().toISOString();
 
-  if (isPostgresActive()) {
-    const pool = getPostgresPool()!;
-    try {
-      await pool.query(
-        `UPDATE payment_submissions SET
-          status = $1,
-          verified_at = $2,
-          verified_by = $3,
-          admin_notes = COALESCE($4, admin_notes)
-         WHERE id = $5`,
-        [status, nowIso, details.verifiedBy, details.adminNotes || null, submissionId]
-      );
-      return;
-    } catch (err: any) {
-      console.warn('[Email DB] PG updatePaymentSubmissionStatus warning:', err?.message);
-    }
-  }
-
   try {
-    const db = await getSqliteDb();
-    db.run(
+    const pool = await getDbPool();
+    await pool.query(
       `UPDATE payment_submissions SET
         status = ?,
         verified_at = ?,
         verified_by = ?,
-        admin_notes = CASE WHEN ? IS NOT NULL THEN ? ELSE admin_notes END
-       WHERE id = ?;`,
-      [status, nowIso, details.verifiedBy, details.adminNotes || null, details.adminNotes || null, submissionId]
+        admin_notes = COALESCE(?, admin_notes)
+       WHERE id = ?`,
+      [status, nowIso, details.verifiedBy, details.adminNotes || null, submissionId]
     );
-    saveSqliteDb(db);
   } catch (err: any) {
-    console.warn('[Email DB] SQLite updatePaymentSubmissionStatus warning:', err?.message);
+    console.warn('[Email DB] MySQL updatePaymentSubmissionStatus warning:', err?.message || err);
   }
 }
 
 // ============================================================================
-// 4. EMAIL PREFERENCES & OPT-OUTS
+// 4. EMAIL PREFERENCES & OPT-OUTS (MySQL)
 // ============================================================================
 
 export async function getEmailPreferences(email: string): Promise<EmailPreferencesRecord> {
@@ -700,47 +419,25 @@ export async function getEmailPreferences(email: string): Promise<EmailPreferenc
     updated_at: new Date().toISOString(),
   };
 
-  if (isPostgresActive()) {
-    const pool = getPostgresPool()!;
-    try {
-      const res = await pool.query(
-        `SELECT id, email, allow_marketing, allow_review_requests, allow_abandoned_cart, allow_price_drop, unsubscribed_all, updated_at
-         FROM email_preferences WHERE email = $1 LIMIT 1`,
-        [cleanEmail]
-      );
-      if (res.rows.length > 0) {
-        return {
-          ...res.rows[0],
-          allow_marketing: Boolean(res.rows[0].allow_marketing),
-          allow_review_requests: Boolean(res.rows[0].allow_review_requests),
-          allow_abandoned_cart: Boolean(res.rows[0].allow_abandoned_cart),
-          allow_price_drop: Boolean(res.rows[0].allow_price_drop),
-          unsubscribed_all: Boolean(res.rows[0].unsubscribed_all),
-        };
-      }
-      return defaultPrefs;
-    } catch {
-      return defaultPrefs;
-    }
-  }
-
   try {
-    const db = await getSqliteDb();
-    const res = db.exec(
-      "SELECT id, email, allow_marketing, allow_review_requests, allow_abandoned_cart, allow_price_drop, unsubscribed_all, updated_at FROM email_preferences WHERE email = ? LIMIT 1;",
+    const pool = await getDbPool();
+    const [rows]: any = await pool.query(
+      `SELECT id, email, allow_marketing, allow_review_requests, allow_abandoned_cart, allow_price_drop, unsubscribed_all, updated_at
+       FROM email_preferences WHERE email = ? LIMIT 1`,
       [cleanEmail]
     );
-    if (res.length > 0 && res[0].values.length > 0) {
-      const row = res[0].values[0];
+
+    if (rows && rows.length > 0) {
+      const r = rows[0];
       return {
-        id: String(row[0]),
-        email: String(row[1]),
-        allow_marketing: Boolean(row[2]),
-        allow_review_requests: Boolean(row[3]),
-        allow_abandoned_cart: Boolean(row[4]),
-        allow_price_drop: Boolean(row[5]),
-        unsubscribed_all: Boolean(row[6]),
-        updated_at: String(row[7]),
+        id: r.id,
+        email: r.email,
+        allow_marketing: Boolean(r.allow_marketing),
+        allow_review_requests: Boolean(r.allow_review_requests),
+        allow_abandoned_cart: Boolean(r.allow_abandoned_cart),
+        allow_price_drop: Boolean(r.allow_price_drop),
+        unsubscribed_all: Boolean(r.unsubscribed_all),
+        updated_at: r.updated_at,
       };
     }
     return defaultPrefs;
@@ -769,48 +466,18 @@ export async function updateEmailPreferences(
   const current = await getEmailPreferences(cleanEmail);
   const next = { ...current, ...updates, updated_at: new Date().toISOString() };
 
-  if (isPostgresActive()) {
-    const pool = getPostgresPool()!;
-    try {
-      await pool.query(
-        `INSERT INTO email_preferences (id, email, allow_marketing, allow_review_requests, allow_abandoned_cart, allow_price_drop, unsubscribed_all, updated_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-         ON CONFLICT (email) DO UPDATE SET
-          allow_marketing = EXCLUDED.allow_marketing,
-          allow_review_requests = EXCLUDED.allow_review_requests,
-          allow_abandoned_cart = EXCLUDED.allow_abandoned_cart,
-          allow_price_drop = EXCLUDED.allow_price_drop,
-          unsubscribed_all = EXCLUDED.unsubscribed_all,
-          updated_at = EXCLUDED.updated_at`,
-        [
-          next.id,
-          next.email,
-          next.allow_marketing ? 1 : 0,
-          next.allow_review_requests ? 1 : 0,
-          next.allow_abandoned_cart ? 1 : 0,
-          next.allow_price_drop ? 1 : 0,
-          next.unsubscribed_all ? 1 : 0,
-          next.updated_at,
-        ]
-      );
-      return;
-    } catch (err: any) {
-      console.warn('[Email DB] PG updateEmailPreferences warning:', err?.message);
-    }
-  }
-
   try {
-    const db = await getSqliteDb();
-    db.run(
+    const pool = await getDbPool();
+    await pool.query(
       `INSERT INTO email_preferences (id, email, allow_marketing, allow_review_requests, allow_abandoned_cart, allow_price_drop, unsubscribed_all, updated_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-       ON CONFLICT (email) DO UPDATE SET
-        allow_marketing = excluded.allow_marketing,
-        allow_review_requests = excluded.allow_review_requests,
-        allow_abandoned_cart = excluded.allow_abandoned_cart,
-        allow_price_drop = excluded.allow_price_drop,
-        unsubscribed_all = excluded.unsubscribed_all,
-        updated_at = excluded.updated_at;`,
+       ON DUPLICATE KEY UPDATE
+        allow_marketing = VALUES(allow_marketing),
+        allow_review_requests = VALUES(allow_review_requests),
+        allow_abandoned_cart = VALUES(allow_abandoned_cart),
+        allow_price_drop = VALUES(allow_price_drop),
+        unsubscribed_all = VALUES(unsubscribed_all),
+        updated_at = VALUES(updated_at)`,
       [
         next.id,
         next.email,
@@ -822,34 +489,23 @@ export async function updateEmailPreferences(
         next.updated_at,
       ]
     );
-    saveSqliteDb(db);
   } catch (err: any) {
-    console.warn('[Email DB] SQLite updateEmailPreferences warning:', err?.message);
+    console.warn('[Email DB] MySQL updateEmailPreferences warning:', err?.message || err);
   }
 }
 
 // ============================================================================
-// 5. SCHEDULED TASK EXECUTION DEDUPLICATION
+// 5. SCHEDULED TASK EXECUTION DEDUPLICATION (MySQL)
 // ============================================================================
 
 export async function wasScheduledTaskExecuted(dedupeKey: string): Promise<boolean> {
-  if (isPostgresActive()) {
-    const pool = getPostgresPool()!;
-    try {
-      const res = await pool.query(
-        `SELECT id FROM scheduled_task_logs WHERE dedupe_key = $1 AND status = 'success' LIMIT 1`,
-        [dedupeKey]
-      );
-      return res.rows.length > 0;
-    } catch {
-      return false;
-    }
-  }
-
   try {
-    const db = await getSqliteDb();
-    const res = db.exec("SELECT id FROM scheduled_task_logs WHERE dedupe_key = ? AND status = 'success' LIMIT 1;", [dedupeKey]);
-    return res.length > 0 && res[0].values.length > 0;
+    const pool = await getDbPool();
+    const [rows]: any = await pool.query(
+      `SELECT id FROM scheduled_task_logs WHERE dedupe_key = ? AND status = 'success' LIMIT 1`,
+      [dedupeKey]
+    );
+    return Boolean(rows && rows.length > 0);
   } catch {
     return false;
   }
@@ -859,36 +515,20 @@ export async function recordScheduledTaskExecution(taskName: string, dedupeKey: 
   const id = `task-${Date.now()}-${crypto.randomBytes(3).toString('hex')}`;
   const nowIso = new Date().toISOString();
 
-  if (isPostgresActive()) {
-    const pool = getPostgresPool()!;
-    try {
-      await pool.query(
-        `INSERT INTO scheduled_task_logs (id, task_name, dedupe_key, executed_at, status, details)
-         VALUES ($1, $2, $3, $4, 'success', $5)
-         ON CONFLICT (dedupe_key) DO UPDATE SET executed_at = EXCLUDED.executed_at, details = EXCLUDED.details`,
-        [id, taskName, dedupeKey, nowIso, details || null]
-      );
-      return;
-    } catch (err: any) {
-      console.warn('[Email DB] PG recordScheduledTaskExecution warning:', err?.message);
-    }
-  }
-
   try {
-    const db = await getSqliteDb();
-    db.run(
+    const pool = await getDbPool();
+    await pool.query(
       `INSERT INTO scheduled_task_logs (id, task_name, dedupe_key, executed_at, status, details)
        VALUES (?, ?, ?, ?, 'success', ?)
-       ON CONFLICT (dedupe_key) DO UPDATE SET executed_at = excluded.executed_at, details = excluded.details;`,
+       ON DUPLICATE KEY UPDATE executed_at = VALUES(executed_at), details = VALUES(details);`,
       [id, taskName, dedupeKey, nowIso, details || null]
     );
-    saveSqliteDb(db);
   } catch (err: any) {
-    console.warn('[Email DB] SQLite recordScheduledTaskExecution warning:', err?.message);
+    console.warn('[Email DB] MySQL recordScheduledTaskExecution warning:', err?.message || err);
   }
 }
 
-// Aliases and Scheduled Task Helpers
+// Export Aliases
 export const recordPaymentSubmission = createPaymentSubmission;
 export const getPaymentSubmissionByCode = getPaymentSubmissionByMpesaCode;
 export const hasScheduledTaskRun = wasScheduledTaskExecuted;
@@ -923,127 +563,57 @@ export async function updateOrderPaymentStatus(
   }
 ): Promise<void> {
   const nowIso = new Date().toISOString();
-  if (isPostgresActive()) {
-    const pool = getPostgresPool()!;
-    try {
-      // 1. Update main orders table
-      await pool.query(
-        `UPDATE orders SET
-          payment_status = $1,
-          payment_reference = COALESCE($2, payment_reference),
-          payment_amount = COALESCE($3, payment_amount),
-          payment_confirmed_at = COALESCE($4, payment_confirmed_at),
-          payment_confirmed_by = COALESCE($5, payment_confirmed_by),
-          payment_reminder_count = COALESCE($6, payment_reminder_count),
-          last_payment_reminder_at = COALESCE($7, last_payment_reminder_at)
-         WHERE id = $8`,
-        [
-          status,
-          details?.paymentReference || null,
-          details?.paymentAmount || null,
-          details?.paymentConfirmedAt || (status === 'paid' ? nowIso : null),
-          details?.paymentConfirmedBy || null,
-          details?.paymentReminderCount ?? null,
-          details?.lastPaymentReminderAt || null,
-          orderId,
-        ]
-      ).catch(() => {});
-
-      // 2. Also update customer_orders table if exists
-      await pool.query(
-        `UPDATE customer_orders SET
-          payment_status = $1,
-          payment_reference = COALESCE($2, payment_reference),
-          payment_amount = COALESCE($3, payment_amount),
-          payment_confirmed_at = COALESCE($4, payment_confirmed_at),
-          payment_confirmed_by = COALESCE($5, payment_confirmed_by),
-          payment_reminder_count = COALESCE($6, payment_reminder_count),
-          last_payment_reminder_at = COALESCE($7, last_payment_reminder_at)
-         WHERE id = $8`,
-        [
-          status,
-          details?.paymentReference || null,
-          details?.paymentAmount || null,
-          details?.paymentConfirmedAt || (status === 'paid' ? nowIso : null),
-          details?.paymentConfirmedBy || null,
-          details?.paymentReminderCount ?? null,
-          details?.lastPaymentReminderAt || null,
-          orderId,
-        ]
-      ).catch(() => {});
-      return;
-    } catch (e: any) {
-      console.warn('[Email DB] PG updateOrderPaymentStatus warning:', e?.message);
-    }
-  }
 
   try {
-    const db = await getSqliteDb();
-    // 1. Update main orders table
-    try {
-      db.run(
-        `UPDATE orders SET
-          paymentStatus = ?,
-          paymentReference = CASE WHEN ? IS NOT NULL THEN ? ELSE paymentReference END,
-          paymentAmount = CASE WHEN ? IS NOT NULL THEN ? ELSE paymentAmount END,
-          paymentConfirmedAt = CASE WHEN ? IS NOT NULL THEN ? ELSE paymentConfirmedAt END,
-          paymentConfirmedBy = CASE WHEN ? IS NOT NULL THEN ? ELSE paymentConfirmedBy END,
-          paymentReminderCount = CASE WHEN ? IS NOT NULL THEN ? ELSE paymentReminderCount END,
-          lastPaymentReminderAt = CASE WHEN ? IS NOT NULL THEN ? ELSE lastPaymentReminderAt END
-         WHERE id = ?;`,
-        [
-          status,
-          details?.paymentReference || null,
-          details?.paymentReference || null,
-          details?.paymentAmount || null,
-          details?.paymentAmount || null,
-          details?.paymentConfirmedAt || (status === 'paid' ? nowIso : null),
-          details?.paymentConfirmedAt || (status === 'paid' ? nowIso : null),
-          details?.paymentConfirmedBy || null,
-          details?.paymentConfirmedBy || null,
-          details?.paymentReminderCount ?? null,
-          details?.paymentReminderCount ?? null,
-          details?.lastPaymentReminderAt || null,
-          details?.lastPaymentReminderAt || null,
-          orderId,
-        ]
-      );
-    } catch (err1) {}
+    const pool = await getDbPool();
+    await pool.query(
+      `UPDATE orders SET
+        paymentStatus = ?,
+        paymentReference = COALESCE(?, paymentReference),
+        total = COALESCE(?, total),
+        paidAt = COALESCE(?, paidAt),
+        deliveryNote = COALESCE(?, deliveryNote),
+        updated_at = ?
+       WHERE id = ?`,
+      [
+        status,
+        details?.paymentReference || null,
+        details?.paymentAmount || null,
+        details?.paymentConfirmedAt || (status === 'paid' ? nowIso : null),
+        details?.notes || null,
+        nowIso,
+        orderId,
+      ]
+    );
 
-    // 2. Update customer_orders table
+    // Also update customer_orders table if exists
     try {
-      db.run(
+      await pool.query(
         `UPDATE customer_orders SET
           payment_status = ?,
-          payment_reference = CASE WHEN ? IS NOT NULL THEN ? ELSE payment_reference END,
-          payment_amount = CASE WHEN ? IS NOT NULL THEN ? ELSE payment_amount END,
-          payment_confirmed_at = CASE WHEN ? IS NOT NULL THEN ? ELSE payment_confirmed_at END,
-          payment_confirmed_by = CASE WHEN ? IS NOT NULL THEN ? ELSE payment_confirmed_by END,
-          payment_reminder_count = CASE WHEN ? IS NOT NULL THEN ? ELSE payment_reminder_count END,
-          last_payment_reminder_at = CASE WHEN ? IS NOT NULL THEN ? ELSE last_payment_reminder_at END
-         WHERE id = ?;`,
+          payment_reference = COALESCE(?, payment_reference),
+          payment_amount = COALESCE(?, payment_amount),
+          payment_confirmed_at = COALESCE(?, payment_confirmed_at),
+          payment_confirmed_by = COALESCE(?, payment_confirmed_by),
+          payment_reminder_count = COALESCE(?, payment_reminder_count),
+          last_payment_reminder_at = COALESCE(?, last_payment_reminder_at),
+          updated_at = ?
+         WHERE id = ?`,
         [
           status,
           details?.paymentReference || null,
-          details?.paymentReference || null,
-          details?.paymentAmount || null,
           details?.paymentAmount || null,
           details?.paymentConfirmedAt || (status === 'paid' ? nowIso : null),
-          details?.paymentConfirmedAt || (status === 'paid' ? nowIso : null),
-          details?.paymentConfirmedBy || null,
           details?.paymentConfirmedBy || null,
           details?.paymentReminderCount ?? null,
-          details?.paymentReminderCount ?? null,
           details?.lastPaymentReminderAt || null,
-          details?.lastPaymentReminderAt || null,
+          nowIso,
           orderId,
         ]
       );
-    } catch (err2) {}
-
-    saveSqliteDb(db);
+    } catch (_) {}
   } catch (e: any) {
-    console.warn('[Email DB] SQLite updateOrderPaymentStatus warning:', e?.message);
+    console.warn('[Email DB] MySQL updateOrderPaymentStatus warning:', e?.message || e);
   }
 }
 
@@ -1063,7 +633,7 @@ function normalizeOrderRecord(row: any): any {
 
   const customerName = row.customerName || row.customer_name || 'Customer';
   const customerEmail = row.customerEmail || row.customer_email || '';
-  const customerPhone = row.phone || row.customerPhone || row.customer_phone || row.mpesaPhone || '';
+  const customerPhone = row.customerPhone || row.phone || row.customer_phone || row.mpesaPhone || '';
   const total = Number(row.total || 0);
   const status = row.status || 'pending';
   const paymentStatus = row.paymentStatus || row.payment_status || 'unpaid';
@@ -1102,49 +672,23 @@ function normalizeOrderRecord(row: any): any {
 }
 
 /**
- * Fetches an order authoritatively from Postgres or SQLite across both orders and customer_orders tables
+ * Fetches an order authoritatively from MySQL
  */
 export async function fetchAuthoritativeOrderById(orderId: string): Promise<any | null> {
   if (!orderId) return null;
   const cleanId = String(orderId).trim();
 
-  if (isPostgresActive()) {
-    const pool = getPostgresPool()!;
-    try {
-      const res1 = await pool.query(`SELECT * FROM orders WHERE UPPER(id) = UPPER($1) LIMIT 1`, [cleanId]);
-      if (res1.rows.length > 0) return normalizeOrderRecord(res1.rows[0]);
-
-      const res2 = await pool.query(`SELECT * FROM customer_orders WHERE UPPER(id) = UPPER($1) LIMIT 1`, [cleanId]);
-      if (res2.rows.length > 0) return normalizeOrderRecord(res2.rows[0]);
-    } catch {
-      // Fall through to SQLite
-    }
-  }
-
   try {
-    const db = await getSqliteDb();
-    
-    // 1. Try orders table
-    try {
-      const res1 = db.exec("SELECT * FROM orders WHERE UPPER(id) = UPPER(?) LIMIT 1;", [cleanId]);
-      if (res1.length > 0 && res1[0].values.length > 0) {
-        const cols = res1[0].columns;
-        const obj: any = {};
-        cols.forEach((c, idx) => { obj[c] = res1[0].values[0][idx]; });
-        return normalizeOrderRecord(obj);
-      }
-    } catch {}
+    const pool = await getDbPool();
+    const [rows]: any = await pool.query(`SELECT * FROM orders WHERE UPPER(id) = UPPER(?) LIMIT 1`, [cleanId]);
+    if (rows && rows.length > 0) {
+      return normalizeOrderRecord(rows[0]);
+    }
 
-    // 2. Try customer_orders table
-    try {
-      const res2 = db.exec("SELECT * FROM customer_orders WHERE UPPER(id) = UPPER(?) LIMIT 1;", [cleanId]);
-      if (res2.length > 0 && res2[0].values.length > 0) {
-        const cols = res2[0].columns;
-        const obj: any = {};
-        cols.forEach((c, idx) => { obj[c] = res2[0].values[0][idx]; });
-        return normalizeOrderRecord(obj);
-      }
-    } catch {}
+    const [cRows]: any = await pool.query(`SELECT * FROM customer_orders WHERE UPPER(id) = UPPER(?) LIMIT 1`, [cleanId]);
+    if (cRows && cRows.length > 0) {
+      return normalizeOrderRecord(cRows[0]);
+    }
 
     return null;
   } catch {
@@ -1156,126 +700,53 @@ export async function getUnpaidOrders(olderThanHours = 0): Promise<any[]> {
   const thresholdIso = new Date(Date.now() - olderThanHours * 3600 * 1000).toISOString();
   const resultMap = new Map<string, any>();
 
-  if (isPostgresActive()) {
-    const pool = getPostgresPool()!;
-    try {
-      const res1 = await pool.query(
-        `SELECT * FROM orders
-         WHERE (payment_status = 'unpaid' OR payment_status IS NULL)
-           AND status NOT IN ('cancelled', 'completed', 'delivered')
-           AND created_at <= $1
-         ORDER BY created_at ASC`,
-        [thresholdIso]
-      );
-      for (const r of res1.rows) {
-        const norm = normalizeOrderRecord(r);
-        if (norm && !resultMap.has(norm.id)) resultMap.set(norm.id, norm);
-      }
-    } catch {}
-
-    try {
-      const res2 = await pool.query(
-        `SELECT * FROM customer_orders
-         WHERE (payment_status = 'unpaid' OR payment_status IS NULL)
-           AND status NOT IN ('cancelled', 'completed', 'delivered')
-           AND created_at <= $1
-         ORDER BY created_at ASC`,
-        [thresholdIso]
-      );
-      for (const r of res2.rows) {
-        const norm = normalizeOrderRecord(r);
-        if (norm && !resultMap.has(norm.id)) resultMap.set(norm.id, norm);
-      }
-    } catch {}
-
-    if (resultMap.size > 0) return Array.from(resultMap.values());
-  }
-
   try {
-    const db = await getSqliteDb();
+    const pool = await getDbPool();
+    const [rows]: any = await pool.query(
+      `SELECT * FROM orders
+       WHERE (paymentStatus = 'unpaid' OR paymentStatus = 'pending' OR paymentStatus IS NULL)
+         AND status NOT IN ('cancelled', 'completed', 'delivered')
+         AND date <= ?
+       ORDER BY date ASC`,
+      [thresholdIso]
+    );
 
-    // 1. Query orders table (Web store orders)
-    try {
-      const res1 = db.exec(
-        `SELECT id, customerName, customerEmail, total, status,
-                COALESCE(paymentStatus, 'unpaid') as paymentStatus,
-                COALESCE(paymentReminderCount, 0) as paymentReminderCount,
-                lastPaymentReminderAt,
-                date, items, shippingAddress
-         FROM orders
-         WHERE (paymentStatus = 'unpaid' OR paymentStatus IS NULL)
-           AND status NOT IN ('cancelled', 'completed', 'delivered')
-           AND date <= ?
-         ORDER BY date ASC;`,
-        [thresholdIso]
-      );
-      if (res1.length > 0 && res1[0].values.length > 0) {
-        const cols = res1[0].columns;
-        for (const val of res1[0].values) {
-          const obj: any = {};
-          cols.forEach((c, idx) => { obj[c] = val[idx]; });
-          const norm = normalizeOrderRecord(obj);
-          if (norm && !resultMap.has(norm.id)) resultMap.set(norm.id, norm);
-        }
-      }
-    } catch (e1) {
-      console.warn('[Email DB] getUnpaidOrders orders query note:', e1);
+    for (const r of rows || []) {
+      const norm = normalizeOrderRecord(r);
+      if (norm && !resultMap.has(norm.id)) resultMap.set(norm.id, norm);
     }
 
-    // 2. Query customer_orders table (POS / ledger orders)
     try {
-      const res2 = db.exec(
-        `SELECT id, customer_name, customer_email, total, status,
-                payment_status, payment_reminder_count, last_payment_reminder_at,
-                COALESCE(created_at, placed_at) as created_at
-         FROM customer_orders
-         WHERE (payment_status = 'unpaid' OR payment_status IS NULL)
+      const [cRows]: any = await pool.query(
+        `SELECT * FROM customer_orders
+         WHERE (payment_status = 'unpaid' OR payment_status = 'pending' OR payment_status IS NULL)
            AND status NOT IN ('cancelled', 'completed', 'delivered')
-           AND (created_at <= ? OR placed_at <= ?);`,
+           AND (created_at <= ? OR placed_at <= ?)
+         ORDER BY created_at ASC`,
         [thresholdIso, thresholdIso]
       );
-      if (res2.length > 0 && res2[0].values.length > 0) {
-        const cols = res2[0].columns;
-        for (const val of res2[0].values) {
-          const obj: any = {};
-          cols.forEach((c, idx) => { obj[c] = val[idx]; });
-          const norm = normalizeOrderRecord(obj);
-          if (norm && !resultMap.has(norm.id)) resultMap.set(norm.id, norm);
-        }
+      for (const r of cRows || []) {
+        const norm = normalizeOrderRecord(r);
+        if (norm && !resultMap.has(norm.id)) resultMap.set(norm.id, norm);
       }
-    } catch (e2) {
-      console.warn('[Email DB] getUnpaidOrders customer_orders query note:', e2);
-    }
+    } catch (_) {}
 
     return Array.from(resultMap.values());
-  } catch {
+  } catch (err: any) {
+    console.warn('[Email DB] getUnpaidOrders error:', err?.message || err);
     return [];
   }
 }
 
 export async function hasUnprocessedPaymentSubmission(orderId: string): Promise<boolean> {
-  if (isPostgresActive()) {
-    const pool = getPostgresPool()!;
-    try {
-      const res = await pool.query(
-        `SELECT id FROM payment_submissions WHERE order_id = $1 AND status = 'pending_verification' LIMIT 1`,
-        [orderId]
-      );
-      return res.rows.length > 0;
-    } catch {
-      return false;
-    }
-  }
-
   try {
-    const db = await getSqliteDb();
-    const res = db.exec(
-      "SELECT id FROM payment_submissions WHERE order_id = ? AND status = 'pending_verification' LIMIT 1;",
+    const pool = await getDbPool();
+    const [rows]: any = await pool.query(
+      `SELECT id FROM payment_submissions WHERE order_id = ? AND status = 'pending_verification' LIMIT 1`,
       [orderId]
     );
-    return res.length > 0 && res[0].values.length > 0;
+    return Boolean(rows && rows.length > 0);
   } catch {
     return false;
   }
 }
-

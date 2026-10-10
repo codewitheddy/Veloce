@@ -76,12 +76,7 @@ export default function App() {
   const { user, isAuthenticated } = useAuth();
   const isMaintenanceActive = Boolean(settings?.general?.maintenance_mode);
 
-  const [darkMode, setDarkMode] = useState<boolean>(() => {
-    const saved = localStorage.getItem('theme');
-    if (saved === 'dark') return true;
-    if (saved === 'light') return false;
-    return typeof window !== 'undefined' && window.matchMedia('(prefers-color-scheme: dark)').matches;
-  });
+  const darkMode = false;
 
   const [fontSize, setFontSize] = useState<string>(() => {
     return localStorage.getItem('app-font-size') || 'normal';
@@ -94,30 +89,16 @@ export default function App() {
     siteSettingsApi.getSettings().catch((err) => console.warn('Site settings init note:', err));
   }, []);
 
+  // Enforce pristine light mode and remove any stale dark class
   useEffect(() => {
-    const handleScroll = () => {
-      if (typeof window !== 'undefined') {
-        setShowBackToTop(window.scrollY > 300);
-      }
-    };
-    window.addEventListener('scroll', handleScroll);
-    return () => window.removeEventListener('scroll', handleScroll);
-  }, []);
-
-  const scrollToTop = () => {
-    if (typeof window !== 'undefined') {
-      window.scrollTo({ top: 0, behavior: 'smooth' });
-    }
-  };
-
-  useEffect(() => {
-    localStorage.setItem('theme', darkMode ? 'dark' : 'light');
-    if (darkMode) {
-      document.documentElement.classList.add('dark');
-    } else {
+    localStorage.setItem('theme', 'light');
+    if (typeof document !== 'undefined') {
       document.documentElement.classList.remove('dark');
+      if (document.body) {
+        document.body.classList.remove('dark');
+      }
     }
-  }, [darkMode]);
+  }, []);
 
   useEffect(() => {
     const html = document.documentElement;
@@ -413,6 +394,14 @@ export default function App() {
   };
 
   useEffect(() => {
+    const handleClearEditing = () => {
+      setAdminEditingProduct(null);
+    };
+    window.addEventListener('veloce_clear_admin_editing_product', handleClearEditing);
+    return () => window.removeEventListener('veloce_clear_admin_editing_product', handleClearEditing);
+  }, []);
+
+  useEffect(() => {
     if (!showLogoutConfirmModal) return;
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
@@ -470,8 +459,21 @@ export default function App() {
     );
   };
 
+  const sortProductsLatestFirst = (list: Product[]): Product[] => {
+    return [...list].sort((a, b) => {
+      const timeA = a.createdAt || (a as any).created_at ? new Date(a.createdAt || (a as any).created_at).getTime() : 0;
+      const timeB = b.createdAt || (b as any).created_at ? new Date(b.createdAt || (b as any).created_at).getTime() : 0;
+      if (timeA !== timeB) return timeB - timeA;
+      const numA = parseInt(String(a.id || '').replace(/\D/g, ''), 10) || 0;
+      const numB = parseInt(String(b.id || '').replace(/\D/g, ''), 10) || 0;
+      if (numA !== numB) return numB - numA;
+      return String(b.id || '').localeCompare(String(a.id || ''));
+    });
+  };
+
   const [products, setProducts] = useState<Product[]>(() => {
-    return safeLocalStorageGetItem<Product[]>('veloce_products', isClearedData() ? [] : INITIAL_PRODUCTS);
+    const raw = safeLocalStorageGetItem<Product[]>('veloce_products', isClearedData() ? [] : INITIAL_PRODUCTS);
+    return Array.isArray(raw) ? sortProductsLatestFirst(raw) : [];
   });
 
   // Asynchronous IndexedDB product recovery fallback if localStorage is empty on initial load
@@ -479,7 +481,7 @@ export default function App() {
     if (products.length === 0 && !isClearedData()) {
       getFromIndexedDb<Product[]>('veloce_cache', 'veloce_products', []).then((idbProducts) => {
         if (Array.isArray(idbProducts) && idbProducts.length > 0) {
-          setProducts((prev) => (prev.length === 0 ? idbProducts : prev));
+          setProducts((prev) => (prev.length === 0 ? sortProductsLatestFirst(idbProducts) : prev));
         }
       }).catch(() => {});
     }
@@ -580,9 +582,10 @@ export default function App() {
       try {
         const fetchedProducts = await fetchProducts();
         if (isMounted && Array.isArray(fetchedProducts) && fetchedProducts.length > 0) {
-          setProducts(fetchedProducts);
-          safeLocalStorageSetItem('veloce_products', JSON.stringify(fetchedProducts));
-          saveToIndexedDb('veloce_cache', 'veloce_products', fetchedProducts).catch(() => {});
+          const sorted = sortProductsLatestFirst(fetchedProducts);
+          setProducts(sorted);
+          safeLocalStorageSetItem('veloce_products', JSON.stringify(sorted));
+          saveToIndexedDb('veloce_cache', 'veloce_products', sorted).catch(() => {});
         }
       } catch (err) {
         console.warn('[App] Could not fetch products from backend API:', err);
@@ -599,22 +602,15 @@ export default function App() {
               const localMatch = localMap.get(mOrder.id.toLowerCase());
               if (!localMatch) return mOrder;
 
-              const isLocalPaid = localMatch.paymentStatus === 'paid';
-              const localHistory = localMatch.statusHistory || [];
-              const backendHistory = mOrder.statusHistory || [];
-
-              // If local copy has status history or recent update and backend hasn't caught up yet, preserve latest local status
-              const hasNewerLocalStatus = localHistory.length >= backendHistory.length && localMatch.status !== mOrder.status;
-              const effectiveStatus = hasNewerLocalStatus ? localMatch.status : mOrder.status;
-
+              const isPaid = mOrder.paymentStatus === 'paid' || localMatch.paymentStatus === 'paid';
               return {
+                ...localMatch,
                 ...mOrder,
-                status: effectiveStatus,
-                paymentStatus: isLocalPaid ? ('paid' as const) : mOrder.paymentStatus,
-                paidAt: isLocalPaid ? (localMatch.paidAt || mOrder.paidAt || new Date().toISOString()) : mOrder.paidAt,
-                paymentReference: isLocalPaid ? (localMatch.paymentReference || mOrder.paymentReference || 'MANUAL-PAYMENT-CONFIRMED') : mOrder.paymentReference,
-                statusHistory: localHistory.length > backendHistory.length ? localHistory : (mOrder.statusHistory || localHistory),
-                trackingNumber: localMatch.trackingNumber || mOrder.trackingNumber,
+                status: mOrder.status || localMatch.status,
+                paymentStatus: isPaid ? ('paid' as const) : (mOrder.paymentStatus || localMatch.paymentStatus || 'unpaid'),
+                paidAt: mOrder.paidAt || localMatch.paidAt,
+                paymentReference: mOrder.paymentReference || localMatch.paymentReference,
+                trackingNumber: mOrder.trackingNumber || localMatch.trackingNumber,
               };
             });
             safeLocalStorageSetItem('veloce_orders', JSON.stringify(merged));
@@ -636,9 +632,21 @@ export default function App() {
     };
     window.addEventListener('veloce_products_updated', handleProductsUpdated);
 
+    const handleOrdersUpdatedEvent = (e: any) => {
+      if (e.detail && Array.isArray(e.detail)) {
+        setOrders(e.detail);
+      } else {
+        loadBackendData();
+      }
+    };
+    window.addEventListener('veloce_orders_updated', handleOrdersUpdatedEvent);
+    window.addEventListener('veloce_order_status_updated', handleOrdersUpdatedEvent);
+
     return () => {
       isMounted = false;
       window.removeEventListener('veloce_products_updated', handleProductsUpdated);
+      window.removeEventListener('veloce_orders_updated', handleOrdersUpdatedEvent);
+      window.removeEventListener('veloce_order_status_updated', handleOrdersUpdatedEvent);
     };
   }, []);
 
@@ -1908,6 +1916,25 @@ export default function App() {
       return;
     }
 
+    // Strict Enforcement: Completed and Delivered orders cannot be reverted to earlier stages
+    if ((targetOrder.status === 'completed' || targetOrder.status === 'delivered') && (status === 'processing' || status === 'pending' || status === 'shipped')) {
+      console.warn(`[Order Lifecycle] Blocked attempt to revert completed order #${orderId} to ${status}.`);
+      const blockToast: EmailNotification = {
+        id: `revert-block-${Date.now()}`,
+        orderId: targetOrder.id,
+        customerName: targetOrder.customerName || 'Customer',
+        customerEmail: targetOrder.customerEmail || 'customer@example.com',
+        subject: `⚠️ Action Blocked: Order #${targetOrder.id} Is Already Completed`,
+        body: `Order #${targetOrder.id} has already reached final completion and cannot be reverted back to ${status}.`,
+        status: 'blocked',
+        timestamp: new Date().toISOString().replace('T', ' ').slice(0, 16),
+        recipientType: 'admin',
+        category: 'order'
+      };
+      addEmailToast(blockToast);
+      return;
+    }
+
     // Persist status change directly to Django/Express backend
     api.put(`/orders/${orderId}/`, {
       status,
@@ -1919,17 +1946,16 @@ export default function App() {
       console.warn('[App] Failed to update order status on backend:', err);
     });
 
-    const mappedStatus = (status === 'completed' ? 'delivered' : status) as any;
     const nowIso = new Date().toISOString().replace('T', ' ').slice(0, 16);
 
     // Dispatch toast notifications cleanly OUTSIDE setOrders to prevent duplicate executions
-    if (mappedStatus === 'shipped') {
+    if (status === 'shipped') {
       const shipToast = buildShippingConfirmationEmail(targetOrder, trackingNumber || targetOrder.trackingNumber, courierName);
       addEmailToast(shipToast);
-    } else if (mappedStatus === 'delivered') {
+    } else if (status === 'delivered' || status === 'completed') {
       const delivToast = buildDeliveryConfirmationEmail(targetOrder);
       addEmailToast(delivToast);
-    } else if (mappedStatus === 'cancelled') {
+    } else if (status === 'cancelled') {
       const cancelToast = buildRefundCancellationNoticeEmail(
         targetOrder.customerName,
         targetOrder.customerEmail,
@@ -1952,16 +1978,17 @@ export default function App() {
             });
           }
           
-          if (history[history.length - 1]?.status !== mappedStatus) {
+          if (history[history.length - 1]?.status !== status) {
             let note = '';
-            if (mappedStatus === 'processing') note = 'Order has been compiled and is in sorting.';
-            else if (mappedStatus === 'shipped') note = 'Dispatched from sorting hub. Package in transit.';
-            else if (mappedStatus === 'delivered') note = 'Delivered safely to recipient.';
-            else if (mappedStatus === 'cancelled') note = 'Order has been cancelled and voided.';
-            else if (mappedStatus === 'pending-cancellation') note = 'Cancellation requested by user.';
+            if (status === 'processing') note = 'Order has been compiled and is in sorting.';
+            else if (status === 'shipped') note = 'Dispatched from sorting hub. Package in transit.';
+            else if (status === 'delivered') note = 'Delivered safely to recipient.';
+            else if (status === 'completed') note = 'Order completed and finalized.';
+            else if (status === 'cancelled') note = 'Order has been cancelled and voided.';
+            else if (status === 'pending-cancellation') note = 'Cancellation requested by user.';
 
             history.push({
-              status: mappedStatus as any,
+              status: status as any,
               timestamp: nowIso,
               note
             });
@@ -1977,6 +2004,10 @@ export default function App() {
       });
       safeLocalStorageSetItem('veloce_orders', JSON.stringify(updated));
       saveToIndexedDb('veloce_cache', 'veloce_orders', updated).catch(() => {});
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('veloce_order_status_updated', { detail: { orderId, status } }));
+        window.dispatchEvent(new CustomEvent('veloce_orders_updated', { detail: updated }));
+      }
       return updated;
     });
   };
@@ -2587,8 +2618,6 @@ export default function App() {
           setSelectedProduct(p);
           handleTabChange('store');
         }}
-        darkMode={darkMode}
-        onToggleDarkMode={() => setDarkMode((prev) => !prev)}
         fontSize={fontSize}
         onChangeFontSize={setFontSize}
         currency={currency}

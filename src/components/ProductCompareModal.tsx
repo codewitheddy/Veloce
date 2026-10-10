@@ -184,23 +184,23 @@ export default function ProductCompareModal({
   const rightBetterRating = leftProduct && rightProduct && (rightProduct.reviewsCount > 0) && (rightProduct.rating > leftProduct.rating || leftProduct.reviewsCount === 0);
 
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto bg-gray-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-50 overflow-y-auto bg-gray-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4">
       <div className="bg-white rounded-2xl w-full max-w-5xl shadow-2xl flex flex-col max-h-[90vh] overflow-hidden border border-gray-100">
         
         {/* Modal Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 bg-gray-50/50">
-          <div className="flex items-center gap-2">
-            <div className="h-8 w-8 rounded-lg bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600">
+        <div className="flex items-center justify-between px-4 sm:px-6 py-3 sm:py-4 border-b border-gray-100 bg-gray-50/50">
+          <div className="flex items-center gap-2 min-w-0">
+            <div className="h-8 w-8 rounded-lg bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600 shrink-0">
               <ArrowRightLeft className="h-4 w-4" />
             </div>
-            <div>
-              <h2 className="font-display font-semibold text-base text-gray-950">Side-by-Side Product Comparison</h2>
-              <p className="text-[10px] text-gray-500 font-mono tracking-tight uppercase">Analyze and compare specifications, pricing, and ratings</p>
+            <div className="min-w-0">
+              <h2 className="font-display font-semibold text-sm sm:text-base text-gray-950 truncate">Side-by-Side Product Comparison</h2>
+              <p className="text-[9px] sm:text-[10px] text-gray-500 font-mono tracking-tight uppercase truncate">Analyze and compare specifications, pricing, and ratings</p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="h-8 w-8 rounded-full hover:bg-gray-200 transition-colors flex items-center justify-center text-gray-400 hover:text-gray-700 cursor-pointer border border-transparent hover:border-gray-150"
+            className="h-8 w-8 rounded-full hover:bg-gray-200 transition-colors flex items-center justify-center text-gray-400 hover:text-gray-700 cursor-pointer border border-transparent hover:border-gray-150 shrink-0"
             title="Close comparator"
           >
             <X className="h-4 w-4" />
@@ -211,15 +211,15 @@ export default function ProductCompareModal({
         <div className="flex md:hidden border-b border-gray-100 bg-gray-50 p-2 gap-1.5 shrink-0">
           <button
             onClick={() => setMobileActiveTab('left')}
-            className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all border ${
+            className={`flex-1 py-1.5 text-[11px] font-bold rounded-lg transition-all border ${
               mobileActiveTab === 'left' ? 'bg-indigo-600 border-indigo-600 text-white shadow-3xs' : 'bg-white border-gray-150 text-gray-600'
             }`}
           >
-            {leftProduct ? leftProduct.name.split(' ').slice(1, 3).join(' ') || 'Product A' : 'Select Product A'}
+            {leftProduct ? leftProduct.name.split(' ').slice(0, 2).join(' ') || 'Product A' : 'Select Product A'}
           </button>
           <button
             onClick={() => setMobileActiveTab('table')}
-            className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all border ${
+            className={`flex-1 py-1.5 text-[11px] font-bold rounded-lg transition-all border ${
               mobileActiveTab === 'table' ? 'bg-indigo-600 border-indigo-600 text-white shadow-3xs' : 'bg-white border-gray-150 text-gray-600'
             }`}
           >
@@ -227,16 +227,16 @@ export default function ProductCompareModal({
           </button>
           <button
             onClick={() => setMobileActiveTab('right')}
-            className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all border ${
+            className={`flex-1 py-1.5 text-[11px] font-bold rounded-lg transition-all border ${
               mobileActiveTab === 'right' ? 'bg-indigo-600 border-indigo-600 text-white shadow-3xs' : 'bg-white border-gray-150 text-gray-600'
             }`}
           >
-            {rightProduct ? rightProduct.name.split(' ').slice(1, 3).join(' ') || 'Product B' : 'Select Product B'}
+            {rightProduct ? rightProduct.name.split(' ').slice(0, 2).join(' ') || 'Product B' : 'Select Product B'}
           </button>
         </div>
 
         {/* Modal Scrollable Workspace */}
-        <div className="overflow-y-auto p-4 md:p-6 flex-1 space-y-6">
+        <div className="overflow-y-auto p-3.5 sm:p-4 md:p-6 flex-1 space-y-6">
           
           {/* Pickers Row */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-8 pb-4 border-b border-gray-100">

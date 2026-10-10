@@ -50,7 +50,7 @@ export default function MobileBottomNav({
         <button
           type="button"
           onClick={() => onTabChange('home')}
-          className={`flex flex-col items-center justify-center py-1 px-2.5 rounded-xl transition-all cursor-pointer relative min-w-[56px] ${
+          className={`flex flex-col items-center justify-center py-1 px-1 sm:px-2.5 rounded-xl transition-all cursor-pointer relative min-w-0 flex-1 ${
             isHomeActive
               ? 'text-indigo-600 dark:text-indigo-400 font-bold scale-105'
               : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 font-medium'
@@ -77,7 +77,7 @@ export default function MobileBottomNav({
               onTabChange('store');
             }
           }}
-          className={`flex flex-col items-center justify-center py-1 px-2.5 rounded-xl transition-all cursor-pointer relative min-w-[56px] ${
+          className={`flex flex-col items-center justify-center py-1 px-1 sm:px-2.5 rounded-xl transition-all cursor-pointer relative min-w-0 flex-1 ${
             isStoreActive
               ? 'text-indigo-600 dark:text-indigo-400 font-bold scale-105'
               : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 font-medium'
@@ -104,7 +104,7 @@ export default function MobileBottomNav({
               onTabChange('store');
             }
           }}
-          className="flex flex-col items-center justify-center py-1 px-2.5 rounded-xl text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 font-medium transition-all cursor-pointer min-w-[56px]"
+          className="flex flex-col items-center justify-center py-1 px-1 sm:px-2.5 rounded-xl text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 font-medium transition-all cursor-pointer min-w-0 flex-1"
           aria-label="Open search"
         >
           <div className="w-9 h-9 -mt-1 rounded-full bg-indigo-600 hover:bg-indigo-700 text-white flex items-center justify-center shadow-md shadow-indigo-600/30 active:scale-95 transition-transform">
@@ -119,7 +119,7 @@ export default function MobileBottomNav({
         <button
           type="button"
           onClick={() => onTabChange('checkout')}
-          className={`flex flex-col items-center justify-center py-1 px-2.5 rounded-xl transition-all cursor-pointer relative min-w-[56px] ${
+          className={`flex flex-col items-center justify-center py-1 px-1 sm:px-2.5 rounded-xl transition-all cursor-pointer relative min-w-0 flex-1 ${
             isCartActive
               ? 'text-indigo-600 dark:text-indigo-400 font-bold scale-105'
               : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 font-medium'
@@ -145,7 +145,7 @@ export default function MobileBottomNav({
         <button
           type="button"
           onClick={() => onTabChange('user')}
-          className={`flex flex-col items-center justify-center py-1 px-2.5 rounded-xl transition-all cursor-pointer relative min-w-[56px] ${
+          className={`flex flex-col items-center justify-center py-1 px-1 sm:px-2.5 rounded-xl transition-all cursor-pointer relative min-w-0 flex-1 ${
             isUserActive
               ? 'text-indigo-600 dark:text-indigo-400 font-bold scale-105'
               : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 font-medium'

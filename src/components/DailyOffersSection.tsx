@@ -3,6 +3,7 @@ import { ChevronLeft, ChevronRight, Sparkles, Flame } from 'lucide-react';
 import { Product } from '../types';
 import { formatPrice, CurrencyType } from '../lib/currency';
 import { getProductDiscountInfo } from '../utils/productUtils';
+import LazyImage from './LazyImage';
 
 interface DailyOffersSectionProps {
   products?: Product[];
@@ -42,7 +43,7 @@ export default function DailyOffersSection({
   };
 
   return (
-    <section className="w-full bg-slate-50 dark:bg-slate-900/60 text-slate-900 dark:text-white py-6 sm:py-8 px-3.5 sm:px-6 lg:px-8 border-b border-slate-200 dark:border-slate-800 font-sans">
+    <section className="w-full max-w-full overflow-hidden bg-slate-50 dark:bg-slate-900/60 text-slate-900 dark:text-white py-6 sm:py-8 px-3.5 sm:px-6 lg:px-8 border-b border-slate-200 dark:border-slate-800 font-sans">
       <div className="w-full max-w-[1440px] mx-auto">
         {/* Header Title, See More & Slider Controls */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 sm:gap-4 mb-3">
@@ -96,7 +97,7 @@ export default function DailyOffersSection({
           {/* Products Horizontal Slider (with pt-3 pb-4 to give hover translation and shadow space) */}
           <div
             ref={scrollRef}
-            className="flex items-stretch gap-3.5 sm:gap-5 overflow-x-auto scrollbar-none pt-3 pb-4 px-1 -mx-1 scroll-smooth"
+            className="flex items-stretch gap-3.5 sm:gap-5 overflow-x-auto scrollbar-none pt-3 pb-4 px-1 scroll-smooth"
             style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
           >
             {saleProducts.map((item) => {
@@ -124,10 +125,13 @@ export default function DailyOffersSection({
                         )}
                       </div>
 
-                      <img
+                      <LazyImage
                         src={item.images?.[0] || item.imageUrl || '/placeholder-product.png'}
                         alt={item.name}
-                        referrerPolicy="no-referrer"
+                        width={280}
+                        height={200}
+                        aspectRatio="280/200"
+                        responsiveType="carousel"
                         className="w-full h-full object-contain group-hover/card:scale-105 transition-transform duration-300"
                       />
                     </div>

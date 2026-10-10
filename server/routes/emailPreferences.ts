@@ -7,8 +7,7 @@ import { Router, Request, Response } from 'express';
 import { getEmailConfig } from '../email/config';
 import { sendEmail, getMailTransporter } from '../email/transporter';
 import { isRecipientOptedOut } from '../email/db';
-import { getSqliteDb, saveSqliteDb } from '../../src/lib/sqlite-db';
-import { getPostgresPool } from '../../src/lib/postgres-db';
+import { getDbPool } from '../../src/lib/mysql-db';
 
 const router = Router();
 
@@ -22,23 +21,10 @@ router.get(['/preferences', '/preferences/'], async (req: Request, res: Response
       return res.status(400).json({ success: false, error: 'Email parameter is required.' });
     }
 
-    const pool = getPostgresPool();
-    if (pool) {
-      const result = await pool.query('SELECT * FROM email_preferences WHERE email = $1 LIMIT 1', [email]);
-      if (result.rows.length > 0) {
-        return res.json({ success: true, preferences: result.rows[0] });
-      }
-    } else {
-      const db = await getSqliteDb();
-      const resSql = db.exec('SELECT * FROM email_preferences WHERE email = ? LIMIT 1;', [email]);
-      if (resSql.length > 0 && resSql[0].values.length > 0) {
-        const cols = resSql[0].columns;
-        const obj: any = {};
-        cols.forEach((col, idx) => {
-          obj[col] = resSql[0].values[0][idx];
-        });
-        return res.json({ success: true, preferences: obj });
-      }
+    const pool = await getDbPool();
+    const [rows]: any = await pool.query('SELECT * FROM email_preferences WHERE email = ? LIMIT 1', [email]);
+    if (rows && rows.length > 0) {
+      return res.json({ success: true, preferences: rows[0] });
     }
 
     // Default preferences
@@ -72,47 +58,28 @@ router.post(['/preferences', '/preferences/'], async (req: Request, res: Respons
     const nowIso = new Date().toISOString();
     const id = `pref-${Date.now()}`;
 
-    const pool = getPostgresPool();
-    if (pool) {
-      await pool.query(
-        `INSERT INTO email_preferences (id, email, allow_marketing, allow_review_requests, allow_abandoned_cart, allow_price_drop, unsubscribed_all, updated_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-         ON CONFLICT (email) DO UPDATE SET
-           allow_marketing = EXCLUDED.allow_marketing,
-           allow_review_requests = EXCLUDED.allow_review_requests,
-           allow_abandoned_cart = EXCLUDED.allow_abandoned_cart,
-           allow_price_drop = EXCLUDED.allow_price_drop,
-           unsubscribed_all = EXCLUDED.unsubscribed_all,
-           updated_at = EXCLUDED.updated_at;`,
-        [
-          id,
-          cleanEmail,
-          Boolean(allow_marketing),
-          Boolean(allow_review_requests),
-          Boolean(allow_abandoned_cart),
-          Boolean(allow_price_drop),
-          Boolean(unsubscribed_all),
-          nowIso,
-        ]
-      );
-    } else {
-      const db = await getSqliteDb();
-      db.run(
-        `INSERT OR REPLACE INTO email_preferences (id, email, allow_marketing, allow_review_requests, allow_abandoned_cart, allow_price_drop, unsubscribed_all, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?);`,
-        [
-          id,
-          cleanEmail,
-          allow_marketing ? 1 : 0,
-          allow_review_requests ? 1 : 0,
-          allow_abandoned_cart ? 1 : 0,
-          allow_price_drop ? 1 : 0,
-          unsubscribed_all ? 1 : 0,
-          nowIso,
-        ]
-      );
-      saveSqliteDb(db);
-    }
+    const pool = await getDbPool();
+    await pool.query(
+      `INSERT INTO email_preferences (id, email, allow_marketing, allow_review_requests, allow_abandoned_cart, allow_price_drop, unsubscribed_all, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+       ON DUPLICATE KEY UPDATE
+         allow_marketing = VALUES(allow_marketing),
+         allow_review_requests = VALUES(allow_review_requests),
+         allow_abandoned_cart = VALUES(allow_abandoned_cart),
+         allow_price_drop = VALUES(allow_price_drop),
+         unsubscribed_all = VALUES(unsubscribed_all),
+         updated_at = VALUES(updated_at);`,
+      [
+        id,
+        cleanEmail,
+        allow_marketing ? 1 : 0,
+        allow_review_requests ? 1 : 0,
+        allow_abandoned_cart ? 1 : 0,
+        allow_price_drop ? 1 : 0,
+        unsubscribed_all ? 1 : 0,
+        nowIso,
+      ]
+    );
 
     return res.json({ success: true, message: 'Email preferences updated successfully.' });
   } catch (err: any) {
@@ -141,29 +108,19 @@ router.get(['/unsubscribe', '/unsubscribe/'], async (req: Request, res: Response
     const nowIso = new Date().toISOString();
     const id = `pref-${Date.now()}`;
 
-    const pool = getPostgresPool();
-    if (pool) {
-      await pool.query(
-        `INSERT INTO email_preferences (id, email, allow_marketing, allow_review_requests, allow_abandoned_cart, allow_price_drop, unsubscribed_all, updated_at)
-         VALUES ($1, $2, FALSE, FALSE, FALSE, FALSE, TRUE, $3)
-         ON CONFLICT (email) DO UPDATE SET
-           allow_marketing = FALSE,
-           allow_review_requests = FALSE,
-           allow_abandoned_cart = FALSE,
-           allow_price_drop = FALSE,
-           unsubscribed_all = TRUE,
-           updated_at = EXCLUDED.updated_at;`,
-        [id, email, nowIso]
-      );
-    } else {
-      const db = await getSqliteDb();
-      db.run(
-        `INSERT OR REPLACE INTO email_preferences (id, email, allow_marketing, allow_review_requests, allow_abandoned_cart, allow_price_drop, unsubscribed_all, updated_at)
-         VALUES (?, ?, 0, 0, 0, 0, 1, ?);`,
-        [id, email, nowIso]
-      );
-      saveSqliteDb(db);
-    }
+    const pool = await getDbPool();
+    await pool.query(
+      `INSERT INTO email_preferences (id, email, allow_marketing, allow_review_requests, allow_abandoned_cart, allow_price_drop, unsubscribed_all, updated_at)
+       VALUES (?, ?, 0, 0, 0, 0, 1, ?)
+       ON DUPLICATE KEY UPDATE
+         allow_marketing = 0,
+         allow_review_requests = 0,
+         allow_abandoned_cart = 0,
+         allow_price_drop = 0,
+         unsubscribed_all = 1,
+         updated_at = VALUES(updated_at);`,
+      [id, email, nowIso]
+    );
 
     return res.send(`
       <!DOCTYPE html>
@@ -207,29 +164,19 @@ router.post(['/unsubscribe', '/unsubscribe/'], async (req: Request, res: Respons
     const nowIso = new Date().toISOString();
     const id = `pref-${Date.now()}`;
 
-    const pool = getPostgresPool();
-    if (pool) {
-      await pool.query(
-        `INSERT INTO email_preferences (id, email, allow_marketing, allow_review_requests, allow_abandoned_cart, allow_price_drop, unsubscribed_all, updated_at)
-         VALUES ($1, $2, FALSE, FALSE, FALSE, FALSE, TRUE, $3)
-         ON CONFLICT (email) DO UPDATE SET
-           allow_marketing = FALSE,
-           allow_review_requests = FALSE,
-           allow_abandoned_cart = FALSE,
-           allow_price_drop = FALSE,
-           unsubscribed_all = TRUE,
-           updated_at = EXCLUDED.updated_at;`,
-        [id, email, nowIso]
-      );
-    } else {
-      const db = await getSqliteDb();
-      db.run(
-        `INSERT OR REPLACE INTO email_preferences (id, email, allow_marketing, allow_review_requests, allow_abandoned_cart, allow_price_drop, unsubscribed_all, updated_at)
-         VALUES (?, ?, 0, 0, 0, 0, 1, ?);`,
-        [id, email, nowIso]
-      );
-      saveSqliteDb(db);
-    }
+    const pool = await getDbPool();
+    await pool.query(
+      `INSERT INTO email_preferences (id, email, allow_marketing, allow_review_requests, allow_abandoned_cart, allow_price_drop, unsubscribed_all, updated_at)
+       VALUES (?, ?, 0, 0, 0, 0, 1, ?)
+       ON DUPLICATE KEY UPDATE
+         allow_marketing = 0,
+         allow_review_requests = 0,
+         allow_abandoned_cart = 0,
+         allow_price_drop = 0,
+         unsubscribed_all = 1,
+         updated_at = VALUES(updated_at);`,
+      [id, email, nowIso]
+    );
 
     return res.json({
       success: true,
@@ -255,29 +202,19 @@ router.post(['/resubscribe', '/resubscribe/'], async (req: Request, res: Respons
     const nowIso = new Date().toISOString();
     const id = `pref-${Date.now()}`;
 
-    const pool = getPostgresPool();
-    if (pool) {
-      await pool.query(
-        `INSERT INTO email_preferences (id, email, allow_marketing, allow_review_requests, allow_abandoned_cart, allow_price_drop, unsubscribed_all, updated_at)
-         VALUES ($1, $2, TRUE, TRUE, TRUE, TRUE, FALSE, $3)
-         ON CONFLICT (email) DO UPDATE SET
-           allow_marketing = TRUE,
-           allow_review_requests = TRUE,
-           allow_abandoned_cart = TRUE,
-           allow_price_drop = TRUE,
-           unsubscribed_all = FALSE,
-           updated_at = EXCLUDED.updated_at;`,
-        [id, email, nowIso]
-      );
-    } else {
-      const db = await getSqliteDb();
-      db.run(
-        `INSERT OR REPLACE INTO email_preferences (id, email, allow_marketing, allow_review_requests, allow_abandoned_cart, allow_price_drop, unsubscribed_all, updated_at)
-         VALUES (?, ?, 1, 1, 1, 1, 0, ?);`,
-        [id, email, nowIso]
-      );
-      saveSqliteDb(db);
-    }
+    const pool = await getDbPool();
+    await pool.query(
+      `INSERT INTO email_preferences (id, email, allow_marketing, allow_review_requests, allow_abandoned_cart, allow_price_drop, unsubscribed_all, updated_at)
+       VALUES (?, ?, 1, 1, 1, 1, 0, ?)
+       ON DUPLICATE KEY UPDATE
+         allow_marketing = 1,
+         allow_review_requests = 1,
+         allow_abandoned_cart = 1,
+         allow_price_drop = 1,
+         unsubscribed_all = 0,
+         updated_at = VALUES(updated_at);`,
+      [id, email, nowIso]
+    );
 
     return res.json({
       success: true,
@@ -300,16 +237,9 @@ router.get(['/unsubscribe-status', '/unsubscribe-status/'], async (req: Request,
       return res.json({ email: '', unsubscribed: false });
     }
 
-    const pool = getPostgresPool();
-    if (pool) {
-      const result = await pool.query('SELECT unsubscribed_all FROM email_preferences WHERE email = $1 LIMIT 1', [email]);
-      return res.json({ email, unsubscribed: result.rows[0]?.unsubscribed_all === true });
-    }
-
-    const db = await getSqliteDb();
-    const resSql = db.exec('SELECT unsubscribed_all FROM email_preferences WHERE email = ? LIMIT 1;', [email]);
-    const unsubscribed = resSql.length > 0 && resSql[0].values.length > 0 ? Boolean(resSql[0].values[0][0]) : false;
-    return res.json({ email, unsubscribed });
+    const pool = await getDbPool();
+    const [rows]: any = await pool.query('SELECT unsubscribed_all FROM email_preferences WHERE email = ? LIMIT 1', [email]);
+    return res.json({ email, unsubscribed: rows && rows.length > 0 ? Boolean(rows[0].unsubscribed_all) : false });
   } catch {
     return res.json({ email: '', unsubscribed: false });
   }
@@ -320,16 +250,9 @@ router.get(['/unsubscribe-status', '/unsubscribe-status/'], async (req: Request,
  */
 router.get(['/unsubscribed-list', '/unsubscribed-list/'], async (_req: Request, res: Response) => {
   try {
-    const pool = getPostgresPool();
-    if (pool) {
-      const result = await pool.query('SELECT email FROM email_preferences WHERE unsubscribed_all = TRUE');
-      const emails = result.rows.map((r) => r.email);
-      return res.json({ count: emails.length, emails });
-    }
-
-    const db = await getSqliteDb();
-    const resSql = db.exec('SELECT email FROM email_preferences WHERE unsubscribed_all = 1;');
-    const emails = resSql.length > 0 ? resSql[0].values.map((v) => String(v[0])) : [];
+    const pool = await getDbPool();
+    const [rows]: any = await pool.query('SELECT email FROM email_preferences WHERE unsubscribed_all = 1');
+    const emails = (rows || []).map((r: any) => r.email);
     return res.json({ count: emails.length, emails });
   } catch {
     return res.json({ count: 0, emails: [] });

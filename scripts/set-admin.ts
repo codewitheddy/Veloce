@@ -6,12 +6,10 @@
 import crypto from 'crypto';
 import readline from 'readline';
 import { 
-  getSqliteUserByEmail, 
-  saveSqliteUser, 
-  getAllSqliteUsers, 
-  getSqliteDb, 
-  saveSqliteDb 
-} from '../src/lib/sqlite-db';
+  getMysqlUserByEmail, 
+  saveMysqlUser, 
+  getAllMysqlUsers 
+} from '../src/lib/mysql-db';
 
 function hashPassword(password: string): string {
   const salt = crypto.randomBytes(16).toString('hex');
@@ -33,7 +31,7 @@ function prompt(query: string): Promise<string> {
 }
 
 async function listAdmins() {
-  const users = await getAllSqliteUsers();
+  const users = await getAllMysqlUsers();
   const admins = users.filter((u) => u.is_staff || u.is_superuser);
 
   console.log('\n========================================');
@@ -69,7 +67,7 @@ async function setAdminAccount(emailInput?: string, passwordInput?: string, name
     process.exit(1);
   }
 
-  const existingUser = await getSqliteUserByEmail(email);
+  const existingUser = await getMysqlUserByEmail(email);
 
   if (existingUser) {
     console.log(`\nℹ️ Found existing account for: ${email}`);
@@ -95,7 +93,7 @@ async function setAdminAccount(emailInput?: string, passwordInput?: string, name
       name = await prompt('Enter Admin Full Name (optional): ');
     }
 
-    const updatedUser = await saveSqliteUser({
+    const updatedUser = await saveMysqlUser({
       id: existingUser.id,
       username: existingUser.username || email.split('@')[0],
       email: email,
@@ -103,9 +101,10 @@ async function setAdminAccount(emailInput?: string, passwordInput?: string, name
       first_name: name || existingUser.first_name || 'Administrator',
       last_name: existingUser.last_name || '',
       phone: existingUser.phone || '',
-      is_staff: true,
-      is_superuser: true,
-      email_verified: true,
+      role: 'admin',
+      is_staff: 1,
+      is_superuser: 1,
+      email_verified: 1,
       partner_tier: 'Diamond'
     });
 
@@ -118,7 +117,7 @@ async function setAdminAccount(emailInput?: string, passwordInput?: string, name
     console.log(`  Staff:       YES`);
     console.log(`  Verified:    YES`);
     if (password) {
-      console.log(`  Password:    [Updated]`);
+      console.log(`  Password:    ${password}`);
     }
     console.log('========================================\n');
   } else {
@@ -139,16 +138,18 @@ async function setAdminAccount(emailInput?: string, passwordInput?: string, name
     const passwordHash = hashPassword(password);
     const username = email.split('@')[0].replace(/[^a-zA-Z0-9_]/g, '') || 'admin';
 
-    const newUser = await saveSqliteUser({
+    const newUser = await saveMysqlUser({
+      id: `usr-admin-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
       username: username,
       email: email,
       password_hash: passwordHash,
       first_name: name,
       last_name: '',
       phone: '',
-      is_staff: true,
-      is_superuser: true,
-      email_verified: true,
+      role: 'admin',
+      is_staff: 1,
+      is_superuser: 1,
+      email_verified: 1,
       partner_tier: 'Diamond'
     });
 
@@ -161,6 +162,7 @@ async function setAdminAccount(emailInput?: string, passwordInput?: string, name
     console.log(`  Superuser:   YES`);
     console.log(`  Staff:       YES`);
     console.log(`  Status:      Verified`);
+    console.log(`  Password:    ${password}`);
     console.log('========================================\n');
   }
 

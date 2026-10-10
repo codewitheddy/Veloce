@@ -343,21 +343,14 @@ export default function PrivacyPolicy({ setCurrentTab }: PrivacyPolicyProps) {
 
           </div>
 
-          {/* Cookie banner info card */}
+          {/* Local storage & privacy info card */}
           <div className="rounded-xl border border-gray-100 dark:border-gray-800 bg-indigo-950/5 dark:bg-indigo-950/10 p-4 font-sans text-[11px] leading-relaxed text-indigo-950 dark:text-indigo-300">
             <div className="flex items-center gap-2 font-semibold text-indigo-900 dark:text-indigo-200 mb-2">
-              <Shield className="h-4.5 w-4.5 shrink-0" /> Local Cookie & Tracker Consent
+              <Shield className="h-4.5 w-4.5 shrink-0" /> Local Storage &amp; Privacy Controls
             </div>
-            <p className="mb-3 font-extralight text-indigo-950/80 dark:text-indigo-300/80">
-              Ropenix Collections complies with strict GDPR "Privacy by Design" guidelines. You can inspect or modify your active cookie preference privileges at any time.
+            <p className="font-extralight text-indigo-950/80 dark:text-indigo-300/80">
+              Ropenix Collections adheres to strict privacy standards. You can inspect, export, or clear your locally cached data using the inspection tools above at any time.
             </p>
-            <button
-              onClick={() => window.dispatchEvent(new CustomEvent('veloce_open_cookie_settings'))}
-              className="w-full inline-flex h-8 items-center justify-center gap-1.5 rounded-lg bg-indigo-650 hover:bg-indigo-700 text-white text-[10px] font-bold transition-all cursor-pointer shadow-sm"
-              id="privacy-btn-edit-cookies"
-            >
-              <Settings className="h-3.5 w-3.5" /> Configure Cookie Preferences
-            </button>
           </div>
 
         </div>

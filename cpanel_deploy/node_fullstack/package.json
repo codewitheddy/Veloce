@@ -4,7 +4,7 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "node ./node_modules/tsx/dist/cli.mjs watch --exclude \"veloce.sqlite*\" --exclude \".notified_expiry_products.json\" --exclude \"dist/**\" server.ts",
+    "dev": "node ./node_modules/tsx/dist/cli.mjs watch --exclude \".notified_expiry_products.json\" --exclude \"dist/**\" server.ts",
     "build": "vite build && npx esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
     "build:cpanel": "vite build && npx esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
     "build:server": "npx esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",

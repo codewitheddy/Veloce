@@ -75,7 +75,7 @@ function zipDirectory(sourceDir, outPath) {
 
 async function run() {
   console.log('\n======================================================');
-  console.log('🚀 Preparing Veloce Hub for cPanel Deployment');
+  console.log('🚀 Preparing Ropenix Collections for cPanel Deployment');
   console.log('======================================================\n');
 
   // Step 1: Run Production Build
@@ -137,7 +137,12 @@ async function run() {
     fs.copyFileSync(path.join(ROOT_DIR, 'veloce.sqlite'), path.join(nodeDir, 'veloce.sqlite'));
   }
 
-  zipDirectory(nodeDir, path.join(OUTPUT_DIR, 'veloce_node_fullstack.zip'));
+  // Generate primary and alias zips
+  const ropenixFullstackZip = path.join(OUTPUT_DIR, 'ropenix_node_fullstack.zip');
+  zipDirectory(nodeDir, ropenixFullstackZip);
+  if (fs.existsSync(ropenixFullstackZip)) {
+    fs.copyFileSync(ropenixFullstackZip, path.join(OUTPUT_DIR, 'veloce_node_fullstack.zip'));
+  }
 
   // ---------------------------------------------------------------------------
   // Bundle 2: Static SPA Frontend (For direct extraction into public_html)
@@ -152,7 +157,11 @@ async function run() {
     fs.copyFileSync(path.join(ROOT_DIR, 'public', '.htaccess'), path.join(staticDir, '.htaccess'));
   }
 
-  zipDirectory(staticDir, path.join(OUTPUT_DIR, 'veloce_static_spa.zip'));
+  const ropenixStaticZip = path.join(OUTPUT_DIR, 'ropenix_static_spa.zip');
+  zipDirectory(staticDir, ropenixStaticZip);
+  if (fs.existsSync(ropenixStaticZip)) {
+    fs.copyFileSync(ropenixStaticZip, path.join(OUTPUT_DIR, 'veloce_static_spa.zip'));
+  }
 
   // Copy deployment documentation into cpanel_deploy
   if (fs.existsSync(path.join(ROOT_DIR, 'CPANEL_DEPLOYMENT.md'))) {
@@ -163,9 +172,9 @@ async function run() {
   console.log('🎉 cPanel Deployment Packages Ready in cpanel_deploy/');
   console.log('======================================================\n');
   console.log('📁 Generated Archives (100% Unified Node.js Stack):');
-  console.log('  1. veloce_node_fullstack.zip  -> Full Node.js Fullstack App (cPanel Setup Node.js App)');
-  console.log('  2. veloce_static_spa.zip       -> Pure Static SPA (Drop into public_html)');
-  console.log('\n📖 Refer to CPANEL_DEPLOYMENT.md for step-by-step instructions.\n');
+  console.log('  1. ropenix_node_fullstack.zip  -> Full Node.js Fullstack App (cPanel Setup Node.js App)');
+  console.log('  2. ropenix_static_spa.zip       -> Pure Static SPA (Drop into public_html)');
+  console.log('\n📖 Refer to CPANEL_DEPLOYMENT.md / DEPLOYMENT_GUIDE.md for step-by-step instructions.\n');
 }
 
 run().catch((err) => {

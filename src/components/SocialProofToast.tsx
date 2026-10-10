@@ -509,7 +509,7 @@ export default function SocialProofToast({
           exit={{ opacity: 0, y: 15, scale: 0.92 }}
           whileHover={{ scale: 1.02, y: -2, boxShadow: '0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1)' }}
           transition={{ type: 'spring', stiffness: 280, damping: 22, mass: 0.85 }}
-          className="fixed bottom-20 left-4 z-50 max-w-sm w-[340px] rounded-xl border border-indigo-100/80 dark:border-indigo-950/80 bg-white/95 dark:bg-gray-900/95 shadow-lg backdrop-blur-md p-3.5 flex gap-3 cursor-pointer select-none font-sans group transition-colors duration-250 touch-none hover:border-indigo-300 dark:hover:border-indigo-800"
+          className="fixed bottom-20 left-3 sm:left-4 z-50 w-[calc(100%-1.5rem)] sm:w-[340px] max-w-sm rounded-xl border border-indigo-100/80 dark:border-indigo-950/80 bg-white/95 dark:bg-gray-900/95 shadow-lg backdrop-blur-md p-3.5 flex gap-3 cursor-pointer select-none font-sans group transition-colors duration-250 touch-none hover:border-indigo-300 dark:hover:border-indigo-800"
           onTap={handleViewProduct}
         >
           {/* Product Thumbnail image with glow overlay on hover */}

@@ -235,6 +235,7 @@ export default function DashboardAnalytics({
   const [isMobileAdminNavOpen, setIsMobileAdminNavOpen] = useState<boolean>(false);
   const [adminMenuFilter, setAdminMenuFilter] = useState<string>('');
   const [isPaymentVerifyModalOpen, setIsPaymentVerifyModalOpen] = useState<boolean>(false);
+  const [copiedMpesaCode, setCopiedMpesaCode] = useState<string | null>(null);
   const adminNavTabsRef = React.useRef<HTMLDivElement>(null);
 
   // Admin Global Search State & Keyboard Navigation
@@ -2854,26 +2855,52 @@ admin@ropenix.co.ke`;
                 );
             }
             setEditingProduct(null);
+            setAdminSubTab('products');
             try {
               localStorage.removeItem('veloce_admin_editing_product_id');
+              localStorage.setItem('veloce_admin_subtab', 'products');
             } catch {}
           } else {
             onAddProduct(savedProduct);
             setShowAddProdPage(false);
+            setAdminSubTab('products');
             try {
               localStorage.removeItem('veloce_admin_show_add_prod');
               localStorage.removeItem('veloce_new_product_draft');
+              localStorage.setItem('veloce_admin_subtab', 'products');
             } catch {}
+          }
+          window.dispatchEvent(new CustomEvent('veloce_clear_admin_editing_product'));
+          if (typeof window !== 'undefined' && window.history && window.history.pushState) {
+            const url = new URL(window.location.href);
+            url.searchParams.delete('productId');
+            url.searchParams.delete('editProduct');
+            url.searchParams.delete('edit_product');
+            url.searchParams.delete('product');
+            url.searchParams.set('subtab', 'products');
+            window.history.pushState({}, '', url.pathname + (url.search ? url.search : ''));
           }
         }}
         onCancel={() => {
           setEditingProduct(null);
           setShowAddProdPage(false);
+          setAdminSubTab('products');
           try {
             localStorage.removeItem('veloce_admin_show_add_prod');
             localStorage.removeItem('veloce_admin_editing_product_id');
             localStorage.removeItem('veloce_new_product_draft');
+            localStorage.setItem('veloce_admin_subtab', 'products');
           } catch {}
+          window.dispatchEvent(new CustomEvent('veloce_clear_admin_editing_product'));
+          if (typeof window !== 'undefined' && window.history && window.history.pushState) {
+            const url = new URL(window.location.href);
+            url.searchParams.delete('productId');
+            url.searchParams.delete('editProduct');
+            url.searchParams.delete('edit_product');
+            url.searchParams.delete('product');
+            url.searchParams.set('subtab', 'products');
+            window.history.pushState({}, '', url.pathname + (url.search ? url.search : ''));
+          }
         }}
         onSwitchProductToEdit={(prod) => setEditingProduct(prod)}
         onDuplicateProduct={(prod) => {
@@ -7195,7 +7222,12 @@ admin@ropenix.co.ke`;
                           <button
                             type="button"
                             onClick={() => {
-                              selectedOrderIds.forEach((id) => onUpdateOrderStatus(id, 'processing'));
+                              const eligible = orders.filter((o) => selectedOrderIds.includes(o.id) && o.status !== 'completed' && o.status !== 'delivered');
+                              const blocked = selectedOrderIds.length - eligible.length;
+                              if (blocked > 0) {
+                                alert(`⚠️ Notice: ${blocked} order(s) are already Completed/Delivered and cannot be reverted to Processing.`);
+                              }
+                              eligible.forEach((o) => onUpdateOrderStatus(o.id, 'processing'));
                               setSelectedOrderIds([]);
                               setIsOrderBulkActionMenuOpen(false);
                             }}
@@ -7208,7 +7240,12 @@ admin@ropenix.co.ke`;
                           <button
                             type="button"
                             onClick={() => {
-                              selectedOrderIds.forEach((id) => onUpdateOrderStatus(id, 'shipped'));
+                              const eligible = orders.filter((o) => selectedOrderIds.includes(o.id) && o.status !== 'completed' && o.status !== 'delivered');
+                              const blocked = selectedOrderIds.length - eligible.length;
+                              if (blocked > 0) {
+                                alert(`⚠️ Notice: ${blocked} order(s) are already Completed/Delivered and cannot be reverted to Shipped.`);
+                              }
+                              eligible.forEach((o) => onUpdateOrderStatus(o.id, 'shipped'));
                               setSelectedOrderIds([]);
                               setIsOrderBulkActionMenuOpen(false);
                             }}
@@ -7245,7 +7282,12 @@ admin@ropenix.co.ke`;
                           <button
                             type="button"
                             onClick={() => {
-                              selectedOrderIds.forEach((id) => onUpdateOrderStatus(id, 'pending'));
+                              const eligible = orders.filter((o) => selectedOrderIds.includes(o.id) && o.status !== 'completed' && o.status !== 'delivered');
+                              const blocked = selectedOrderIds.length - eligible.length;
+                              if (blocked > 0) {
+                                alert(`⚠️ Notice: ${blocked} order(s) are already Completed/Delivered and cannot be reverted to Pending.`);
+                              }
+                              eligible.forEach((o) => onUpdateOrderStatus(o.id, 'pending'));
                               setSelectedOrderIds([]);
                               setIsOrderBulkActionMenuOpen(false);
                             }}
@@ -7446,6 +7488,7 @@ admin@ropenix.co.ke`;
                           </th>
                           <th className="py-2.5 text-gray-400">Channel</th>
                           <th className="py-2.5 text-gray-400">Payment Mode</th>
+                          <th className="py-2.5 text-gray-400">M-PESA Code</th>
                           <th className="py-2.5 text-gray-400">Payment Status</th>
                           <th className="py-2.5 text-gray-400">Order Status</th>
                           <th className="py-2.5 text-right text-gray-400">Operations & Audits</th>
@@ -7509,6 +7552,48 @@ admin@ropenix.co.ke`;
                               </td>
                               <td className="py-3">
                                 {(() => {
+                                  const rawMpesaCode = (ord.paymentReference || (ord as any).mpesaReceiptNumber || (ord as any).mpesaTransactionCode || (ord as any).mpesa_receipt_number || (ord as any).mpesa_code || '').trim();
+                                  if (!rawMpesaCode) {
+                                    if (isCod) {
+                                      return <span className="text-[10px] text-gray-400 italic font-mono">N/A (COD)</span>;
+                                    }
+                                    if (isCard) {
+                                      return <span className="text-[10px] text-gray-400 italic font-mono">N/A (Card)</span>;
+                                    }
+                                    return <span className="text-[10px] text-gray-400 italic font-mono">— None —</span>;
+                                  }
+
+                                  const isCopied = copiedMpesaCode === rawMpesaCode;
+
+                                  return (
+                                    <div className="inline-flex items-center gap-1.5">
+                                      <span className="inline-flex items-center px-2 py-0.5 rounded bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-300 dark:border-emerald-800 text-[10px] font-black text-emerald-900 dark:text-emerald-200 uppercase font-mono tracking-wider shadow-3xs">
+                                        {rawMpesaCode.toUpperCase()}
+                                      </span>
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          if (navigator.clipboard && navigator.clipboard.writeText) {
+                                            navigator.clipboard.writeText(rawMpesaCode.toUpperCase());
+                                            setCopiedMpesaCode(rawMpesaCode);
+                                            setTimeout(() => setCopiedMpesaCode((prev) => (prev === rawMpesaCode ? null : prev)), 2000);
+                                          }
+                                        }}
+                                        className={`p-1 rounded transition-colors cursor-pointer ${
+                                          isCopied
+                                            ? 'text-emerald-600 bg-emerald-100 dark:bg-emerald-900/60'
+                                            : 'text-gray-400 hover:text-indigo-600 hover:bg-gray-100 dark:hover:bg-gray-800'
+                                        }`}
+                                        title={isCopied ? 'Copied to clipboard!' : 'Copy M-PESA confirmation code'}
+                                      >
+                                        {isCopied ? <Check className="h-3 w-3 shrink-0" /> : <Copy className="h-3 w-3 shrink-0" />}
+                                      </button>
+                                    </div>
+                                  );
+                                })()}
+                              </td>
+                              <td className="py-3">
+                                {(() => {
                                   const isPaid = ord.paymentStatus === 'paid';
 
                                   if (isPaid) {
@@ -7569,7 +7654,7 @@ admin@ropenix.co.ke`;
                                     Completed
                                   </span>
                                 )}
-                                {ord.status === 'shipped' && (
+                                {(ord.status === 'shipped' || ord.status === 'delivered') && (
                                   <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-bold uppercase font-mono shadow-3xs ${
                                     ord.deliveryConfirmed
                                       ? 'bg-emerald-50 text-emerald-700 border border-emerald-200/60'
@@ -7687,7 +7772,7 @@ admin@ropenix.co.ke`;
                                     </button>
                                   )}
 
-                                  {ord.status === 'shipped' && ord.deliveryConfirmed && (
+                                  {(ord.status === 'delivered' || (ord.status === 'shipped' && ord.deliveryConfirmed)) && (
                                     <button
                                       type="button"
                                       onClick={() => openWorkflowDialog(ord, 'mark-completed')}
@@ -10153,6 +10238,12 @@ admin@ropenix.co.ke`;
               if (onNavigateToSite) {
                 onNavigateToSite('store');
               }
+            }}
+            onBackToCatalog={() => {
+              setAdminSubTab('products');
+              try {
+                localStorage.setItem('veloce_admin_subtab', 'products');
+              } catch {}
             }}
           />
         </div>

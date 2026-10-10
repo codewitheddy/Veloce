@@ -21,8 +21,14 @@ const getAppDirname = (): string => {
 
 const appDir = getAppDirname();
 
-import { getSqliteDbStatus, ensureDefaultAdminUser, ensureDefaultCustomers, ensureDefaultProducts, ensureDefaultHeroBanners } from '../src/lib/sqlite-db';
-import { initPostgresTables } from '../src/lib/postgres-db';
+import { 
+  getDbStatus, 
+  initializeDatabaseSchema, 
+  ensureDefaultAdminUser, 
+  ensureDefaultCustomers, 
+  ensureDefaultProducts, 
+  ensureDefaultHeroBanners 
+} from '../src/lib/mysql-db';
 import { validateEmailConfigOnStartup } from './email/startupCheck';
 import { registerEmailEventListeners } from './email/events';
 import { startEmailQueueWorker, stopEmailQueueWorker } from './email/queue';
@@ -34,6 +40,7 @@ import { errorHandler } from './middleware/errorHandler';
 import authRouter from './routes/auth';
 import usersRouter from './routes/users';
 import productsRouter, { loadProductsCache } from './routes/products';
+import categoriesRouter from './routes/categories';
 import ordersRouter from './routes/orders';
 import suppliersRouter from './routes/suppliers';
 import customersRouter from './routes/customers';
@@ -78,25 +85,40 @@ app.use((_req, res, next) => {
   res.setHeader('X-Frame-Options', 'SAMEORIGIN');
   res.setHeader('X-XSS-Protection', '1; mode=block');
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
-  res.setHeader(
-    'Content-Security-Policy',
-    "default-src 'self' https: http:; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://translate.google.com https://translate.googleapis.com http://translate.google.com http://translate.googleapis.com https://*.google.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://translate.googleapis.com http://translate.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https: http: res.cloudinary.com https://images.unsplash.com https://translate.google.com https://www.google.com https://*.google.com; connect-src 'self' https: http: ws: wss:; media-src 'self' data: blob: https: res.cloudinary.com; frame-ancestors 'self';"
-  );
+  
+  const cspDirectives = [
+    "default-src 'self' https: http: data: blob:",
+    "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://translate.google.com https://translate.googleapis.com https://translate-pa.googleapis.com https://*.googleapis.com https://*.google.com https://*.gstatic.com https://www.gstatic.com http://translate.google.com http://translate.googleapis.com",
+    "script-src-elem 'self' 'unsafe-inline' 'unsafe-eval' https://translate.google.com https://translate.googleapis.com https://translate-pa.googleapis.com https://*.googleapis.com https://*.google.com https://*.gstatic.com https://www.gstatic.com http://translate.google.com http://translate.googleapis.com",
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://translate.googleapis.com https://*.googleapis.com https://www.gstatic.com https://*.gstatic.com http://translate.googleapis.com",
+    "style-src-elem 'self' 'unsafe-inline' https://fonts.googleapis.com https://translate.googleapis.com https://*.googleapis.com https://www.gstatic.com https://*.gstatic.com http://translate.googleapis.com",
+    "font-src 'self' https://fonts.gstatic.com https://*.gstatic.com data:",
+    "img-src 'self' data: blob: https: http: res.cloudinary.com https://images.unsplash.com https://translate.google.com https://www.google.com https://*.google.com https://*.gstatic.com https://www.gstatic.com",
+    "connect-src 'self' https: http: ws: wss: https://*.googleapis.com https://translate-pa.googleapis.com https://*.google.com https://*.gstatic.com",
+    "frame-src 'self' https://translate.google.com https://*.google.com https://*.googleapis.com",
+    "child-src 'self' https://translate.google.com https://*.google.com https://*.googleapis.com",
+    "media-src 'self' data: blob: https: res.cloudinary.com",
+    "frame-ancestors 'self'",
+  ];
+
+  res.setHeader('Content-Security-Policy', cspDirectives.join('; '));
   next();
 });
 
 // 3. Lightweight Health Check Monitor Endpoint
 app.get(['/health', '/api/health'], async (_req: Request, res: Response) => {
   try {
-    const sqliteStatus = await getSqliteDbStatus();
+    const dbStatus = await getDbStatus();
     const memUsage = process.memoryUsage();
     return res.status(200).json({
-      status: 'healthy',
+      status: dbStatus.connected ? 'healthy' : 'degraded',
       timestamp: new Date().toISOString(),
       uptime_seconds: Math.floor(process.uptime()),
       database: {
-        sqlite: sqliteStatus.connected ? 'connected' : 'degraded',
-        message: sqliteStatus.message,
+        engine: 'MySQL',
+        status: dbStatus.connected ? 'connected' : 'disconnected',
+        message: dbStatus.message,
+        stats: dbStatus.stats,
       },
       memory: {
         rss_mb: Math.round(memUsage.rss / 1024 / 1024),
@@ -125,7 +147,7 @@ app.use('/auth', authRouter);
 app.use('/api/auth', authRouter);
 app.use('/api/users', usersRouter);
 app.use('/api/products', productsRouter);
-app.use('/api/categories', productsRouter);
+app.use('/api/categories', categoriesRouter);
 app.use('/api/inventory', productsRouter);
 app.use('/api/orders', ordersRouter);
 app.use('/api/suppliers', suppliersRouter);
@@ -158,16 +180,13 @@ app.use(errorHandler);
 // ============================================================================
 async function startServer() {
   try {
-    const sqliteStatus = await getSqliteDbStatus();
-    console.log(`[SQLite Database] ${sqliteStatus.message}`);
+    await initializeDatabaseSchema();
+    const dbStatus = await getDbStatus();
+    console.log(`[MySQL Database] ${dbStatus.message}`);
     await loadProductsCache();
   } catch (err) {
-    console.error('[SQLite Startup] Error initializing SQLite database:', err);
+    console.error('[MySQL Startup] Error initializing MySQL database:', err);
   }
-
-  initPostgresTables().catch((err) => {
-    console.warn('[PostgreSQL Startup] Notice:', err?.message || err);
-  });
 
   performExpiryBackgroundCheck().catch((err) => {
     console.error('[Expiry Check] Startup execution error:', err);
@@ -265,18 +284,29 @@ async function startServer() {
     }
   }
 
-  const server = app.listen(PORT, () => {
-    console.log(`[Ropenix Express Server] Running on http://localhost:${PORT}`);
-    console.log(`[Ropenix Auth API] Route registered at http://localhost:${PORT}/api/auth`);
-    console.log(`[Ropenix Products API] Route registered at http://localhost:${PORT}/api/products`);
-    console.log(`[Ropenix Orders API] Route registered at http://localhost:${PORT}/api/orders`);
-    console.log(`[Ropenix Suppliers API] Route registered at http://localhost:${PORT}/api/suppliers`);
+  let listenPort: number | string = PORT;
+  if (typeof (global as any).PhusionPassenger !== 'undefined') {
+    try {
+      (global as any).PhusionPassenger.configure({ autoInstall: false });
+    } catch (_) {}
+    listenPort = 'passenger';
+  } else if (process.env.PORT === 'passenger' || (process.env.PORT && isNaN(Number(process.env.PORT)))) {
+    listenPort = process.env.PORT;
+  }
+
+  const server = app.listen(listenPort, () => {
+    const listenMsg = listenPort === 'passenger' ? 'Phusion Passenger' : `http://localhost:${listenPort}`;
+    console.log(`[Ropenix Express Server] Running on ${listenMsg}`);
+    console.log(`[Ropenix Auth API] Route registered at /api/auth`);
+    console.log(`[Ropenix Products API] Route registered at /api/products`);
+    console.log(`[Ropenix Orders API] Route registered at /api/orders`);
+    console.log(`[Ropenix Suppliers API] Route registered at /api/suppliers`);
   });
 
-  ensureDefaultAdminUser().catch((err) => console.warn('[SQLite] Default admin seed notice:', err));
-  ensureDefaultCustomers().catch((err) => console.warn('[SQLite] Default customer seed notice:', err));
-  ensureDefaultProducts().catch((err) => console.warn('[SQLite] Default product seed notice:', err));
-  ensureDefaultHeroBanners().catch((err) => console.warn('[SQLite] Default hero banners seed notice:', err));
+  ensureDefaultAdminUser().catch((err) => console.warn('[MySQL] Default admin seed notice:', err));
+  ensureDefaultCustomers().catch((err) => console.warn('[MySQL] Default customer seed notice:', err));
+  ensureDefaultProducts().catch((err) => console.warn('[MySQL] Default product seed notice:', err));
+  ensureDefaultHeroBanners().catch((err) => console.warn('[MySQL] Default hero banners seed notice:', err));
   registerEmailEventListeners();
   try {
     validateEmailConfigOnStartup();
@@ -300,7 +330,15 @@ async function startServer() {
   return server;
 }
 
-const isMain = process.argv[1] && (process.argv[1].endsWith('server.ts') || process.argv[1].endsWith('server.cjs') || process.argv[1].endsWith('index.ts') || process.argv[1].endsWith('index.cjs'));
+const isMain = process.argv[1] && (
+  process.argv[1].endsWith('server.ts') || 
+  process.argv[1].endsWith('server.cjs') || 
+  process.argv[1].endsWith('index.ts') || 
+  process.argv[1].endsWith('index.cjs') ||
+  process.argv[1].endsWith('app.cjs') ||
+  process.argv[1].endsWith('app.js')
+);
+
 if (isMain && process.env.NODE_ENV !== 'test') {
   startServer();
 }

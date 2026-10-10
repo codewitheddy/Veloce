@@ -404,7 +404,22 @@ router.put(['/:id', '/:id/'], requireAdmin, async (req: Request, res: Response) 
     }
 
     // 4. Metadata updates (tracking number, notes, etc. without status change)
-    const updated = await updateSqliteOrderStatus(orderId, req.body);
+    let targetStatus = typeof req.body.status === 'string' && req.body.status !== '[object Object]' ? req.body.status : existing.status;
+    if (typeof targetStatus !== 'string' || targetStatus === '[object Object]' || !targetStatus) {
+      targetStatus = existing.deliveryConfirmed ? 'delivered' : (existing.trackingNumber ? 'shipped' : (existing.isPaid || existing.paymentStatus === 'paid' ? 'processing' : 'pending'));
+    }
+    const targetPaymentStatus = req.body.paymentStatus || req.body.payment_status || existing.paymentStatus;
+    const targetTracking = req.body.trackingNumber || req.body.tracking_number || existing.trackingNumber;
+
+    const updatedPayload = {
+      ...existing,
+      ...req.body,
+      status: targetStatus,
+      paymentStatus: targetPaymentStatus,
+      trackingNumber: targetTracking,
+      updated_at: new Date().toISOString(),
+    };
+    const updated = await saveSqliteOrder(updatedPayload);
     return res.json({ success: true, message: 'Order details updated successfully.', order: updated });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Failed to update order';

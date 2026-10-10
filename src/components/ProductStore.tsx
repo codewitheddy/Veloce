@@ -108,7 +108,7 @@ export default function ProductStore({
     initialFilterType || 'All'
   );
   const [isMobileFiltersOpen, setIsMobileFiltersOpen] = useState(false);
-  const [sortBy, setSortBy] = useState<string>('featured');
+  const [sortBy, setSortBy] = useState<string>('latest');
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState<number>(12);
   const [viewLayout, setViewLayout] = useState<'grid' | 'list'>('grid');
@@ -604,7 +604,18 @@ export default function ProductStore({
     if (sortBy === 'alpha-desc') {
       return b.name.localeCompare(a.name);
     }
-    return 0;
+    // Default & 'latest' / 'featured': Always sort newest/latest products first
+    const timeA = a.createdAt || (a as any).created_at ? new Date(a.createdAt || (a as any).created_at).getTime() : 0;
+    const timeB = b.createdAt || (b as any).created_at ? new Date(b.createdAt || (b as any).created_at).getTime() : 0;
+    if (timeA !== timeB) {
+      return timeB - timeA;
+    }
+    const numA = parseInt(String(a.id).replace(/\D/g, ''), 10) || 0;
+    const numB = parseInt(String(b.id).replace(/\D/g, ''), 10) || 0;
+    if (numA !== numB) {
+      return numB - numA;
+    }
+    return String(b.id).localeCompare(String(a.id));
   });
 
   const totalItems = sortedAndFilteredProducts.length;
@@ -829,7 +840,7 @@ export default function ProductStore({
 
   if (selectedProduct) {
     return (
-      <div className="w-full max-w-[1440px] mx-auto px-4 py-8 sm:px-6 lg:px-8">
+      <div className="w-full max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8 font-sans">
         {/* Back navigation & Title */}
         <div className="border-b border-gray-150 dark:border-gray-800 pb-5 mb-8 flex flex-col gap-2 relative">
           <button
@@ -932,6 +943,11 @@ export default function ProductStore({
                       <LazyImage
                         src={currentImageSrc}
                         alt={`${selectedProduct.name}${selectedColorName ? ` - ${selectedColorName}` : ''}`}
+                        priority={true}
+                        width={600}
+                        height={600}
+                        aspectRatio="1/1"
+                        responsiveType="detail"
                         className="w-full h-full object-contain object-center rounded-none shadow-xs transition-transform duration-150 ease-out"
                         style={{
                           transform: isZoomed ? 'scale(2.25)' : 'scale(1)',
@@ -969,6 +985,10 @@ export default function ProductStore({
                           <LazyImage
                             src={imgUrl}
                             alt={`${selectedProduct.name} thumbnail ${index + 1}`}
+                            width={64}
+                            height={64}
+                            aspectRatio="1/1"
+                            responsiveType="thumbnail"
                             className="w-full h-full object-contain object-center rounded-md"
                           />
                         </button>
@@ -1065,7 +1085,7 @@ export default function ProductStore({
                         </>
                       )}
                     </div>
-                    <h1 className="font-display font-bold text-3xl text-gray-900 dark:text-gray-50 tracking-tight mt-1 leading-tight">{selectedProduct.name}</h1>
+                    <h1 className="font-display font-bold text-lg sm:text-xl md:text-2xl text-gray-900 dark:text-gray-50 tracking-tight mt-1 leading-snug break-words">{selectedProduct.name}</h1>
                     
                     <div className="mt-3 flex items-center gap-2 flex-wrap">
                       {selectedProduct.reviewsCount > 0 && selectedProduct.rating > 0 ? (
@@ -1387,77 +1407,13 @@ export default function ProductStore({
                       })()}
                     </div>
                   </div>
-
-                  {/* Floating Sticky Mobile Buy Bar */}
-                  <div className="fixed bottom-14 sm:bottom-0 left-0 right-0 z-40 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-t border-slate-200 dark:border-slate-800 px-4 py-2.5 sm:hidden flex items-center justify-between gap-3 shadow-[0_-4px_20px_rgba(0,0,0,0.1)]">
-                    <div className="flex flex-col min-w-0">
-                      <span className="font-mono text-[9px] text-slate-400 dark:text-slate-500 uppercase font-bold truncate max-w-[140px]">
-                        {selectedProduct.name}
-                      </span>
-                      <div className="flex items-center gap-1.5">
-                        <span className="font-mono font-bold text-base text-indigo-950 dark:text-indigo-300">
-                          {formatPrice(effectivePrice, currency)}
-                        </span>
-                        {hasDiscount && (
-                          <span className="text-[9px] font-mono text-rose-500 font-bold">-{discountPercent}%</span>
-                        )}
-                      </div>
-                    </div>
-                    {isOutOfStock ? (
-                      <button
-                        type="button"
-                        disabled
-                        className="px-5 py-2.5 rounded-xl font-bold text-xs flex items-center gap-1.5 bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500 cursor-not-allowed border border-slate-200/60 dark:border-slate-700/60 shrink-0"
-                      >
-                        <ShoppingBag className="h-4 w-4 opacity-50" />
-                        <span>{isVariantInactive ? 'Unavailable' : 'Out of Stock'}</span>
-                      </button>
-                    ) : (() => {
-                      const isJustAdded = addedToCartToast;
-                      const isInCart = selectedProduct
-                        ? (cart && cart.some((item) => item.product?.id === selectedProduct.id || (item as any).productId === selectedProduct.id))
-                        : false;
-                      const showViewCart = isInCart && !isJustAdded;
-
-                      return (
-                        <button
-                          type="button"
-                          onClick={showViewCart ? handleViewCart : handleCartAdd}
-                          className={`px-5 py-2.5 rounded-xl font-bold text-xs flex items-center gap-1.5 transition-all shadow-md shrink-0 active:scale-95 cursor-pointer ${
-                            isJustAdded
-                              ? 'bg-emerald-600 text-white animate-pulse'
-                              : showViewCart
-                              ? 'bg-emerald-600 hover:bg-emerald-700 text-white'
-                              : 'bg-indigo-600 hover:bg-indigo-700 text-white'
-                          }`}
-                        >
-                          {isJustAdded ? (
-                            <>
-                              <Check className="h-4 w-4 stroke-[2.5]" />
-                              <span>Added!</span>
-                            </>
-                          ) : showViewCart ? (
-                            <>
-                              <ShoppingBag className="h-4 w-4" />
-                              <span>View Cart &rarr;</span>
-                            </>
-                          ) : (
-                            <>
-                              <ShoppingBag className="h-4 w-4" />
-                              <span>Add to Cart</span>
-                            </>
-                          )}
-                        </button>
-                      );
-                    })()}
-                  </div>
                 </div>
               );
             })()}
 
               {/* Product Specifications, Features, and Detailed Overview Tabs */}
               <div className="border-t border-indigo-50/50 dark:border-gray-800/50 pt-6">
-                <div className="flex border-b border-gray-200 dark:border-gray-800 overflow-x-auto scrollbar-none gap-1 sm:gap-2 -mx-4 px-4 sm:mx-0 sm:px-0">
+                <div className="flex border-b border-gray-200 dark:border-gray-800 overflow-x-auto scrollbar-none gap-1 sm:gap-2">
                   <button
                     type="button"
                     onClick={() => setDetailActiveTab('description')}
@@ -1554,7 +1510,7 @@ export default function ProductStore({
                     <div className="flex flex-col gap-3">
                       <h4 className="font-display text-xs font-bold text-gray-900 dark:text-white uppercase tracking-wider">Technical Specifications</h4>
                       {selectedProduct.specifications && selectedProduct.specifications.length > 0 ? (
-                        <div className="border border-gray-150 dark:border-gray-800 rounded-xl overflow-hidden shadow-3xs mt-1">
+                        <div className="border border-gray-150 dark:border-gray-800 rounded-xl overflow-x-auto shadow-3xs mt-1">
                           <table className="w-full text-left text-xs border-collapse">
                             <tbody>
                               {selectedProduct.specifications.map((spec, idx) => (
@@ -2116,7 +2072,7 @@ export default function ProductStore({
           );
         })()}
 
-        {/* Recently Viewed Objects Component */}
+        {/* Recently Viewed Products Component */}
         <RecentlyViewedSlider
           products={products}
           cart={cart}
@@ -2131,12 +2087,12 @@ export default function ProductStore({
   }
 
   return (
-    <div className="w-full max-w-[1440px] mx-auto px-4 py-8 sm:px-6 lg:px-8">
+    <div className="w-full max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8 font-sans">
       {/* Search and Filters Header */}
-      <div className="border-b border-gray-100 dark:border-gray-800 pb-6 mb-6 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+      <div className="border-b border-slate-200/80 dark:border-slate-800 pb-5 mb-6 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
         <div>
-          <h1 className="font-display text-2xl font-semibold text-gray-900 dark:text-white">Ropenix Store</h1>
-          <p className="text-xs text-gray-500 dark:text-gray-400 font-extralight mt-1">Proprietary high-end workspace objects and downloadable resources.</p>
+          <h1 className="font-display text-xl sm:text-2xl font-bold text-slate-950 dark:text-white tracking-tight">Ropenix Store</h1>
+          <p className="text-xs text-slate-500 dark:text-slate-400 font-normal mt-1">Proprietary high-end workspace objects and downloadable resources.</p>
         </div>
         
         {/* Real-time search by name, description, or tags */}
@@ -2164,7 +2120,7 @@ export default function ProductStore({
       </div>
 
       {/* Mobile & Tablet Horizontal Category Chips Strip */}
-      <div className="lg:hidden mb-4 overflow-x-auto scrollbar-none -mx-4 px-4 sm:-mx-6 sm:px-6">
+      <div className="lg:hidden mb-4 overflow-x-auto scrollbar-none w-full">
         <div className="flex items-center gap-2 pb-1 min-w-max">
           <button
             type="button"
@@ -2847,7 +2803,8 @@ export default function ProductStore({
                     onChange={(e) => setSortBy(e.target.value)}
                     className="h-8.5 rounded-lg border border-gray-250 dark:border-gray-800 bg-white dark:bg-gray-900 px-3.5 font-mono text-[11px] font-bold text-gray-700 dark:text-gray-300 focus:outline-hidden focus:ring-1 focus:ring-indigo-500 cursor-pointer shadow-3xs hover:border-indigo-150 transition-colors"
                   >
-                  <option value="featured">Featured / Default</option>
+                  <option value="latest">Latest / Newest First (Default)</option>
+                  <option value="featured">Featured Collection</option>
                   <option value="price-asc">Price: Low to High</option>
                   <option value="price-desc">Price: High to Low</option>
                   <option value="alpha-asc">Alphabetical: A to Z</option>
@@ -2926,6 +2883,10 @@ export default function ProductStore({
                           <LazyImage
                             src={product.imageUrl}
                             alt={product.name}
+                            width={280}
+                            height={280}
+                            aspectRatio="1/1"
+                            responsiveType="grid_card"
                             className="h-full w-full object-contain object-center transition-transform duration-500 group-hover:scale-102"
                           />
                           {/* Heart Toggle Button */}
@@ -3073,6 +3034,10 @@ export default function ProductStore({
                         <LazyImage
                           src={product.imageUrl}
                           alt={product.name}
+                          width={176}
+                          height={176}
+                          aspectRatio="1/1"
+                          responsiveType="thumbnail"
                           className="h-full w-full object-contain object-center transition-transform duration-500 group-hover:scale-102"
                         />
                         {/* Bookmark Button */}
@@ -3305,7 +3270,7 @@ export default function ProductStore({
         </div>
       </div>
 
-      {/* Recently Viewed Objects Component */}
+      {/* Recently Viewed Products Component */}
       <RecentlyViewedSlider
         products={products}
         cart={cart}

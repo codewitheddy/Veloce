@@ -42,7 +42,11 @@ import {
   PackageCheck,
   Loader2,
   ClipboardPaste,
-  Mail
+  Mail,
+  MapPin,
+  Bike,
+  Car,
+  Store
 } from 'lucide-react';
 import { CartItem, Product, Order, CouponItem } from '../types';
 import { CurrencyType, formatPrice } from '../lib/currency';
@@ -159,7 +163,7 @@ function generateHTMLReceipt(order: Order, currency: CurrencyType = 'KSh') {
 <head>
   <meta charset="UTF-8">
   <title>Veloce Order Receipt - ${order.id.toUpperCase()}</title>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Space+Grotesk:wght@500;700&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Poppins:wght@400;600;700&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
   <style>
     body {
       font-family: 'Inter', sans-serif;
@@ -193,7 +197,7 @@ function generateHTMLReceipt(order: Order, currency: CurrencyType = 'KSh') {
       color: #111827;
     }
     .brand-subtitle {
-      font-family: 'JetBrains Mono', monospace;
+      font-family: 'Inter', 'Poppins', sans-serif;
       font-size: 9px;
       font-weight: 700;
       color: #9ca3af;
@@ -203,7 +207,7 @@ function generateHTMLReceipt(order: Order, currency: CurrencyType = 'KSh') {
     }
     .invoice-details {
       text-align: right;
-      font-family: 'JetBrains Mono', monospace;
+      font-family: 'Inter', 'Poppins', sans-serif;
       font-size: 11px;
       color: #4b5563;
     }
@@ -213,7 +217,7 @@ function generateHTMLReceipt(order: Order, currency: CurrencyType = 'KSh') {
       margin-bottom: 30px;
     }
     .metadata-hdr {
-      font-family: 'JetBrains Mono', monospace;
+      font-family: 'Inter', 'Poppins', sans-serif;
       font-size: 10px;
       font-weight: 700;
       color: #4b8bd8;
@@ -227,7 +231,7 @@ function generateHTMLReceipt(order: Order, currency: CurrencyType = 'KSh') {
       margin-bottom: 30px;
     }
     .items-table th {
-      font-family: 'JetBrains Mono', monospace;
+      font-family: 'Inter', 'Poppins', sans-serif;
       font-size: 10px;
       font-weight: 700;
       color: #9ca3af;
@@ -257,7 +261,7 @@ function generateHTMLReceipt(order: Order, currency: CurrencyType = 'KSh') {
       border-top: 1px dashed #e5e7eb;
       padding-top: 20px;
       text-align: center;
-      font-family: 'JetBrains Mono', monospace;
+      font-family: 'Inter', 'Poppins', sans-serif;
       font-size: 9px;
       color: #9ca3af;
       line-height: 1.6;
@@ -636,17 +640,6 @@ export default function CheckoutFlow({
   const [isProcessing, setIsProcessing] = useState(false);
   const [checkedOutOrder, setCheckedOutOrder] = useState<Order | null>(null);
   const [emailStatus, setEmailStatus] = useState<'idle' | 'sending' | 'sent' | 'failed'>('idle');
-
-  // Post-checkout payment confirmation state
-  const [postPayPhone, setPostPayPhone] = useState('');
-  const [postPayPaste, setPostPayPaste] = useState('');
-  const [postPayExtractedCode, setPostPayExtractedCode] = useState('');
-  const [postPayExtractedAmount, setPostPayExtractedAmount] = useState<number | null>(null);
-  const [postPayNotes, setPostPayNotes] = useState('');
-  const [postPayLoading, setPostPayLoading] = useState(false);
-  const [postPayError, setPostPayError] = useState('');
-  const [postPaySuccess, setPostPaySuccess] = useState('');
-  const [postPayCopiedField, setPostPayCopiedField] = useState<string | null>(null);
 
   // Dynamic Delivery Zones & Thresholds
   const [storeZones, setStoreZones] = useState<ShippingZone[]>(() => {
@@ -1065,6 +1058,18 @@ export default function CheckoutFlow({
 
   const handleGoToReview = (e: React.FormEvent) => {
     e.preventDefault();
+    if (paymentMethod === 'mpesa') {
+      const code = mpesaTransactionCode.trim();
+      if (!code) {
+        setStepError('M-PESA Confirmation Code is required. Please enter the code received in your Lipa na M-PESA SMS to continue.');
+        return;
+      }
+      if (code.length < 6) {
+        setStepError('Please enter a valid M-PESA transaction code (e.g. SHB4X7K9LP).');
+        return;
+      }
+    }
+    setStepError('');
     setActiveStep(4);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
@@ -1135,6 +1140,12 @@ _Hello Ropenix Team, I would like to place and confirm this order!_`;
 
     if (sync.hasBlockingChanges) {
       setStepError('One or more items in your cart are out of stock or have quantity restrictions. Please review your cart.');
+      return;
+    }
+
+    if (paymentMethod === 'mpesa' && !mpesaTransactionCode.trim()) {
+      setStepError('M-PESA Confirmation Code is required. Please enter the code from your Lipa na M-PESA SMS.');
+      setActiveStep(3);
       return;
     }
 
@@ -1244,13 +1255,6 @@ _Hello Ropenix Team, I would like to place and confirm this order!_`;
 
       setCheckedOutOrder(newOrder);
       clearCheckoutSession(); // Clear the checkout session after successful order
-      setPostPayPhone(newOrder.mpesaPhone || newOrder.phone || customerPhone || '');
-      setPostPayError('');
-      setPostPaySuccess('');
-      setPostPayPaste('');
-      setPostPayExtractedCode('');
-      setPostPayExtractedAmount(null);
-      setPostPayNotes('');
       setIsProcessing(false);
       setEmailStatus('sent');
       onClearCart();
@@ -1285,64 +1289,8 @@ _Hello Ropenix Team, I would like to place and confirm this order!_`;
       URL.revokeObjectURL(url);
     };
 
-    const handlePostPayManualClaim = async (e: React.FormEvent) => {
-      e.preventDefault();
-      setPostPayError('');
-      const cleanCode = (postPayExtractedCode || postPayPaste).toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 12);
-      if (!cleanCode || cleanCode.length < 8) {
-        setPostPayError('Please enter or paste a valid 10-character M-Pesa receipt code (e.g. SGH7XYZ123).');
-        return;
-      }
-
-      setPostPayLoading(true);
-      try {
-        const res = await fetch('/api/payments/claim', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            orderId: checkedOutOrder.id,
-            mpesaCode: cleanCode,
-            customerName: checkedOutOrder.customerName,
-            customerEmail: checkedOutOrder.customerEmail,
-            phoneNumber: postPayPhone || checkedOutOrder.phone,
-            amount: checkedOutOrder.total,
-            notes: (postPayNotes || (postPayExtractedAmount ? `Auto-extracted from SMS: KSh ${postPayExtractedAmount}` : '')).trim() || 'Submitted via Post-Checkout Hub',
-          }),
-        });
-        const data = await res.json();
-        if (!res.ok || !data.success) {
-          throw new Error(data.error || 'Failed to submit payment reference.');
-        }
-
-        setCheckedOutOrder((prev) => {
-          if (!prev) return null;
-          return {
-            ...prev,
-            paymentStatus: 'pending_verification',
-            paymentReference: cleanCode,
-          };
-        });
-
-        window.dispatchEvent(
-          new CustomEvent('veloce_payment_submitted', {
-            detail: {
-              orderId: checkedOutOrder.id,
-              mpesaCode: cleanCode,
-              amount: checkedOutOrder.total,
-              isPaid: false,
-            },
-          })
-        );
-        setPostPaySuccess(`M-Pesa code ${cleanCode} submitted! Verification in progress.`);
-      } catch (err: any) {
-        setPostPayError(err?.message || 'Failed to submit payment reference.');
-      } finally {
-        setPostPayLoading(false);
-      }
-    };
-
     const isOrderPaid = checkedOutOrder.paymentStatus === 'paid' || checkedOutOrder.status === 'completed';
-    const isOrderUnderReview = checkedOutOrder.paymentStatus === 'pending_verification' || Boolean(postPaySuccess);
+    const isOrderUnderReview = checkedOutOrder.paymentStatus === 'pending_verification' || Boolean(checkedOutOrder.paymentReference);
 
     return (
       <div className="mx-auto max-w-3xl px-4 py-6 sm:py-10 sm:px-6 lg:px-8">
@@ -1429,7 +1377,7 @@ _Hello Ropenix Team, I would like to place and confirm this order!_`;
             </div>
           )}
 
-          {/* EMBEDDED PAYBILL & SMART SMS PASTE HUB (If M-Pesa & not yet paid) */}
+          {/* EMBEDDED PAYBILL & PAYMENT VERIFICATION NOTICE (If M-Pesa & not yet paid) */}
           {checkedOutOrder.paymentMethod !== 'cod' && !isOrderPaid && (
             <div className="mt-6 max-w-lg mx-auto text-left rounded-3xl border border-emerald-500/30 bg-emerald-50/20 dark:bg-emerald-950/15 p-4 sm:p-6 shadow-sm">
               <div className="flex items-center gap-2 mb-3.5">
@@ -1438,10 +1386,10 @@ _Hello Ropenix Team, I would like to place and confirm this order!_`;
                 </div>
                 <div>
                   <h3 className="font-bold text-sm text-slate-900 dark:text-white">
-                    Lipa na M-PESA Paybill Instructions
+                    Lipa na M-PESA Paybill Reference
                   </h3>
                   <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                    Follow the 3 quick steps below to confirm your payment
+                    Your payment details have been recorded for admin verification
                   </p>
                 </div>
               </div>
@@ -1451,11 +1399,11 @@ _Hello Ropenix Team, I would like to place and confirm this order!_`;
                 <div className="bg-white dark:bg-slate-900 p-2.5 rounded-xl border border-emerald-100 dark:border-emerald-900/40 flex items-center justify-between shadow-3xs">
                   <div>
                     <span className="text-[9px] text-slate-400 block">Paybill Number</span>
-                    <strong className="text-emerald-700 dark:text-emerald-400 font-mono text-xs">303030</strong>
+                    <strong className="text-emerald-700 dark:text-emerald-400 font-mono text-xs">{mpesaPaybill}</strong>
                   </div>
                   <button
                     type="button"
-                    onClick={() => handleCopyText('303030', 'paybill')}
+                    onClick={() => handleCopyText(mpesaPaybill, 'paybill')}
                     className="text-slate-400 hover:text-emerald-600 p-1 rounded-lg hover:bg-emerald-50 dark:hover:bg-slate-800 transition-colors cursor-pointer"
                     title="Copy Paybill"
                   >
@@ -1466,11 +1414,11 @@ _Hello Ropenix Team, I would like to place and confirm this order!_`;
                 <div className="bg-white dark:bg-slate-900 p-2.5 rounded-xl border border-emerald-100 dark:border-emerald-900/40 flex items-center justify-between shadow-3xs">
                   <div>
                     <span className="text-[9px] text-slate-400 block">Account Number</span>
-                    <strong className="text-emerald-700 dark:text-emerald-400 font-mono text-xs">{checkedOutOrder.id.toUpperCase()}</strong>
+                    <strong className="text-emerald-700 dark:text-emerald-400 font-mono text-xs">{mpesaAccountNumber}</strong>
                   </div>
                   <button
                     type="button"
-                    onClick={() => handleCopyText(checkedOutOrder.id.toUpperCase(), 'account')}
+                    onClick={() => handleCopyText(mpesaAccountNumber, 'account')}
                     className="text-slate-400 hover:text-emerald-600 p-1 rounded-lg hover:bg-emerald-50 dark:hover:bg-slate-800 transition-colors cursor-pointer"
                     title="Copy Account"
                   >
@@ -1479,107 +1427,26 @@ _Hello Ropenix Team, I would like to place and confirm this order!_`;
                 </div>
               </div>
 
-              {isOrderUnderReview ? (
+              {checkedOutOrder.paymentReference ? (
                 <div className="p-3.5 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 text-xs text-amber-900 dark:text-amber-200 space-y-1">
                   <div className="flex items-center gap-1.5 font-bold">
                     <CheckCircle2 className="w-4 h-4 text-amber-600 dark:text-amber-400" />
-                    <span>Payment Reference Received</span>
+                    <span>Payment Reference Recorded: <strong className="font-mono">{checkedOutOrder.paymentReference}</strong></span>
                   </div>
                   <p className="text-[11px] text-amber-700 dark:text-amber-300 leading-relaxed">
-                    Code <strong className="font-mono">{checkedOutOrder.paymentReference || postPayExtractedCode}</strong> is being verified against our Paybill statement. We'll send an update to <strong>{checkedOutOrder.customerEmail}</strong>.
+                    Your payment code entered at checkout has been recorded. Our store administrator will verify it against the M-Pesa statement and update your status.
                   </p>
                 </div>
               ) : (
-                <form onSubmit={handlePostPayManualClaim} className="space-y-3">
-                  {postPayError && (
-                    <div className="p-2.5 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900 rounded-xl text-rose-700 dark:text-rose-300 text-xs flex items-center gap-2">
-                      <AlertCircle className="w-4 h-4 shrink-0" />
-                      <span>{postPayError}</span>
-                    </div>
-                  )}
-
-                  {/* Smart SMS Paste Textarea */}
-                  <div>
-                    <div className="flex items-center justify-between mb-1">
-                      <label className="text-xs font-semibold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
-                        <ClipboardPaste className="w-3.5 h-3.5 text-indigo-500" />
-                        <span>Paste Safaricom SMS or Enter Code</span>
-                        <span className="text-rose-500">*</span>
-                      </label>
-                      {postPayExtractedCode && (
-                        <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/50 px-1.5 py-0.5 rounded-full border border-emerald-500/20 flex items-center gap-1">
-                          <Sparkles className="w-3 h-3" />
-                          Code: {postPayExtractedCode}
-                        </span>
-                      )}
-                    </div>
-                    <textarea
-                      rows={2}
-                      placeholder="Paste your full M-Pesa SMS receipt here (e.g. SGH7XYZ123 Confirmed. Ksh1,500 sent to...)"
-                      value={postPayPaste}
-                      onChange={(e) => {
-                        const raw = e.target.value;
-                        setPostPayPaste(raw);
-                        const parsed = parseMpesaInput(raw);
-                        if (parsed.code) {
-                          setPostPayExtractedCode(parsed.code);
-                          if (parsed.amount) setPostPayExtractedAmount(parsed.amount);
-                        } else {
-                          setPostPayExtractedCode(raw.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 12));
-                        }
-                      }}
-                      className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 focus:border-emerald-600 rounded-xl p-2.5 text-xs text-slate-900 dark:text-white resize-none"
-                    />
-                    <span className="text-[10px] text-slate-400 dark:text-slate-500 block mt-0.5">
-                      You can paste your entire Safaricom SMS message; the 10-char code will be auto-parsed.
-                    </span>
+                <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 text-xs text-slate-800 dark:text-slate-200 space-y-1">
+                  <div className="flex items-center gap-1.5 font-bold text-slate-900 dark:text-white">
+                    <Clock className="w-4 h-4 text-indigo-500" />
+                    <span>Payment Pending Admin Verification</span>
                   </div>
-
-                  <div className="grid grid-cols-2 gap-2">
-                    <div>
-                      <label className="block text-[10px] font-semibold text-slate-700 dark:text-slate-300 mb-0.5">
-                        Phone Number Used
-                      </label>
-                      <input
-                        type="tel"
-                        placeholder="07XX XXX XXX"
-                        value={postPayPhone}
-                        onChange={(e) => setPostPayPhone(e.target.value)}
-                        className="h-9 w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-2.5 text-xs text-slate-900 dark:text-white font-mono"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-[10px] font-semibold text-slate-700 dark:text-slate-300 mb-0.5">
-                        Optional Note
-                      </label>
-                      <input
-                        type="text"
-                        placeholder="e.g. Sent via Jane"
-                        value={postPayNotes}
-                        onChange={(e) => setPostPayNotes(e.target.value)}
-                        className="h-9 w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-2.5 text-xs text-slate-900 dark:text-white"
-                      />
-                    </div>
-                  </div>
-
-                  <button
-                    type="submit"
-                    disabled={postPayLoading || (!postPayExtractedCode && postPayPaste.length < 8)}
-                    className="w-full h-11 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer shadow-md shadow-emerald-600/20 active:scale-[0.99]"
-                  >
-                    {postPayLoading ? (
-                      <>
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                        <span>Submitting Payment Reference...</span>
-                      </>
-                    ) : (
-                      <>
-                        <span>Submit Payment Reference</span>
-                        <ArrowRight className="w-4 h-4" />
-                      </>
-                    )}
-                  </button>
-                </form>
+                  <p className="text-[11px] text-slate-600 dark:text-slate-400 leading-relaxed">
+                    If you completed payment via Paybill, our store administrator will cross-reference the payment and confirm your order shortly.
+                  </p>
+                </div>
               )}
             </div>
           )}
@@ -2090,148 +1957,229 @@ _Hello Ropenix Team, I would like to place and confirm this order!_`;
                 </div>
 
                 {/* PROMINENT DELIVERY NOTICE (STEP 2) */}
-                <div className="rounded-2xl border border-amber-300/80 bg-amber-50/75 dark:bg-amber-950/30 p-4 text-xs text-amber-950 dark:text-amber-200 flex items-start gap-3 shadow-3xs">
-                  <Info className="h-5 w-5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
-                  <div className="space-y-1">
-                    <span className="font-bold text-xs text-amber-900 dark:text-amber-300 block">
+                <div className="rounded-2xl border border-amber-200/90 bg-gradient-to-r from-amber-50/90 via-amber-50/60 to-orange-50/40 p-3.5 sm:p-4 text-xs text-amber-950 flex items-start gap-3 shadow-3xs">
+                  <div className="p-1.5 rounded-xl bg-amber-100/90 text-amber-800 shrink-0 mt-0.5">
+                    <Info className="h-4 w-4" />
+                  </div>
+                  <div className="space-y-1 min-w-0">
+                    <span className="font-bold text-xs text-amber-900 block">
                       Courier Delivery Rate Calculation
                     </span>
-                    <p className="text-[11.5px] text-amber-800 dark:text-amber-300 leading-relaxed font-normal">
-                      Delivery fee is not included in your total. It will be calculated after your order is placed, based on courier charges (Uber, Bolt, or PickUp Mtaani), and we'll contact you to confirm before dispatch.
+                    <p className="text-[11.5px] text-amber-800 leading-relaxed font-normal">
+                      Delivery fee is not included in your checkout total. It will be calculated after your order is placed, based on live courier charges (Uber, Bolt, or PickUp Mtaani), and we'll contact you to confirm before dispatch.
                     </p>
                   </div>
                 </div>
 
                 {/* Delivery Options */}
-                <div className="space-y-3">
+                <div className="space-y-3 sm:space-y-3.5 w-full">
                   {/* Local Courier Delivery Option */}
-                  <label
+                  <div
                     onClick={() => setFulfillmentMethod('delivery')}
-                    className={`flex flex-col p-4 rounded-2xl border transition-all cursor-pointer ${
+                    className={`flex flex-col p-3.5 sm:p-5 rounded-2xl sm:rounded-3xl border transition-all cursor-pointer select-none w-full ${
                       fulfillmentMethod === 'delivery'
-                        ? 'border-black bg-neutral-50/50 ring-1 ring-black'
+                        ? 'border-indigo-600 bg-indigo-50/20 ring-1.5 ring-indigo-600/90 shadow-xs'
                         : 'border-gray-200 bg-white hover:border-gray-300'
                     }`}
                   >
-                    <div className="flex items-start justify-between">
-                      <div className="flex items-start gap-3.5">
+                    {/* Header Row - Full Width Responsive Layout */}
+                    <div className="flex items-start gap-3 min-w-0 w-full">
+                      <div className="mt-0.5 shrink-0">
                         <input
                           type="radio"
                           name="fulfillment"
                           checked={fulfillmentMethod === 'delivery'}
                           onChange={() => setFulfillmentMethod('delivery')}
-                          className="mt-1 h-4 w-4 text-black accent-black"
+                          className="h-4 w-4 text-indigo-600 accent-indigo-600 cursor-pointer"
                         />
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <span className="text-sm font-bold text-gray-950">Local Courier Delivery (Uber / Bolt / PickUp Mtaani)</span>
-                            <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-900 text-[10px] font-bold uppercase font-mono">
-                              TBC
-                            </span>
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <span className="text-sm sm:text-base font-bold text-gray-950 block">Local Courier Delivery</span>
+                            <span className="text-xs text-gray-500 font-medium block">(Uber / Bolt / PickUp Mtaani)</span>
                           </div>
-                          <p className="text-xs text-gray-500 mt-0.5">
-                            Quoted at actual courier rates based on your area ({areaEstate || shippingAddress || 'Nairobi'}).
-                          </p>
-                          <span className="inline-block mt-1.5 text-[11px] text-gray-600 font-mono">
-                            ⚡ Fast doorstep dispatch across Kenya
-                          </span>
+                          {/* Single Clean Price Badge */}
+                          <div className="shrink-0 text-right">
+                            <span className="inline-flex items-center px-2.5 py-1 rounded-lg bg-amber-50 border border-amber-200/90 text-amber-800 font-mono font-bold text-[11px] sm:text-xs shadow-3xs whitespace-nowrap">
+                              To be confirmed
+                            </span>
+                            <span className="block text-[10px] text-gray-400 font-mono mt-0.5">Live quote</span>
+                          </div>
+                        </div>
+                        <p className="text-xs text-gray-500 mt-1.5 leading-relaxed">
+                          Quoted at actual courier rates based on your area <span className="font-semibold text-gray-800">({areaEstate || shippingAddress || 'Nairobi'})</span>.
+                        </p>
+                        <div className="flex items-center gap-1.5 mt-2 text-[11px] text-indigo-700 font-medium">
+                          <Zap className="h-3.5 w-3.5 text-amber-500 fill-amber-500 shrink-0" />
+                          <span>Fast doorstep dispatch across Kenya</span>
                         </div>
                       </div>
-                      <span className="font-mono font-bold text-xs sm:text-sm text-amber-700 bg-amber-50 px-2.5 py-1 rounded-lg border border-amber-200/80 shrink-0">
-                        To be confirmed
-                      </span>
                     </div>
 
                     {/* Preferred Courier Selector (If Delivery is Selected) */}
                     {fulfillmentMethod === 'delivery' && (
-                      <div className="mt-4 pt-4 border-t border-gray-200/80 space-y-3">
-                        <div>
-                          <label className="block text-[11px] font-bold text-gray-700 uppercase tracking-wider mb-2">
-                            Select Preferred Local Courier (Optional)
+                      <div className="mt-4 pt-4 border-t border-gray-100 sm:border-indigo-100/70 space-y-3 w-full">
+                        <div className="flex items-center justify-between">
+                          <label className="block text-[10.5px] sm:text-[11px] font-bold text-gray-700 uppercase tracking-wider">
+                            Select Preferred Local Courier <span className="text-gray-400 font-normal lowercase">(optional)</span>
                           </label>
-                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                            {[
-                              { id: 'any', label: 'Best Rate (Any)', desc: 'Lowest live quote' },
-                              { id: 'uber', label: 'Uber Package', desc: 'Doorstep direct car' },
-                              { id: 'bolt', label: 'Bolt Send', desc: 'Rapid motorbike' },
-                              { id: 'pickup_mtaani', label: 'PickUp Mtaani', desc: 'Agent collection' },
-                            ].map((c) => (
+                        </div>
+
+                        {/* Responsive Courier Selection Grid (Spacious 2-column on desktop/tablet, full-width on mobile) */}
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5 sm:gap-3 w-full">
+                          {[
+                            { 
+                              id: 'any', 
+                              label: 'Best Rate', 
+                              badge: 'Lowest Quote',
+                              desc: 'Lowest live quote found across services',
+                              icon: <Zap className="h-4 w-4 text-amber-500 fill-amber-500" />
+                            },
+                            { 
+                              id: 'uber', 
+                              label: 'Uber Package', 
+                              badge: 'Doorstep Car',
+                              desc: 'Direct doorstep delivery via car/van',
+                              icon: <Car className="h-4 w-4 text-gray-800" />
+                            },
+                            { 
+                              id: 'bolt', 
+                              label: 'Bolt Send', 
+                              badge: 'Express Boda',
+                              desc: 'Rapid motorbike dispatch rider',
+                              icon: <Bike className="h-4 w-4 text-emerald-600" />
+                            },
+                            { 
+                              id: 'pickup_mtaani', 
+                              label: 'PickUp Mtaani', 
+                              badge: 'Agent Point',
+                              desc: 'Affordable collection counter agent',
+                              icon: <Store className="h-4 w-4 text-indigo-600" />
+                            },
+                          ].map((c) => {
+                            const isSelected = preferredCourier === c.id;
+                            return (
                               <button
                                 key={c.id}
                                 type="button"
                                 onClick={(e) => {
                                   e.preventDefault();
+                                  e.stopPropagation();
                                   setPreferredCourier(c.id as any);
                                 }}
-                                className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer ${
-                                  preferredCourier === c.id
-                                    ? 'border-indigo-600 bg-indigo-50/60 dark:bg-indigo-950/40 ring-1 ring-indigo-600 text-indigo-950 dark:text-indigo-200'
-                                    : 'border-gray-200 bg-white hover:border-gray-300 text-gray-700'
+                                className={`group relative flex items-start justify-between p-3.5 sm:p-4 rounded-xl sm:rounded-2xl border text-left transition-all duration-150 cursor-pointer select-none active:scale-[0.99] w-full ${
+                                  isSelected
+                                    ? 'border-indigo-600 bg-indigo-50/70 ring-1.5 ring-indigo-600 text-indigo-950 shadow-xs'
+                                    : 'border-gray-200/90 bg-white hover:border-gray-300 hover:bg-gray-50/50 text-gray-700'
                                 }`}
                               >
-                                <span className="text-xs font-bold block">{c.label}</span>
-                                <span className="text-[10px] text-gray-400 block mt-0.5">{c.desc}</span>
+                                <div className="flex items-start gap-3 min-w-0 flex-1">
+                                  <div className={`p-2.5 rounded-xl shrink-0 transition-colors ${isSelected ? 'bg-white shadow-3xs text-indigo-600' : 'bg-gray-100 group-hover:bg-gray-200/70'}`}>
+                                    {c.icon}
+                                  </div>
+                                  <div className="min-w-0 flex-1 pr-1">
+                                    <div className="flex items-center gap-2 flex-wrap mb-1">
+                                      <span className={`text-xs sm:text-sm font-bold leading-tight block ${isSelected ? 'text-indigo-950' : 'text-gray-900'}`}>
+                                        {c.label}
+                                      </span>
+                                      {c.badge && (
+                                        <span className={`px-2 py-0.5 rounded-md text-[9.5px] font-bold uppercase font-mono tracking-wide whitespace-nowrap ${
+                                          c.id === 'any' ? 'bg-amber-100 text-amber-900 border border-amber-200/60' : 'bg-gray-100 text-gray-700 border border-gray-200/60'
+                                        }`}>
+                                          {c.badge}
+                                        </span>
+                                      )}
+                                    </div>
+                                    <p className="text-[11.5px] sm:text-xs text-gray-500 leading-snug line-clamp-2">
+                                      {c.desc}
+                                    </p>
+                                  </div>
+                                </div>
+
+                                <div className="shrink-0 ml-2 mt-0.5">
+                                  {isSelected ? (
+                                    <CheckCircle2 className="h-5 w-5 text-indigo-600 fill-indigo-100" />
+                                  ) : (
+                                    <div className="h-4 w-4 rounded-full border-2 border-gray-300 group-hover:border-gray-400 transition-colors" />
+                                  )}
+                                </div>
                               </button>
-                            ))}
-                          </div>
+                            );
+                          })}
                         </div>
 
-                        {/* PickUp Mtaani Specific Drop Point (if PickUp Mtaani selected or generic) */}
+                        {/* PickUp Mtaani Specific Drop Point (if PickUp Mtaani selected) */}
                         {preferredCourier === 'pickup_mtaani' && (
-                          <div className="pt-1">
-                            <label className="block text-[11px] font-bold text-gray-700 uppercase tracking-wider mb-1">
-                              Preferred PickUp Mtaani Agent / Location
-                            </label>
-                            <input
-                              type="text"
-                              value={pickupMtaaniPoint}
-                              onChange={(e) => setPickupMtaaniPoint(e.target.value)}
-                              placeholder="e.g. Pioneer House CBD / Sarit Centre / Roysambu Agent"
-                              className="h-10 w-full rounded-xl border border-gray-200 bg-white px-3 text-xs text-gray-900 focus:border-black focus:outline-hidden"
-                            />
-                            <span className="text-[10px] text-gray-400 block mt-1">
-                              We will quote the exact PickUp Mtaani package rate for this agent point.
-                            </span>
+                          <div className="pt-1.5 w-full">
+                            <div className="p-3 sm:p-3.5 rounded-xl sm:rounded-2xl bg-indigo-50/60 border border-indigo-200/80 space-y-2 animate-in fade-in duration-200 w-full">
+                              <div className="flex items-center gap-1.5">
+                                <MapPin className="h-3.5 w-3.5 text-indigo-600 shrink-0" />
+                                <label className="block text-[11px] font-bold text-indigo-950 uppercase tracking-wider">
+                                  Preferred PickUp Mtaani Agent / Location
+                                </label>
+                              </div>
+                              <input
+                                type="text"
+                                value={pickupMtaaniPoint}
+                                onChange={(e) => setPickupMtaaniPoint(e.target.value)}
+                                placeholder="e.g. Pioneer House CBD / Sarit Centre / Roysambu Agent"
+                                className="h-10 w-full rounded-xl border border-indigo-200 bg-white px-3 text-xs text-gray-900 placeholder:text-gray-400 focus:border-indigo-600 focus:ring-1 focus:ring-indigo-600 focus:outline-hidden"
+                              />
+                              <p className="text-[10.5px] text-indigo-800/80">
+                                💡 We will quote the exact PickUp Mtaani package rate for this collection point.
+                              </p>
+                            </div>
                           </div>
                         )}
                       </div>
                     )}
-                  </label>
+                  </div>
 
                   {/* Warehouse Self-Pickup Option */}
-                  <label
+                  <div
                     onClick={() => setFulfillmentMethod('pickup')}
-                    className={`flex items-start justify-between p-4 rounded-2xl border transition-all cursor-pointer ${
+                    className={`flex flex-col p-3.5 sm:p-5 rounded-2xl sm:rounded-3xl border transition-all cursor-pointer select-none w-full ${
                       fulfillmentMethod === 'pickup'
-                        ? 'border-black bg-neutral-50/50 ring-1 ring-black'
+                        ? 'border-emerald-600 bg-emerald-50/20 ring-1.5 ring-emerald-600/90 shadow-xs'
                         : 'border-gray-200 bg-white hover:border-gray-300'
                     }`}
                   >
-                    <div className="flex items-start gap-3.5">
-                      <input
-                        type="radio"
-                        name="fulfillment"
-                        checked={fulfillmentMethod === 'pickup'}
-                        onChange={() => setFulfillmentMethod('pickup')}
-                        className="mt-1 h-4 w-4 text-black accent-black"
-                      />
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm font-bold text-gray-950">Warehouse Hub Self-Pickup</span>
-                          <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-bold uppercase font-mono">
-                            FREE
-                          </span>
+                    <div className="flex items-start gap-3 min-w-0 w-full">
+                      <div className="mt-0.5 shrink-0">
+                        <input
+                          type="radio"
+                          name="fulfillment"
+                          checked={fulfillmentMethod === 'pickup'}
+                          onChange={() => setFulfillmentMethod('pickup')}
+                          className="h-4 w-4 text-emerald-600 accent-emerald-600 cursor-pointer"
+                        />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <span className="text-sm sm:text-base font-bold text-gray-950 block">Warehouse Hub Self-Pickup</span>
+                            <span className="inline-block mt-0.5 px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-bold uppercase font-mono">
+                              FREE
+                            </span>
+                          </div>
+                          <div className="shrink-0 text-right">
+                            <span className="inline-flex items-center px-2.5 py-1 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-800 font-mono font-bold text-[11px] sm:text-xs shadow-3xs whitespace-nowrap">
+                              FREE
+                            </span>
+                            <span className="block text-[10px] text-gray-400 font-mono mt-0.5">Zero charge</span>
+                          </div>
                         </div>
-                        <p className="text-xs text-gray-500 mt-0.5">
+                        <p className="text-xs text-gray-500 mt-1.5 leading-relaxed">
                           Collect directly from any of our official logistics depots in Nairobi.
                         </p>
-                        <span className="inline-block mt-2 text-[11px] text-emerald-700 font-mono font-medium">
-                          Ready in 2–4 Business Hours
-                        </span>
+                        <div className="flex items-center gap-1.5 mt-2 text-[11px] text-emerald-700 font-mono font-medium">
+                          <Warehouse className="h-3.5 w-3.5 text-emerald-600 shrink-0" />
+                          <span>Ready in 2–4 Business Hours</span>
+                        </div>
                       </div>
                     </div>
-                    <span className="font-mono font-bold text-sm text-emerald-700">FREE</span>
-                  </label>
+                  </div>
                 </div>
 
                 {/* Warehouse Selection if Pickup */}
@@ -2461,18 +2409,36 @@ _Hello Ropenix Team, I would like to place and confirm this order!_`;
                           </div>
                         </div>
 
-                        {/* Optional M-Pesa Code */}
+                        {/* Required M-Pesa Transaction / Confirmation Code */}
                         <div className="pt-2">
-                          <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">
-                            M-PESA Confirmation Code (Optional)
-                          </label>
+                          <div className="flex items-center justify-between mb-1.5">
+                            <label className="block text-[11px] font-bold text-gray-700 uppercase tracking-wider">
+                              M-PESA Confirmation Code <span className="text-rose-500">*</span>
+                            </label>
+                            {mpesaTransactionCode.trim() && (
+                              <span className={`text-[10px] font-mono font-bold ${
+                                mpesaTransactionCode.trim().length >= 8
+                                  ? 'text-emerald-600'
+                                  : 'text-amber-600'
+                              }`}>
+                                {mpesaTransactionCode.trim().length >= 8 ? '✓ Code Entered' : `${mpesaTransactionCode.trim().length}/10 chars`}
+                              </span>
+                            )}
+                          </div>
                           <input
                             type="text"
+                            required
                             value={mpesaTransactionCode}
-                            onChange={(e) => setMpesaTransactionCode(e.target.value.toUpperCase())}
+                            onChange={(e) => {
+                              setMpesaTransactionCode(e.target.value.toUpperCase());
+                              if (stepError) setStepError('');
+                            }}
                             placeholder="e.g. SHB4X7K9LP"
-                            className="h-10 w-full rounded-xl border border-gray-200 bg-white px-3 text-xs font-mono uppercase focus:border-black focus:outline-hidden"
+                            className="h-11 w-full rounded-xl border border-gray-200 bg-white px-3.5 text-xs font-mono uppercase tracking-wider text-gray-900 focus:border-indigo-600 focus:ring-1 focus:ring-indigo-600 focus:outline-hidden transition-colors"
                           />
+                          <p className="text-[10.5px] text-gray-500 mt-1.5 leading-relaxed">
+                            💡 Enter the 10-character code from your Lipa na M-PESA SMS. Our store administrator will check and verify this code to confirm your payment.
+                          </p>
                         </div>
                       </div>
                     )}
@@ -2561,8 +2527,23 @@ _Hello Ropenix Team, I would like to place and confirm this order!_`;
                           : `🚚 Doorstep Delivery to ${shippingAddress}${areaEstate ? `, ${areaEstate}` : ''}${landmark ? ` (${landmark})` : ''}, ${shippingCity}`}
                       </span>
                       {fulfillmentMethod === 'delivery' && (
-                        <div className="mt-1.5 p-2 rounded-lg bg-amber-50 border border-amber-200 text-[11px] text-amber-900">
-                          <strong>Delivery Fee:</strong> To be confirmed (TBC) based on live Uber / Bolt / PickUp Mtaani charges.
+                        <div className="mt-1.5 p-2.5 rounded-xl bg-amber-50/90 border border-amber-200/90 text-[11px] text-amber-900 space-y-1">
+                          <div className="flex items-center gap-1.5">
+                            <span className="font-bold">Delivery Fee:</span>
+                            <span>To be confirmed (TBC) based on live courier quote</span>
+                          </div>
+                          <div className="text-[10.5px] text-amber-800 flex items-center gap-1.5">
+                            <span className="font-bold">Preferred Dispatch:</span>
+                            <span>
+                              {preferredCourier === 'uber'
+                                ? 'Uber Package (Direct car)'
+                                : preferredCourier === 'bolt'
+                                ? 'Bolt Send (Rapid motorbike)'
+                                : preferredCourier === 'pickup_mtaani'
+                                ? `PickUp Mtaani${pickupMtaaniPoint ? ` • Drop Point: ${pickupMtaaniPoint}` : ''}`
+                                : 'Best Rate (Lowest live quote)'}
+                            </span>
+                          </div>
                         </div>
                       )}
                     </div>
@@ -2582,11 +2563,17 @@ _Hello Ropenix Team, I would like to place and confirm this order!_`;
                         {paymentMethod === 'cod' ? 'Cash on Delivery' : `Lipa na M-PESA Paybill (${mpesaPaybill})`}
                         {checkoutChannel === 'whatsapp' ? ' • WhatsApp Placement' : ''}
                       </span>
+                      {paymentMethod === 'mpesa' && mpesaTransactionCode && (
+                        <div className="mt-1.5 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-50 border border-emerald-200 text-xs text-emerald-900 font-mono">
+                          <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600 shrink-0" />
+                          <span>M-PESA Code: <strong>{mpesaTransactionCode}</strong></span>
+                        </div>
+                      )}
                     </div>
                     <button
                       type="button"
                       onClick={() => setActiveStep(3)}
-                      className="text-xs font-semibold text-black hover:underline cursor-pointer"
+                      className="text-xs font-semibold text-black hover:underline cursor-pointer ml-3 shrink-0"
                     >
                       Edit
                     </button>
@@ -2682,6 +2669,10 @@ _Hello Ropenix Team, I would like to place and confirm this order!_`;
                       <img
                         src={item.product.imageUrl}
                         alt={item.product.name}
+                        width={64}
+                        height={64}
+                        loading="lazy"
+                        decoding="async"
                         className="h-full w-full object-contain object-center"
                         referrerPolicy="no-referrer"
                       />

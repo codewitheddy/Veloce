@@ -142,6 +142,16 @@ export function renderOrderConfirmationEmail(order: OrderEmailData): RenderedEma
           <td style="padding: 4px 0; color: #64748b;"><strong>Payment Method:</strong></td>
           <td style="padding: 4px 0; color: #0f172a; font-weight: 600;">${escapeHtml(order.paymentMethod || 'M-PESA Paybill')}</td>
         </tr>
+        ${order.paymentReference ? `
+        <tr>
+          <td style="padding: 4px 0; color: #64748b;"><strong>Payment Reference:</strong></td>
+          <td style="padding: 4px 0; color: #0f172a; font-weight: 700; font-family: monospace;">${escapeHtml(order.paymentReference)}</td>
+        </tr>
+        ` : ''}
+        <tr>
+          <td style="padding: 4px 0; color: #64748b;"><strong>Payment Status:</strong></td>
+          <td style="padding: 4px 0; color: #0284c7; font-weight: 700;">Pending Admin Verification</td>
+        </tr>
         ${order.shippingAddress ? `
         <tr>
           <td style="padding: 4px 0; color: #64748b; vertical-align: top;"><strong>Delivery Address:</strong></td>
@@ -156,21 +166,12 @@ export function renderOrderConfirmationEmail(order: OrderEmailData): RenderedEma
     ${renderOrderItemsTable(order.items)}
     ${renderOrderTotals(order)}
 
-    <!-- Paybill Payment Box (if M-Pesa / manual) -->
-    ${isMpesa ? renderPaybillBox(totalFormatted, shortId) : ''}
-
-    ${isGuest ? `
-    <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 14px 18px; margin: 24px 0; text-align: center; font-size: 13px; color: #475569;">
-      📬 <strong>Guest Order Notice:</strong> All subsequent order progress, dispatch alerts, and digital receipts will be delivered directly to <strong>${escapeHtml(order.customerEmail)}</strong>.
-    </div>
-    ` : `
     <div style="text-align: center; margin: 28px 0;">
-      ${renderEmailButton('Track Order & Submit Payment Code', trackUrl, 'indigo')}
+      ${renderEmailButton('Track Order Status', trackUrl, 'indigo')}
     </div>
-    `}
 
     <p style="margin: 20px 0 0 0; font-size: 13px; color: #475569; line-height: 1.6;">
-      ${isGuest ? 'If you have any questions regarding your order, reply directly to this email.' : 'Once you complete your M-Pesa payment, please submit your transaction code via the tracking page above to fast-track verification.'}
+      Our store administration will verify your payment details and update the order status. You will receive an email update once your order is processed. If you have any questions, reply directly to this email.
     </p>
   `;
 
@@ -182,9 +183,7 @@ export function renderOrderConfirmationEmail(order: OrderEmailData): RenderedEma
     bodyHtml,
   });
 
-  const text = isGuest
-    ? `Dear ${order.customerName},\n\nThank you for your order ${shortId} on Ropenix Collections.\nTotal: ${totalFormatted}\n\nPayment via M-Pesa Paybill:\nBusiness No: 303030\nAccount: 2047728455 (Fixed shared account)\nAmount: ${totalFormatted}\n\nAll subsequent delivery updates and receipts will be sent to ${order.customerEmail}.\n\nThank you!`
-    : `Dear ${order.customerName},\n\nThank you for your order ${shortId} on Ropenix Collections.\nTotal: ${totalFormatted}\n\nTrack order: ${trackUrl}\n\nPayment via M-Pesa Paybill:\nBusiness No: 303030\nAccount: 2047728455 (Fixed shared account)\nAmount: ${totalFormatted}\n\nAfter paying, visit your order tracking page to submit your M-Pesa code.\n\nThank you!`;
+  const text = `Dear ${order.customerName},\n\nThank you for your order ${shortId} on Ropenix Collections.\nTotal: ${totalFormatted}\n\nOur store administration will verify your payment and update the status.\n\nTrack order: ${trackUrl}\n\nThank you!`;
 
   return { subject, html, text };
 }

@@ -28,7 +28,6 @@ import {
 } from 'lucide-react';
 import { Order, Product } from '../types';
 import { CurrencyType, formatPrice } from '../lib/currency';
-import CustomerPaymentClaimModal from './CustomerPaymentClaimModal';
 import { useAuth } from '../context/AuthContext';
 import { useSiteSettings } from '../context/SiteSettingsContext';
 import { generateColorRamp } from '../services/siteSettingsApi';
@@ -80,8 +79,6 @@ export default function OrderTrackingPage({
   const [errorMsg, setErrorMsg] = useState('');
   const [copied, setCopied] = useState(false);
   const [showItemsBreakdown, setShowItemsBreakdown] = useState(true);
-  const [isPaymentClaimOpen, setIsPaymentClaimOpen] = useState(false);
-  const [paymentStatusNote, setPaymentStatusNote] = useState<string | null>(null);
   const [isInputFocused, setIsInputFocused] = useState(false);
 
   const fetchServerTracking = async (orderId: string) => {
@@ -392,15 +389,22 @@ export default function OrderTrackingPage({
 
           {/* Right Column: 3D Delivery Van & Package Hero Asset */}
           <div className="lg:col-span-5 relative flex items-center justify-center lg:justify-end">
-            <div className="relative w-full max-w-md lg:max-w-none rounded-2xl overflow-hidden group">
-              <img
-                src="/images/delivery-hero.jpg"
-                alt={`${siteName} Express Delivery Van and Courier Parcel`}
-                className="w-full h-auto object-cover rounded-2xl shadow-xl transition-transform duration-500 group-hover:scale-[1.02]"
-                onError={(e) => {
-                  (e.target as HTMLElement).style.display = 'none';
-                }}
-              />
+            <div className="relative w-full max-w-md lg:max-w-none rounded-2xl overflow-hidden group aspect-[800/447]">
+              <picture>
+                <source srcSet="/images/delivery-hero.webp" type="image/webp" />
+                <img
+                  src="/images/delivery-hero.webp"
+                  alt={`${siteName} Express Delivery Van and Courier Parcel`}
+                  width={800}
+                  height={447}
+                  loading="lazy"
+                  decoding="async"
+                  className="w-full h-full object-cover rounded-2xl shadow-xl transition-transform duration-500 group-hover:scale-[1.02]"
+                  onError={(e) => {
+                    (e.target as HTMLElement).style.display = 'none';
+                  }}
+                />
+              </picture>
             </div>
           </div>
         </div>
@@ -432,7 +436,7 @@ export default function OrderTrackingPage({
                 </p>
               </div>
 
-              {/* Payment Status Pill / Paybill Trigger */}
+              {/* Payment Status Pill */}
               <div className="flex items-center gap-3">
                 {trackedOrder.paymentStatus === 'paid' || trackedOrder.status === 'completed' ? (
                   <span className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-800 text-xs font-bold text-emerald-700 dark:text-emerald-400">
@@ -440,14 +444,14 @@ export default function OrderTrackingPage({
                     <span>Paid &amp; Confirmed</span>
                   </span>
                 ) : (
-                  <button
-                    type="button"
-                    onClick={() => setIsPaymentClaimOpen(true)}
-                    className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition shadow-xs cursor-pointer"
-                  >
-                    <ShieldCheck className="w-4 h-4" />
-                    <span>{paymentStatusNote || (trackedOrder.paymentStatus === 'pending_verification' ? 'Review Payment Code' : 'Submit M-Pesa Code')}</span>
-                  </button>
+                  <span className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-amber-50 dark:bg-amber-950/50 border border-amber-200 dark:border-amber-800 text-xs font-bold text-amber-700 dark:text-amber-400">
+                    <Clock className="w-3.5 h-3.5" />
+                    <span>
+                      {trackedOrder.paymentReference
+                        ? `Payment Pending Verification (${trackedOrder.paymentReference})`
+                        : 'Payment Pending Admin Verification'}
+                    </span>
+                  </span>
                 )}
               </div>
             </div>
@@ -467,11 +471,11 @@ export default function OrderTrackingPage({
                 </div>
 
                 {/* 4 Stepper Milestones */}
-                <div className="grid grid-cols-4 relative z-10">
+                <div className="grid grid-cols-4 relative z-10 gap-1 sm:gap-2">
                   {/* Step 1: Order Confirmed */}
                   <div className="flex flex-col items-center text-center">
                     <div
-                      className={`w-10 h-10 sm:w-12 sm:h-12 rounded-full flex items-center justify-center transition-all ${
+                      className={`w-8 h-8 sm:w-12 sm:h-12 rounded-full flex items-center justify-center transition-all ${
                         currentStage >= 1
                           ? 'text-white'
                           : 'bg-slate-100 dark:bg-slate-800 text-slate-400'
@@ -481,12 +485,12 @@ export default function OrderTrackingPage({
                         boxShadow: `0 4px 14px ${primaryColor}40`,
                       } : undefined}
                     >
-                      <Check className="w-5 h-5 stroke-[2.5]" />
+                      <Check className="w-4 h-4 sm:w-5 sm:h-5 stroke-[2.5]" />
                     </div>
-                    <span className="mt-3 text-xs sm:text-sm font-bold text-slate-900 dark:text-white">
-                      Order Confirmed
+                    <span className="mt-2 sm:mt-3 text-[10px] sm:text-sm font-bold text-slate-900 dark:text-white leading-tight">
+                      Confirmed
                     </span>
-                    <span className="text-[11px] text-slate-500 dark:text-slate-400 font-medium mt-0.5">
+                    <span className="hidden sm:block text-[11px] text-slate-500 dark:text-slate-400 font-medium mt-0.5">
                       {getFormattedDate(trackedOrder.date, 0)}, {getFormattedTime(trackedOrder.date, 0)}
                     </span>
                   </div>
@@ -494,7 +498,7 @@ export default function OrderTrackingPage({
                   {/* Step 2: Processing */}
                   <div className="flex flex-col items-center text-center">
                     <div
-                      className={`w-10 h-10 sm:w-12 sm:h-12 rounded-full flex items-center justify-center transition-all ${
+                      className={`w-8 h-8 sm:w-12 sm:h-12 rounded-full flex items-center justify-center transition-all ${
                         currentStage >= 2
                           ? 'text-white'
                           : 'bg-slate-100 dark:bg-slate-800 text-slate-400'
@@ -504,16 +508,16 @@ export default function OrderTrackingPage({
                         boxShadow: `0 4px 14px ${primaryColor}40`,
                       } : undefined}
                     >
-                      <Check className="w-5 h-5 stroke-[2.5]" />
+                      <Check className="w-4 h-4 sm:w-5 sm:h-5 stroke-[2.5]" />
                     </div>
                     <span
-                      className={`mt-3 text-xs sm:text-sm font-bold ${
+                      className={`mt-2 sm:mt-3 text-[10px] sm:text-sm font-bold leading-tight ${
                         currentStage >= 2 ? 'text-slate-900 dark:text-white' : 'text-slate-400 dark:text-slate-500'
                       }`}
                     >
                       Processing
                     </span>
-                    <span className="text-[11px] text-slate-500 dark:text-slate-400 font-medium mt-0.5">
+                    <span className="hidden sm:block text-[11px] text-slate-500 dark:text-slate-400 font-medium mt-0.5">
                       {currentStage >= 2
                         ? `${getFormattedDate(trackedOrder.date, 4)}, ${getFormattedTime(trackedOrder.date, 4)}`
                         : 'In preparation'}
@@ -523,7 +527,7 @@ export default function OrderTrackingPage({
                   {/* Step 3: Out for Delivery */}
                   <div className="flex flex-col items-center text-center">
                     <div
-                      className={`w-10 h-10 sm:w-12 sm:h-12 rounded-full flex items-center justify-center transition-all ${
+                      className={`w-8 h-8 sm:w-12 sm:h-12 rounded-full flex items-center justify-center transition-all ${
                         currentStage >= 3
                           ? 'text-white'
                           : 'bg-slate-100 dark:bg-slate-800 text-slate-400'
@@ -534,16 +538,16 @@ export default function OrderTrackingPage({
                         outline: `4px solid ${primarySoft}`
                       } : undefined}
                     >
-                      <Truck className="w-5 h-5 stroke-[2.5]" />
+                      <Truck className="w-4 h-4 sm:w-5 sm:h-5 stroke-[2.5]" />
                     </div>
                     <span
-                      className={`mt-3 text-xs sm:text-sm font-bold ${
+                      className={`mt-2 sm:mt-3 text-[10px] sm:text-sm font-bold leading-tight ${
                         currentStage >= 3 ? 'text-slate-900 dark:text-white' : 'text-slate-400 dark:text-slate-500'
                       }`}
                     >
-                      Out for Delivery
+                      In Transit
                     </span>
-                    <span className="text-[11px] text-slate-500 dark:text-slate-400 font-medium mt-0.5">
+                    <span className="hidden sm:block text-[11px] text-slate-500 dark:text-slate-400 font-medium mt-0.5">
                       {currentStage >= 3
                         ? `${getFormattedDate(trackedOrder.date, 24)}, ${getFormattedTime(trackedOrder.date, 24)}`
                         : 'Estimated arrival'}
@@ -553,22 +557,22 @@ export default function OrderTrackingPage({
                   {/* Step 4: Delivered */}
                   <div className="flex flex-col items-center text-center">
                     <div
-                      className={`w-10 h-10 sm:w-12 sm:h-12 rounded-full flex items-center justify-center transition-all ${
+                      className={`w-8 h-8 sm:w-12 sm:h-12 rounded-full flex items-center justify-center transition-all ${
                         currentStage >= 4
                           ? 'bg-emerald-600 text-white shadow-md shadow-emerald-500/30'
                           : 'bg-slate-100 dark:bg-slate-800 text-slate-400'
                       }`}
                     >
-                      <Home className="w-5 h-5 stroke-[2.5]" />
+                      <Home className="w-4 h-4 sm:w-5 sm:h-5 stroke-[2.5]" />
                     </div>
                     <span
-                      className={`mt-3 text-xs sm:text-sm font-bold ${
+                      className={`mt-2 sm:mt-3 text-[10px] sm:text-sm font-bold leading-tight ${
                         currentStage >= 4 ? 'text-slate-900 dark:text-white' : 'text-slate-400 dark:text-slate-500'
                       }`}
                     >
                       Delivered
                     </span>
-                    <span className="text-[11px] text-slate-500 dark:text-slate-400 font-medium mt-0.5">
+                    <span className="hidden sm:block text-[11px] text-slate-500 dark:text-slate-400 font-medium mt-0.5">
                       {currentStage >= 4
                         ? `${getFormattedDate(trackedOrder.date, 30)}, ${getFormattedTime(trackedOrder.date, 30)}`
                         : 'Arriving soon'}
@@ -655,7 +659,15 @@ export default function OrderTrackingPage({
                         >
                           <div className="w-12 h-12 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 overflow-hidden flex items-center justify-center shrink-0">
                             {img ? (
-                              <img src={img} alt={item.name} className="w-full h-full object-cover" />
+                              <img
+                                src={img}
+                                alt={item.name}
+                                width={48}
+                                height={48}
+                                loading="lazy"
+                                decoding="async"
+                                className="w-full h-full object-cover"
+                              />
                             ) : (
                               <Box className="w-5 h-5 text-slate-400" />
                             )}
@@ -680,27 +692,6 @@ export default function OrderTrackingPage({
             </div>
           </div>
         </div>
-      )}
-
-      {/* Customer Payment Claim Modal */}
-      {isPaymentClaimOpen && trackedOrder && (
-        <CustomerPaymentClaimModal
-          isOpen={isPaymentClaimOpen}
-          onClose={() => setIsPaymentClaimOpen(false)}
-          orderId={trackedOrder.id}
-          orderTotal={trackedOrder.total || 0}
-          customerName={trackedOrder.customerName || ''}
-          customerEmail={trackedOrder.customerEmail || ''}
-          customerPhone={trackedOrder.phone || ''}
-          currency={currency}
-          onNavigateToOrders={() => {
-            setIsPaymentClaimOpen(false);
-            if (onBackToAccount) onBackToAccount();
-          }}
-          onClaimSuccess={(data) => {
-            setPaymentStatusNote(`Code: ${data.mpesaCode} (Under Review)`);
-          }}
-        />
       )}
     </div>
   );

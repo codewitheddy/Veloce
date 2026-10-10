@@ -204,7 +204,7 @@ export const RecentlyViewedSlider: React.FC<RecentlyViewedSliderProps> = ({
 
   return (
     <section
-      className={`w-full mt-10 rounded-3xl border border-slate-200/90 dark:border-slate-800/90 bg-gradient-to-b from-slate-50/60 via-white to-white dark:from-slate-900/60 dark:via-slate-900/40 dark:to-slate-900/80 p-5 sm:p-7 shadow-xs ${className}`}
+      className={`w-full max-w-full overflow-hidden mt-10 rounded-3xl border border-slate-200/90 dark:border-slate-800/90 bg-gradient-to-b from-slate-50/60 via-white to-white dark:from-slate-900/60 dark:via-slate-900/40 dark:to-slate-900/80 p-4 sm:p-7 shadow-xs ${className}`}
       id="recently-viewed-slider"
     >
       {/* SECTION HEADER & CONTROLS */}
@@ -216,7 +216,7 @@ export const RecentlyViewedSlider: React.FC<RecentlyViewedSliderProps> = ({
           <div>
             <div className="flex items-center gap-2 flex-wrap">
               <h3 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white tracking-tight">
-                {isShowingHistory ? 'Recently Viewed Objects' : 'Recommended For You'}
+                {isShowingHistory ? 'Recently Viewed Products' : 'Recommended For You'}
               </h3>
               <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200/60 dark:border-slate-700/60">
                 {displayedProducts.length} {displayedProducts.length === 1 ? 'Item' : 'Items'}
@@ -271,7 +271,7 @@ export const RecentlyViewedSlider: React.FC<RecentlyViewedSliderProps> = ({
       <div
         ref={scrollContainerRef}
         onScroll={checkScroll}
-        className="flex items-stretch gap-4 sm:gap-5 overflow-x-auto pb-4 pt-1 px-1 scroll-smooth snap-x snap-mandatory scrollbar-none -mx-1"
+        className="flex items-stretch gap-4 sm:gap-5 overflow-x-auto pb-4 pt-1 px-1 scroll-smooth snap-x snap-mandatory scrollbar-none"
         style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
       >
         {displayedProducts.map((product) => {

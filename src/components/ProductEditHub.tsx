@@ -8,6 +8,7 @@ import {
   Edit3,
   Search,
   Plus,
+  ArrowLeft,
   Package,
   Layers,
   Sparkles,
@@ -43,6 +44,7 @@ interface ProductEditHubProps {
   onCreateNewProduct: () => void;
   onDuplicateProduct?: (product: Product) => void;
   onViewProductOnSite?: (product: Product) => void;
+  onBackToCatalog?: () => void;
 }
 
 export default function ProductEditHub({
@@ -53,12 +55,13 @@ export default function ProductEditHub({
   onCreateNewProduct,
   onDuplicateProduct,
   onViewProductOnSite,
+  onBackToCatalog,
 }: ProductEditHubProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [stockFilter, setStockFilter] = useState<'all' | 'in-stock' | 'low-stock' | 'out-of-stock'>('all');
   const [statusFilter, setStatusFilter] = useState<'all' | 'Active' | 'Draft' | 'Inactive'>('all');
-  const [sortBy, setSortBy] = useState<'name' | 'price-asc' | 'price-desc' | 'stock-asc' | 'stock-desc' | 'sku'>('name');
+  const [sortBy, setSortBy] = useState<'latest' | 'name' | 'price-asc' | 'price-desc' | 'stock-asc' | 'stock-desc' | 'sku'>('latest');
   const [viewMode, setViewMode] = useState<'table' | 'grid'>('table');
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState<number>(15);
@@ -97,6 +100,15 @@ export default function ProductEditHub({
 
       return matchesSearch && matchesCategory && matchesStatus && matchesStock;
     }).sort((a, b) => {
+      if (sortBy === 'latest') {
+        const timeA = a.createdAt || (a as any).created_at ? new Date(a.createdAt || (a as any).created_at).getTime() : 0;
+        const timeB = b.createdAt || (b as any).created_at ? new Date(b.createdAt || (b as any).created_at).getTime() : 0;
+        if (timeA !== timeB) return timeB - timeA;
+        const numA = parseInt(String(a.id || '').replace(/\D/g, ''), 10) || 0;
+        const numB = parseInt(String(b.id || '').replace(/\D/g, ''), 10) || 0;
+        if (numA !== numB) return numB - numA;
+        return String(b.id || '').localeCompare(String(a.id || ''));
+      }
       if (sortBy === 'name') return a.name.localeCompare(b.name);
       if (sortBy === 'price-asc') return a.price - b.price;
       if (sortBy === 'price-desc') return b.price - a.price;
@@ -175,6 +187,17 @@ export default function ProductEditHub({
         </div>
 
         <div className="flex items-center gap-2 shrink-0">
+          {onBackToCatalog && (
+            <button
+              type="button"
+              id="btn-back-to-inventory-hub"
+              onClick={onBackToCatalog}
+              className="px-3.5 py-2 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-200 text-xs font-bold rounded-xl border border-gray-200 dark:border-gray-700 transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs"
+            >
+              <ArrowLeft className="h-4 w-4 text-gray-500 dark:text-gray-400" />
+              <span>Back to Product Catalog</span>
+            </button>
+          )}
           <button
             type="button"
             id="btn-create-new-product-hub"
@@ -320,6 +343,7 @@ export default function ProductEditHub({
                 onChange={(e) => setSortBy(e.target.value as any)}
                 className="h-9 px-3 rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 text-xs font-semibold text-gray-800 dark:text-gray-200 focus:outline-hidden focus:ring-1 focus:ring-indigo-550 transition-all cursor-pointer"
               >
+                <option value="latest">Latest / Newest First (Default)</option>
                 <option value="name">Title (A-Z)</option>
                 <option value="price-asc">Price (Low → High)</option>
                 <option value="price-desc">Price (High → Low)</option>

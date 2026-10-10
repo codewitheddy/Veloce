@@ -7,20 +7,17 @@ import { Router, Request, Response } from 'express';
 import crypto from 'crypto';
 import { z } from 'zod';
 import { 
-  getSqliteUserByEmail, 
-  getSqliteUserById,
-  saveSqliteUser, 
+  getMysqlUserByEmail, 
+  getMysqlUserByEmailOrUsername,
+  getMysqlUserById,
+  saveMysqlUser, 
+  saveMysqlCustomer
+} from '../../src/lib/mysql-db';
+import { 
   getSqlitePendingRegistration, 
   saveSqlitePendingRegistration, 
   deleteSqlitePendingRegistration, 
-  updateSqlitePendingRegistrationAttempts, 
-  getFlaggedDuplicateAccounts,
-  saveSqliteCustomer,
-  saveSqlitePasswordReset,
-  getSqliteActivePasswordReset,
-  markSqlitePasswordResetUsed,
-  incrementSqlitePasswordResetAttempts,
-  updateSqliteUserPassword
+  updateSqlitePendingRegistrationAttempts
 } from '../../src/lib/sqlite-db';
 import { validateBody } from '../middleware/validate';
 import { createRateLimiter } from '../middleware/rateLimit';
@@ -167,8 +164,8 @@ router.post(
       const cleanLastName = String(last_name || '').trim();
       const cleanPhone = String(phone || '').trim();
 
-      // Check if account already exists
-      const existingUser = await getSqliteUserByEmail(normalizedEmail);
+      // Check if account already exists in MySQL
+      const existingUser = await getMysqlUserByEmail(normalizedEmail);
       if (existingUser) {
         return res.status(409).json({
           success: false,
@@ -313,7 +310,7 @@ router.post(
       }
 
       // Check unique constraint race condition
-      const duplicateCheck = await getSqliteUserByEmail(normalizedEmail);
+      const duplicateCheck = await getMysqlUserByEmail(normalizedEmail);
       if (duplicateCheck) {
         await deleteSqlitePendingRegistration(normalizedEmail);
         return res.status(409).json({
@@ -324,11 +321,11 @@ router.post(
         });
       }
 
-      // Create authoritative user in database
+      // Create authoritative user in MySQL database
       const newUserId = `usr-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
       let savedUser: any;
       try {
-        savedUser = await saveSqliteUser({
+        savedUser = await saveMysqlUser({
           id: newUserId,
           username: pending.username,
           email: normalizedEmail,
@@ -355,9 +352,9 @@ router.post(
       // Delete single-use pending registration
       await deleteSqlitePendingRegistration(normalizedEmail);
 
-      // Create CRM customer record
+      // Create CRM customer record in MySQL
       try {
-        await saveSqliteCustomer({
+        await saveMysqlCustomer({
           name: `${savedUser.first_name} ${savedUser.last_name}`.trim() || savedUser.username,
           first_name: savedUser.first_name || '',
           last_name: savedUser.last_name || '',
@@ -506,18 +503,20 @@ router.post(
 async function handleUserLogin(req: Request, res: Response) {
   try {
     const { username, email, password } = req.body || {};
-    const userIdentifier = normalizeEmail(email || username);
+    const userIdentifier = String(email || username || '').trim().toLowerCase();
+    const rawPassword = typeof password === 'string' ? password : '';
+    const cleanPassword = rawPassword.trim();
 
-    if (!userIdentifier || !password) {
+    if (!userIdentifier || (!cleanPassword && !rawPassword)) {
       return res.status(400).json({ success: false, error: 'Email/username and password are required.', code: 'MISSING_CREDENTIALS' });
     }
 
-    const user = await getSqliteUserByEmail(userIdentifier);
+    const user = await getMysqlUserByEmailOrUsername(userIdentifier);
     if (!user || !user.password_hash || typeof user.password_hash !== 'string' || !user.password_hash.includes(':')) {
       return res.status(401).json({ success: false, error: 'Invalid email or password. Please check your credentials.', code: 'INVALID_CREDENTIALS' });
     }
 
-    const isMatch = verifyPassword(password, user.password_hash);
+    const isMatch = verifyPassword(cleanPassword, user.password_hash) || (rawPassword ? verifyPassword(rawPassword, user.password_hash) : false);
     if (!isMatch) {
       return res.status(401).json({ success: false, error: 'Invalid email or password. Please check your credentials.', code: 'INVALID_CREDENTIALS' });
     }
@@ -559,13 +558,15 @@ router.post(['/token', '/token/'], validateBody(LoginSchema), handleUserLogin);
 router.post(['/superuser-login', '/superuser-login/'], async (req: Request, res: Response) => {
   try {
     const { username, email, password } = req.body || {};
-    const cleanUser = normalizeEmail(email || username);
+    const cleanUser = String(email || username || '').trim().toLowerCase();
+    const rawPassword = typeof password === 'string' ? password : '';
+    const cleanPassword = rawPassword.trim();
 
-    if (!cleanUser || !password) {
+    if (!cleanUser || (!cleanPassword && !rawPassword)) {
       return res.status(400).json({ success: false, error: 'Username/email and password are required.', code: 'MISSING_CREDENTIALS' });
     }
 
-    const superuser = await getSqliteUserByEmail(cleanUser);
+    const superuser = await getMysqlUserByEmailOrUsername(cleanUser);
     if (!superuser || (!superuser.is_superuser && !superuser.is_staff)) {
       return res.status(401).json({
         success: false,
@@ -582,7 +583,7 @@ router.post(['/superuser-login', '/superuser-login/'], async (req: Request, res:
       });
     }
 
-    const isMatch = verifyPassword(password, superuser.password_hash);
+    const isMatch = verifyPassword(cleanPassword, superuser.password_hash) || (rawPassword ? verifyPassword(rawPassword, superuser.password_hash) : false);
     if (!isMatch) {
       return res.status(401).json({
         success: false,
@@ -636,7 +637,7 @@ router.post(['/token/refresh', '/token/refresh/'], async (req: Request, res: Res
       return res.status(401).json({ success: false, error: 'Invalid or expired refresh token.', code: 'INVALID_TOKEN' });
     }
 
-    const user = await getSqliteUserById(payload.sub);
+    const user = await getMysqlUserById(payload.sub);
     if (!user) {
       return res.status(401).json({ success: false, error: 'User account not found.', code: 'INVALID_TOKEN' });
     }

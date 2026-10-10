@@ -10,6 +10,7 @@ import CountdownTimer from './CountdownTimer';
 import { getProductDiscountInfo } from '../utils/productUtils';
 import { cleanDescriptionExcerpt } from '../utils/formatDescription';
 import { CurrencyType, formatPrice } from '../lib/currency';
+import LazyImage from './LazyImage';
 
 interface SaleProductsProps {
   products: Product[];
@@ -104,7 +105,7 @@ export default function SaleProducts({
   if (saleProducts.length === 0) return null;
 
   return (
-    <section className="py-8 bg-gradient-to-b from-slate-50 via-rose-50/20 to-slate-50 dark:from-[#090D16] dark:via-rose-950/20 dark:to-[#090D16] border-t border-rose-100/40 dark:border-rose-950/40 transition-colors">
+    <section className="py-8 bg-gradient-to-b from-slate-50 via-rose-50/20 to-slate-50 dark:from-[#090D16] dark:via-rose-950/20 dark:to-[#090D16] border-t border-rose-100/40 dark:border-rose-950/40 transition-colors w-full max-w-full overflow-hidden">
       <div className="w-full max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-6 mb-8">
           <div>
@@ -166,12 +167,12 @@ export default function SaleProducts({
         </div>
 
         {/* Sales Carousel */}
-        <div className="relative px-6 sm:px-8 lg:px-12 py-6">
+        <div className="relative px-0 sm:px-8 lg:px-12 py-4 sm:py-6 overflow-hidden">
           {/* Left Scroll Button */}
           <button
             onClick={() => scroll('left')}
             disabled={!canScrollLeft}
-            className="absolute -left-5 sm:-left-6 top-1/2 -translate-y-1/2 z-10 w-10 h-10 sm:w-12 sm:h-12 flex items-center justify-center rounded-full bg-white/80 dark:bg-slate-800/80 backdrop-blur-sm border border-rose-100 dark:border-slate-700 hover:bg-white dark:hover:bg-slate-700 hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+            className="hidden sm:flex absolute -left-2 lg:-left-5 top-1/2 -translate-y-1/2 z-10 w-10 h-10 sm:w-12 sm:h-12 items-center justify-center rounded-full bg-white/80 dark:bg-slate-800/80 backdrop-blur-sm border border-rose-100 dark:border-slate-700 hover:bg-white dark:hover:bg-slate-700 hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
             aria-label="Scroll left"
           >
             <ChevronLeft className="h-5 w-5 sm:h-6 sm:w-6 text-gray-900 dark:text-white" />
@@ -198,7 +199,7 @@ export default function SaleProducts({
                 <div
                   key={product.id}
                   onClick={() => onProductClick(product)}
-                  className="snap-start shrink-0 w-full sm:w-[320px] md:w-[340px] lg:w-[360px] flex flex-col justify-between rounded-2xl border border-rose-100/50 dark:border-rose-950/60 bg-[#fffdfd]/80 dark:bg-slate-900 p-5 cursor-pointer transition-all duration-300 hover:shadow-[0_16px_32px_rgba(220,38,38,0.08)] dark:hover:shadow-[0_16px_32px_rgba(0,0,0,0.5)] hover:border-rose-200 dark:hover:border-rose-500/40 hover:bg-white dark:hover:bg-slate-850"
+                  className="snap-start shrink-0 w-[270px] xs:w-[300px] sm:w-[320px] md:w-[340px] lg:w-[360px] flex flex-col justify-between rounded-2xl border border-rose-100/50 dark:border-rose-950/60 bg-[#fffdfd]/80 dark:bg-slate-900 p-5 cursor-pointer transition-all duration-300 hover:shadow-[0_16px_32px_rgba(220,38,38,0.08)] dark:hover:shadow-[0_16px_32px_rgba(0,0,0,0.5)] hover:border-rose-200 dark:hover:border-rose-500/40 hover:bg-white dark:hover:bg-slate-850"
                 >
                   <div>
                     {/* Category & Custom Savings Badge */}
@@ -217,11 +218,14 @@ export default function SaleProducts({
 
                     {/* High Quality Render Block */}
                     <div className="relative h-56 w-full overflow-hidden rounded-xl bg-gray-50 dark:bg-slate-950 border border-rose-50/20 dark:border-slate-800 flex items-center justify-center p-2">
-                      <img
+                      <LazyImage
                         src={product.imageUrl}
                         alt={product.name}
+                        width={320}
+                        height={224}
+                        aspectRatio="320/224"
+                        responsiveType="carousel"
                         className="h-full w-full object-contain object-center transition-transform duration-500 hover:scale-105"
-                        referrerPolicy="no-referrer"
                       />
                       
                       {/* Visual Flare badge */}
@@ -309,7 +313,7 @@ export default function SaleProducts({
           <button
             onClick={() => scroll('right')}
             disabled={!canScrollRight}
-            className="absolute -right-5 sm:-right-6 top-1/2 -translate-y-1/2 z-10 w-10 h-10 sm:w-12 sm:h-12 flex items-center justify-center rounded-full bg-white/80 dark:bg-slate-800/80 backdrop-blur-sm border border-rose-100 dark:border-slate-700 hover:bg-white dark:hover:bg-slate-700 hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+            className="hidden sm:flex absolute -right-2 lg:-right-5 top-1/2 -translate-y-1/2 z-10 w-10 h-10 sm:w-12 sm:h-12 items-center justify-center rounded-full bg-white/80 dark:bg-slate-800/80 backdrop-blur-sm border border-rose-100 dark:border-slate-700 hover:bg-white dark:hover:bg-slate-700 hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
             aria-label="Scroll right"
           >
             <ChevronRight className="h-5 w-5 sm:h-6 sm:w-6 text-gray-900 dark:text-white" />

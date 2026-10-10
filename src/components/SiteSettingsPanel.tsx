@@ -259,9 +259,9 @@ export function SiteSettingsPanel() {
       primary_color: '#4f46e5',
       secondary_color: '#06b6d4',
       accent_color: '#f59e0b',
-      background_color: '#0f172a',
-      surface_color: '#1e293b',
-      text_color: '#f8fafc'
+      background_color: '#f8fafc',
+      surface_color: '#ffffff',
+      text_color: '#0f172a'
     };
     setSettings((prev) => ({ ...prev, appearance: defaultAppearance }));
     applyAppearanceToDom(defaultAppearance);
@@ -1054,19 +1054,19 @@ export function SiteSettingsPanel() {
                   <div className="flex items-center gap-2.5">
                     <input
                       type="color"
-                      value={settings.appearance.background_color || '#0f172a'}
+                      value={settings.appearance.background_color || '#f8fafc'}
                       onChange={(e) => handleColorChange('background_color', e.target.value)}
                       className="h-9 w-12 rounded-lg cursor-pointer border border-gray-300 dark:border-gray-600 p-0.5 bg-white dark:bg-gray-800"
                     />
                     <input
                       type="text"
-                      value={settings.appearance.background_color || '#0f172a'}
+                      value={settings.appearance.background_color || '#f8fafc'}
                       onChange={(e) => handleColorChange('background_color', e.target.value)}
                       className="h-9 flex-1 rounded-xl border border-gray-250 dark:border-gray-700 px-3 font-mono text-xs uppercase bg-white dark:bg-gray-800 text-gray-950 dark:text-white"
                     />
                   </div>
                   <span className="text-[10px] text-gray-400 font-light block">
-                    Base page backdrop tone applied for dark theme environments.
+                    Base page backdrop tone applied across the platform.
                   </span>
                 </div>
 
@@ -1078,13 +1078,13 @@ export function SiteSettingsPanel() {
                   <div className="flex items-center gap-2.5">
                     <input
                       type="color"
-                      value={settings.appearance.surface_color || '#1e293b'}
+                      value={settings.appearance.surface_color || '#ffffff'}
                       onChange={(e) => handleColorChange('surface_color', e.target.value)}
                       className="h-9 w-12 rounded-lg cursor-pointer border border-gray-300 dark:border-gray-600 p-0.5 bg-white dark:bg-gray-800"
                     />
                     <input
                       type="text"
-                      value={settings.appearance.surface_color || '#1e293b'}
+                      value={settings.appearance.surface_color || '#ffffff'}
                       onChange={(e) => handleColorChange('surface_color', e.target.value)}
                       className="h-9 flex-1 rounded-xl border border-gray-250 dark:border-gray-700 px-3 font-mono text-xs uppercase bg-white dark:bg-gray-800 text-gray-950 dark:text-white"
                     />
@@ -1102,19 +1102,19 @@ export function SiteSettingsPanel() {
                   <div className="flex items-center gap-2.5">
                     <input
                       type="color"
-                      value={settings.appearance.text_color || '#f8fafc'}
+                      value={settings.appearance.text_color || '#0f172a'}
                       onChange={(e) => handleColorChange('text_color', e.target.value)}
                       className="h-9 w-12 rounded-lg cursor-pointer border border-gray-300 dark:border-gray-600 p-0.5 bg-white dark:bg-gray-800"
                     />
                     <input
                       type="text"
-                      value={settings.appearance.text_color || '#f8fafc'}
+                      value={settings.appearance.text_color || '#0f172a'}
                       onChange={(e) => handleColorChange('text_color', e.target.value)}
                       className="h-9 flex-1 rounded-xl border border-gray-250 dark:border-gray-700 px-3 font-mono text-xs uppercase bg-white dark:bg-gray-800 text-gray-950 dark:text-white"
                     />
                   </div>
                   <span className="text-[10px] text-gray-400 font-light block">
-                    High contrast text for dark backdrops and primary badges.
+                    High contrast text for surfaces and content typography.
                   </span>
                 </div>
               </div>

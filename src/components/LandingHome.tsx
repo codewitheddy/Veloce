@@ -47,7 +47,7 @@ export default function LandingHome({
 }: LandingHomeProps) {
 
   return (
-    <div className="bg-slate-50 dark:bg-[#090D16] text-slate-900 dark:text-slate-100 min-h-screen transition-colors duration-200">
+    <div className="bg-slate-50 dark:bg-[#090D16] text-slate-900 dark:text-slate-100 min-h-screen transition-colors duration-200 w-full max-w-full">
       {/* Daily Offers Carousel Section */}
       <DailyOffersSection
         products={featuredProducts}

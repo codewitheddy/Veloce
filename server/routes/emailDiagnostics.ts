@@ -8,8 +8,7 @@ import { getEmailConfig } from '../email/config';
 import { sendEmail, getMailTransporter } from '../email/transporter';
 import { fetchEmailJobs, retryFailedJobs } from '../email/db';
 import { processQueueBatch } from '../email/queue';
-import { getSqliteDb } from '../../src/lib/sqlite-db';
-import { getPostgresPool } from '../../src/lib/postgres-db';
+import { getDbPool } from '../../src/lib/mysql-db';
 import { requireAdmin } from '../middleware/auth';
 
 const router = Router();
@@ -28,45 +27,21 @@ router.get(['/stats', '/stats/'], async (_req: Request, res: Response) => {
     let sentLogsCount = 0;
     let recentLogs: any[] = [];
 
-    const pool = getPostgresPool();
-    if (pool) {
-      const qRes = await pool.query(`SELECT status, count(*) FROM email_jobs GROUP BY status`);
-      qRes.rows.forEach((r) => {
+    try {
+      const pool = await getDbPool();
+      const [qRows]: any = await pool.query(`SELECT status, count(*) as count FROM email_jobs GROUP BY status`);
+      (qRows || []).forEach((r: any) => {
         if (r.status === 'queued') queuedJobsCount = parseInt(r.count, 10);
         if (r.status === 'failed') failedJobsCount = parseInt(r.count, 10);
       });
 
-      const lRes = await pool.query(`SELECT count(*) FROM email_logs WHERE status = 'sent'`);
-      sentLogsCount = parseInt(lRes.rows[0]?.count || '0', 10);
+      const [lRows]: any = await pool.query(`SELECT count(*) as count FROM email_logs WHERE status = 'sent'`);
+      sentLogsCount = parseInt(lRows[0]?.count || '0', 10);
 
-      const recRes = await pool.query(`SELECT * FROM email_logs ORDER BY created_at DESC LIMIT 30`);
-      recentLogs = recRes.rows;
-    } else {
-      const db = await getSqliteDb();
-      const qRes = db.exec(`SELECT status, count(*) FROM email_jobs GROUP BY status;`);
-      if (qRes.length > 0) {
-        qRes[0].values.forEach((row) => {
-          if (row[0] === 'queued') queuedJobsCount = Number(row[1]);
-          if (row[0] === 'failed') failedJobsCount = Number(row[1]);
-        });
-      }
-
-      const lRes = db.exec(`SELECT count(*) FROM email_logs WHERE status = 'sent';`);
-      if (lRes.length > 0 && lRes[0].values.length > 0) {
-        sentLogsCount = Number(lRes[0].values[0][0]);
-      }
-
-      const recRes = db.exec(`SELECT * FROM email_logs ORDER BY created_at DESC LIMIT 30;`);
-      if (recRes.length > 0 && recRes[0].values.length > 0) {
-        const cols = recRes[0].columns;
-        recentLogs = recRes[0].values.map((row) => {
-          const item: any = {};
-          cols.forEach((c, idx) => {
-            item[c] = row[idx];
-          });
-          return item;
-        });
-      }
+      const [recRows]: any = await pool.query(`SELECT * FROM email_logs ORDER BY created_at DESC LIMIT 30`);
+      recentLogs = recRows || [];
+    } catch (dbErr) {
+      console.warn('[Email Diagnostics] MySQL query notice:', dbErr);
     }
 
     return res.json({

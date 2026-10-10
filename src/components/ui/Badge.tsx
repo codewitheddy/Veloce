@@ -8,7 +8,7 @@ export const Badge = React.forwardRef<HTMLSpanElement, BadgeProps>(
   ({ children, className = '', variant = 'default', ...props }, ref) => {
     // Styling states
     const baseStyle =
-      'inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full font-mono text-[9px] font-bold tracking-wider uppercase select-none border shadow-3xs';
+      'inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full font-mono text-[10px] font-bold tracking-wider uppercase select-none border shadow-3xs';
 
     const variants = {
       default:

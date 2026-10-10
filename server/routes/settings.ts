@@ -6,7 +6,12 @@
 import { Router, Request, Response } from 'express';
 import crypto from 'crypto';
 import { z } from 'zod';
-import { getSqliteDb, saveSqliteDb, getSqliteSiteSettings, saveSqliteSiteSettings } from '../../src/lib/sqlite-db';
+import { 
+  getMysqlSiteSettings as getSqliteSiteSettings, 
+  saveMysqlSiteSettings as saveSqliteSiteSettings,
+  getAppSetting,
+  setAppSetting
+} from '../../src/lib/mysql-db';
 import { requireAdmin, getAuthTokenFromRequest, extractUserFromToken } from '../middleware/auth';
 
 const router = Router();
@@ -31,9 +36,10 @@ export const DEFAULT_SITE_SETTINGS: Record<string, any> = {
     primary_color: '#4f46e5',
     secondary_color: '#06b6d4',
     accent_color: '#f59e0b',
-    background_color: '#0f172a',
-    surface_color: '#1e293b',
-    dark_mode_default: true,
+    background_color: '#f8fafc',
+    surface_color: '#ffffff',
+    text_color: '#0f172a',
+    dark_mode_default: false,
     is_scheduled_theme_active: false
   },
   tax: {
@@ -224,69 +230,26 @@ const INITIAL_BACKUP_SNAPSHOTS = [
 ];
 
 async function getSqliteThemePresets(): Promise<any[]> {
-  try {
-    const db = await getSqliteDb();
-    const stmt = db.prepare("SELECT setting_value FROM app_settings WHERE setting_key = 'theme_presets' LIMIT 1;");
-    if (stmt.step()) {
-      const val = stmt.getAsObject().setting_value as string;
-      stmt.free();
-      return JSON.parse(val);
-    }
-    stmt.free();
-  } catch (_) {}
-  return INITIAL_THEME_PRESETS;
+  const presets = await getAppSetting('theme_presets', null);
+  return presets || INITIAL_THEME_PRESETS;
 }
 
 async function saveSqliteThemePresets(presets: any[]): Promise<void> {
-  try {
-    const db = await getSqliteDb();
-    const stmt = db.prepare("INSERT OR REPLACE INTO app_settings (setting_key, setting_value) VALUES ('theme_presets', ?);");
-    stmt.run([JSON.stringify(presets)]);
-    stmt.free();
-    saveSqliteDb(db);
-  } catch (e) {
-    console.warn('[Theme Presets] Failed to save to sqlite:', e);
-  }
+  await setAppSetting('theme_presets', presets);
 }
 
 async function getSqliteBackups(): Promise<any[]> {
-  try {
-    const db = await getSqliteDb();
-    const stmt = db.prepare("SELECT setting_value FROM app_settings WHERE setting_key = 'backup_snapshots' LIMIT 1;");
-    if (stmt.step()) {
-      const val = stmt.getAsObject().setting_value as string;
-      stmt.free();
-      return JSON.parse(val);
-    }
-    stmt.free();
-  } catch (_) {}
-  return INITIAL_BACKUP_SNAPSHOTS;
+  const backups = await getAppSetting('backup_snapshots', null);
+  return backups || INITIAL_BACKUP_SNAPSHOTS;
 }
 
 async function saveSqliteBackups(backups: any[]): Promise<void> {
-  try {
-    const db = await getSqliteDb();
-    const stmt = db.prepare("INSERT OR REPLACE INTO app_settings (setting_key, setting_value) VALUES ('backup_snapshots', ?);");
-    stmt.run([JSON.stringify(backups)]);
-    stmt.free();
-    saveSqliteDb(db);
-  } catch (e) {
-    console.warn('[Backups] Failed to save to sqlite:', e);
-  }
+  await setAppSetting('backup_snapshots', backups);
 }
 
 async function getSqliteAuditLogs(): Promise<any[]> {
-  try {
-    const db = await getSqliteDb();
-    const stmt = db.prepare("SELECT setting_value FROM app_settings WHERE setting_key = 'settings_audit_logs' LIMIT 1;");
-    if (stmt.step()) {
-      const val = stmt.getAsObject().setting_value as string;
-      stmt.free();
-      return JSON.parse(val);
-    }
-    stmt.free();
-  } catch (_) {}
-  return [];
+  const logs = await getAppSetting('settings_audit_logs', null);
+  return logs || [];
 }
 
 // 1. Theme Presets Endpoints
