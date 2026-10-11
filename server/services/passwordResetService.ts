@@ -12,6 +12,7 @@ import {
   cleanupExpiredMysqlResetTokens,
   getMysqlPasswordResetToken,
   saveMysqlUser,
+  getDbPool,
 } from '../../src/lib/mysql-db';
 import { sendEmail } from '../email/transporter';
 import { renderPasswordResetEmail, renderPasswordChangedEmail } from '../email/templates';

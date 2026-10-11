@@ -690,13 +690,12 @@ export default function BulkProductUploadModal({
         });
       }
 
-      // Broadcast products updated event and sync to localStorage/IndexedDB
+      // Broadcast products updated event
       try {
         const allProducts = [...products, ...importedProducts];
         window.dispatchEvent(new CustomEvent('veloce_products_updated', { detail: allProducts }));
-        localStorage.setItem('veloce_products', JSON.stringify(allProducts));
       } catch (err) {
-        console.warn('Failed to sync imported products to cache:', err);
+        console.warn('Failed to broadcast updated products:', err);
       }
 
       setIsImporting(false);

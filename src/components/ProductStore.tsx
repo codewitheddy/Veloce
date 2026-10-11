@@ -5,7 +5,7 @@
 
 import React, { useState } from 'react';
 import { motion } from 'motion/react';
-import { Search, Filter, Star, Plus, Check, CheckCircle2, ShoppingBag, X, FileText, Sparkles, User, Heart, ArrowLeft, Tag, Share2, Clock, ArrowRightLeft, Twitter, Linkedin, Bell, Mail, ArrowUpDown, Package, Layers, ChevronLeft, ChevronRight, ChevronDown, ShoppingCart, FolderTree, Edit2, Edit3, Flame, ShieldCheck, SlidersHorizontal, RotateCcw } from 'lucide-react';
+import { Search, Filter, Star, Plus, Check, CheckCircle2, ShoppingBag, X, FileText, Sparkles, User, Heart, ArrowLeft, Tag, Share2, Clock, ArrowRightLeft, Twitter, Linkedin, Bell, Mail, ArrowUpDown, Package, Layers, ChevronLeft, ChevronRight, ChevronDown, ShoppingCart, FolderTree, Edit2, Edit3, Flame, ShieldCheck, SlidersHorizontal, RotateCcw, WifiOff } from 'lucide-react';
 import { Product, CartItem, Review } from '../types';
 import {
   isProductHiddenFromStorefront,
@@ -14,6 +14,7 @@ import {
   getSubcategoriesForCategory,
   getProductDiscountInfo,
   getCountryFlag,
+  checkProductHasVariants,
   resolveProductVariant,
   getProductColorImages,
   resolveColorHex,
@@ -232,7 +233,16 @@ export default function ProductStore({
           }
         });
       }
-      onAddToCart(product, 1, defaultVars);
+      const dInfo = getProductDiscountInfo(product);
+      const productToAdd: Product = {
+        ...product,
+        price: dInfo.currentPrice,
+        originalPrice: dInfo.originalPrice ?? product.originalPrice ?? (product as any).original_price,
+        original_price: dInfo.originalPrice ?? (product as any).original_price ?? product.originalPrice,
+        compareAtPrice: dInfo.originalPrice ?? product.compareAtPrice ?? (product as any).compare_at_price,
+        compare_at_price: dInfo.originalPrice ?? (product as any).compare_at_price ?? product.compareAtPrice,
+      };
+      onAddToCart(productToAdd, 1, defaultVars);
     }
   };
 
@@ -262,35 +272,37 @@ export default function ProductStore({
       const initialVars: Record<string, string> = {};
       const urlParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : new URLSearchParams();
 
-      const optionsList = selectedProduct.options || [];
-      const variantsList = selectedProduct.variantMatrix || selectedProduct.variants || [];
+      if (checkProductHasVariants(selectedProduct)) {
+        const optionsList = selectedProduct.options || [];
+        const variantsList = selectedProduct.variantMatrix || selectedProduct.variants || [];
 
-      if (optionsList.length > 0) {
-        optionsList.forEach((opt) => {
-          const key = opt.name.toLowerCase().trim().replace(/\s+/g, '_');
-          const paramVal = urlParams.get(key) || urlParams.get(opt.name);
-          if (paramVal && opt.values.some((v) => v.name.toLowerCase() === paramVal.toLowerCase())) {
-            const matched = opt.values.find((v) => v.name.toLowerCase() === paramVal.toLowerCase());
-            if (matched) initialVars[opt.name.toLowerCase()] = matched.name;
-          } else if (opt.values.length > 0) {
-            initialVars[opt.name.toLowerCase()] = opt.values[0].name;
+        if (optionsList.length > 0) {
+          optionsList.forEach((opt) => {
+            const key = opt.name.toLowerCase().trim().replace(/\s+/g, '_');
+            const paramVal = urlParams.get(key) || urlParams.get(opt.name);
+            if (paramVal && opt.values.some((v) => v.name.toLowerCase() === paramVal.toLowerCase())) {
+              const matched = opt.values.find((v) => v.name.toLowerCase() === paramVal.toLowerCase());
+              if (matched) initialVars[opt.name.toLowerCase()] = matched.name;
+            } else if (opt.values.length > 0) {
+              initialVars[opt.name.toLowerCase()] = opt.values[0].name;
+            }
+          });
+        } else if (variantsList.length > 0) {
+          const firstAvailable = variantsList.find((v) => v.active !== false && (v.stockQty > 0 || (v.stock ?? 0) > 0)) || variantsList[0];
+          if (firstAvailable?.attributes) {
+            Object.entries(firstAvailable.attributes).forEach(([k, val]) => {
+              const paramVal = urlParams.get(k.toLowerCase()) || urlParams.get(k);
+              initialVars[k.toLowerCase()] = paramVal || val;
+            });
           }
-        });
-      } else if (variantsList.length > 0) {
-        const firstAvailable = variantsList.find((v) => v.active !== false && (v.stockQty > 0 || (v.stock ?? 0) > 0)) || variantsList[0];
-        if (firstAvailable?.attributes) {
-          Object.entries(firstAvailable.attributes).forEach(([k, val]) => {
-            const paramVal = urlParams.get(k.toLowerCase()) || urlParams.get(k);
-            initialVars[k.toLowerCase()] = paramVal || val;
+        } else if (selectedProduct.variations) {
+          selectedProduct.variations.forEach((v) => {
+            if (v.options && v.options.length > 0) {
+              const paramVal = urlParams.get(v.name.toLowerCase()) || urlParams.get(v.name);
+              initialVars[v.name.toLowerCase()] = paramVal || v.options[0];
+            }
           });
         }
-      } else if (selectedProduct.variations) {
-        selectedProduct.variations.forEach((v) => {
-          if (v.options && v.options.length > 0) {
-            const paramVal = urlParams.get(v.name.toLowerCase()) || urlParams.get(v.name);
-            initialVars[v.name.toLowerCase()] = paramVal || v.options[0];
-          }
-        });
       }
       setSelectedVars(initialVars);
 
@@ -789,7 +801,18 @@ export default function ProductStore({
 
   const handleCartAdd = () => {
     if (!selectedProduct) return;
-    onAddToCart(selectedProduct, 1, selectedVars);
+    const activeVariant = resolveProductVariant(selectedProduct, selectedVars);
+    const dInfo = getProductDiscountInfo(selectedProduct, activeVariant);
+    const productToAdd: Product = {
+      ...selectedProduct,
+      price: dInfo.currentPrice,
+      originalPrice: dInfo.originalPrice ?? selectedProduct.originalPrice ?? (selectedProduct as any).original_price,
+      original_price: dInfo.originalPrice ?? (selectedProduct as any).original_price ?? selectedProduct.originalPrice,
+      compareAtPrice: dInfo.originalPrice ?? selectedProduct.compareAtPrice ?? (selectedProduct as any).compare_at_price,
+      compare_at_price: dInfo.originalPrice ?? (selectedProduct as any).compare_at_price ?? selectedProduct.compareAtPrice,
+      sku: activeVariant?.sku || selectedProduct.sku,
+    };
+    onAddToCart(productToAdd, 1, selectedVars);
     setAddedToCartToast(true);
     setDetailAddedIds((prev) => new Set(prev).add(selectedProduct.id));
     setTimeout(() => {
@@ -799,7 +822,18 @@ export default function ProductStore({
 
   const handleBulkAdd = () => {
     if (!selectedProduct) return;
-    onAddToCart(selectedProduct, 6, selectedVars);
+    const activeVariant = resolveProductVariant(selectedProduct, selectedVars);
+    const dInfo = getProductDiscountInfo(selectedProduct, activeVariant);
+    const productToAdd: Product = {
+      ...selectedProduct,
+      price: dInfo.currentPrice,
+      originalPrice: dInfo.originalPrice ?? selectedProduct.originalPrice ?? (selectedProduct as any).original_price,
+      original_price: dInfo.originalPrice ?? (selectedProduct as any).original_price ?? selectedProduct.originalPrice,
+      compareAtPrice: dInfo.originalPrice ?? selectedProduct.compareAtPrice ?? (selectedProduct as any).compare_at_price,
+      compare_at_price: dInfo.originalPrice ?? (selectedProduct as any).compare_at_price ?? selectedProduct.compareAtPrice,
+      sku: activeVariant?.sku || selectedProduct.sku,
+    };
+    onAddToCart(productToAdd, 6, selectedVars);
     setBulkAddedToast(true);
     setDetailAddedIds((prev) => new Set(prev).add(selectedProduct.id));
     setTimeout(() => {
@@ -811,7 +845,18 @@ export default function ProductStore({
     if (onViewCart) {
       onViewCart();
     } else if (onBuyNow && selectedProduct) {
-      onBuyNow(selectedProduct, 0, selectedVars);
+      const activeVariant = resolveProductVariant(selectedProduct, selectedVars);
+      const dInfo = getProductDiscountInfo(selectedProduct, activeVariant);
+      const productToAdd: Product = {
+        ...selectedProduct,
+        price: dInfo.currentPrice,
+        originalPrice: dInfo.originalPrice ?? selectedProduct.originalPrice ?? (selectedProduct as any).original_price,
+        original_price: dInfo.originalPrice ?? (selectedProduct as any).original_price ?? selectedProduct.originalPrice,
+        compareAtPrice: dInfo.originalPrice ?? selectedProduct.compareAtPrice ?? (selectedProduct as any).compare_at_price,
+        compare_at_price: dInfo.originalPrice ?? (selectedProduct as any).compare_at_price ?? selectedProduct.compareAtPrice,
+        sku: activeVariant?.sku || selectedProduct.sku,
+      };
+      onBuyNow(productToAdd, 0, selectedVars);
     } else {
       window.dispatchEvent(new CustomEvent('veloce_navigate_tab', { detail: 'checkout' }));
     }
@@ -957,7 +1002,7 @@ export default function ProductStore({
                     </div>
                     
                     <div className="absolute top-5 left-5 rounded-md bg-indigo-600/90 backdrop-blur-xs px-2.5 py-1 text-[10px] font-mono font-extrabold text-white uppercase tracking-wider border border-white/10 shadow-xs pointer-events-none select-none z-10">
-                      {selectedColorName ? `${selectedColorName} • ` : ''}{selectedProduct.type} Edition
+                      {selectedColorName || (selectedProduct.type && selectedProduct.type !== 'physical' ? `${selectedProduct.type} Edition` : selectedProduct.category || 'Official Collection')}
                     </div>
                     
                     <div className="absolute top-5 right-5 rounded-md bg-gray-950/75 backdrop-blur-xs px-2.5 py-1 text-[9px] font-medium text-white flex items-center gap-1 border border-white/10 shadow-xs pointer-events-none transition-all duration-300 group-hover:scale-95 group-hover:opacity-0 z-10">
@@ -1024,21 +1069,17 @@ export default function ProductStore({
           <div className="lg:col-span-7 flex flex-col gap-8">
             {(() => {
               const activeVariant = resolveProductVariant(selectedProduct, selectedVars);
-              const effectivePrice = activeVariant?.price !== undefined ? activeVariant.price : selectedProduct.price;
-              const effectiveCompareAt = activeVariant?.compareAtPrice !== undefined 
-                ? activeVariant.compareAtPrice 
-                : (selectedProduct.compareAtPrice || (selectedProduct as any).compare_at_price);
+              const discountInfo = getProductDiscountInfo(selectedProduct, activeVariant);
+              const effectivePrice = discountInfo.currentPrice;
+              const effectiveCompareAt = discountInfo.originalPrice;
+              const hasDiscount = discountInfo.hasDiscount;
+              const discountPercent = discountInfo.discountPercent;
               const effectiveStock = activeVariant?.stockQty !== undefined 
                 ? activeVariant.stockQty 
                 : (activeVariant?.stock !== undefined ? activeVariant.stock : selectedProduct.stock);
               const effectiveSku = activeVariant?.sku || selectedProduct.sku;
               const isVariantInactive = activeVariant ? activeVariant.active === false : false;
               const isOutOfStock = (selectedProduct.type === 'physical' && effectiveStock !== null && effectiveStock <= 0) || isVariantInactive;
-
-              const hasDiscount = Boolean(effectiveCompareAt && effectiveCompareAt > effectivePrice);
-              const discountPercent = hasDiscount && effectiveCompareAt
-                ? Math.round(((effectiveCompareAt - effectivePrice) / effectiveCompareAt) * 100)
-                : 0;
 
               // Helper to check if choosing a specific option value results in an out-of-stock combination
               const checkOptionValueStock = (optKey: string, valName: string) => {
@@ -1161,7 +1202,7 @@ export default function ProductStore({
               })()}
 
                   {/* Dynamic Variant Options (Color Swatches with Hex & Photo counts, Sizes with Sold Out status) */}
-                  {selectedProduct.options && selectedProduct.options.length > 0 ? (
+                  {checkProductHasVariants(selectedProduct) && selectedProduct.options && selectedProduct.options.length > 0 ? (
                     <div className="border-t border-indigo-50/50 dark:border-gray-800/50 pt-5 flex flex-col gap-4">
                       {selectedProduct.options.map((opt) => {
                         const optKey = opt.name.toLowerCase().trim().replace(/\s+/g, '_');
@@ -1245,7 +1286,7 @@ export default function ProductStore({
                         );
                       })}
                     </div>
-                  ) : selectedProduct.variantMatrix && selectedProduct.variantMatrix.length > 0 ? (
+                  ) : checkProductHasVariants(selectedProduct) && selectedProduct.variantMatrix && selectedProduct.variantMatrix.length > 0 ? (
                     <div className="border-t border-indigo-50/50 dark:border-gray-800/50 pt-5">
                       <h4 className="font-display text-[10px] font-bold uppercase tracking-wider text-indigo-700/85 dark:text-indigo-400 mb-3.5 font-mono flex items-center gap-1.5">
                         <Layers className="h-3.5 w-3.5 text-indigo-600" /> Select Product Variant & Measurements
@@ -1296,7 +1337,7 @@ export default function ProductStore({
                         })}
                       </div>
                     </div>
-                  ) : selectedProduct.variations && selectedProduct.variations.length > 0 ? (
+                  ) : checkProductHasVariants(selectedProduct) && selectedProduct.variations && selectedProduct.variations.length > 0 ? (
                     <div className="border-t border-indigo-50/50 dark:border-gray-800/50 pt-5">
                       <h4 className="font-display text-[10px] font-bold uppercase tracking-wider text-indigo-700/85 dark:text-indigo-400 mb-3.5 font-mono">Select Configuration Option</h4>
                       <div className="flex flex-col gap-4.5">
@@ -2817,10 +2858,16 @@ export default function ProductStore({
           {filteredProducts.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-20 text-center rounded-2xl border border-dashed border-gray-200 bg-gray-55/10 bg-gray-50 dark:bg-gray-900/40 dark:border-gray-800 p-6 animate-in fade-in">
               <div className="w-12 h-12 rounded-full bg-indigo-50 dark:bg-indigo-950 flex items-center justify-center mb-3 text-indigo-500">
-                <FolderTree className="w-6 h-6" />
+                {typeof navigator !== 'undefined' && !navigator.onLine && products.length === 0 ? (
+                  <WifiOff className="w-6 h-6 text-rose-500" />
+                ) : (
+                  <FolderTree className="w-6 h-6" />
+                )}
               </div>
               <h3 className="text-base font-bold text-gray-900 dark:text-white mb-1">
-                {activeType === 'sale'
+                {typeof navigator !== 'undefined' && !navigator.onLine && products.length === 0
+                  ? 'No Internet Connection'
+                  : activeType === 'sale'
                   ? 'No Products On Sale'
                   : activeCategory !== 'All'
                   ? `No Products in "${activeCategory}"`
@@ -2829,7 +2876,9 @@ export default function ProductStore({
                   : 'No Products Found'}
               </h3>
               <p className="text-gray-500 dark:text-gray-400 font-normal text-xs max-w-md">
-                {activeType === 'sale'
+                {typeof navigator !== 'undefined' && !navigator.onLine && products.length === 0
+                  ? 'Unable to connect to the live product catalog. Please check your internet connection and try again.'
+                  : activeType === 'sale'
                   ? 'There are currently no active promotional or discounted products under this category.'
                   : activeCategory !== 'All'
                   ? `We couldn't find any products currently assigned to "${activeCategory}". Check back soon or browse other categories.`
@@ -2838,31 +2887,42 @@ export default function ProductStore({
                   : 'No items matched your active search query or filter matrix.'}
               </p>
               <div className="flex items-center gap-3 mt-5">
-                {activeCategory !== 'All' && (
+                {typeof navigator !== 'undefined' && !navigator.onLine && products.length === 0 ? (
                   <button
-                    onClick={() => {
-                      setActiveCategory('All');
-                      setActiveSubcategory('All');
-                      if (onCategoryChange) onCategoryChange('All', 'All');
-                    }}
-                    className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-lg transition-colors cursor-pointer shadow-xs"
+                    onClick={() => window.location.reload()}
+                    className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-lg transition-colors cursor-pointer shadow-xs"
                   >
-                    View All Categories
+                    Retry Connection
                   </button>
+                ) : (
+                  <>
+                    {activeCategory !== 'All' && (
+                      <button
+                        onClick={() => {
+                          setActiveCategory('All');
+                          setActiveSubcategory('All');
+                          if (onCategoryChange) onCategoryChange('All', 'All');
+                        }}
+                        className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-lg transition-colors cursor-pointer shadow-xs"
+                      >
+                        View All Categories
+                      </button>
+                    )}
+                    <button
+                      onClick={() => {
+                        setSearch('');
+                        setActiveCategory('All');
+                        setActiveSubcategory('All');
+                        setActiveType('All');
+                        if (onCategoryChange) onCategoryChange('All', 'All');
+                        if (onFilterTypeChange) onFilterTypeChange('All');
+                      }}
+                      className="px-3.5 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 text-xs font-bold rounded-lg hover:bg-gray-50 dark:hover:bg-gray-750 transition-colors cursor-pointer"
+                    >
+                      Reset All Filters
+                    </button>
+                  </>
                 )}
-                <button
-                  onClick={() => {
-                    setSearch('');
-                    setActiveCategory('All');
-                    setActiveSubcategory('All');
-                    setActiveType('All');
-                    if (onCategoryChange) onCategoryChange('All', 'All');
-                    if (onFilterTypeChange) onFilterTypeChange('All');
-                  }}
-                  className="px-3.5 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 text-xs font-bold rounded-lg hover:bg-gray-50 dark:hover:bg-gray-750 transition-colors cursor-pointer"
-                >
-                  Reset All Filters
-                </button>
               </div>
             </div>
           ) : (
@@ -2936,9 +2996,11 @@ export default function ProductStore({
                                 </div>
                               );
                             })()}
-                            <div className="rounded bg-white/95 dark:bg-slate-900/95 backdrop-blur-sm px-1.5 py-0.5 font-mono text-[8px] sm:text-[9px] font-bold text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-800 uppercase shadow-xs w-fit">
-                              {product.type}
-                            </div>
+                            {product.type && product.type !== 'physical' && (
+                              <div className="rounded bg-white/95 dark:bg-slate-900/95 backdrop-blur-sm px-1.5 py-0.5 font-mono text-[8px] sm:text-[9px] font-bold text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-800 uppercase shadow-xs w-fit">
+                                {product.type}
+                              </div>
+                            )}
                             {product.paymentRestriction && product.paymentRestriction !== 'both' && (
                               <div className={`rounded ${
                                 product.paymentRestriction === 'prepaid'
@@ -3080,9 +3142,11 @@ export default function ProductStore({
                               </div>
                             );
                           })()}
-                          <div className="rounded bg-white/95 dark:bg-slate-900/95 backdrop-blur-sm px-1.5 py-0.5 font-mono text-[8px] sm:text-[9px] font-bold text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-800 uppercase shadow-xs w-fit">
-                            {product.type}
-                          </div>
+                          {product.type && product.type !== 'physical' && (
+                            <div className="rounded bg-white/95 dark:bg-slate-900/95 backdrop-blur-sm px-1.5 py-0.5 font-mono text-[8px] sm:text-[9px] font-bold text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-800 uppercase shadow-xs w-fit">
+                              {product.type}
+                            </div>
+                          )}
                           {product.paymentRestriction && product.paymentRestriction !== 'both' && (
                             <div className={`rounded ${
                               product.paymentRestriction === 'prepaid'
@@ -3361,9 +3425,11 @@ export default function ProductStore({
                       })()}
 
                       {/* Item Type Badge */}
-                      <span className="absolute bottom-2 left-2 rounded bg-white/95 dark:bg-gray-950/95 backdrop-blur-xs px-2 py-0.5 font-mono text-[8px] font-bold text-indigo-900 dark:text-indigo-300 border border-indigo-50 dark:border-gray-800 uppercase">
-                        {p.type}
-                      </span>
+                      {p.type && p.type !== 'physical' && (
+                        <span className="absolute bottom-2 left-2 rounded bg-white/95 dark:bg-gray-950/95 backdrop-blur-xs px-2 py-0.5 font-mono text-[8px] font-bold text-indigo-900 dark:text-indigo-300 border border-indigo-50 dark:border-gray-800 uppercase">
+                          {p.type}
+                        </span>
+                      )}
                     </div>
 
                     {/* Meta info */}

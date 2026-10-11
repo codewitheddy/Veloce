@@ -483,41 +483,73 @@ export interface ProductDiscountInfo {
   isOnSale: boolean;
 }
 
-export const getProductDiscountInfo = (product: Product | any): ProductDiscountInfo => {
+export const getProductDiscountInfo = (product: Product | any, variant?: any): ProductDiscountInfo => {
   if (!product) {
     return { hasDiscount: false, currentPrice: 0, originalPrice: null, discountPercent: 0, isOnSale: false };
   }
-  const currentPrice = Number(product.price || 0);
+
+  // If a specific variant is supplied, merge with fallback to product attributes
+  const target = variant ? {
+    ...product,
+    ...variant,
+    price: variant.price !== undefined && variant.price !== null ? Number(variant.price) : Number(product.price || 0),
+    compareAtPrice: variant.compareAtPrice ?? variant.compare_at_price ?? product.compareAtPrice ?? product.compare_at_price,
+    originalPrice: variant.originalPrice ?? variant.original_price ?? variant.compareAtPrice ?? product.originalPrice ?? product.original_price ?? product.compareAtPrice,
+  } : product;
+
+  let currentPrice = Number(target.price || 0);
 
   // Check for sale dates validity
   const now = Date.now();
-  if (product.saleEndAt && !isNaN(new Date(product.saleEndAt).getTime()) && new Date(product.saleEndAt).getTime() < now) {
+  if (target.saleEndAt && !isNaN(new Date(target.saleEndAt).getTime()) && new Date(target.saleEndAt).getTime() < now) {
     return { hasDiscount: false, currentPrice, originalPrice: null, discountPercent: 0, isOnSale: false };
   }
-  if (product.saleEndDate && !isNaN(new Date(product.saleEndDate).getTime()) && new Date(product.saleEndDate).getTime() < now) {
+  if (target.saleEndDate && !isNaN(new Date(target.saleEndDate).getTime()) && new Date(target.saleEndDate).getTime() < now) {
     return { hasDiscount: false, currentPrice, originalPrice: null, discountPercent: 0, isOnSale: false };
   }
-  if (product.saleStartAt && !isNaN(new Date(product.saleStartAt).getTime()) && new Date(product.saleStartAt).getTime() > now) {
+  if (target.saleStartAt && !isNaN(new Date(target.saleStartAt).getTime()) && new Date(target.saleStartAt).getTime() > now) {
     return { hasDiscount: false, currentPrice, originalPrice: null, discountPercent: 0, isOnSale: false };
   }
 
-  const rawOriginalPrice = 
-    product.previousPrice !== undefined && product.previousPrice !== null && Number(product.previousPrice) > currentPrice
-      ? Number(product.previousPrice)
-      : product.originalPrice !== undefined && product.originalPrice !== null && Number(product.originalPrice) > currentPrice
-      ? Number(product.originalPrice)
-      : product.original_price !== undefined && product.original_price !== null && Number(product.original_price) > currentPrice
-      ? Number(product.original_price)
-      : product.basePrice !== undefined && product.basePrice !== null && Number(product.basePrice) > currentPrice
-      ? Number(product.basePrice)
-      : null;
+  // Check if explicit salePrice is lower than standard price
+  const candidateSalePrice = target.salePrice !== undefined && target.salePrice !== null && target.salePrice !== ''
+    ? Number(target.salePrice)
+    : (target.sale_price !== undefined && target.sale_price !== null && target.sale_price !== '' ? Number(target.sale_price) : null);
 
+  const candidates: number[] = [];
+
+  if (candidateSalePrice !== null && !isNaN(candidateSalePrice) && candidateSalePrice > 0 && candidateSalePrice < currentPrice) {
+    candidates.push(currentPrice);
+    currentPrice = candidateSalePrice;
+  }
+
+  const potentialFields = [
+    target.compareAtPrice,
+    target.compare_at_price,
+    target.originalPrice,
+    target.original_price,
+    target.previousPrice,
+    target.previous_price,
+    target.basePrice,
+    target.base_price,
+  ];
+
+  for (const val of potentialFields) {
+    if (val !== undefined && val !== null && val !== '') {
+      const num = Number(val);
+      if (!isNaN(num) && num > currentPrice) {
+        candidates.push(num);
+      }
+    }
+  }
+
+  const rawOriginalPrice = candidates.length > 0 ? Math.max(...candidates) : null;
   const hasDiscount = Boolean(rawOriginalPrice && rawOriginalPrice > currentPrice && currentPrice > 0);
   const discountPercent = hasDiscount && rawOriginalPrice 
     ? Math.round(((rawOriginalPrice - currentPrice) / rawOriginalPrice) * 100)
     : 0;
 
-  const isOnSale = hasDiscount || (Boolean(product.isDailyDeal || product.onSale) && Boolean(rawOriginalPrice && rawOriginalPrice > currentPrice));
+  const isOnSale = hasDiscount || (Boolean(target.isDailyDeal || target.onSale || target.on_sale || target.is_on_sale) && Boolean(rawOriginalPrice && rawOriginalPrice > currentPrice));
 
   return {
     hasDiscount,
@@ -529,10 +561,36 @@ export const getProductDiscountInfo = (product: Product | any): ProductDiscountI
 };
 
 /**
+ * Check if a product explicitly has variants enabled
+ */
+export const checkProductHasVariants = (product: Product | null | undefined): boolean => {
+  if (!product) return false;
+  const anyProd = product as any;
+  if (
+    anyProd.hasVariants === false ||
+    anyProd.has_variants === false ||
+    anyProd.hasVariants === 0 ||
+    anyProd.has_variants === 0 ||
+    anyProd.hasVariants === 'false' ||
+    anyProd.has_variants === 'false'
+  ) {
+    return false;
+  }
+  return Boolean(
+    anyProd.hasVariants === true ||
+    anyProd.has_variants === true ||
+    anyProd.hasVariants === 1 ||
+    anyProd.has_variants === 1 ||
+    anyProd.hasVariants === 'true' ||
+    anyProd.has_variants === 'true'
+  );
+};
+
+/**
  * Find matching variant from product's variantMatrix or variants array
  */
 export const resolveProductVariant = (product: Product | null | undefined, selectedVars: Record<string, string> = {}) => {
-  if (!product) return null;
+  if (!product || !checkProductHasVariants(product)) return null;
   const matrix = product.variantMatrix || product.variants || [];
   if (matrix.length === 0) return null;
 
@@ -552,6 +610,12 @@ export const resolveProductVariant = (product: Product | null | undefined, selec
  */
 export const getProductColorImages = (product: Product | null | undefined, colorName?: string): string[] => {
   if (!product) return [];
+  if (!checkProductHasVariants(product)) {
+    if (product.images && product.images.length > 0) {
+      return product.images;
+    }
+    return product.imageUrl ? [product.imageUrl] : [];
+  }
   const colorMap = product.colorImages || (product as any).color_images || {};
   if (colorName) {
     // Try exact match and case-insensitive match

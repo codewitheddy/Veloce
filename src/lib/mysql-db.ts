@@ -9,6 +9,7 @@
 
 import mysql from 'mysql2/promise';
 import dotenv from 'dotenv';
+import { sanitizeProductImageFields } from './image-storage';
 import {
   Supplier,
   SupplierProduct,
@@ -945,6 +946,7 @@ export async function getMysqlProductById(id: string): Promise<any | null> {
 }
 
 export async function saveMysqlProduct(p: any): Promise<any> {
+  await sanitizeProductImageFields(p);
   const pool = await getDbPool();
   const id = p.id || `prod-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
   const now = new Date().toISOString();
@@ -2711,6 +2713,10 @@ export async function ensureDefaultCustomers(): Promise<void> {
 export async function ensureDefaultProducts(): Promise<void> {
   try {
     const existing = await getMysqlProducts();
+    if (existing && existing.length > 0) {
+      // Database already has live products; strictly do NOT inject hardcoded products
+      return;
+    }
     const existingIds = new Set(existing.map((p: any) => p.id));
 
     const DEFAULT_PRODUCTS: any[] = [

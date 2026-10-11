@@ -83,9 +83,21 @@ export function getEmailConfig(): EmailSystemConfig {
   const adminUrl = (process.env.ADMIN_URL || frontendUrl).replace(/\/+$/, '');
 
   const enabled = process.env.EMAIL_ENABLED !== 'false';
-  const isDev = process.env.NODE_ENV !== 'production';
-  const devMode = process.env.EMAIL_DEV_MODE !== undefined ? process.env.EMAIL_DEV_MODE === 'true' : isDev;
-  const devRedirectTo = process.env.EMAIL_DEV_REDIRECT_TO || (devMode ? replyTo : undefined);
+
+  // Determine production/live execution context
+  const isExplicitProd = process.env.NODE_ENV === 'production';
+  const isBundledServer = Boolean(process.argv[1]) && (process.argv[1].endsWith('.cjs') || process.argv[1].includes('dist'));
+  const isLiveDomain = Boolean(frontendUrl && !frontendUrl.includes('localhost') && !frontendUrl.includes('127.0.0.1'));
+  const isProduction = isExplicitProd || isBundledServer || isLiveDomain;
+
+  // CRITICAL FIX: devMode redirection must NEVER default to true in deployed/cPanel apps.
+  // Previously, if NODE_ENV was omitted or development in cPanel, devMode defaulted to true,
+  // which redirected customer order emails to the admin dev inbox, preventing customers from receiving emails.
+  // devMode is strictly false unless explicitly enabled with EMAIL_DEV_MODE=true and NOT on a live domain.
+  const explicitDevModeRequested = process.env.EMAIL_DEV_MODE === 'true';
+  const forceDevRedirect = process.env.FORCE_EMAIL_DEV_REDIRECT === 'true';
+  const devMode = explicitDevModeRequested && (!isProduction || forceDevRedirect);
+  const devRedirectTo = devMode ? (process.env.EMAIL_DEV_REDIRECT_TO || replyTo) : undefined;
 
   const digestEnabled = process.env.ADMIN_DIGEST_ENABLED !== 'false';
   const digestTimesRaw = process.env.ADMIN_DIGEST_TIMES || '08:00,17:00';

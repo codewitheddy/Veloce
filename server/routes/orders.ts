@@ -188,7 +188,7 @@ router.post('/', validateBody(CreateOrderSchema), async (req: Request, res: Resp
     const user = (!isGuestOrder && token) ? await extractUserFromToken(token) : null;
 
     // Derive customer info: Explicit checkout form details take top priority
-    const customerEmail = (orderData.customerEmail || orderData.customer_email || user?.email || '').trim().toLowerCase();
+    const customerEmail = (orderData.customerEmail || orderData.customer_email || orderData.email || user?.email || '').trim().toLowerCase();
     const customerName = (orderData.customerName || orderData.customer_name || (user ? `${user.first_name || ''} ${user.last_name || ''}`.trim() || user.username : 'Valued Customer')).trim();
     const customerPhone = (orderData.phone || orderData.customerPhone || orderData.customer_phone || user?.phone || '').trim();
 
@@ -272,6 +272,7 @@ router.post('/', validateBody(CreateOrderSchema), async (req: Request, res: Resp
       customer_name: customerName,
       customerEmail,
       customer_email: customerEmail,
+      email: customerEmail,
       phone: customerPhone,
       customerPhone,
       customer_phone: customerPhone,

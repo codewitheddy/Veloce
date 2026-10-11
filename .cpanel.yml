@@ -2,14 +2,35 @@
 # ==============================================================================
 # cPanel Git Version Control Automated Deployment Configuration (.cpanel.yml)
 # ==============================================================================
-# When pushing code via cPanel Git Version Control, tasks listed below are
-# automatically executed by cPanel's deployment engine.
+# When pushing or deploying via cPanel Git Version Control, tasks listed below
+# are automatically executed by cPanel's deployment engine.
+#
+# Default configuration deploys to public_html and prepares the Node.js application
+# environment with zero-downtime Phusion Passenger reloading.
 #
 # Customize DEPLOYPATH to match your cPanel username and destination directory:
-# Example: export DEPLOYPATH=/home/YOUR_CPANEL_USER/public_html/
+# Example for Node.js Application root: export DEPLOYPATH=$HOME/ropenix-app/
+# Example for Static HTML public:       export DEPLOYPATH=$HOME/public_html/
 # ==============================================================================
 deployment:
   tasks:
     - export DEPLOYPATH=$HOME/public_html/
-    - /bin/cp -R dist/* $DEPLOYPATH/
-    - /bin/cp public/.htaccess $DEPLOYPATH/.htaccess
+    # 1. Create necessary directory hierarchy
+    - /bin/mkdir -p $DEPLOYPATH/dist
+    - /bin/mkdir -p $DEPLOYPATH/public/uploads
+    - /bin/mkdir -p $DEPLOYPATH/tmp
+    # 2. Deploy compiled frontend assets and backend server bundle
+    - /bin/cp -R dist/* $DEPLOYPATH/dist/ 2>/dev/null || /bin/cp -R dist $DEPLOYPATH/
+    - /bin/cp -R public/* $DEPLOYPATH/public/ 2>/dev/null || /bin/cp -R public $DEPLOYPATH/
+    # 3. Deploy cPanel Passenger startup & package metadata
+    - /bin/cp app.cjs $DEPLOYPATH/app.cjs 2>/dev/null || true
+    - /bin/cp package.json $DEPLOYPATH/package.json 2>/dev/null || true
+    - /bin/cp package-lock.json $DEPLOYPATH/package-lock.json 2>/dev/null || true
+    # 4. Deploy Apache .htaccess for SPA routing & security
+    - /bin/cp public/.htaccess $DEPLOYPATH/.htaccess 2>/dev/null || true
+    # 5. Provide default .env.example if .env is missing
+    - test -f $DEPLOYPATH/.env || /bin/cp .env.cpanel.example $DEPLOYPATH/.env.example 2>/dev/null || true
+    # 6. Ensure uploads directory is writable
+    - /bin/chmod -R 775 $DEPLOYPATH/public/uploads 2>/dev/null || true
+    # 7. Zero-downtime Phusion Passenger restart trigger
+    - /bin/touch $DEPLOYPATH/tmp/restart.txt 2>/dev/null || true

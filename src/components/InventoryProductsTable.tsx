@@ -807,17 +807,17 @@ export default function InventoryProductsTable({
                             {product.name}
                           </span>
                           <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
-                            <span
-                              className={`inline-block px-1.5 py-0.2 rounded text-[9px] font-bold uppercase tracking-wider font-mono ${
-                                product.type === 'physical'
-                                  ? 'bg-slate-150 dark:bg-slate-800 text-slate-800 dark:text-slate-200'
-                                  : product.type === 'digital'
-                                  ? 'bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800'
-                                  : 'bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800'
-                              }`}
-                            >
-                              {product.type || 'physical'}
-                            </span>
+                            {product.type && product.type !== 'physical' && (
+                              <span
+                                className={`inline-block px-1.5 py-0.2 rounded text-[9px] font-bold uppercase tracking-wider font-mono ${
+                                  product.type === 'digital'
+                                    ? 'bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800'
+                                    : 'bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800'
+                                }`}
+                              >
+                                {product.type}
+                              </span>
+                            )}
                             {product.brand && (
                               <span className="text-[10px] text-indigo-700 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/60 px-1.5 py-0.2 rounded font-medium truncate max-w-[110px]">
                                 {product.brand}

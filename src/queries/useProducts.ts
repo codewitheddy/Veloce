@@ -88,6 +88,18 @@ export const useCreateProduct = () => {
       // Invalidate all product queries so the listing reflects the new product
       queryClient.invalidateQueries({ queryKey: queryKeys.products.lists() });
       queryClient.setQueryData(queryKeys.products.detail(newProduct.id), newProduct);
+      
+      // Notify other tabs of the new product
+      try {
+        localStorage.setItem('ropenix_product_mutation', JSON.stringify({
+          type: 'created',
+          productId: newProduct.id,
+          product: newProduct,
+          timestamp: Date.now(),
+        }));
+      } catch (e) {
+        // ignore
+      }
     },
   });
 };
@@ -104,6 +116,18 @@ export const useUpdateProduct = () => {
     onSuccess: (updatedProduct) => {
       queryClient.setQueryData(queryKeys.products.detail(updatedProduct.id), updatedProduct);
       queryClient.invalidateQueries({ queryKey: queryKeys.products.lists() });
+      
+      // Notify other tabs of the product update
+      try {
+        localStorage.setItem('ropenix_product_mutation', JSON.stringify({
+          type: 'updated',
+          productId: updatedProduct.id,
+          product: updatedProduct,
+          timestamp: Date.now(),
+        }));
+      } catch (e) {
+        // ignore
+      }
     },
   });
 };
@@ -119,6 +143,17 @@ export const useDeleteProduct = () => {
     onSuccess: (_, id) => {
       queryClient.removeQueries({ queryKey: queryKeys.products.detail(id) });
       queryClient.invalidateQueries({ queryKey: queryKeys.products.lists() });
+      
+      // Notify other tabs of the product deletion
+      try {
+        localStorage.setItem('ropenix_product_mutation', JSON.stringify({
+          type: 'deleted',
+          productId: id,
+          timestamp: Date.now(),
+        }));
+      } catch (e) {
+        // ignore
+      }
     },
   });
 };
@@ -135,8 +170,19 @@ export const useBulkProductAction = () => {
       action: 'archive' | 'delete' | 'update_status';
       status?: 'Active' | 'Inactive' | 'Draft' | 'Archived';
     }) => productsApi.bulkAction(payload),
-    onSuccess: () => {
+    onSuccess: (_, payload) => {
       queryClient.invalidateQueries({ queryKey: queryKeys.products.all });
+      
+      // Notify other tabs of the bulk action
+      try {
+        localStorage.setItem('ropenix_product_mutation', JSON.stringify({
+          type: 'bulk_' + payload.action,
+          productIds: payload.product_ids,
+          timestamp: Date.now(),
+        }));
+      } catch (e) {
+        // ignore
+      }
     },
   });
 };

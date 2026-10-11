@@ -313,7 +313,7 @@ export const RecentlyViewedSlider: React.FC<RecentlyViewedSliderProps> = ({
                         <span>-{discountPercent}%</span>
                       </span>
                     )}
-                    {product.type && (
+                    {product.type && product.type !== 'physical' && (
                       <span className="px-1.5 py-0.5 rounded text-[8.5px] font-mono font-bold bg-white/95 dark:bg-slate-900/95 text-slate-700 dark:text-slate-300 uppercase shadow-xs border border-slate-200/50 dark:border-slate-800/50 w-fit">
                         {product.type}
                       </span>

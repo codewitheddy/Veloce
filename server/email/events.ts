@@ -28,25 +28,31 @@ export function registerEmailEventListeners(): void {
     try {
       const shortId = order.id.startsWith('ROP-') ? order.id : `ROP-${order.id.slice(-6).toUpperCase()}`;
       const totalFormatted = formatKES(order.total);
+      const customerEmail = (order.customerEmail || (order as any).customer_email || (order as any).email || '').trim().toLowerCase();
+      const customerName = (order.customerName || (order as any).customer_name || 'Valued Customer').trim();
 
       // Customer confirmation
-      if (order.customerEmail) {
+      if (customerEmail && customerEmail.includes('@')) {
+        console.log(`[Email Events] 🛒 Enqueueing customer confirmation for order ${shortId} -> ${customerEmail}`);
         await enqueueEmail({
           emailType: 'order_confirmation',
-          recipient: order.customerEmail,
+          recipient: customerEmail,
           subject: `Order Confirmed: ${shortId} (${totalFormatted}) - Ropenix Collections`,
-          payload: order,
+          payload: { ...order, customerEmail, customerName },
           dedupeKey: `order_confirmation:${order.id}`,
         });
+      } else {
+        console.warn(`[Email Events] ⚠️ Order ${order.id} has no valid customerEmail ("${customerEmail}"). Customer confirmation email skipped.`);
       }
 
       // Admin alert
       if (adminEmail) {
+        console.log(`[Email Events] 🔔 Enqueueing admin alert for order ${shortId} -> ${adminEmail}`);
         await enqueueEmail({
           emailType: 'admin_new_order',
           recipient: adminEmail,
-          subject: `🔔 [NEW ORDER] ${shortId} by ${order.customerName} (${totalFormatted})`,
-          payload: order,
+          subject: `🔔 [NEW ORDER] ${shortId} by ${customerName} (${totalFormatted})`,
+          payload: { ...order, customerEmail, customerName },
           dedupeKey: `admin_new_order:${order.id}`,
         });
       }
@@ -68,14 +74,15 @@ export function registerEmailEventListeners(): void {
   }) => {
     try {
       const shortId = data.orderId.startsWith('ROP-') ? data.orderId : `ROP-${data.orderId.slice(-6).toUpperCase()}`;
+      const customerEmail = (data.customerEmail || (data as any).customer_email || (data as any).email || '').trim().toLowerCase();
 
       // Customer acknowledgment
-      if (data.customerEmail) {
+      if (customerEmail && customerEmail.includes('@')) {
         await enqueueEmail({
           emailType: 'payment_submission_received',
-          recipient: data.customerEmail,
+          recipient: customerEmail,
           subject: `Payment Claim Received: ${data.mpesaCode} for Order ${shortId}`,
-          payload: data,
+          payload: { ...data, customerEmail },
           dedupeKey: `payment_submitted_cust:${data.orderId}:${data.mpesaCode}`,
         });
       }
@@ -86,7 +93,7 @@ export function registerEmailEventListeners(): void {
           emailType: 'admin_payment_submitted',
           recipient: adminEmail,
           subject: `💰 [VERIFY PAYMENT] M-Pesa ${data.mpesaCode.toUpperCase()} for Order ${shortId}`,
-          payload: data,
+          payload: { ...data, customerEmail },
           dedupeKey: `payment_submitted_admin:${data.orderId}:${data.mpesaCode}`,
         });
       }
@@ -100,13 +107,14 @@ export function registerEmailEventListeners(): void {
     try {
       const shortId = order.id.startsWith('ROP-') ? order.id : `ROP-${order.id.slice(-6).toUpperCase()}`;
       const totalFormatted = formatKES(order.total);
+      const customerEmail = (order.customerEmail || (order as any).customer_email || (order as any).email || '').trim().toLowerCase();
 
-      if (order.customerEmail) {
+      if (customerEmail && customerEmail.includes('@')) {
         await enqueueEmail({
           emailType: 'payment_receipt',
-          recipient: order.customerEmail,
+          recipient: customerEmail,
           subject: `Payment Confirmed & Official Receipt: ${shortId} (${totalFormatted})`,
-          payload: order,
+          payload: { ...order, customerEmail },
           dedupeKey: `payment_receipt:${order.id}`,
         });
       }
@@ -124,13 +132,14 @@ export function registerEmailEventListeners(): void {
   }) => {
     try {
       const shortId = order.id.startsWith('ROP-') ? order.id : `ROP-${order.id.slice(-6).toUpperCase()}`;
+      const customerEmail = (order.customerEmail || (order as any).customer_email || (order as any).email || '').trim().toLowerCase();
 
-      if (order.customerEmail) {
+      if (customerEmail && customerEmail.includes('@')) {
         await enqueueEmail({
           emailType: 'payment_issue',
-          recipient: order.customerEmail,
+          recipient: customerEmail,
           subject: `Action Needed: Payment Verification Issue for Order ${shortId}`,
-          payload: order,
+          payload: { ...order, customerEmail },
           // Dedupe per timestamp to allow re-sending if subsequent issues occur
           dedupeKey: `payment_issue:${order.id}:${Date.now()}`,
         });
@@ -148,13 +157,14 @@ export function registerEmailEventListeners(): void {
   }) => {
     try {
       const shortId = order.id.startsWith('ROP-') ? order.id : `ROP-${order.id.slice(-6).toUpperCase()}`;
+      const customerEmail = (order.customerEmail || (order as any).customer_email || (order as any).email || '').trim().toLowerCase();
 
-      if (order.customerEmail) {
+      if (customerEmail && customerEmail.includes('@')) {
         await enqueueEmail({
           emailType: 'order_shipped',
-          recipient: order.customerEmail,
+          recipient: customerEmail,
           subject: `🚚 Your Order is on the Way: ${shortId}`,
-          payload: order,
+          payload: { ...order, customerEmail },
           dedupeKey: `order_shipped:${order.id}`,
         });
       }
@@ -167,13 +177,14 @@ export function registerEmailEventListeners(): void {
   emailEvents.on('order:delivered', async (order: OrderEmailData & { reviewUrl?: string }) => {
     try {
       const shortId = order.id.startsWith('ROP-') ? order.id : `ROP-${order.id.slice(-6).toUpperCase()}`;
+      const customerEmail = (order.customerEmail || (order as any).customer_email || (order as any).email || '').trim().toLowerCase();
 
-      if (order.customerEmail) {
+      if (customerEmail && customerEmail.includes('@')) {
         await enqueueEmail({
           emailType: 'order_delivered',
-          recipient: order.customerEmail,
+          recipient: customerEmail,
           subject: `🎉 Order Delivered: ${shortId} - Enjoy Your Items!`,
-          payload: order,
+          payload: { ...order, customerEmail },
           dedupeKey: `order_delivered:${order.id}`,
         });
       }
@@ -186,13 +197,14 @@ export function registerEmailEventListeners(): void {
   emailEvents.on('order:cancelled', async (order: OrderEmailData & { cancellationReason?: string }) => {
     try {
       const shortId = order.id.startsWith('ROP-') ? order.id : `ROP-${order.id.slice(-6).toUpperCase()}`;
+      const customerEmail = (order.customerEmail || (order as any).customer_email || (order as any).email || '').trim().toLowerCase();
 
-      if (order.customerEmail) {
+      if (customerEmail && customerEmail.includes('@')) {
         await enqueueEmail({
           emailType: 'order_cancelled',
-          recipient: order.customerEmail,
+          recipient: customerEmail,
           subject: `Order Cancellation Notice: ${shortId} - Ropenix Collections`,
-          payload: order,
+          payload: { ...order, customerEmail },
           dedupeKey: `order_cancelled:${order.id}`,
         });
       }
@@ -210,13 +222,14 @@ export function registerEmailEventListeners(): void {
     try {
       const shortId = order.id.startsWith('ROP-') ? order.id : `ROP-${order.id.slice(-6).toUpperCase()}`;
       const refundFormatted = formatKES(order.refundAmount);
+      const customerEmail = (order.customerEmail || (order as any).customer_email || (order as any).email || '').trim().toLowerCase();
 
-      if (order.customerEmail) {
+      if (customerEmail && customerEmail.includes('@')) {
         await enqueueEmail({
           emailType: 'refund_processed',
-          recipient: order.customerEmail,
+          recipient: customerEmail,
           subject: `Refund Processed: ${shortId} (${refundFormatted}) - Ropenix Collections`,
-          payload: order,
+          payload: { ...order, customerEmail },
           dedupeKey: `refund_processed:${order.id}:${order.refundReference || Date.now()}`,
         });
       }

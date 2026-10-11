@@ -93,12 +93,6 @@ export const ProductVariantManager: React.FC<ProductVariantManagerProps> = ({
     return colorOption ? colorOption.values : [];
   }, [colorOption]);
 
-  // Auto-enable variations if options, matrix, or color galleries exist
-  useEffect(() => {
-    if (!hasVariants && (options.length > 0 || variants.length > 0 || Object.keys(colorImages).length > 0)) {
-      onHasVariantsChange(true);
-    }
-  }, [hasVariants, options.length, variants.length, colorImages, onHasVariantsChange]);
 
   // Set default active color tab
   useEffect(() => {
@@ -175,11 +169,34 @@ export const ProductVariantManager: React.FC<ProductVariantManagerProps> = ({
       return;
     }
 
+    let defaultValues: OptionValue[] = [];
+    const lower = trimmed.toLowerCase();
+    if (lower === 'size') {
+      defaultValues = [
+        { id: `val-${Date.now()}-s`, name: 'S', position: 0 },
+        { id: `val-${Date.now()}-m`, name: 'M', position: 1 },
+        { id: `val-${Date.now()}-l`, name: 'L', position: 2 },
+        { id: `val-${Date.now()}-xl`, name: 'XL', position: 3 },
+      ];
+    } else if (lower === 'color' || lower === 'colour') {
+      defaultValues = [
+        { id: `val-${Date.now()}-black`, name: 'Black', hexColor: '#111827', hexCode: '#111827', hex_code: '#111827', position: 0 },
+        { id: `val-${Date.now()}-white`, name: 'White', hexColor: '#FFFFFF', hexCode: '#FFFFFF', hex_code: '#FFFFFF', position: 1 },
+        { id: `val-${Date.now()}-navy`, name: 'Navy', hexColor: '#1E3A8A', hexCode: '#1E3A8A', hex_code: '#1E3A8A', position: 2 },
+      ];
+    } else if (lower === 'material') {
+      defaultValues = [
+        { id: `val-${Date.now()}-cotton`, name: 'Cotton', position: 0 },
+        { id: `val-${Date.now()}-leather`, name: 'Leather', position: 1 },
+        { id: `val-${Date.now()}-wool`, name: 'Wool', position: 2 },
+      ];
+    }
+
     const newOpt: ProductOption = {
       id: `opt-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
       name: trimmed,
       position: options.length,
-      values: [],
+      values: defaultValues,
     };
 
     onOptionsChange([...options, newOpt]);
@@ -624,33 +641,51 @@ export const ProductVariantManager: React.FC<ProductVariantManagerProps> = ({
   return (
     <div className="space-y-6">
       {/* Master Toggle Bar */}
-      <div className="p-5 rounded-2xl bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white shadow-md flex items-center justify-between">
-        <div className="flex items-center gap-3.5">
-          <div className="p-3 bg-white/10 backdrop-blur-md rounded-xl border border-white/10 text-indigo-400">
-            <Layers className="h-6 w-6" />
+      <div
+        className={`p-4 sm:p-5 rounded-2xl border transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-4 ${
+          hasVariants
+            ? 'bg-gradient-to-r from-indigo-50/60 via-white to-indigo-50/40 border-indigo-200/80 shadow-2xs'
+            : 'bg-slate-50/70 border-slate-200 shadow-2xs'
+        }`}
+      >
+        <div className="flex items-start sm:items-center gap-3.5">
+          <div
+            className={`p-2.5 rounded-xl border shrink-0 transition-colors ${
+              hasVariants
+                ? 'bg-indigo-50 border-indigo-200 text-indigo-600'
+                : 'bg-white border-slate-200 text-slate-500'
+            }`}
+          >
+            <Layers className="h-5 w-5" />
           </div>
           <div>
-            <h3 className="text-base font-bold tracking-tight text-white flex items-center gap-2">
+            <h3 className="text-sm sm:text-base font-bold tracking-tight text-slate-900 flex items-center gap-2">
               Product Variants & Matrix Engine
-              <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-indigo-500/30 text-indigo-200 border border-indigo-400/20">
-                v2.0
+              <span
+                className={`px-2 py-0.5 rounded-md text-[10px] font-mono font-bold border transition-colors ${
+                  hasVariants
+                    ? 'bg-indigo-100 text-indigo-800 border-indigo-200'
+                    : 'bg-slate-100 text-slate-600 border-slate-200'
+                }`}
+              >
+                {hasVariants ? 'Active' : 'Disabled'}
               </span>
             </h3>
-            <p className="text-xs text-slate-300 mt-0.5 max-w-xl">
+            <p className="text-xs text-slate-500 mt-0.5 max-w-xl leading-relaxed">
               Configure options (Size, Color swatches), color-specific image galleries, and auto-generate the SKU variant pricing matrix.
             </p>
           </div>
         </div>
 
-        <label className="relative inline-flex items-center cursor-pointer select-none">
+        <label className="relative inline-flex items-center cursor-pointer select-none shrink-0 self-start sm:self-auto">
           <input
             type="checkbox"
             checked={hasVariants}
             onChange={(e) => onHasVariantsChange(e.target.checked)}
             className="sr-only peer"
           />
-          <div className="w-14 h-7 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:left-[4px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-6 after:w-6 after:transition-all peer-checked:bg-indigo-600"></div>
-          <span className="ml-3 text-xs font-mono font-bold text-white uppercase tracking-wider">
+          <div className="w-12 h-6 bg-slate-200 peer-focus:outline-hidden rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
+          <span className="ml-3 text-xs font-mono font-bold text-slate-700 uppercase tracking-wider">
             {hasVariants ? 'Enabled' : 'Disabled'}
           </span>
         </label>

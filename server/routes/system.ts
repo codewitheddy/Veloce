@@ -64,7 +64,8 @@ router.get('/postgres/status', async (_req: Request, res: Response) => {
 // ============================================================================
 router.post('/sqlite/purge-all', requireAdmin, async (_req: Request, res: Response) => {
   try {
-    await purgeAllSqliteData();
+    await purgeAllMysqlData();
+    await loadProductsCache(true);
     res.json({ success: true, message: 'All data purged cleanly from backend database.' });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Failed to purge database data.';
@@ -78,12 +79,9 @@ router.post('/sqlite/sync-push', requireAdmin, async (req: Request, res: Respons
     if (!payload || typeof payload !== 'object') {
       return res.status(400).json({ error: 'Invalid sync payload format.' });
     }
-    await pushSyncDataSqlite(payload);
+    await pushSyncData(payload);
     try {
       await loadProductsCache(true);
-    } catch (_) {}
-    try {
-      await pushSyncData(payload);
     } catch (_) {}
     res.json({ success: true, message: 'Database state successfully synchronized.' });
   } catch (error: unknown) {
@@ -94,12 +92,7 @@ router.post('/sqlite/sync-push', requireAdmin, async (req: Request, res: Respons
 
 router.get('/sqlite/sync-pull', optionalAuth, async (_req: Request, res: Response) => {
   try {
-    let data: any = null;
-    try {
-      data = await pullSyncDataSqlite();
-    } catch (_) {
-      data = await pullSyncData();
-    }
+    const data = await pullSyncData();
     res.json({ success: true, data });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Database pull sync failed.';

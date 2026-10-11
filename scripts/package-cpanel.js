@@ -136,6 +136,23 @@ async function run() {
   if (fs.existsSync(path.join(ROOT_DIR, 'veloce.sqlite'))) {
     fs.copyFileSync(path.join(ROOT_DIR, 'veloce.sqlite'), path.join(nodeDir, 'veloce.sqlite'));
   }
+  // Copy .cpanel.yml if available
+  if (fs.existsSync(path.join(ROOT_DIR, '.cpanel.yml'))) {
+    fs.copyFileSync(path.join(ROOT_DIR, '.cpanel.yml'), path.join(nodeDir, '.cpanel.yml'));
+  }
+  // Ensure public/uploads exists in bundle
+  const uploadsDir = path.join(nodeDir, 'public', 'uploads');
+  if (!fs.existsSync(uploadsDir)) {
+    fs.mkdirSync(uploadsDir, { recursive: true });
+  }
+  fs.writeFileSync(path.join(uploadsDir, '.gitkeep'), '');
+
+  // Ensure tmp/restart.txt exists for Phusion Passenger zero-downtime restarts
+  const tmpDir = path.join(nodeDir, 'tmp');
+  if (!fs.existsSync(tmpDir)) {
+    fs.mkdirSync(tmpDir, { recursive: true });
+  }
+  fs.writeFileSync(path.join(tmpDir, 'restart.txt'), '');
 
   // Generate primary and alias zips
   const ropenixFullstackZip = path.join(OUTPUT_DIR, 'ropenix_node_fullstack.zip');
@@ -156,6 +173,12 @@ async function run() {
   if (fs.existsSync(path.join(ROOT_DIR, 'public', '.htaccess'))) {
     fs.copyFileSync(path.join(ROOT_DIR, 'public', '.htaccess'), path.join(staticDir, '.htaccess'));
   }
+  // Ensure uploads directory exists in static bundle
+  const staticUploadsDir = path.join(staticDir, 'uploads');
+  if (!fs.existsSync(staticUploadsDir)) {
+    fs.mkdirSync(staticUploadsDir, { recursive: true });
+  }
+  fs.writeFileSync(path.join(staticUploadsDir, '.gitkeep'), '');
 
   const ropenixStaticZip = path.join(OUTPUT_DIR, 'ropenix_static_spa.zip');
   zipDirectory(staticDir, ropenixStaticZip);

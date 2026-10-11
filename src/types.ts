@@ -216,6 +216,9 @@ export interface Product {
   shippingClass?: 'standard' | 'fragile' | 'oversized';
   deliveryZones?: string[];
   relatedProducts?: string[];
+  createdAt?: string;
+  created_at?: string;
+  updatedAt?: string;
 }
 
 export interface CartItem {

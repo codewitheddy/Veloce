@@ -153,6 +153,27 @@ export async function uploadImageToCloudinary(
 ): Promise<CloudinaryUploadResult> {
   const folder = options.folder || 'veloce_products';
 
+  // Quick Path: For local development, use immediate local data URL (skip Cloudinary)
+  if (import.meta.env.DEV && typeof fileOrBase64 !== 'string') {
+    try {
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = reject;
+        reader.readAsDataURL(fileOrBase64);
+      });
+
+      return {
+        success: true,
+        url: dataUrl,
+        secureUrl: dataUrl,
+        isCloudinary: false,
+      };
+    } catch (err) {
+      console.warn('[Local Upload Fallback]:', err);
+    }
+  }
+
   // 1. Try Backend Upload API (/api/upload/cloudinary)
   try {
     let base64Payload = '';

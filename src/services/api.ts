@@ -239,18 +239,22 @@ export const mapBackendProductToFrontend = (item: any): any => {
   const parsedMatrix = parseJsonArray(item.variantMatrix || item.variant_matrix || item.variants);
   const parsedVars = parseJsonArray(item.variants || item.variantMatrix || item.variant_matrix);
 
-  const hasVarComputed = Boolean(
+  const explicitFalse = Boolean(
+    item.has_variants === false ||
+    item.hasVariants === false ||
+    item.has_variants === 0 ||
+    item.hasVariants === 0 ||
+    item.has_variants === 'false' ||
+    item.hasVariants === 'false'
+  );
+
+  const hasVarComputed = !explicitFalse && Boolean(
     item.has_variants === true ||
     item.hasVariants === true ||
     item.has_variants === 1 ||
     item.hasVariants === 1 ||
     item.has_variants === 'true' ||
-    item.hasVariants === 'true' ||
-    parsedOpts.length > 0 ||
-    parsedMatrix.length > 0 ||
-    parsedVars.length > 0 ||
-    parsedVariations.length > 0 ||
-    Object.keys(parsedColorImgs).length > 0
+    item.hasVariants === 'true'
   );
 
   return {
@@ -287,12 +291,24 @@ export const mapBackendProductToFrontend = (item: any): any => {
           : (item.agreed_cost_price !== undefined && item.agreed_cost_price !== null && item.agreed_cost_price !== ''
             ? Number(item.agreed_cost_price)
             : undefined))),
-    previousPrice: item.original_price !== undefined && item.original_price !== null 
-      ? (typeof item.original_price === 'string' ? parseFloat(item.original_price) : Number(item.original_price))
-      : (item.previousPrice !== undefined && item.previousPrice !== null ? Number(item.previousPrice) : undefined),
-    originalPrice: item.original_price !== undefined && item.original_price !== null 
-      ? (typeof item.original_price === 'string' ? parseFloat(item.original_price) : Number(item.original_price))
-      : (item.originalPrice !== undefined && item.originalPrice !== null ? Number(item.originalPrice) : (item.previousPrice !== undefined && item.previousPrice !== null ? Number(item.previousPrice) : undefined)),
+    previousPrice: (item.original_price || item.originalPrice || item.compareAtPrice || item.compare_at_price || item.previousPrice || item.previous_price) !== undefined
+      ? Number(item.original_price ?? item.originalPrice ?? item.compareAtPrice ?? item.compare_at_price ?? item.previousPrice ?? item.previous_price)
+      : undefined,
+    previous_price: (item.original_price || item.originalPrice || item.compareAtPrice || item.compare_at_price || item.previousPrice || item.previous_price) !== undefined
+      ? Number(item.original_price ?? item.originalPrice ?? item.compareAtPrice ?? item.compare_at_price ?? item.previousPrice ?? item.previous_price)
+      : null,
+    originalPrice: (item.original_price || item.originalPrice || item.compareAtPrice || item.compare_at_price || item.previousPrice || item.previous_price) !== undefined
+      ? Number(item.original_price ?? item.originalPrice ?? item.compareAtPrice ?? item.compare_at_price ?? item.previousPrice ?? item.previous_price)
+      : undefined,
+    original_price: (item.original_price || item.originalPrice || item.compareAtPrice || item.compare_at_price || item.previousPrice || item.previous_price) !== undefined
+      ? Number(item.original_price ?? item.originalPrice ?? item.compareAtPrice ?? item.compare_at_price ?? item.previousPrice ?? item.previous_price)
+      : null,
+    compareAtPrice: (item.compareAtPrice || item.compare_at_price || item.original_price || item.originalPrice || item.previousPrice || item.previous_price) !== undefined
+      ? Number(item.compareAtPrice ?? item.compare_at_price ?? item.original_price ?? item.originalPrice ?? item.previousPrice ?? item.previous_price)
+      : null,
+    compare_at_price: (item.compareAtPrice || item.compare_at_price || item.original_price || item.originalPrice || item.previousPrice || item.previous_price) !== undefined
+      ? Number(item.compareAtPrice ?? item.compare_at_price ?? item.original_price ?? item.originalPrice ?? item.previousPrice ?? item.previous_price)
+      : null,
     category: item.category || 'General',
     brand: item.brand || '',
     countryOfOrigin: item.country_of_origin || item.countryOfOrigin || '',
@@ -308,16 +324,21 @@ export const mapBackendProductToFrontend = (item: any): any => {
     rating: item.rating || 4.8,
     reviewsCount: item.reviewsCount || (Array.isArray(item.reviews) ? item.reviews.length : 0),
     reviews: Array.isArray(item.reviews) ? item.reviews : [],
+    features: Array.isArray(item.features)
+      ? item.features
+      : (typeof item.features === 'string' && item.features.startsWith('[')
+        ? parseJsonArray(item.features)
+        : (typeof item.features === 'string' && item.features.trim() ? item.features.split('\n').map((s: string) => s.trim()).filter(Boolean) : [])),
     status: item.status || 'Active',
     hasVariants: hasVarComputed,
     has_variants: hasVarComputed,
-    options: parsedOpts,
-    colorImages: parsedColorImgs,
-    color_images: parsedColorImgs,
-    variations: parsedVariations,
-    variantMatrix: parsedMatrix,
-    variant_matrix: parsedMatrix,
-    variants: parsedVars,
+    options: hasVarComputed ? parsedOpts : [],
+    colorImages: hasVarComputed ? parsedColorImgs : {},
+    color_images: hasVarComputed ? parsedColorImgs : {},
+    variations: hasVarComputed ? parsedVariations : [],
+    variantMatrix: hasVarComputed ? parsedMatrix : [],
+    variant_matrix: hasVarComputed ? parsedMatrix : [],
+    variants: hasVarComputed ? parsedVars : [],
     unitMeasurement: item.unit_measurement || item.unitMeasurement || '',
     unitValue: item.unit_value !== undefined ? item.unit_value : item.unitValue,
     weight: item.weight || '',
@@ -455,6 +476,11 @@ export const productService = {
       countryOfOrigin: productData.countryOfOrigin || productData.country_of_origin || '',
       country_of_origin: productData.country_of_origin || productData.countryOfOrigin || '',
       description: productData.description || '',
+      shortDescription: productData.shortDescription || productData.short_description || '',
+      detailedDescription: productData.detailedDescription || productData.detailed_description || productData.description || '',
+      features: Array.isArray(productData.features) ? productData.features : [],
+      specifications: productData.specifications || (Array.isArray(productData.specs) ? productData.specs.map((s: any) => ({ key: s.label, value: s.value })) : []),
+      whatsInTheBox: productData.whatsInTheBox || '',
       price: productData.price,
       original_price: originalPriceVal,
       previousPrice: originalPriceVal,
@@ -664,8 +690,9 @@ export const pushOrderToBackend = async (orderData: any) => {
     id: orderData.id || undefined,
     customerName: (orderData.customerName || orderData.customer_name || 'Customer').trim(),
     customer_name: (orderData.customerName || orderData.customer_name || 'Customer').trim(),
-    customerEmail: (orderData.customerEmail || orderData.customer_email || '').trim(),
-    customer_email: (orderData.customerEmail || orderData.customer_email || '').trim(),
+    customerEmail: (orderData.customerEmail || orderData.customer_email || orderData.email || '').trim(),
+    customer_email: (orderData.customerEmail || orderData.customer_email || orderData.email || '').trim(),
+    email: (orderData.customerEmail || orderData.customer_email || orderData.email || '').trim(),
     customerPhone: (orderData.phone || orderData.customerPhone || orderData.customer_phone || orderData.pickupContactPhone || '').trim(),
     customer_phone: (orderData.phone || orderData.customerPhone || orderData.customer_phone || orderData.pickupContactPhone || '').trim(),
     phone: (orderData.phone || orderData.customerPhone || orderData.customer_phone || orderData.pickupContactPhone || '').trim(),

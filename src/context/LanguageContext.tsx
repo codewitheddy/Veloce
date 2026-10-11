@@ -537,29 +537,80 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
   const syncGoogleTranslate = (lang: LanguageType) => {
     try {
       const gtLang = lang === 'zh' ? 'zh-CN' : lang;
+
+      // 1. Maintain cross-domain & local cookies so page reloads also stay in selected language
+      const domains = ['', `domain=${window.location.hostname};`, `domain=.${window.location.hostname};`];
       if (lang === 'en') {
-        document.cookie = 'googtrans=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
-        document.cookie = `googtrans=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/; domain=${window.location.hostname};`;
-        document.cookie = 'googtrans=/en/en; path=/;';
+        domains.forEach((dom) => {
+          document.cookie = `googtrans=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/; ${dom}`.trim();
+          document.cookie = `googtrans=/en/en; path=/; ${dom}`.trim();
+        });
       } else {
-        document.cookie = `googtrans=/en/${gtLang}; path=/;`;
-        document.cookie = `googtrans=/en/${gtLang}; path=/; domain=${window.location.hostname};`;
+        domains.forEach((dom) => {
+          document.cookie = `googtrans=/en/${gtLang}; path=/; ${dom}`.trim();
+        });
       }
 
-      const applyCombo = () => {
-        const combo = document.querySelector('.goog-te-combo') as HTMLSelectElement | null;
+      // 2. Direct DOM dispatch on Google Translate's select combo
+      const triggerCombo = (): boolean => {
+        const combo = (
+          document.querySelector('.goog-te-combo') ||
+          document.querySelector('#google_translate_element select')
+        ) as HTMLSelectElement | null;
+
         if (combo) {
-          combo.value = lang === 'en' ? '' : gtLang;
-          combo.dispatchEvent(new Event('change'));
+          const targetVal = lang === 'en' ? '' : gtLang;
+          combo.value = targetVal;
+
+          // Dispatch native change event with bubbles
+          combo.dispatchEvent(new Event('change', { bubbles: true, cancelable: true }));
+          combo.dispatchEvent(new Event('input', { bubbles: true }));
+          if (typeof (combo as any).onchange === 'function') {
+            try {
+              (combo as any).onchange();
+            } catch (_) {}
+          }
+
+          // If reverting back to English, also trigger Google's restore button if active
+          if (lang === 'en') {
+            try {
+              const frames = document.querySelectorAll(
+                'iframe.goog-te-banner-frame, iframe[id^=":"]'
+              ) as NodeListOf<HTMLIFrameElement>;
+              frames.forEach((frame) => {
+                try {
+                  const inner = frame.contentDocument || frame.contentWindow?.document;
+                  if (inner) {
+                    const buttons = inner.getElementsByTagName('button');
+                    for (let i = 0; i < buttons.length; i++) {
+                      if (buttons[i].id?.includes('restore') || buttons[i].className?.includes('restore')) {
+                        buttons[i].click();
+                        break;
+                      }
+                    }
+                  }
+                } catch (_) {}
+              });
+            } catch (_) {}
+          }
           return true;
+        }
+
+        // If widget element exists but combo hasn't rendered, attempt init
+        if (
+          typeof (window as any).googleTranslateElementInit === 'function' &&
+          (window as any).google?.translate
+        ) {
+          try {
+            (window as any).googleTranslateElementInit();
+          } catch (_) {}
         }
         return false;
       };
 
-      if (!applyCombo()) {
-        setTimeout(applyCombo, 300);
-        setTimeout(applyCombo, 800);
-        setTimeout(applyCombo, 1600);
+      if (!triggerCombo()) {
+        const delays = [25, 75, 150, 300, 600, 1200, 2500];
+        delays.forEach((delay) => setTimeout(triggerCombo, delay));
       }
     } catch (e) {
       console.warn('[Language Engine] Auto-translate dispatch error:', e);

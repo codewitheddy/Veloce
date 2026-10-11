@@ -132,16 +132,16 @@ export default function Footer({ setCurrentTab }: FooterProps) {
               <div className="mt-5 space-y-2 text-xs">
                 <a
                   href={`tel:${rawPhone}`}
-                  className="flex items-center gap-2.5 p-2.5 rounded-xl bg-[#000000] hover:bg-[#111111] border border-[#383838] hover:border-[#555555] transition-all text-[#FFFFFF] active:scale-[0.99] group cursor-pointer"
+                  className="flex items-center gap-2.5 p-2.5 rounded-xl bg-transparent transition-all text-[#FFFFFF] active:scale-[0.99] group cursor-pointer"
                 >
-                  <div className="h-7 w-7 rounded-lg bg-[#1a1a1a] text-indigo-400 flex items-center justify-center shrink-0 group-hover:bg-[#252525] transition-colors">
-                    <Phone className="h-3.5 w-3.5" />
+                  <div className="h-7 w-7 text-indigo-400 flex items-center justify-center shrink-0">
+                    <Phone className="h-4 w-4" />
                   </div>
                   <div className="min-w-0 flex-1">
                     <span className="block text-[10px] text-[#FFFFFF]/70 font-mono uppercase tracking-wider">
                       Direct Concierge
                     </span>
-                    <span className="font-mono text-xs font-bold text-[#FFFFFF] tracking-wide">
+                    <span className="font-mono text-xs font-bold text-[#FFFFFF] tracking-wide group-hover:text-indigo-300 transition-colors">
                       {supportPhone}
                     </span>
                   </div>
@@ -150,16 +150,16 @@ export default function Footer({ setCurrentTab }: FooterProps) {
 
                 <a
                   href={`mailto:${businessEmail}`}
-                  className="flex items-center gap-2.5 p-2.5 rounded-xl bg-[#000000] hover:bg-[#111111] border border-[#383838] hover:border-[#555555] transition-all text-[#FFFFFF] active:scale-[0.99] group cursor-pointer"
+                  className="flex items-center gap-2.5 p-2.5 rounded-xl bg-transparent transition-all text-[#FFFFFF] active:scale-[0.99] group cursor-pointer"
                 >
-                  <div className="h-7 w-7 rounded-lg bg-[#1a1a1a] text-indigo-400 flex items-center justify-center shrink-0 group-hover:bg-[#252525] transition-colors">
-                    <Mail className="h-3.5 w-3.5" />
+                  <div className="h-7 w-7 text-indigo-400 flex items-center justify-center shrink-0">
+                    <Mail className="h-4 w-4" />
                   </div>
                   <div className="min-w-0 flex-1">
                     <span className="block text-[10px] text-[#FFFFFF]/70 font-mono uppercase tracking-wider">
                       Email Inquiries
                     </span>
-                    <span className="text-xs font-semibold text-[#FFFFFF] truncate block">
+                    <span className="text-xs font-semibold text-[#FFFFFF] truncate block group-hover:text-indigo-300 transition-colors">
                       {businessEmail}
                     </span>
                   </div>
@@ -167,23 +167,11 @@ export default function Footer({ setCurrentTab }: FooterProps) {
                 </a>
 
                 <div className="flex items-start gap-2.5 p-2.5 rounded-xl bg-transparent text-[#FFFFFF]/80 text-xs">
-                  <MapPin className="h-4 w-4 text-indigo-400 shrink-0 mt-0.5" />
+                  <div className="h-7 w-7 text-indigo-400 flex items-center justify-center shrink-0 pt-0.5">
+                    <MapPin className="h-4 w-4" />
+                  </div>
                   <span className="leading-snug">{physicalAddress}</span>
                 </div>
-              </div>
-
-              {/* Direct WhatsApp Concierge Button */}
-              <div className="mt-4">
-                <a
-                  href={whatsappUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  aria-label="Chat with Ropenix concierge on WhatsApp"
-                  className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl bg-[#000000] hover:bg-[#111111] border border-[#383838] hover:border-[#25D366] text-[#FFFFFF] font-bold text-xs shadow-md transition-all active:scale-[0.98] cursor-pointer group"
-                >
-                  <WhatsAppIcon className="h-4.5 w-4.5 text-[#25D366] group-hover:scale-110 transition-transform" />
-                  <span>WhatsApp Fast Support</span>
-                </a>
               </div>
             </div>
 

@@ -4,12 +4,111 @@ import {
   QueryClientProvider,
   QueryCache,
   MutationCache,
+  QueryFunction,
 } from '@tanstack/react-query';
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 import { AxiosError } from 'axios';
 import { queryKeys } from '../queries/keys';
 import { handleQueryError, handleMutationError } from '../queries/errorHandler';
 import { ToastContainer } from '../components/ui/ToastNotification';
+import { useProductSync } from '../hooks/useProductSync';
+import { productsApi } from '../api/products';
+import { categoriesApi } from '../api/categories';
+import { ordersApi } from '../api/orders';
+import { reviewsApi } from '../api/reviews';
+import { usersApi } from '../api/users';
+import { wishlistApi } from '../api/wishlist';
+import { cartApi } from '../api/cart';
+
+/**
+ * Internal component that activates product sync
+ * Must be inside QueryClientProvider context
+ */
+const ProductSyncActivator: React.FC<{ children: ReactNode }> = ({ children }) => {
+  // Activate product sync with polling
+  useProductSync({
+    enabled: true,
+    pollIntervalMs: 10000, // Poll every 10 seconds
+    enableConsoleLogging: import.meta.env.DEV,
+  });
+
+  return <>{children}</>;
+};
+
+/**
+ * Default Query Function to resolve cached or invalidated queries
+ * that were initialized without an explicit queryFn (e.g. via setQueryData).
+ */
+export const defaultQueryFn: QueryFunction = async ({ queryKey }) => {
+  if (!Array.isArray(queryKey) || queryKey.length === 0) {
+    throw new Error(`Invalid queryKey: ${JSON.stringify(queryKey)}`);
+  }
+
+  const [domain, action, param] = queryKey;
+
+  // Products
+  if (domain === 'products') {
+    if (action === 'detail' && typeof param === 'string' && param.length > 0) {
+      return productsApi.getProduct(param);
+    }
+    if (action === 'list' || action === 'infinite') {
+      return productsApi.getProducts(param as any);
+    }
+  }
+
+  // Categories
+  if (domain === 'categories') {
+    if (action === 'list') {
+      return categoriesApi.getCategories();
+    }
+    if (action === 'detail' && typeof param === 'string' && param.length > 0) {
+      return categoriesApi.getCategory(param);
+    }
+  }
+
+  // Reviews
+  if (domain === 'reviews') {
+    if (action === 'list' && typeof param === 'string' && param.length > 0) {
+      return reviewsApi.getProductReviews(param);
+    }
+  }
+
+  // Orders
+  if (domain === 'orders') {
+    if (action === 'list') {
+      return ordersApi.getOrders(param as any);
+    }
+    if (action === 'detail' && typeof param === 'string' && param.length > 0) {
+      return ordersApi.getOrder(param);
+    }
+  }
+
+  // Users & Profile
+  if (domain === 'users') {
+    if (action === 'me') {
+      return usersApi.getMe();
+    }
+    if (action === 'notifications') {
+      return usersApi.getNotifications();
+    }
+  }
+
+  // Wishlist
+  if (domain === 'wishlist') {
+    if (action === 'list') {
+      return wishlistApi.getWishlist();
+    }
+  }
+
+  // Cart
+  if (domain === 'cart') {
+    if (action === 'items') {
+      return cartApi.getCart(param !== 'guest' ? (param as string) : undefined);
+    }
+  }
+
+  throw new Error(`Missing queryFn for queryKey: '${JSON.stringify(queryKey)}'`);
+};
 
 /**
  * Creates and configures a production-grade QueryClient tailored for eCommerce operations.
@@ -38,6 +137,7 @@ export const createQueryClient = (): QueryClient => {
     }),
     defaultOptions: {
       queries: {
+        queryFn: defaultQueryFn,
         // 5 minutes stale time for catalog items (prevents unnecessary re-fetching on rapid navigation)
         staleTime: 1000 * 60 * 5,
         // Keep inactive cache items for 15 minutes in memory
@@ -90,11 +190,13 @@ interface QueryProviderProps {
 export const QueryProvider: React.FC<QueryProviderProps> = ({ children, client = queryClient }) => {
   return (
     <QueryClientProvider client={client}>
-      {children}
-      <ToastContainer />
-      {import.meta.env.DEV && (
-        <ReactQueryDevtools initialIsOpen={false} buttonPosition="bottom-right" />
-      )}
+      <ProductSyncActivator>
+        {children}
+        <ToastContainer />
+        {import.meta.env.DEV && (
+          <ReactQueryDevtools initialIsOpen={false} buttonPosition="bottom-right" />
+        )}
+      </ProductSyncActivator>
     </QueryClientProvider>
   );
 };

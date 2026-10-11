@@ -733,7 +733,7 @@ export default function CheckoutFlow({
   const originalSubtotal = cart.reduce((acc, item) => acc + item.product.price * item.quantity, 0);
   const catalogPreSaleRetailTotal = cart.reduce((acc, item) => {
     const dInfo = getProductDiscountInfo(item.product);
-    const regPrice = dInfo.isOnSale && dInfo.originalPrice && dInfo.originalPrice > item.product.price
+    const regPrice = (dInfo.hasDiscount || dInfo.isOnSale) && dInfo.originalPrice && dInfo.originalPrice > item.product.price
       ? dInfo.originalPrice
       : item.product.price;
     return acc + regPrice * item.quantity;
@@ -2656,6 +2656,9 @@ _Hello Ropenix Team, I would like to place and confirm this order!_`;
                 const isLowStock = stockData?.isLowStock || (item.product.stock !== null && item.product.stock > 0 && item.product.stock <= 5);
                 const priceHist = sync.priceHistory[item.product.id];
                 const hasPriceChanged = Boolean(priceHist && priceHist.oldPrice !== item.product.price);
+                const dInfo = getProductDiscountInfo(item.product);
+                const hasItemDiscount = Boolean(dInfo.hasDiscount && dInfo.originalPrice && dInfo.originalPrice > item.product.price);
+                const effectiveOriginalPrice = hasItemDiscount ? (dInfo.originalPrice as number) : null;
 
                 return (
                   <div
@@ -2707,7 +2710,23 @@ _Hello Ropenix Team, I would like to place and confirm this order!_`;
                               </span>
                             )}
                           </div>
-                          {specsText ? (
+                          {hasItemDiscount && effectiveOriginalPrice ? (
+                            <div className="flex items-center gap-1.5 mt-0.5 font-mono text-[10px]">
+                              <span className="text-gray-400 dark:text-gray-500 line-through">
+                                {formatPrice(effectiveOriginalPrice, currency)}
+                              </span>
+                              <span className="font-semibold text-indigo-700 dark:text-indigo-400">
+                                {formatPrice(item.product.price, currency)}
+                              </span>
+                              <span className="text-gray-400 dark:text-gray-500 font-sans">each</span>
+                              {specsText && (
+                                <>
+                                  <span className="text-gray-300">•</span>
+                                  <span className="text-gray-500 truncate max-w-[120px]">{specsText}</span>
+                                </>
+                              )}
+                            </div>
+                          ) : specsText ? (
                             <p className="text-[10px] text-gray-400 mt-0.5 truncate">{specsText}</p>
                           ) : (
                             <p className="text-[10px] text-gray-400 mt-0.5">{item.product.category || 'Luxury Collection'}</p>
@@ -2715,14 +2734,23 @@ _Hello Ropenix Team, I would like to place and confirm this order!_`;
                         </div>
 
                         <div className="text-right shrink-0">
-                          {hasPriceChanged && (
+                          {hasItemDiscount && effectiveOriginalPrice ? (
+                            <span className="block line-through text-[10px] text-gray-400 font-mono">
+                              {formatPrice(effectiveOriginalPrice * item.quantity, currency)}
+                            </span>
+                          ) : hasPriceChanged ? (
                             <span className="block line-through text-[10px] text-gray-400 font-mono">
                               {formatPrice(priceHist.oldPrice * item.quantity, currency)}
                             </span>
-                          )}
+                          ) : null}
                           <span className={`font-mono text-xs font-bold ${hasPriceChanged ? 'text-amber-600' : 'text-gray-900'}`}>
                             {formatPrice(item.product.price * item.quantity, currency)}
                           </span>
+                          {hasItemDiscount && dInfo.discountPercent > 0 && (
+                            <span className="inline-block mt-0.5 rounded bg-rose-50 border border-rose-200 px-1 py-0.2 text-[9px] font-mono font-bold text-rose-700">
+                              -{dInfo.discountPercent}%
+                            </span>
+                          )}
                         </div>
                       </div>
 
@@ -2861,10 +2889,24 @@ _Hello Ropenix Team, I would like to place and confirm this order!_`;
 
             {/* Financial Lines */}
             <div className="pt-4 border-t border-gray-100 space-y-2.5 text-xs text-gray-600">
+              {promotionalMarkdownSavings > 0 && (
+                <div className="flex justify-between text-gray-500">
+                  <span>Original Value</span>
+                  <span className="font-mono line-through">{formatPrice(catalogPreSaleRetailTotal, currency)}</span>
+                </div>
+              )}
+
               <div className="flex justify-between">
                 <span>Subtotal</span>
                 <span className="font-mono text-gray-900 font-semibold">{formatPrice(subtotal, currency)}</span>
               </div>
+
+              {promotionalMarkdownSavings > 0 && (
+                <div className="flex justify-between text-rose-600 font-medium">
+                  <span>Catalog Promotional Savings</span>
+                  <span className="font-mono">-{formatPrice(promotionalMarkdownSavings, currency)}</span>
+                </div>
+              )}
 
               {discountAmount > 0 && (
                 <div className="flex justify-between text-emerald-600 font-medium">

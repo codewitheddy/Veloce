@@ -14,9 +14,12 @@ const path = require('path');
 const fs = require('fs');
 const http = require('http');
 
-// 1. Guarantee production mode in cPanel environment
+// 1. Guarantee production mode and disable dev email hijacking in cPanel environment
 if (!process.env.NODE_ENV) {
   process.env.NODE_ENV = 'production';
+}
+if (!process.env.EMAIL_DEV_MODE) {
+  process.env.EMAIL_DEV_MODE = 'false';
 }
 
 // 2. Ensure current working directory is anchored to the application root

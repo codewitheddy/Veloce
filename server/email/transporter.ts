@@ -84,14 +84,19 @@ export async function sendRawMail(options: SendMailOptions): Promise<SendMailRes
   let targetRecipient = rawRecipient;
   let devModeRedirected = false;
 
-  // In development mode, protect real user inboxes by redirecting or logging
-  if (config.behavior.devMode) {
+  // In development mode, protect real user inboxes ONLY if devMode is explicitly enabled
+  // with an explicit dev redirect target and NOT in production
+  if (config.behavior.devMode && config.behavior.devRedirectTo) {
     const isTestAccount = rawRecipient.includes('ropenix') || rawRecipient.includes('admin') || rawRecipient.includes('localhost');
-    if (!isTestAccount && config.behavior.devRedirectTo) {
+    if (!isTestAccount) {
       targetRecipient = config.behavior.devRedirectTo;
       devModeRedirected = true;
       console.log(`[Email Dev Mode] 🛡️ Redirecting email originally destined for <${rawRecipient}> to dev inbox: <${targetRecipient}>`);
+    } else {
+      console.log(`[Email Dev Mode] 🧪 Test account match: sending directly to <${targetRecipient}>`);
     }
+  } else {
+    console.log(`[Email Dispatch] 📤 Dispatching "${options.subject}" directly to recipient: <${targetRecipient}>`);
   }
 
   const mailOptions: nodemailer.SendMailOptions = {

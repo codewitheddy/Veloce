@@ -450,7 +450,20 @@
    Google Translate Seamless Auto-Translation Integration & Widget Resets
    ============================================================================== */
 #google_translate_element {
-  display: none !important;
+  position: fixed !important;
+  top: -9999px !important;
+  left: -9999px !important;
+  width: 1px !important;
+  height: 1px !important;
+  overflow: hidden !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+  z-index: -9999 !important;
+}
+
+body {
+  top: 0 !important;
+  position: static !important;
 }
 
 .goog-te-banner-frame,
@@ -458,7 +471,6 @@
 iframe.goog-te-banner-frame,
 iframe.skiptranslate,
 iframe[id^=":"],
-.skiptranslate:not(.allow-display),
 #goog-gt-tt,
 .goog-te-balloon-frame,
 .VIpgJd-yAWdnf-hSRGPd {

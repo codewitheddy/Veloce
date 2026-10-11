@@ -28,6 +28,7 @@ import ProductImageUpload from './ProductImageUpload';
 import { ProductFormEditor, generateSlug } from './ProductFormEditor';
 import { getSubcategoriesForCategory } from '../utils/productUtils';
 import { ShippingSettingsPanel } from './ShippingSettingsPanel';
+import SimplifiedAnalytics from './SimplifiedAnalytics';
 import { SiteSettingsPanel } from './SiteSettingsPanel';
 import AdminHeroSliderManager from './AdminHeroSliderManager';
 import { CategoryManagementPanel } from './CategoryManagementPanel';
@@ -412,6 +413,9 @@ export default function DashboardAnalytics({
         }
         if (Array.isArray(d.veloce_products)) {
           setLiveDbProducts(d.veloce_products);
+          if (onProductsUpdated) {
+            onProductsUpdated(d.veloce_products);
+          }
         }
 
         setLastLiveDbSyncTime(new Date().toLocaleTimeString());
@@ -421,7 +425,7 @@ export default function DashboardAnalytics({
     } finally {
       setIsLiveDbFetching(false);
     }
-  }, []);
+  }, [onProductsUpdated]);
 
   const [djangoApiUrl, setDjangoApiUrl] = useState<string>(() => {
     return localStorage.getItem('veloce_django_api_url') || '';
@@ -530,7 +534,7 @@ export default function DashboardAnalytics({
         const fetchedProducts = await fetchProducts();
         if (Array.isArray(fetchedProducts)) {
           setLiveDbProducts(fetchedProducts);
-          safeLocalStorageSetItem('veloce_products', JSON.stringify(fetchedProducts));
+          localStorage.removeItem('veloce_products');
           localStorage.removeItem('veloce_cleared_simulated_data');
           window.dispatchEvent(new CustomEvent('veloce_products_updated', { detail: fetchedProducts }));
         }
@@ -567,7 +571,6 @@ export default function DashboardAnalytics({
       localStorage.removeItem('veloce_clicklogs');
       localStorage.removeItem('veloce_payout_logs');
       localStorage.removeItem('veloce_wishlist');
-      safeLocalStorageSetItem('veloce_products', JSON.stringify([]));
       safeLocalStorageSetItem('veloce_orders', JSON.stringify([]));
       safeLocalStorageSetItem('veloce_affiliates', JSON.stringify([]));
 
@@ -594,8 +597,18 @@ export default function DashboardAnalytics({
     return () => clearInterval(interval);
   }, [fetchLiveDatabaseMetrics]);
 
-  const effectiveOrders = liveDbOrders || orders;
-  const effectiveProducts = liveDbProducts || products;
+  React.useEffect(() => {
+    const handleProductsUpdated = (e: any) => {
+      if (e.detail && Array.isArray(e.detail)) {
+        setLiveDbProducts(e.detail);
+      }
+    };
+    window.addEventListener('veloce_products_updated', handleProductsUpdated);
+    return () => window.removeEventListener('veloce_products_updated', handleProductsUpdated);
+  }, []);
+
+  const effectiveOrders = liveDbOrders !== null ? liveDbOrders : orders;
+  const effectiveProducts = liveDbProducts !== null ? liveDbProducts : products;
 
   // Custom Date Range filter states for Performance Analytics
   const [analyticsDateRange, setAnalyticsDateRange] = useState<{ start: string; end: string } | null>(null);
@@ -1416,7 +1429,7 @@ export default function DashboardAnalytics({
             
             const payload = data.data;
             Object.keys(payload).forEach(key => {
-              if (payload[key] !== null && payload[key] !== undefined) {
+              if (key !== 'veloce_products' && payload[key] !== null && payload[key] !== undefined) {
                 localStorage.setItem(key, typeof payload[key] === 'object' ? JSON.stringify(payload[key]) : String(payload[key]));
               }
             });
@@ -2032,7 +2045,9 @@ admin@ropenix.co.ke`;
     };
 
     onAddProduct(newProduct);
+    setLiveDbProducts((prev) => [newProduct, ...(prev ? prev.filter((p) => p.id !== newProduct.id) : [])]);
     setShowAddProdPage(false);
+    setAdminSubTab('products');
 
     // Reset forms
     setNewProdName('');
@@ -2821,11 +2836,12 @@ admin@ropenix.co.ke`;
   };
 
   if (editingProduct || showAddProdPage) {
+    const currentProdToEdit = showAddProdPage ? null : editingProduct;
     return (
       <div className="w-full h-full flex-1 min-h-0 overflow-y-auto overflow-x-hidden bg-slate-50/50" id="product-form-scroll-viewport">
         <ProductFormEditor
-        key={editingProduct ? `edit-prod-${editingProduct.id}` : 'add-prod-new'}
-        initialProduct={editingProduct}
+        key={currentProdToEdit ? `edit-prod-${currentProdToEdit.id}` : 'add-prod-new'}
+        initialProduct={currentProdToEdit}
         allProducts={products}
         categories={customCategories.map((c, i) => ({ id: String(i + 1), name: c }))}
         currentUserRole="super_admin"
@@ -2855,6 +2871,7 @@ admin@ropenix.co.ke`;
                 );
             }
             setEditingProduct(null);
+            setLiveDbProducts((prev) => (prev ? prev.map((p) => (p.id === editingProduct.id ? { ...p, ...savedProduct } : p)) : null));
             setAdminSubTab('products');
             try {
               localStorage.removeItem('veloce_admin_editing_product_id');
@@ -2862,6 +2879,7 @@ admin@ropenix.co.ke`;
             } catch {}
           } else {
             onAddProduct(savedProduct);
+            setLiveDbProducts((prev) => [savedProduct, ...(prev ? prev.filter((p) => p.id !== savedProduct.id) : [])]);
             setShowAddProdPage(false);
             setAdminSubTab('products');
             try {
@@ -5536,7 +5554,7 @@ admin@ropenix.co.ke`;
                 buttonId: 'btn-tab-inventory',
                 label: 'Inventory',
                 icon: Package,
-                badge: `${products.length}`,
+                badge: `${effectiveProducts.length}`,
                 badgeType: 'count',
                 iconColor: 'text-indigo-500',
               },
@@ -5582,7 +5600,7 @@ admin@ropenix.co.ke`;
                 buttonId: 'btn-tab-orders',
                 label: 'Orders',
                 icon: ShoppingBag,
-                badge: `${orders.length}`,
+                badge: `${effectiveOrders.length}`,
                 badgeType: 'count',
                 iconColor: 'text-indigo-500',
               },
@@ -5920,925 +5938,21 @@ admin@ropenix.co.ke`;
 
       {/* Dashboard Sub-content */}
       {adminSubTab === 'analytics' && (
-        <div className="mt-8 flex flex-col gap-8">
-          {/* Low Stock Alerts Banner */}
-          {lowStockProducts.length > 0 && (
-            <div className="rounded-xl border border-red-100 bg-red-50/70 p-4 shadow-3xs animate-in fade-in duration-200">
-              <div className="flex items-start gap-4 flex-col md:flex-row">
-                <div className="rounded-lg bg-red-100 p-2 text-red-700 shrink-0">
-                  <AlertTriangle className="h-5 w-5 animate-pulse" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <h4 className="text-sm font-bold text-red-900 font-sans tracking-tight">Active Low-Stock Alerts ({lowStockProducts.length})</h4>
-                  <p className="text-xs text-red-750 font-normal mt-0.5">
-                    The following proprietary items have dropped below their individual minimum threshold settings. Please reorder stock or configure thresholds inside Inventory.
-                  </p>
-                  
-                  <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
-                    {lowStockProducts.map((p) => {
-                      const limit = p.lowStockThreshold ?? 5;
-                      return (
-                        <div key={p.id} className="flex justify-between items-center bg-white rounded-lg p-3 border border-red-100/50 text-xs shadow-2xs hover:border-red-200 transition-colors">
-                          <div className="truncate pr-2">
-                            <span className="font-mono text-[9px] font-bold text-gray-400 block tracking-wider leading-none uppercase">{p.sku}</span>
-                            <span className="font-semibold text-gray-900 truncate block mt-1.5">{p.name}</span>
-                          </div>
-                          <div className="text-right shrink-0">
-                            <span className="font-mono font-bold text-red-700 block">
-                              {p.stock === 0 ? "OUT (0)" : `${p.stock} units`}
-                            </span>
-                            <span className="text-[10px] text-gray-402 block font-normal mt-0.5">Reorder Threshold: {limit}</span>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                  
-                  <button
-                    onClick={() => setAdminSubTab('products')}
-                    className="mt-3 inline-flex items-center gap-1.5 rounded-lg bg-red-700 hover:bg-red-800 transition-colors text-white py-1.5 px-3.5 text-xs font-bold shadow-xs cursor-pointer"
-                  >
-                    Manage Inventory Catalog →
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Profitability Overview & Net Revenue Ledger Card */}
-          <div className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-6 text-gray-900 dark:text-white shadow-xs">
-            <div className="flex flex-col gap-6">
-              {/* Widget Header */}
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-gray-150 dark:border-gray-800">
-                <div className="flex items-center gap-3">
-                  <div className="p-2.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-800 text-emerald-600 dark:text-emerald-400">
-                    <DollarSign className="h-6 w-6" />
-                  </div>
-                  <div>
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <h3 className="font-display text-lg font-bold text-gray-900 dark:text-white tracking-tight">
-                        Profitability Overview & Net Revenue Ledger
-                      </h3>
-                      <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
-                        {profitabilityOverview.netMarginPercent.toFixed(1)}% Net Margin
-                      </span>
-                      {isCashFlowDeficit && (
-                        <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-rose-50 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800 animate-pulse flex items-center gap-1">
-                          <AlertTriangle className="h-3 w-3 text-rose-600 dark:text-rose-400" /> Cash Flow Deficit
-                        </span>
-                      )}
-                    </div>
-                    <p className="text-xs text-gray-500 dark:text-gray-400 font-light mt-0.5">
-                      Net earnings calculated after accounting for tax liabilities (VAT) for selected window.
-                    </p>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-2.5 flex-wrap sm:flex-nowrap relative">
-                  {/* Scope & Date Range Dropdown Selector */}
-                  <div className="relative" ref={dateScopeDropdownRef}>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setIsDateScopeDropdownOpen(!isDateScopeDropdownOpen);
-                        setIsLedgerActionsDropdownOpen(false);
-                      }}
-                      className="px-3 py-1.5 rounded-lg bg-gray-50 dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-750 border border-gray-200 dark:border-gray-700 text-[11px] font-mono text-gray-700 dark:text-gray-300 flex items-center gap-1.5 cursor-pointer transition shadow-2xs shrink-0"
-                      id="btn-date-scope-dropdown"
-                      title="Filter ledger time window"
-                    >
-                      <Calendar className="h-3.5 w-3.5 text-indigo-500 shrink-0" />
-                      <span className="font-semibold text-gray-900 dark:text-gray-100">
-                        {analyticsDateRange ? `${analyticsDateRange.start} → ${analyticsDateRange.end}` : 'All Time Active Orders'}
-                      </span>
-                      <ChevronDown className={`h-3.5 w-3.5 text-gray-400 transition-transform duration-200 ${isDateScopeDropdownOpen ? 'rotate-180' : ''}`} />
-                    </button>
-
-                    {isDateScopeDropdownOpen && (
-                      <div
-                        className="absolute right-0 sm:left-0 sm:right-auto mt-1.5 w-56 rounded-xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 shadow-xl py-1.5 z-40 animate-in fade-in zoom-in-95 duration-150 font-sans"
-                        id="menu-date-scope-options"
-                      >
-                        <div className="px-3 py-1.5 text-[10px] font-mono uppercase tracking-wider font-bold text-gray-400 dark:text-gray-500 border-b border-gray-100 dark:border-gray-700/60">
-                          Select Ledger Window
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => handleSelectDateScopePreset('all')}
-                          className={`w-full px-3 py-2 text-left text-xs flex items-center justify-between hover:bg-gray-50 dark:hover:bg-gray-700/60 cursor-pointer transition ${!analyticsDateRange ? 'text-indigo-600 dark:text-indigo-400 font-bold bg-indigo-50/50 dark:bg-indigo-950/40' : 'text-gray-700 dark:text-gray-200'}`}
-                        >
-                          <span className="flex items-center gap-2">
-                            <Calendar className="h-3.5 w-3.5 text-gray-400" />
-                            All Time Active Orders
-                          </span>
-                          {!analyticsDateRange && <Check className="h-3.5 w-3.5 text-indigo-600" />}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleSelectDateScopePreset('today')}
-                          className="w-full px-3 py-2 text-left text-xs flex items-center justify-between text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700/60 cursor-pointer transition"
-                        >
-                          <span>Today (24h)</span>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleSelectDateScopePreset('7days')}
-                          className="w-full px-3 py-2 text-left text-xs flex items-center justify-between text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700/60 cursor-pointer transition"
-                        >
-                          <span>Last 7 Days</span>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleSelectDateScopePreset('30days')}
-                          className="w-full px-3 py-2 text-left text-xs flex items-center justify-between text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700/60 cursor-pointer transition"
-                        >
-                          <span>Last 30 Days</span>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleSelectDateScopePreset('this_month')}
-                          className="w-full px-3 py-2 text-left text-xs flex items-center justify-between text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700/60 cursor-pointer transition"
-                        >
-                          <span>This Month</span>
-                        </button>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Ledger Actions Dropdown Menu */}
-                  <div className="relative" ref={ledgerActionsDropdownRef}>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setIsLedgerActionsDropdownOpen(!isLedgerActionsDropdownOpen);
-                        setIsDateScopeDropdownOpen(false);
-                      }}
-                      className="px-3.5 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold transition flex items-center gap-2 shadow-xs cursor-pointer shrink-0"
-                      id="btn-ledger-actions-dropdown"
-                      title="Open Payouts, Export, and Ledger Actions"
-                    >
-                      <Zap className="h-3.5 w-3.5 text-emerald-300" />
-                      <span>Ledger Actions</span>
-                      <ChevronDown className={`h-3.5 w-3.5 text-indigo-200 transition-transform duration-200 ${isLedgerActionsDropdownOpen ? 'rotate-180' : ''}`} />
-                    </button>
-
-                    {isLedgerActionsDropdownOpen && (
-                      <div
-                        className="absolute right-0 mt-1.5 w-72 rounded-xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 shadow-xl py-2 z-40 animate-in fade-in zoom-in-95 duration-150 font-sans"
-                        id="menu-ledger-actions-options"
-                      >
-                        <div className="px-3 py-1 text-[10px] font-mono uppercase tracking-wider font-bold text-gray-400 dark:text-gray-500 border-b border-gray-100 dark:border-gray-700/60 flex items-center justify-between">
-                          <span>Payout & Ledger Operations</span>
-                          <span className="text-emerald-600 dark:text-emerald-400 font-bold">KSh {currentPayoutBalance.toLocaleString('en-KE')}</span>
-                        </div>
-
-                        <div className="py-1">
-                          {/* 1. Quick Payout Request */}
-                          <button
-                            type="button"
-                            onClick={() => {
-                              handleQuickPayoutRequest();
-                              setIsLedgerActionsDropdownOpen(false);
-                            }}
-                            className="w-full px-3.5 py-2.5 text-left flex items-start gap-3 hover:bg-emerald-50/70 dark:hover:bg-emerald-950/40 text-gray-800 dark:text-gray-100 transition group cursor-pointer"
-                            id="menu-item-quick-payout"
-                          >
-                            <div className="p-1.5 rounded-lg bg-emerald-100 dark:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 shrink-0 mt-0.5 group-hover:scale-105 transition-transform">
-                              <Zap className="h-4 w-4" />
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center justify-between gap-1">
-                                <span className="text-xs font-bold text-gray-900 dark:text-white group-hover:text-emerald-700 dark:group-hover:text-emerald-300">
-                                  Quick Payout Request
-                                </span>
-                                <span className="text-[10px] font-mono font-bold text-emerald-700 dark:text-emerald-300 bg-emerald-100 dark:bg-emerald-950 px-1.5 py-0.2 rounded">
-                                  Instant
-                                </span>
-                              </div>
-                              <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-0.5">
-                                Trigger withdrawal for KSh {currentPayoutBalance.toLocaleString('en-KE')}
-                              </p>
-                            </div>
-                          </button>
-
-                          {/* 2. Copy Payout Bank Details */}
-                          <button
-                            type="button"
-                            onClick={() => {
-                              handleCopyBankDetails();
-                            }}
-                            className="w-full px-3.5 py-2.5 text-left flex items-start gap-3 hover:bg-indigo-50/70 dark:hover:bg-indigo-950/40 text-gray-800 dark:text-gray-100 transition group cursor-pointer"
-                            id="menu-item-copy-bank-details"
-                          >
-                            <div className="p-1.5 rounded-lg bg-indigo-100 dark:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 shrink-0 mt-0.5 group-hover:scale-105 transition-transform">
-                              {isBankDetailsCopied ? (
-                                <Check className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
-                              ) : (
-                                <Copy className="h-4 w-4" />
-                              )}
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center justify-between gap-1">
-                                <span className="text-xs font-bold text-gray-900 dark:text-white group-hover:text-indigo-700 dark:group-hover:text-indigo-300">
-                                  Copy Payout Bank Details
-                                </span>
-                                {isBankDetailsCopied && (
-                                  <span className="text-[10px] font-mono font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-100 dark:bg-emerald-950 px-1.5 py-0.2 rounded">
-                                    Copied!
-                                  </span>
-                                )}
-                              </div>
-                              <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-0.5">
-                                Copy banking & wire routing details to clipboard
-                              </p>
-                            </div>
-                          </button>
-                        </div>
-
-                        <div className="my-1 border-t border-gray-100 dark:border-gray-700/60" />
-
-                        <div className="py-1">
-                          {/* 3. Download PDF Report */}
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setShowProfitabilityPdfModal(true);
-                              setIsLedgerActionsDropdownOpen(false);
-                            }}
-                            className="w-full px-3.5 py-2.5 text-left flex items-start gap-3 hover:bg-indigo-50/70 dark:hover:bg-indigo-950/40 text-gray-800 dark:text-gray-100 transition group cursor-pointer"
-                            id="menu-item-download-pdf"
-                          >
-                            <div className="p-1.5 rounded-lg bg-blue-100 dark:bg-blue-900/60 text-blue-700 dark:text-blue-300 shrink-0 mt-0.5 group-hover:scale-105 transition-transform">
-                              <FileText className="h-4 w-4" />
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center justify-between gap-1">
-                                <span className="text-xs font-bold text-gray-900 dark:text-white group-hover:text-blue-700 dark:group-hover:text-blue-300">
-                                  Download PDF Report
-                                </span>
-                                <span className="text-[10px] font-mono font-bold text-blue-700 dark:text-blue-300 bg-blue-100 dark:bg-blue-950 px-1.5 py-0.2 rounded">
-                                  PDF
-                                </span>
-                              </div>
-                              <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-0.5">
-                                Print-ready audit summary & profitability metrics
-                              </p>
-                            </div>
-                          </button>
-
-                          {/* 4. Export Ledger */}
-                          <button
-                            type="button"
-                            onClick={() => {
-                              handleExportProfitabilityCSV();
-                              setIsLedgerActionsDropdownOpen(false);
-                            }}
-                            className="w-full px-3.5 py-2.5 text-left flex items-start gap-3 hover:bg-slate-50 dark:hover:bg-slate-700/60 text-gray-800 dark:text-gray-100 transition group cursor-pointer"
-                            id="menu-item-export-ledger-csv"
-                          >
-                            <div className="p-1.5 rounded-lg bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 shrink-0 mt-0.5 group-hover:scale-105 transition-transform">
-                              <Download className="h-4 w-4" />
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center justify-between gap-1">
-                                <span className="text-xs font-bold text-gray-900 dark:text-white group-hover:text-slate-900 dark:group-hover:text-white">
-                                  Export Ledger
-                                </span>
-                                <span className="text-[10px] font-mono font-bold text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 px-1.5 py-0.2 rounded">
-                                  CSV
-                                </span>
-                              </div>
-                              <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-0.5">
-                                Export full order transactions and ledger breakdown
-                              </p>
-                            </div>
-                          </button>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-
-              {/* Quick Payout Status Feedback Banner */}
-              {payoutNotification && (
-                <div
-                  className={`p-3.5 rounded-xl border text-xs font-mono font-semibold flex items-center justify-between transition-all animate-in fade-in duration-200 ${
-                    payoutNotification.startsWith('Error')
-                      ? 'bg-rose-50 dark:bg-rose-950/50 border-rose-200 dark:border-rose-800 text-rose-800 dark:text-rose-200'
-                      : 'bg-emerald-50 dark:bg-emerald-950/50 border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-200'
-                  }`}
-                  id="quick-payout-notification-banner"
-                >
-                  <div className="flex items-center gap-2">
-                    {payoutNotification.startsWith('Error') ? (
-                      <AlertCircle className="h-4 w-4 text-rose-600 dark:text-rose-400 shrink-0" />
-                    ) : (
-                      <CheckCircle2 className="h-4 w-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
-                    )}
-                    <span>{payoutNotification}</span>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setPayoutNotification(null)}
-                    className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 cursor-pointer"
-                  >
-                    <X className="h-4 w-4" />
-                  </button>
-                </div>
-              )}
-
-              {/* Cash Flow Reserves vs Pending Payouts Warning Notification */}
-              {isCashFlowDeficit ? (
-                <div
-                  className="bg-rose-50/80 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 rounded-xl p-4 sm:p-5 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 text-gray-900 dark:text-white transition-all animate-in fade-in duration-200"
-                  id="payout-cashflow-warning-notification"
-                >
-                  <div className="flex items-start gap-3.5">
-                    <div className="p-2.5 rounded-xl bg-rose-100 dark:bg-rose-900/40 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-700 shrink-0 mt-0.5">
-                      <AlertTriangle className="h-6 w-6 text-rose-600 dark:text-rose-400" />
-                    </div>
-                    <div>
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-rose-600 text-white uppercase tracking-wider">
-                          LIQUIDITY RISK WARNING
-                        </span>
-                        <h4 className="text-sm font-bold text-rose-900 dark:text-rose-100">
-                          Pending Affiliate Payouts Exceed Available Cash Flow Reserves!
-                        </h4>
-                      </div>
-                      <p className="text-xs text-rose-800 dark:text-rose-200/90 leading-relaxed mt-1.5">
-                        Total pending affiliate payout requests (<strong>KSh {effectivePendingPayouts.toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>) exceed current available net revenue cash reserves (<strong>KSh {profitabilityOverview.netRevenue.toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>).
-                        Liquidity deficit coverage gap: <strong className="text-rose-700 dark:text-rose-300 font-mono text-xs">KSh {(effectivePendingPayouts - profitabilityOverview.netRevenue).toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>.
-                      </p>
-                      <div className="flex items-center gap-4 text-[11px] font-mono text-rose-700 dark:text-rose-300/80 mt-2 flex-wrap">
-                        <span>• Pending Liability: <strong>KSh {effectivePendingPayouts.toLocaleString('en-KE')}</strong></span>
-                        <span>• Net Reserves: <strong>KSh {profitabilityOverview.netRevenue.toLocaleString('en-KE')}</strong></span>
-                        <span>• Liquidity Ratio: <strong>{profitabilityOverview.netRevenue > 0 ? ((profitabilityOverview.netRevenue / effectivePendingPayouts) * 100).toFixed(1) : '0.0'}%</strong></span>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-2 shrink-0 self-end md:self-center flex-wrap">
-
-
-                    <button
-                      type="button"
-                      onClick={() => setSimulateLiquidityDeficit(false)}
-                      className="px-3 py-2 rounded-xl bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 text-xs font-medium transition cursor-pointer border border-gray-200 dark:border-gray-700 shadow-3xs"
-                      title="Reset test simulation state"
-                    >
-                      Dismiss Alert
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <div className="bg-emerald-50/60 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-800/60 rounded-xl p-3 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-emerald-900 dark:text-emerald-200 font-mono">
-                  <div className="flex items-center gap-2">
-                    <ShieldCheck className="h-4 w-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
-                    <span>
-                      Cash Flow Reserves Healthy — Pending Payout Requests (KSh {effectivePendingPayouts.toLocaleString('en-KE')}) fully covered by Net Reserves (KSh {profitabilityOverview.netRevenue.toLocaleString('en-KE')}).
-                    </span>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setSimulateLiquidityDeficit(true)}
-                    className="px-2.5 py-1 rounded bg-white dark:bg-gray-800 hover:bg-emerald-50 text-gray-700 dark:text-gray-300 text-[11px] font-mono transition cursor-pointer border border-gray-200 dark:border-gray-700 shrink-0 shadow-3xs"
-                    title="Simulate high pending payout scenario exceeding current reserves"
-                    id="btn-simulate-cashflow-deficit"
-                  >
-                    ⚡ Simulate Deficit Alert
-                  </button>
-                </div>
-              )}
-
-              {/* Core Financial Grid */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                {/* 1. Gross Revenue */}
-                <div className="p-4 rounded-xl bg-gray-50/80 dark:bg-gray-800/40 border border-gray-200 dark:border-gray-700/60 flex flex-col justify-between min-w-0 overflow-hidden shadow-3xs">
-                  <div className="min-w-0">
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400 font-mono block truncate">Gross Sales Revenue</span>
-                    <p
-                      className="mt-1.5 text-lg sm:text-base lg:text-lg xl:text-xl font-black font-mono tracking-tight text-gray-900 dark:text-white truncate"
-                      title={`KSh ${profitabilityOverview.grossSales.toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
-                    >
-                      KSh {profitabilityOverview.grossSales.toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                    </p>
-                  </div>
-                  <div className="mt-3 text-[10.5px] sm:text-[10px] xl:text-[11px] text-gray-500 dark:text-gray-400 flex items-center justify-between border-t border-gray-200 dark:border-gray-700/60 pt-2 font-mono gap-1 min-w-0">
-                    <span className="truncate">Active Orders</span>
-                    <span className="font-bold text-gray-800 dark:text-gray-200 shrink-0">{profitabilityOverview.completedOrderCount} completed</span>
-                  </div>
-                </div>
-
-                {/* 2. Tax Liabilities */}
-                <div className="p-4 rounded-xl bg-amber-50/60 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/50 flex flex-col justify-between min-w-0 overflow-hidden shadow-3xs">
-                  <div className="min-w-0">
-                    <div className="flex items-center justify-between gap-1">
-                      <span className="text-[10px] font-bold uppercase tracking-wider text-amber-800 dark:text-amber-300/80 font-mono truncate">Tax Liabilities (VAT)</span>
-                      <ShieldCheck className="h-4 w-4 text-amber-600 dark:text-amber-400 shrink-0" />
-                    </div>
-                    <p
-                      className="mt-1.5 text-lg sm:text-base lg:text-lg xl:text-xl font-black font-mono tracking-tight text-amber-700 dark:text-amber-300 truncate"
-                      title={`-KSh ${profitabilityOverview.totalTaxLiabilities.toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
-                    >
-                      -KSh {profitabilityOverview.totalTaxLiabilities.toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                    </p>
-                  </div>
-                  <div className="mt-3 text-[10.5px] sm:text-[10px] xl:text-[11px] text-amber-700 dark:text-amber-300/80 flex items-center justify-between border-t border-amber-200 dark:border-amber-800/40 pt-2 font-mono gap-1 min-w-0">
-                    <span className="truncate">Tax Share</span>
-                    <span className="font-bold text-amber-800 dark:text-amber-300 shrink-0">{profitabilityOverview.taxSharePercent.toFixed(1)}% of gross</span>
-                  </div>
-                </div>
-
-                {/* 3. Net Revenue (Profit) */}
-                <div className="p-4 rounded-xl bg-emerald-50/80 dark:bg-emerald-950/40 border border-emerald-300 dark:border-emerald-700 flex flex-col justify-between shadow-3xs min-w-0 overflow-hidden">
-                  <div className="min-w-0">
-                    <div className="flex items-center justify-between gap-1">
-                      <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-800 dark:text-emerald-400 font-mono truncate">Net Retained Revenue</span>
-                      <TrendingUp className="h-4 w-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
-                    </div>
-                    <p
-                      className="mt-1.5 text-lg sm:text-base lg:text-lg xl:text-xl font-black font-mono tracking-tight text-emerald-700 dark:text-emerald-400 truncate"
-                      title={`KSh ${profitabilityOverview.netRevenue.toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
-                    >
-                      KSh {profitabilityOverview.netRevenue.toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                    </p>
-                  </div>
-                  <div className="mt-3 text-[10.5px] sm:text-[10px] xl:text-[11px] text-emerald-700 dark:text-emerald-300/80 flex items-center justify-between border-t border-emerald-200 dark:border-emerald-700/60 pt-2 font-mono gap-1 min-w-0">
-                    <span className="truncate">Retained Ratio</span>
-                    <span className="font-bold text-emerald-800 dark:text-emerald-300 shrink-0">{profitabilityOverview.netMarginPercent.toFixed(1)}% net profit</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Deductive Proportional Bar */}
-              <div className="p-4 rounded-xl bg-gray-50/80 dark:bg-gray-800/40 border border-gray-200 dark:border-gray-700 flex flex-col gap-2.5">
-                <div className="flex items-center justify-between text-xs font-mono">
-                  <span className="text-gray-800 dark:text-gray-200 font-bold">Revenue Allocation Breakdown</span>
-                  <span className="text-gray-500 dark:text-gray-400">Gross 100% = Net {profitabilityOverview.netMarginPercent.toFixed(1)}% + VAT {profitabilityOverview.taxSharePercent.toFixed(1)}%</span>
-                </div>
-
-                <div className="h-3 w-full bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden flex border border-gray-300 dark:border-gray-600">
-                  <div
-                    style={{ width: `${Math.max(0, profitabilityOverview.netMarginPercent)}%` }}
-                    className="bg-emerald-500 h-full transition-all duration-500"
-                    title={`Net Profit: KSh ${profitabilityOverview.netRevenue.toLocaleString('en-KE')}`}
-                  />
-                  <div
-                    style={{ width: `${Math.max(0, profitabilityOverview.taxSharePercent)}%` }}
-                    className="bg-amber-500 h-full transition-all duration-500"
-                    title={`Tax Liabilities: KSh ${profitabilityOverview.totalTaxLiabilities.toLocaleString('en-KE')}`}
-                  />
-                </div>
-
-                <div className="flex flex-wrap items-center justify-between gap-4 text-[11px] font-mono text-gray-700 dark:text-gray-300 pt-1">
-                  <div className="flex items-center gap-2">
-                    <span className="h-2.5 w-2.5 rounded-full bg-emerald-500" />
-                    <span>Net Profit: <strong>KSh {profitabilityOverview.netRevenue.toLocaleString('en-KE')}</strong></span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="h-2.5 w-2.5 rounded-full bg-amber-500" />
-                    <span>VAT Liabilities: <strong>KSh {profitabilityOverview.totalTaxLiabilities.toLocaleString('en-KE')}</strong></span>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Recharts Analytics Module (Full-Width) */}
-          <RechartsAnalytics
-            orders={filteredOrdersForAnalytics}
-            days={chartDaysLookup}
-            products={products}
-            dateRange={analyticsDateRange}
-            darkMode={darkMode}
-          />
-
-          {/* Revenue & Conversions D3.js Analytical Track (Full-Width) */}
-          <div className="rounded-xl border border-gray-100 bg-white p-5 shadow-2xs flex flex-col">
-            <div>
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4 pb-4 border-b border-gray-50">
-                <div className="flex flex-col gap-0.5">
-                  <h3 className="font-display text-sm font-semibold text-gray-950 flex items-center gap-1.5">
-                    <LineChart className="h-4 w-4 text-indigo-600" /> Revenue & Conversions D3.js Analytical Track
-                  </h3>
-                  <p className="text-[11px] font-light text-gray-400">
-                    Smooth vector morphing on date and segment changes.
-                  </p>
-                </div>
-                
-                <div className="flex flex-wrap items-center gap-3">
-                  {/* Product Category Filter Select */}
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-[10px] uppercase font-bold tracking-wider text-gray-450 font-mono">Cat:</span>
-                    <select
-                      value={selectedCategory || ''}
-                      onChange={(e) => setSelectedCategory(e.target.value ? e.target.value : null)}
-                      className="bg-gray-50 text-[11px] font-bold text-gray-700 rounded-lg px-2.5 py-1 border border-gray-200 outline-none transition-colors focus:border-indigo-400 cursor-pointer"
-                    >
-                      <option value="">All Categories</option>
-                      {availableCategories.map((cat) => (
-                        <option key={cat} value={cat}>
-                          {cat}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  {/* Date-range toggle filter */}
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-[10px] uppercase font-bold tracking-wider text-gray-400 font-mono">Days:</span>
-                    <div className="inline-flex rounded-lg p-0.5 bg-gray-100 border border-gray-200">
-                      {([7, 30, 90] as const).map((days) => (
-                        <button
-                          key={days}
-                          type="button"
-                          onClick={() => setChartDaysLookup(days)}
-                          className={`px-2 py-0.5 text-[10px] font-semibold rounded-md transition-all cursor-pointer ${
-                            chartDaysLookup === days
-                              ? 'bg-white text-indigo-950 shadow-2xs font-bold'
-                              : 'text-gray-500 hover:text-gray-950'
-                          }`}
-                        >
-                          {days}d
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Export Current Viewable CSV Button */}
-                  <button
-                    type="button"
-                    onClick={handleExportCurrentViewableAnalyticsCSV}
-                    className="inline-flex h-7 items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 px-2 text-[10px] font-bold transition-all cursor-pointer shadow-3xs"
-                    id="btn-export-viewable-analytics-csv"
-                  >
-                    <Download className="h-3 w-3 text-emerald-650" /> Export
-                  </button>
-                </div>
-              </div>
-
-              {/* Clickable Quick filter summary bar */}
-              <div className="mb-4 flex flex-wrap gap-1.5 items-center bg-gray-50/50 p-2 rounded-lg border border-gray-100">
-                <span className="text-[9px] uppercase font-bold text-gray-400 font-mono mr-1.5 pl-1">Quick Filters:</span>
-                <button
-                  onClick={() => setSelectedCategory(null)}
-                  className={`px-2 py-1 text-[10px] font-semibold rounded-md border transition-all cursor-pointer ${
-                    selectedCategory === null
-                      ? 'bg-indigo-600 border-indigo-600 text-white shadow-2xs'
-                      : 'bg-white border-gray-200 text-gray-550 hover:bg-gray-50'
-                  }`}
-                >
-                  All
-                </button>
-                {availableCategories.map((cat) => (
-                  <button
-                    key={cat}
-                    onClick={() => setSelectedCategory(cat)}
-                    className={`px-2 py-1 text-[10px] font-semibold rounded-md border transition-all cursor-pointer ${
-                      selectedCategory === cat
-                        ? 'bg-indigo-600 border-indigo-600 text-white shadow-2xs'
-                        : 'bg-white border-gray-200 text-gray-550 hover:bg-gray-50'
-                    }`}
-                  >
-                    {cat}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div className="w-full flex-1 min-h-[300px]">
-              <ComparativeD3Chart
-                orders={filteredOrdersForAnalytics}
-                days={chartDaysLookup}
-                selectedCategory={selectedCategory}
-                products={products}
-                darkMode={darkMode}
-              />
-            </div>
-          </div>
-
-          {/* 30-Day Revenue & Affiliate Conversion Growth (Recharts - Full-Width) */}
-          <DailyRevenueConversionChart
-            orders={filteredOrdersForAnalytics}
-            darkMode={darkMode}
-          />
-
-          {/* Stock Levels vs. Reorder Thresholds Analytical Bar Chart (Full-Width) */}
-          <StockThresholdChart 
-            products={products} 
-            onUpdateProductStock={onUpdateProductStock} 
-            darkMode={darkMode}
-          />
-
-          {/* Critical Stock Replenishment & Reorder Hub (Full-Width) */}
-          <div className="rounded-xl border border-gray-150 bg-white p-5 shadow-2xs flex flex-col">
-            <div>
-              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-4 pb-4 border-b border-gray-50">
-                <div className="flex items-start gap-3">
-                  <div className="rounded-lg bg-amber-50 border border-amber-100 p-2 text-amber-700 shrink-0">
-                    <AlertOctagon className="h-5 w-5 animate-pulse" />
-                  </div>
-                  <div>
-                    <h3 className="font-display text-sm font-semibold text-gray-950 flex items-center gap-1.5">
-                      Critical Stock Replenishment & Reorder Hub
-                    </h3>
-                    <p className="text-[11px] font-light text-gray-400 mt-0.5">
-                      Proprietary physical products currently running at or under safety reorder thresholds.
-                    </p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="text-[10px] uppercase font-bold tracking-wider text-gray-450 font-mono">Status:</span>
-                  <span className={`inline-flex items-center gap-1.5 text-[10px] font-bold font-mono px-2.5 py-1 rounded-full border ${
-                    lowStockProducts.length > 0 
-                      ? 'bg-amber-50 text-amber-800 border-amber-200' 
-                      : 'bg-emerald-50 text-emerald-800 border-emerald-200'
-                  }`}>
-                    <span className={`h-1.5 w-1.5 rounded-full ${lowStockProducts.length > 0 ? 'bg-amber-500 animate-pulse' : 'bg-emerald-500'}`} />
-                    {lowStockProducts.length > 0 ? `${lowStockProducts.length} Reorder Alerts` : 'All Secure'}
-                  </span>
-                </div>
-              </div>
-
-              {lowStockProducts.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-12 text-center bg-gray-50/50 rounded-lg border border-dashed border-gray-150">
-                  <div className="h-10 w-10 rounded-full bg-emerald-50 text-emerald-650 flex items-center justify-center mb-2">
-                    <CheckCircle className="h-5 w-5" />
-                  </div>
-                  <h4 className="text-xs font-bold text-gray-800">All Stock Levels Secure</h4>
-                  <p className="text-[10px] text-gray-400 mt-1 max-w-sm">
-                    Excellent! No physical inventory items are currently below their safety threshold levels.
-                  </p>
-                </div>
-              ) : (
-                <div className="overflow-x-auto custom-table-scroll max-h-[350px] overflow-y-auto">
-                  <table className="w-full text-left border-collapse min-w-[550px]">
-                    <thead className="sticky top-0 bg-white z-10">
-                      <tr className="border-b border-gray-100 text-[10px] font-bold text-gray-400 uppercase font-mono tracking-wider">
-                        <th className="pb-2.5">Product Details</th>
-                        <th className="pb-2.5">Category</th>
-                        <th className="pb-2.5">Stock</th>
-                        <th className="pb-2.5">Safety</th>
-                        <th className="pb-2.5 text-right">Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-50">
-                      {lowStockProducts.map((p) => {
-                        const limit = p.lowStockThreshold ?? 5;
-                        const currentStock = p.stock ?? 0;
-                        return (
-                          <tr key={p.id} className="text-xs hover:bg-gray-50/40 transition-colors">
-                            <td className="py-2.5">
-                              <div className="flex flex-col">
-                                <span className="font-semibold text-gray-900 leading-tight" title={p.name}>{p.name}</span>
-                                <span className="font-mono text-[9px] text-gray-450 mt-0.5 uppercase tracking-wide">SKU: {p.sku}</span>
-                              </div>
-                            </td>
-                            <td className="py-2.5">
-                              <span className="px-1.5 py-0.5 rounded bg-gray-100 text-gray-600 font-mono text-[9px] uppercase">{p.category}</span>
-                            </td>
-                            <td className="py-2.5">
-                              <span className={`font-mono font-black ${currentStock === 0 ? 'text-rose-600' : 'text-amber-600 animate-pulse'}`}>
-                                {currentStock === 0 ? 'OUT' : `${currentStock}`}
-                              </span>
-                            </td>
-                            <td className="py-2.5">
-                              <span className="font-mono text-gray-500 font-bold">{limit}</span>
-                            </td>
-                            <td className="py-2.5 text-right">
-                              <div className="inline-flex items-center gap-1">
-                                <button
-                                  onClick={() => onUpdateProductStock(p.id, currentStock + 25)}
-                                  className="rounded bg-indigo-50 hover:bg-indigo-100 text-indigo-750 text-[9px] font-bold px-1.5 py-0.5 transition-colors cursor-pointer"
-                                  title="Add 25 Units"
-                                >
-                                  +25
-                                </button>
-                                <button
-                                  onClick={() => onUpdateProductStock(p.id, currentStock + 50)}
-                                  className="rounded bg-indigo-600 hover:bg-indigo-700 text-white text-[9px] font-bold px-1.5 py-0.5 transition-colors cursor-pointer"
-                                  title="Add 50 Units"
-                                >
-                                  +50
-                                </button>
-                                <button
-                                  onClick={() => handleOpenContactSupplierModal(p)}
-                                  className="rounded border border-indigo-200 hover:bg-indigo-50 text-indigo-650 p-1 transition-all cursor-pointer"
-                                  title="Contact Supplier"
-                                >
-                                  <Mail className="h-3 w-3" />
-                                </button>
-                              </div>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Post-Delivery Review Request Conversion Funnel Analytics */}
-          <Suspense fallback={<ChartLoaderFallback />}>
-            <ReviewFunnelAnalytics
-              orders={filteredOrdersForAnalytics}
-              products={products}
-              darkMode={darkMode}
-            />
-          </Suspense>
-
-          {/* 6-Month Sales & Revenue Trend Matrix (Full Width) */}
-          <Monthly6MonthTrends orders={filteredOrdersForAnalytics} />
-
-          {/* Active Tracking Clicks Feed (Full-Width) */}
-          <div className="rounded-xl border border-gray-100 bg-white p-5 shadow-2xs">
-            <h3 className="font-display text-sm font-semibold text-gray-900 mb-4 pb-2 border-b border-gray-50 flex items-center gap-1.5">
-              <MousePointer className="h-4 w-4 text-indigo-600" /> Active Tracking Clicks Feed
-            </h3>
-
-            {filteredClickLogsForAnalytics.length === 0 ? (
-              <p className="py-8 text-center text-xs text-gray-400 italic">No marketing clicks logged yet.</p>
-            ) : (
-              <div className="flex flex-col gap-3.5">
-                {filteredClickLogsForAnalytics.slice(0, 5).map((log) => (
-                  <div key={log.id} className="flex justify-between items-start text-xs border-b border-gray-50 pb-3 last:border-0 last:pb-0 font-light">
-                    <div>
-                      <strong className="block text-gray-800">{log.targetName}</strong>
-                      <div className="flex items-center gap-2 text-[10px] text-gray-400 font-mono uppercase mt-0.5">
-                        <span>{log.source || 'Direct'}</span>
-                        <span>•</span>
-                        <span>{log.timestamp}</span>
-                      </div>
-                    </div>
-
-                    <div className="text-right">
-                      {log.converted ? (
-                        <span className="rounded bg-emerald-50 px-2 py-0.5 text-[9px] font-bold text-emerald-700 font-mono uppercase">
-                          +${cleanDecimals(log.commission, 2)}
-                        </span>
-                      ) : (
-                        <span className="rounded bg-gray-100 px-2 py-0.5 text-[9px] font-bold text-gray-400 font-mono uppercase">
-                          Click (No Tx)
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Recent Proprietary Sales (Full-Width) */}
-          <div className="rounded-xl border border-gray-100 bg-white p-5 shadow-2xs">
-            <h3 className="font-display text-sm font-semibold text-gray-900 mb-4 pb-2 border-b border-gray-50 flex items-center gap-1.5">
-              <Inbox className="h-4 w-4 text-indigo-600" /> Recent Proprietary Sales
-            </h3>
-
-            {filteredOrdersForAnalytics.length === 0 ? (
-              <p className="py-8 text-center text-xs text-gray-400 italic">No internal checkout orders logged yet.</p>
-            ) : (
-              <div className="flex flex-col gap-3">
-                {filteredOrdersForAnalytics.slice(0, 5).map((ord) => (
-                  <div key={ord.id} className="flex justify-between items-center text-xs border-b border-gray-50 pb-3 last:border-0 last:pb-0">
-                    <div>
-                      <strong className="text-gray-800 block text-xs">{ord.customerName}</strong>
-                      <span className="text-[10px] text-gray-400 font-mono block mt-0.5">{ord.items.length} items • {ord.date}</span>
-                    </div>
-                    <span className="font-mono font-bold text-emerald-600">KSh {ord.total.toLocaleString('en-KE')}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
+        <div className="mt-8">
+          <SimplifiedAnalytics products={products} orders={orders} darkMode={darkMode} />
         </div>
       )}
-
       {/* Catalog lists */}
       {adminSubTab === 'products' && (
         <div className="mt-8 flex flex-col gap-8">
-          {/* Low Stock Turnover & Revenue Potential Widget */}
-          <div className="rounded-xl border border-gray-100 bg-white p-5 shadow-2xs">
-            <div className="mb-4 pb-2 border-b border-gray-50 flex items-center justify-between">
-              <div>
-                <h3 className="font-display text-sm font-semibold text-gray-900 flex items-center gap-1.5">
-                  <Activity className="h-4.5 w-4.5 text-indigo-600" /> Stock Turnover & Revenue Potential (Top 5 Lowest Stock)
-                </h3>
-                <p className="text-[10px] text-gray-400 mt-0.5">
-                  Analytical projection correlating remaining low-stock inventory to its sales velocity and total unreleased revenue value.
-                </p>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              {/* Chart container */}
-              <div className="lg:col-span-2 rounded-xl border border-gray-100 bg-slate-50/10 p-4 flex flex-col justify-between">
-                <div className="h-64 mt-2 w-full min-w-0" style={{ width: '100%', height: 256, minWidth: 0, minHeight: 256 }}>
-                  {lowStockWidgetData.length === 0 ? (
-                    <div className="h-full flex flex-col items-center justify-center border-2 border-dashed border-gray-150 rounded-xl bg-slate-50/20 p-4 text-center">
-                      <AlertCircle className="h-6 w-6 text-gray-400 mb-1.5" />
-                      <span className="text-xs font-semibold text-gray-550 block">No physical items in inventory</span>
-                      <span className="text-[10px] text-gray-400 font-light mt-0.5 max-w-xs">Create or register physical products with stock levels to visualize analytics.</span>
-                    </div>
-                  ) : (
-                    <RechartsResponsiveContainer width="100%" height={256} minWidth={0} minHeight={256} debounce={50}>
-                      <RechartsBarChart data={lowStockWidgetData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
-                        <RechartsCartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                        <RechartsXAxis 
-                          dataKey="name" 
-                          tick={{ fill: '#64748b', fontSize: 9 }}
-                          axisLine={false}
-                          tickLine={false}
-                        />
-                        <RechartsYAxis 
-                          yAxisId="left" 
-                          orientation="left" 
-                          stroke="#6366f1"
-                          tick={{ fill: '#6366f1', fontSize: 9 }}
-                          axisLine={false}
-                          tickLine={false}
-                          label={{ value: 'Velocity / Turnover Rate (x)', angle: -90, position: 'insideLeft', offset: 12, style: { textAnchor: 'middle', fontSize: '9px', fill: '#6366f1', fontWeight: 'bold' } }}
-                        />
-                        <RechartsYAxis 
-                          yAxisId="right" 
-                          orientation="right" 
-                          stroke="#10b981"
-                          tick={{ fill: '#10b981', fontSize: 9 }}
-                          axisLine={false}
-                          tickLine={false}
-                          tickFormatter={(val) => `KSh ${val.toLocaleString('en-KE', { notation: 'compact', compactDisplay: 'short' })}`}
-                          label={{ value: 'Revenue Potential (KSh)', angle: 90, position: 'insideRight', offset: 12, style: { textAnchor: 'middle', fontSize: '9px', fill: '#10b981', fontWeight: 'bold' } }}
-                        />
-                        <RechartsTooltip 
-                          contentStyle={{ backgroundColor: '#ffffff', borderRadius: '12px', border: '1px solid #e2e8f0', fontSize: '11px', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.05)' }}
-                          formatter={(value: any, name: string) => {
-                            if (name.includes('Revenue')) {
-                              return [`KSh ${value.toLocaleString('en-KE')}`, 'Revenue Potential'];
-                            }
-                            return [`${value}x`, 'Turnover Rate'];
-                          }}
-                        />
-                        <RechartsLegend verticalAlign="top" height={36} iconType="circle" wrapperStyle={{ fontSize: '10px', fontWeight: '600' }} />
-                        <RechartsBar yAxisId="left" dataKey="turnoverRate" fill="#6366f1" radius={[4, 4, 0, 0]} name="Turnover Rate (x)" barSize={20} />
-                        <RechartsBar yAxisId="right" dataKey="revenuePotential" fill="#10b981" radius={[4, 4, 0, 0]} name="Revenue Potential (KSh)" barSize={20} />
-                      </RechartsBarChart>
-                    </RechartsResponsiveContainer>
-                  )}
-                </div>
-              </div>
-
-              {/* KPI indicators side card */}
-              <div className="flex flex-col gap-4">
-                <div className="flex-1 rounded-xl border border-gray-100 bg-indigo-50/10 p-4.5 flex flex-col justify-between">
-                  <div>
-                    <span className="block text-[9px] font-black font-mono text-indigo-500 uppercase tracking-wider mb-0.5">Total Low Stock Revenue Potential</span>
-                    <span className="block text-lg font-bold font-display text-gray-900">
-                      KSh {totalLockedRevenue.toLocaleString('en-KE')}
-                    </span>
-                  </div>
-                  <p className="text-[10px] text-gray-400 font-light leading-relaxed mt-1">
-                    Value of remaining physical stock for the top 5 lowest-stock products.
-                  </p>
-                </div>
-
-                <div className="flex-1 rounded-xl border border-gray-100 bg-emerald-50/10 p-4.5 flex flex-col justify-between">
-                  <div>
-                    <span className="block text-[9px] font-black font-mono text-emerald-500 uppercase tracking-wider mb-0.5">Average Inventory Turnover</span>
-                    <span className="block text-lg font-bold font-display text-gray-900">
-                      {avgTurnoverRate}x <span className="text-[10px] font-mono text-emerald-600 font-semibold">turns / year</span>
-                    </span>
-                  </div>
-                  <p className="text-[10px] text-gray-400 font-light leading-relaxed mt-1">
-                    Mean stock replacement velocity for the most constrained items in inventory.
-                  </p>
-                </div>
-
-                <div className="flex-1 rounded-xl border border-gray-100 bg-rose-50/10 p-4.5 flex flex-col justify-between">
-                  <div>
-                    <span className="block text-[9px] font-black font-mono text-rose-500 uppercase tracking-wider mb-0.5">Understocked & Critical Items</span>
-                    <span className="block text-lg font-bold font-display text-gray-900 flex items-center gap-1.5">
-                      {criticalRestockAlertCount} {criticalRestockAlertCount === 1 ? 'Product' : 'Products'}
-                      {criticalRestockAlertCount > 0 && (
-                        <span className="h-2 w-2 rounded-full bg-rose-500 animate-ping" />
-                      )}
-                    </span>
-                  </div>
-                  <p className="text-[10px] text-gray-400 font-light leading-relaxed mt-1">
-                    Total catalog products currently resting at or below their low stock threshold.
-                  </p>
-                </div>
-              </div>
-            </div>
-          </div>
-
           {/* Proprietary Items listings */}
           <InventoryProductsTable
             products={effectiveProducts}
             orders={effectiveOrders}
-            onAddProductClick={() => setShowAddProdPage(true)}
+            onAddProductClick={() => {
+              setEditingProduct(null);
+              setShowAddProdPage(true);
+            }}
             onEditProduct={(p) => setEditingProduct(p)}
             onDuplicateProduct={(prod) => {
               const duplicated: Product = {
@@ -6849,10 +5963,18 @@ admin@ropenix.co.ke`;
                 slug: `${generateSlug(prod.name)}-copy`,
                 status: 'Draft'
               };
+              setLiveDbProducts((prev) => [duplicated, ...(prev ? prev.filter(p => p.id !== duplicated.id) : [])]);
               onAddProduct(duplicated);
             }}
-            onDeleteProduct={onDeleteProduct}
-            onBulkDeleteProducts={onBulkDeleteProducts}
+            onDeleteProduct={(id, type, skipConfirm) => {
+              setLiveDbProducts((prev) => (prev ? prev.filter((p) => p.id !== id) : null));
+              onDeleteProduct(id, type, skipConfirm);
+            }}
+            onBulkDeleteProducts={(ids) => {
+              const idsSet = new Set(ids.map((id) => String(id)));
+              setLiveDbProducts((prev) => (prev ? prev.filter((p) => !idsSet.has(String(p.id))) : null));
+              if (onBulkDeleteProducts) onBulkDeleteProducts(ids);
+            }}
             onUpdateProductStock={onUpdateProductStock}
             onUpdateProductSku={onUpdateProductSku}
             onUpdateProductThreshold={onUpdateProductThreshold}
@@ -10231,6 +9353,7 @@ admin@ropenix.co.ke`;
                 slug: `${generateSlug(prod.name)}-copy`,
                 status: 'Draft'
               };
+              setLiveDbProducts((prev) => [duplicated, ...(prev ? prev.filter(p => p.id !== duplicated.id) : [])]);
               onAddProduct(duplicated);
               setEditingProduct(duplicated);
             }}

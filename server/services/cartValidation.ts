@@ -84,7 +84,17 @@ export interface CartValidationResult {
 function resolveEffectivePrice(product: any, selectedVars?: Record<string, string>): { price: number; originalPrice: number | null } {
   const norm = normalizeProductVariants(product);
   let basePrice = Number(norm.price || 0);
-  let originalPrice = norm.original_price ? Number(norm.original_price) : (norm.originalPrice ? Number(norm.originalPrice) : null);
+  let originalPrice = norm.original_price
+    ? Number(norm.original_price)
+    : norm.originalPrice
+    ? Number(norm.originalPrice)
+    : norm.compareAtPrice
+    ? Number(norm.compareAtPrice)
+    : norm.compare_at_price
+    ? Number(norm.compare_at_price)
+    : norm.previousPrice
+    ? Number(norm.previousPrice)
+    : null;
 
   // Check if variant price override exists
   if (selectedVars && Object.keys(selectedVars).length > 0 && Array.isArray(norm.variants)) {
@@ -96,8 +106,13 @@ function resolveEffectivePrice(product: any, selectedVars?: Record<string, strin
       return vKeys.every(k => (v.attributes[k] || '').toLowerCase() === (selectedVars[k] || '').toLowerCase());
     });
 
-    if (matched && matched.price !== undefined && matched.price !== null && !isNaN(Number(matched.price))) {
-      basePrice = Number(matched.price);
+    if (matched) {
+      if (matched.price !== undefined && matched.price !== null && !isNaN(Number(matched.price))) {
+        basePrice = Number(matched.price);
+      }
+      if (matched.compareAtPrice !== undefined && matched.compareAtPrice !== null && !isNaN(Number(matched.compareAtPrice))) {
+        originalPrice = Number(matched.compareAtPrice);
+      }
     }
   }
 

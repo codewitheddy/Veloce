@@ -175,37 +175,6 @@ export function loadCategoriesFromStorage(): Category[] {
         }
       } catch {}
     }
-
-    // Auto-Recovery 2: Recover from existing product catalog in localStorage if not intentionally cleared
-    const productsRaw = typeof window !== 'undefined' ? localStorage.getItem('veloce_products') : null;
-    if (productsRaw && !isCleared) {
-      try {
-        const prods = JSON.parse(productsRaw);
-        if (Array.isArray(prods) && prods.length > 0) {
-          const catNames = Array.from(new Set(prods.map((p: any) => p.category).filter(Boolean))) as string[];
-          if (catNames.length > 0) {
-            const recovered: Category[] = catNames.map((name: string, idx: number) => ({
-              id: `cat-prod-${idx + 1}`,
-              name: String(name),
-              slug: String(name).toLowerCase().replace(/\s+/g, '-'),
-              parentId: null,
-              description: `${name} catalog category`,
-              imageUrl: '',
-              status: 'Active',
-              displayOrder: idx + 1,
-              previousSlugs: [],
-              productCount: prods.filter((p: any) => p.category === name).length,
-              createdAt: new Date().toISOString(),
-            }));
-            try {
-              localStorage.setItem(STORAGE_KEY_CATEGORIES, JSON.stringify(recovered));
-              localStorage.setItem('veloce_custom_categories', JSON.stringify(catNames));
-            } catch {}
-            return recovered;
-          }
-        }
-      } catch {}
-    }
   } catch (err) {
     console.warn('[CategoryUtils] Failed to load categories from storage:', err);
   }

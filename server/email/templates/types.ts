@@ -25,6 +25,7 @@ export interface OrderEmailData {
   total: number;
   paymentMethod?: string;
   paymentStatus?: string;
+  paymentReference?: string;
   shippingAddress?: string;
   trackingNumber?: string;
   courierName?: string;

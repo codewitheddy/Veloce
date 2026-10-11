@@ -171,6 +171,10 @@ export default function BestSellersNewArrivalsCarousel({
     }
   };
 
+  if (displayedProducts.length === 0) {
+    return null;
+  }
+
   return (
     <section 
       className={`rounded-2xl border border-indigo-100/70 dark:border-gray-800 bg-linear-to-b from-indigo-50/30 via-white to-white dark:from-gray-950 dark:via-gray-900 dark:to-gray-900 p-4 sm:p-7 shadow-[0_4px_24px_rgba(37,44,139,0.03)] dark:shadow-none font-sans w-full max-w-full overflow-hidden ${className}`}

@@ -155,7 +155,7 @@ const SECTION_TABS: SectionConfig[] = [
   { id: 'variants', label: 'Variants & Stock', shortLabel: 'Variants', icon: Layers },
   { id: 'organization', label: 'Organization', shortLabel: 'Category', icon: FolderTree },
   { id: 'category_specs', label: 'Category & Expiry', shortLabel: 'Compliance', icon: ShieldAlert },
-  { id: 'description', label: 'Description & Specs', shortLabel: 'Specs', icon: Zap },
+  { id: 'description', label: 'Features & Description', shortLabel: 'Features', icon: Sparkles },
   { id: 'seo', label: 'SEO & Search', shortLabel: 'SEO', icon: Globe },
   { id: 'shipping', label: 'Shipping & Logistics', shortLabel: 'Shipping', icon: Truck },
   { id: 'publish', label: 'Status & Publish', shortLabel: 'Publish', icon: CheckCircle2 }
@@ -463,6 +463,20 @@ export function ProductFormEditor({
   const checkHasVariants = (prod?: Product | null): boolean => {
     if (!prod) return false;
     const anyProd = prod as any;
+
+    // Explicit false checks - must strictly respect disabled state
+    if (
+      anyProd.hasVariants === false ||
+      anyProd.has_variants === false ||
+      anyProd.hasVariants === 0 ||
+      anyProd.has_variants === 0 ||
+      anyProd.hasVariants === 'false' ||
+      anyProd.has_variants === 'false'
+    ) {
+      return false;
+    }
+
+    // Explicit true checks
     if (
       anyProd.hasVariants === true ||
       anyProd.has_variants === true ||
@@ -473,70 +487,13 @@ export function ProductFormEditor({
     ) {
       return true;
     }
-    const rawOpts = anyProd.options;
-    const optsLen = Array.isArray(rawOpts)
-      ? rawOpts.length
-      : typeof rawOpts === 'string' && (rawOpts as string).trim().startsWith('[')
-      ? (() => { try { return JSON.parse(rawOpts).length; } catch { return 0; } })()
-      : 0;
-    if (optsLen > 0) return true;
-
-    const rawMatrix = anyProd.variantMatrix || anyProd.variant_matrix;
-    const matrixLen = Array.isArray(rawMatrix)
-      ? rawMatrix.length
-      : typeof rawMatrix === 'string' && (rawMatrix as string).trim().startsWith('[')
-      ? (() => { try { return JSON.parse(rawMatrix).length; } catch { return 0; } })()
-      : 0;
-    if (matrixLen > 0) return true;
-
-    const rawVars = anyProd.variants;
-    const varsLen = Array.isArray(rawVars)
-      ? rawVars.length
-      : typeof rawVars === 'string' && (rawVars as string).trim().startsWith('[')
-      ? (() => { try { return JSON.parse(rawVars).length; } catch { return 0; } })()
-      : 0;
-    if (varsLen > 0) return true;
-
-    const rawVariations = anyProd.variations;
-    const variationsLen = Array.isArray(rawVariations)
-      ? rawVariations.length
-      : typeof rawVariations === 'string' && (rawVariations as string).trim().startsWith('[')
-      ? (() => { try { return JSON.parse(rawVariations).length; } catch { return 0; } })()
-      : 0;
-    if (variationsLen > 0) return true;
-
-    const rawColorImgs = anyProd.colorImages || anyProd.color_images;
-    if (rawColorImgs && typeof rawColorImgs === 'object' && Object.keys(rawColorImgs).length > 0) return true;
 
     return false;
   };
 
   const extractOptionsFromProduct = (prod?: Product | null): ProductOption[] => {
-    if (!prod) {
-      return [
-        {
-          id: 'opt-size',
-          name: 'Size',
-          position: 0,
-          values: [
-            { id: 'v-s', name: 'S', position: 0 },
-            { id: 'v-m', name: 'M', position: 1 },
-            { id: 'v-l', name: 'L', position: 2 },
-            { id: 'v-xl', name: 'XL', position: 3 },
-          ],
-        },
-        {
-          id: 'opt-color',
-          name: 'Color',
-          position: 1,
-          values: [
-            { id: 'v-black', name: 'Black', hexColor: '#111827', hexCode: '#111827', hex_code: '#111827', position: 0 },
-            { id: 'v-navy', name: 'Navy', hexColor: '#1E3A8A', hexCode: '#1E3A8A', hex_code: '#1E3A8A', position: 1 },
-            { id: 'v-white', name: 'White', hexColor: '#FFFFFF', hexCode: '#FFFFFF', hex_code: '#FFFFFF', position: 2 },
-            { id: 'v-red', name: 'Crimson Red', hexColor: '#DC2626', hexCode: '#DC2626', hex_code: '#DC2626', position: 3 },
-          ],
-        },
-      ];
+    if (!prod || !checkHasVariants(prod)) {
+      return [];
     }
 
     const anyProd = prod as any;
@@ -632,7 +589,7 @@ export function ProductFormEditor({
   };
 
   const extractVariantsFromProduct = (prod?: Product | null): ProductVariant[] => {
-    if (!prod) return [];
+    if (!prod || !checkHasVariants(prod)) return [];
     if (prod.variants && Array.isArray(prod.variants) && prod.variants.length > 0) {
       return prod.variants;
     }
@@ -645,20 +602,24 @@ export function ProductFormEditor({
     return [];
   };
 
-  // Variants & Inventory
+  // Variants & Inventory - Disabled by default; only admin can enable
   const [hasVariants, setHasVariants] = useState<boolean>(() => {
+    if (!isEditing) return false;
     return checkHasVariants(initialProduct);
   });
 
   const [options, setOptions] = useState<ProductOption[]>(() => {
+    if (!isEditing) return [];
     return extractOptionsFromProduct(initialProduct);
   });
 
   const [colorImages, setColorImages] = useState<Record<string, OptionValueImage[]>>(() => {
-    return initialProduct?.colorImages || (initialProduct as any)?.color_images || {};
+    if (!isEditing) return {};
+    return checkHasVariants(initialProduct) ? (initialProduct?.colorImages || (initialProduct as any)?.color_images || {}) : {};
   });
 
   const [variants, setVariants] = useState<ProductVariant[]>(() => {
+    if (!isEditing) return [];
     return extractVariantsFromProduct(initialProduct);
   });
 
@@ -863,17 +824,90 @@ export function ProductFormEditor({
     reader.readAsDataURL(file);
   };
 
+  // Key Features State
+  const [features, setFeatures] = useState<string[]>(() => {
+    if (!isEditing) return [];
+    if (Array.isArray(initialProduct?.features) && initialProduct.features.length > 0) {
+      return initialProduct.features;
+    }
+    if (typeof (initialProduct as any)?.features === 'string') {
+      try {
+        const parsed = JSON.parse((initialProduct as any).features);
+        if (Array.isArray(parsed)) return parsed;
+      } catch {
+        return (initialProduct as any).features.split('\n').map((s: string) => s.trim()).filter(Boolean);
+      }
+    }
+    return [];
+  });
+  const [newFeatureInput, setNewFeatureInput] = useState('');
+  const [isBulkFeaturesMode, setIsBulkFeaturesMode] = useState(false);
+  const [bulkFeaturesText, setBulkFeaturesText] = useState('');
+
+  const handleAddFeature = (text?: string) => {
+    const val = (text ?? newFeatureInput).trim();
+    if (!val) return;
+    if (!features.includes(val)) {
+      setFeatures(prev => [...prev, val]);
+    }
+    if (!text) {
+      setNewFeatureInput('');
+    }
+  };
+
+  const handleRemoveFeature = (idx: number) => {
+    setFeatures(prev => prev.filter((_, i) => i !== idx));
+  };
+
+  const handleUpdateFeature = (idx: number, newVal: string) => {
+    setFeatures(prev => {
+      const updated = [...prev];
+      updated[idx] = newVal;
+      return updated;
+    });
+  };
+
+  const handleMoveFeature = (idx: number, direction: 'up' | 'down') => {
+    if (direction === 'up' && idx === 0) return;
+    if (direction === 'down' && idx === features.length - 1) return;
+    const targetIdx = direction === 'up' ? idx - 1 : idx + 1;
+    setFeatures(prev => {
+      const updated = [...prev];
+      const item = updated[idx];
+      updated[idx] = updated[targetIdx];
+      updated[targetIdx] = item;
+      return updated;
+    });
+  };
+
+  const handleApplyBulkFeatures = () => {
+    if (!bulkFeaturesText.trim()) return;
+    const lines = bulkFeaturesText
+      .split('\n')
+      .map(line => line.replace(/^[\s*•\-–—\d.)]+/, '').trim())
+      .filter(line => line.length > 0);
+    if (lines.length > 0) {
+      setFeatures(prev => {
+        const next = [...prev];
+        lines.forEach(l => {
+          if (!next.includes(l)) next.push(l);
+        });
+        return next;
+      });
+      setBulkFeaturesText('');
+      setIsBulkFeaturesMode(false);
+    }
+  };
+
   const [specs, setSpecs] = useState<{ label: string; value: string }[]>(() => {
+    if (!isEditing) return [];
     if (Array.isArray(initialProduct?.specs) && initialProduct.specs.length > 0) {
       return initialProduct.specs;
     }
     if (Array.isArray(initialProduct?.specifications) && initialProduct.specifications.length > 0) {
       return initialProduct.specifications.map((s) => ({ label: s.key, value: s.value }));
     }
-    return [
-      { label: 'Material', value: 'Premium Mesh & TPU' },
-      { label: 'Warranty', value: '1 Year Official Veloce Care' }
-    ];
+    return [];
   });
 
   const handleMoveSpecRow = (idx: number, direction: 'up' | 'down') => {
@@ -1193,24 +1227,60 @@ export function ProductFormEditor({
         setSku(initialProduct.sku);
         setIsSkuCustom(true);
       }
-      const loadedOptions = extractOptionsFromProduct(initialProduct);
-      if (loadedOptions.length > 0) {
-        setOptions(loadedOptions);
+      if (isEditing) {
+        const isProductVar = checkHasVariants(initialProduct);
+        setHasVariants(isProductVar);
+        if (isProductVar) {
+          const loadedOptions = extractOptionsFromProduct(initialProduct);
+          setOptions(loadedOptions);
+          if (initialProduct.colorImages || (initialProduct as any).color_images) {
+            setColorImages(initialProduct.colorImages || (initialProduct as any).color_images || {});
+          }
+          const loadedVariants = extractVariantsFromProduct(initialProduct);
+          setVariants(loadedVariants);
+        } else {
+          setOptions([]);
+          setColorImages({});
+          setVariants([]);
+        }
+      } else {
+        setHasVariants(false);
+        setOptions([]);
+        setColorImages({});
+        setVariants([]);
       }
-      if (initialProduct.colorImages || (initialProduct as any).color_images) {
-        setColorImages(initialProduct.colorImages || (initialProduct as any).color_images || {});
-      }
-      const loadedVariants = extractVariantsFromProduct(initialProduct);
-      if (loadedVariants.length > 0) {
-        setVariants(loadedVariants);
-      }
-      const isProductVar = checkHasVariants(initialProduct);
-      setHasVariants(isProductVar);
       if (initialProduct.supplierId) setSupplierId(initialProduct.supplierId);
       if (initialProduct.supplierName) setSupplierName(initialProduct.supplierName);
       if (initialProduct.supplierSku) setSupplierSku(initialProduct.supplierSku);
+
+      if (Array.isArray(initialProduct.features)) {
+        setFeatures(initialProduct.features);
+      } else if (typeof (initialProduct as any)?.features === 'string') {
+        try {
+          setFeatures(JSON.parse((initialProduct as any).features));
+        } catch {
+          setFeatures((initialProduct as any).features.split('\n').map((s: string) => s.trim()).filter(Boolean));
+        }
+      } else {
+        setFeatures([]);
+      }
+
+      if (Array.isArray(initialProduct.specs) && initialProduct.specs.length > 0) {
+        setSpecs(initialProduct.specs);
+      } else if (Array.isArray(initialProduct.specifications) && initialProduct.specifications.length > 0) {
+        setSpecs(initialProduct.specifications.map((s) => ({ label: s.key, value: s.value })));
+      } else {
+        setSpecs([]);
+      }
+    } else {
+      setHasVariants(false);
+      setOptions([]);
+      setColorImages({});
+      setVariants([]);
+      setFeatures([]);
+      setSpecs([]);
     }
-  }, [initialProduct]);
+  }, [initialProduct, isEditing]);
 
   // Auto-generate unique SKU when category or title changes unless user custom overridden
   useEffect(() => {
@@ -1861,21 +1931,24 @@ export function ProductFormEditor({
       images360: images360.length > 0 ? images360 : (initialProduct?.images360 || undefined),
       stock: prodType === 'physical' ? Number(stockQty) : (initialProduct?.stock ?? null),
       lowStockThreshold: Number(lowStockThreshold),
-      trackInventory,
-      hasVariants,
-      options: hasVariants ? options : (initialProduct?.options || []),
-      colorImages: hasVariants ? colorImages : (initialProduct?.colorImages || {}),
-      color_images: hasVariants ? colorImages : (initialProduct?.color_images || {}),
-      variantAttributes: options.map((o) => o.name.toLowerCase()),
-      variantMatrix: hasVariants ? variants : (initialProduct?.variantMatrix || undefined),
-      variants: hasVariants ? variants : (initialProduct?.variants || undefined),
+      hasVariants: Boolean(hasVariants),
+      has_variants: Boolean(hasVariants),
+      options: hasVariants ? options : [],
+      colorImages: hasVariants ? colorImages : {},
+      color_images: hasVariants ? colorImages : {},
+      variantAttributes: hasVariants ? options.map((o) => o.name.toLowerCase()) : [],
+      variantMatrix: hasVariants ? variants : [],
+      variants: hasVariants ? variants : [],
+      variations: hasVariants ? options.map((o) => ({ name: o.name, options: o.values.map((v) => v.name) })) : [],
       rating: initialProduct?.rating || 5.0,
       reviewsCount: initialProduct?.reviewsCount || 0,
       reviews: initialProduct?.reviews || [],
       status: publishImmediately ? 'Active' : status === 'scheduled' ? 'scheduled' : (initialProduct?.status || 'Draft'),
       publishAt: publishAt || initialProduct?.publishAt || undefined,
       paymentRestriction: initialProduct?.paymentRestriction || 'both',
-      features: specs.length > 0 ? specs.map((s) => `${s.label}: ${s.value}`) : (initialProduct?.features || []),
+      features: features.length > 0
+        ? features.map((f) => f.trim()).filter(Boolean)
+        : (specs.length > 0 ? specs.map((s) => `${s.label}: ${s.value}`) : (Array.isArray(initialProduct?.features) ? initialProduct.features : [])),
       specifications: specs.length > 0 ? specs.map((s) => ({ key: s.label, value: s.value })) : (initialProduct?.specifications || []),
       specs: specs.length > 0 ? specs : (initialProduct?.specs || []),
       whatsInTheBox: whatsInTheBox.trim() || initialProduct?.whatsInTheBox || '',
@@ -2444,8 +2517,237 @@ export function ProductFormEditor({
             </div>
           </div>
         </section>
-        <section id="section-description" className="bg-white rounded-2xl border border-slate-200 p-5 sm:p-8 shadow-xs scroll-mt-24">
-          <div className="space-y-6">
+        <section id="section-description" className="bg-white rounded-2xl border border-slate-200 p-5 sm:p-8 shadow-xs scroll-mt-24 space-y-8">
+          {/* Key Product Features & Highlights Input Block */}
+          <div className="bg-linear-to-br from-indigo-50/40 via-white to-slate-50/40 rounded-2xl border border-indigo-100 p-5 sm:p-6 space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pb-3 border-b border-indigo-50">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-lg bg-indigo-600 text-white flex items-center justify-center shadow-xs">
+                  <Sparkles className="w-4 h-4" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="font-bold text-sm text-slate-900">
+                      Key Product Features & Highlights
+                    </h3>
+                    <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-indigo-100 text-indigo-700">
+                      {features.length} {features.length === 1 ? 'Feature' : 'Features'}
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Bullet highlights displayed on the product page beneath the price for fast customer scanning.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 self-start sm:self-auto">
+                <button
+                  type="button"
+                  onClick={() => setIsBulkFeaturesMode(!isBulkFeaturesMode)}
+                  className="px-3 py-1.5 rounded-lg text-xs font-semibold border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 transition flex items-center gap-1.5 cursor-pointer shadow-3xs"
+                >
+                  <List className="h-3.5 w-3.5 text-indigo-600" />
+                  {isBulkFeaturesMode ? 'Standard List Mode' : 'Bulk Paste Mode'}
+                </button>
+                {features.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (window.confirm('Are you sure you want to remove all product features?')) {
+                        setFeatures([]);
+                      }
+                    }}
+                    className="px-2.5 py-1.5 rounded-lg text-xs font-semibold text-rose-600 hover:bg-rose-50 border border-rose-200 transition cursor-pointer"
+                    title="Clear all features"
+                  >
+                    Clear All
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Bulk Mode */}
+            {isBulkFeaturesMode ? (
+              <div className="space-y-3 bg-white p-4 rounded-xl border border-slate-200">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold text-slate-700 uppercase font-mono">
+                    Paste Features (One per line)
+                  </label>
+                  <span className="text-[11px] text-slate-400">Lines will be automatically cleaned and converted into bullet items</span>
+                </div>
+                <textarea
+                  rows={5}
+                  value={bulkFeaturesText}
+                  onChange={(e) => setBulkFeaturesText(e.target.value)}
+                  placeholder={`e.g.\n• Aerospace-Grade Aluminum Frame\n• Fast 65W GaN Quick Charge Support\n• High-Resolution 120Hz AMOLED Display\n• IP68 Water & Dust Resistance`}
+                  className="w-full p-3.5 text-xs font-mono rounded-xl border border-slate-300 focus:outline-hidden focus:ring-2 focus:ring-indigo-500 bg-slate-50/50"
+                />
+                <div className="flex items-center justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsBulkFeaturesMode(false);
+                      setBulkFeaturesText('');
+                    }}
+                    className="px-3 py-1.5 text-xs font-bold text-slate-600 hover:bg-slate-100 rounded-lg cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleApplyBulkFeatures}
+                    disabled={!bulkFeaturesText.trim()}
+                    className="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-lg text-xs font-bold shadow-xs cursor-pointer flex items-center gap-1.5"
+                  >
+                    <Plus className="h-3.5 w-3.5" /> Add Bulk Features
+                  </button>
+                </div>
+              </div>
+            ) : (
+              /* Standard Add Input */
+              <div className="space-y-3">
+                <div className="flex items-center gap-2">
+                  <div className="relative flex-1">
+                    <input
+                      type="text"
+                      id="input-product-feature"
+                      value={newFeatureInput}
+                      onChange={(e) => setNewFeatureInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          handleAddFeature();
+                        }
+                      }}
+                      placeholder="Type a key selling point (e.g. 100% Genuine Kenyan Leather, 1-Year Warranty)..."
+                      className="w-full h-11 pl-4 pr-10 rounded-xl border border-slate-300 bg-white text-xs font-medium focus:outline-hidden focus:ring-2 focus:ring-indigo-500 shadow-3xs"
+                    />
+                    {newFeatureInput && (
+                      <button
+                        type="button"
+                        onClick={() => setNewFeatureInput('')}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                      >
+                        <X className="h-4 w-4" />
+                      </button>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    id="btn-add-product-feature"
+                    onClick={() => handleAddFeature()}
+                    disabled={!newFeatureInput.trim()}
+                    className="h-11 px-5 rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-bold transition flex items-center gap-2 shadow-xs cursor-pointer shrink-0"
+                  >
+                    <Plus className="h-4 w-4" /> Add Feature
+                  </button>
+                </div>
+
+                {/* Quick Preset Badges */}
+                <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                  <span className="text-[11px] font-mono text-slate-400 flex items-center gap-1 mr-1">
+                    <Sparkles className="h-3 w-3 text-indigo-500" /> Quick Add:
+                  </span>
+                  {[
+                    '100% Genuine Certified Quality',
+                    '1-Year Official Manufacturer Warranty',
+                    'Ergonomic & Lightweight Design',
+                    'Fast Same-Day Delivery in Nairobi',
+                    '7-Day Return & Exchange Guarantee',
+                    'Premium Long-Lasting Durability',
+                  ].map((preset) => {
+                    const alreadyAdded = features.includes(preset);
+                    return (
+                      <button
+                        key={preset}
+                        type="button"
+                        onClick={() => {
+                          if (!alreadyAdded) handleAddFeature(preset);
+                        }}
+                        disabled={alreadyAdded}
+                        className={`px-2.5 py-1 rounded-full text-[11px] font-medium transition cursor-pointer border ${
+                          alreadyAdded
+                            ? 'bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed'
+                            : 'bg-white hover:bg-indigo-50 text-slate-700 hover:text-indigo-700 border-slate-200 hover:border-indigo-300 shadow-3xs'
+                        }`}
+                      >
+                        {alreadyAdded ? '✓ ' : '+ '}
+                        {preset}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* Rendered Features List */}
+            {features.length === 0 ? (
+              <div className="p-6 text-center border-2 border-dashed border-slate-200 rounded-xl bg-white/70">
+                <Sparkles className="h-8 w-8 text-indigo-400 mx-auto mb-2 opacity-60" />
+                <p className="text-xs font-bold text-slate-700">No Key Features Added Yet</p>
+                <p className="text-[11px] text-slate-400 mt-0.5">
+                  Add bullet points above to highlight key specs, quality guarantees, and benefits to customers.
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-2 pt-2">
+                <div className="text-[11px] font-mono uppercase tracking-wider text-slate-400 font-bold px-1">
+                  Active Feature Bullet Points ({features.length})
+                </div>
+                <div className="space-y-2">
+                  {features.map((feat, idx) => (
+                    <div
+                      key={idx}
+                      className="group flex items-center gap-2 p-2.5 bg-white hover:bg-slate-50/80 rounded-xl border border-slate-200 hover:border-indigo-200 transition shadow-3xs"
+                    >
+                      <span className="w-6 h-6 rounded-md bg-indigo-50 text-indigo-700 font-mono text-[10px] font-bold flex items-center justify-center shrink-0">
+                        {idx + 1}
+                      </span>
+                      <div className="flex-1">
+                        <input
+                          type="text"
+                          value={feat}
+                          onChange={(e) => handleUpdateFeature(idx, e.target.value)}
+                          className="w-full px-2.5 py-1 text-xs text-slate-800 font-medium bg-transparent border border-transparent hover:border-slate-200 focus:border-indigo-400 focus:bg-white rounded-lg focus:outline-hidden transition"
+                        />
+                      </div>
+                      <div className="flex items-center gap-1 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => handleMoveFeature(idx, 'up')}
+                          disabled={idx === 0}
+                          title="Move Up"
+                          className="p-1 rounded-md text-slate-400 hover:text-slate-700 hover:bg-slate-100 disabled:opacity-30 disabled:hover:bg-transparent cursor-pointer"
+                        >
+                          <MoveUp className="h-3.5 w-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleMoveFeature(idx, 'down')}
+                          disabled={idx === features.length - 1}
+                          title="Move Down"
+                          className="p-1 rounded-md text-slate-400 hover:text-slate-700 hover:bg-slate-100 disabled:opacity-30 disabled:hover:bg-transparent cursor-pointer"
+                        >
+                          <MoveDown className="h-3.5 w-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveFeature(idx)}
+                          title="Delete Feature"
+                          className="p-1 rounded-md text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition cursor-pointer"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Detailed Rich Description */}
+          <div className="space-y-6 pt-2">
             {/* Header with Stats and View Mode Toggle */}
             <div className="border-b border-slate-100 pb-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
               <div>
@@ -4600,9 +4902,11 @@ export function ProductFormEditor({
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-1.5 flex-wrap">
-                    <span className="px-2 py-0.5 rounded-md bg-indigo-50 text-indigo-700 border border-indigo-100 font-mono font-bold text-[9px] uppercase tracking-wider">
-                      {prodType} Product
-                    </span>
+                    {prodType !== 'physical' && (
+                      <span className="px-2 py-0.5 rounded-md bg-indigo-50 text-indigo-700 border border-indigo-100 font-mono font-bold text-[9px] uppercase tracking-wider">
+                        {prodType} Product
+                      </span>
+                    )}
                     <span className={`px-2 py-0.5 rounded-md font-mono font-bold text-[9px] uppercase border ${
                       (status as string) === 'published' || (status as string) === 'Active'
                         ? 'bg-emerald-50 text-emerald-700 border-emerald-200'

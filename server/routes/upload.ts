@@ -9,6 +9,7 @@
 import { Router, Request, Response } from 'express';
 import crypto from 'crypto';
 import { requireAdmin } from '../middleware/auth';
+import { saveBase64ImageToDisk } from '../../src/lib/image-storage';
 
 let sharp: any = null;
 try {
@@ -139,11 +140,14 @@ router.post('/optimize', requireAdmin, async (req: Request, res: Response) => {
       generateThumbnailWithSharp(input, 300, 78),
     ]);
 
+    const staticUrl = await saveBase64ImageToDisk(fullResult.dataUri, 'opt');
+    const staticThumbUrl = await saveBase64ImageToDisk(thumbResult.dataUri, 'thumb');
+
     return res.json({
       success: true,
-      url: fullResult.dataUri,
-      thumbnail_url: thumbResult.dataUri,
-      thumbnailUrl: thumbResult.dataUri,
+      url: staticUrl,
+      thumbnail_url: staticThumbUrl,
+      thumbnailUrl: staticThumbUrl,
       format: 'webp',
       width: fullResult.info.width,
       height: fullResult.info.height,
@@ -191,14 +195,17 @@ router.post('/cloudinary', requireAdmin, async (req: Request, res: Response) => 
     }
 
     if (!cloudName || !apiKey || !apiSecret) {
-      // Return high-efficiency Sharp WebP payload as successful fallback
+      // Offload to local static file in public/uploads/
+      const staticUrl = await saveBase64ImageToDisk(processedPayload, 'prod');
+      const staticThumbUrl = localThumbDataUri ? await saveBase64ImageToDisk(localThumbDataUri, 'thumb') : staticUrl;
+
       return res.status(200).json({
         success: true,
         configured: false,
         fallback: true,
-        url: processedPayload,
-        thumbnail_url: localThumbDataUri || processedPayload,
-        thumbnailUrl: localThumbDataUri || processedPayload,
+        url: staticUrl,
+        thumbnail_url: staticThumbUrl,
+        thumbnailUrl: staticThumbUrl,
         format: 'webp',
         message: 'Saved locally as optimized WebP image with 300x300 thumbnail.',
       });

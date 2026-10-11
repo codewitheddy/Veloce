@@ -350,9 +350,10 @@ export const supplierApi = {
           overall_profit_margin: Math.round(margin * 10) / 10
         },
         status_distribution: {
-          Paid: suppliers.filter((s) => s.payment_status === 'Paid').length,
-          'Partially Paid': suppliers.filter((s) => s.payment_status === 'Partially Paid').length,
-          Pending: suppliers.filter((s) => s.payment_status === 'Pending').length
+          // Only count suppliers with actual outstanding balance or transactions
+          Paid: suppliers.filter((s) => s.payment_status === 'Paid' && s.total_cost_owed > 0).length,
+          'Partially Paid': suppliers.filter((s) => s.payment_status === 'Partially Paid' && s.total_cost_owed > 0).length,
+          Pending: suppliers.filter((s) => s.payment_status === 'Pending' && s.total_cost_owed > 0).length
         },
         top_profitable_products: products.slice(0, 5).map((p) => ({
           product_id: p.product,

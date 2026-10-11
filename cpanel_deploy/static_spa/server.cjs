@@ -29,6 +29,120 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
 ));
 var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
 
+// src/lib/image-storage.ts
+function ensureUploadsDir() {
+  if (!import_fs.default.existsSync(UPLOADS_DIR)) {
+    import_fs.default.mkdirSync(UPLOADS_DIR, { recursive: true });
+  }
+  return UPLOADS_DIR;
+}
+async function saveBase64ImageToDisk(input, prefix = "prod") {
+  if (!input || typeof input !== "string") return input;
+  const trimmed = input.trim();
+  if (!trimmed.startsWith("data:image/")) {
+    return trimmed;
+  }
+  ensureUploadsDir();
+  try {
+    const match = trimmed.match(/^data:image\/([a-zA-Z0-9+.-]+);base64,(.+)$/s);
+    if (!match) {
+      return trimmed;
+    }
+    const mimeSubtype = match[1].toLowerCase();
+    const base64Data = match[2];
+    const buffer = Buffer.from(base64Data, "base64");
+    const randomHex = import_crypto.default.randomBytes(4).toString("hex");
+    if (sharp && mimeSubtype !== "svg+xml") {
+      const filename2 = `${prefix}_${Date.now()}_${randomHex}.webp`;
+      const filePath2 = import_path.default.join(UPLOADS_DIR, filename2);
+      await sharp(buffer).rotate().resize(1600, 1600, { fit: "inside", withoutEnlargement: true }).webp({ quality: 82, effort: 4 }).toFile(filePath2);
+      return `/uploads/${filename2}`;
+    }
+    let ext = "png";
+    if (mimeSubtype.includes("jpeg") || mimeSubtype.includes("jpg")) ext = "jpg";
+    else if (mimeSubtype.includes("webp")) ext = "webp";
+    else if (mimeSubtype.includes("gif")) ext = "gif";
+    else if (mimeSubtype.includes("svg")) ext = "svg";
+    const filename = `${prefix}_${Date.now()}_${randomHex}.${ext}`;
+    const filePath = import_path.default.join(UPLOADS_DIR, filename);
+    await import_fs.default.promises.writeFile(filePath, buffer);
+    return `/uploads/${filename}`;
+  } catch (err) {
+    console.error("[Image Storage] Error offloading base64 image to disk:", err);
+    return trimmed;
+  }
+}
+async function sanitizeProductImageFields(product) {
+  if (!product || typeof product !== "object") return product;
+  if (product.imageUrl && typeof product.imageUrl === "string" && product.imageUrl.startsWith("data:image/")) {
+    product.imageUrl = await saveBase64ImageToDisk(product.imageUrl, "prod");
+  }
+  if (product.image_url && typeof product.image_url === "string" && product.image_url.startsWith("data:image/")) {
+    product.image_url = product.imageUrl && !product.imageUrl.startsWith("data:image/") ? product.imageUrl : await saveBase64ImageToDisk(product.image_url, "prod");
+  }
+  if (!product.imageUrl && product.image_url) {
+    product.imageUrl = product.image_url;
+  }
+  if (!product.image_url && product.imageUrl) {
+    product.image_url = product.imageUrl;
+  }
+  if (Array.isArray(product.images)) {
+    product.images = await Promise.all(
+      product.images.map(async (img) => {
+        if (typeof img === "string" && img.startsWith("data:image/")) {
+          return await saveBase64ImageToDisk(img, "prod");
+        }
+        return img;
+      })
+    );
+  }
+  if (Array.isArray(product.gallery_images)) {
+    product.gallery_images = product.images;
+  }
+  const colorImgs = product.colorImages || product.color_images;
+  if (colorImgs && typeof colorImgs === "object" && !Array.isArray(colorImgs)) {
+    const updatedColorImgs = {};
+    for (const [key, val] of Object.entries(colorImgs)) {
+      if (typeof val === "string" && val.startsWith("data:image/")) {
+        updatedColorImgs[key] = await saveBase64ImageToDisk(val, "color");
+      } else {
+        updatedColorImgs[key] = String(val);
+      }
+    }
+    product.colorImages = updatedColorImgs;
+    product.color_images = updatedColorImgs;
+  }
+  const matrix = product.variants || product.variantMatrix || product.variant_matrix;
+  if (Array.isArray(matrix)) {
+    for (const v of matrix) {
+      if (v && typeof v === "object") {
+        if (typeof v.image === "string" && v.image.startsWith("data:image/")) {
+          v.image = await saveBase64ImageToDisk(v.image, "var");
+        }
+        if (typeof v.imageUrl === "string" && v.imageUrl.startsWith("data:image/")) {
+          v.imageUrl = await saveBase64ImageToDisk(v.imageUrl, "var");
+        }
+      }
+    }
+  }
+  return product;
+}
+var import_fs, import_path, import_crypto, sharp, UPLOADS_DIR;
+var init_image_storage = __esm({
+  "src/lib/image-storage.ts"() {
+    import_fs = __toESM(require("fs"), 1);
+    import_path = __toESM(require("path"), 1);
+    import_crypto = __toESM(require("crypto"), 1);
+    sharp = null;
+    try {
+      sharp = require("sharp");
+    } catch (_) {
+      console.warn("[Image Storage] sharp not available, using raw buffer write.");
+    }
+    UPLOADS_DIR = import_path.default.resolve(process.cwd(), "public", "uploads");
+  }
+});
+
 // src/lib/mysql-db.ts
 function getDbHost() {
   let host = (process.env.DB_HOST || "127.0.0.1").trim();
@@ -49,7 +163,7 @@ function getDbName() {
 function getDbPort() {
   return Number(process.env.DB_PORT) || 3306;
 }
-async function getDbPool2() {
+async function getDbPool() {
   if (dbPool) {
     return dbPool;
   }
@@ -108,7 +222,7 @@ async function initializeDatabaseSchema() {
   if (isInitialized) return;
   isInitializing = true;
   try {
-    const pool = dbPool || await getDbPool2();
+    const pool = dbPool || await getDbPool();
     console.log("[MySQL] Verifying and initializing database schema tables...");
     await pool.query(`
       CREATE TABLE IF NOT EXISTS users (
@@ -672,7 +786,7 @@ async function initializeDatabaseSchema() {
 }
 async function getDbStatus() {
   try {
-    const pool = await getDbPool2();
+    const pool = await getDbPool();
     const [prodCount] = await pool.query("SELECT COUNT(*) as count FROM products");
     const [orderCount] = await pool.query("SELECT COUNT(*) as count FROM orders");
     const [userCount] = await pool.query("SELECT COUNT(*) as count FROM users");
@@ -695,7 +809,7 @@ async function getDbStatus() {
   }
 }
 async function getMysqlUserByEmail(email) {
-  const pool = await getDbPool2();
+  const pool = await getDbPool();
   const [rows] = await pool.query("SELECT * FROM users WHERE LOWER(email) = ? LIMIT 1", [
     (email || "").trim().toLowerCase()
   ]);
@@ -703,7 +817,7 @@ async function getMysqlUserByEmail(email) {
   return rows[0];
 }
 async function getMysqlUserByEmailOrUsername(identifier) {
-  const pool = await getDbPool2();
+  const pool = await getDbPool();
   const clean = (identifier || "").trim().toLowerCase();
   const [rows] = await pool.query(
     "SELECT * FROM users WHERE LOWER(email) = ? OR LOWER(username) = ? LIMIT 1",
@@ -713,18 +827,18 @@ async function getMysqlUserByEmailOrUsername(identifier) {
   return rows[0];
 }
 async function getMysqlUserById(userId) {
-  const pool = await getDbPool2();
+  const pool = await getDbPool();
   const [rows] = await pool.query("SELECT * FROM users WHERE id = ? LIMIT 1", [userId]);
   if (!rows || rows.length === 0) return null;
   return rows[0];
 }
 async function getAllMysqlUsers() {
-  const pool = await getDbPool2();
+  const pool = await getDbPool();
   const [rows] = await pool.query("SELECT * FROM users ORDER BY created_at DESC");
   return rows || [];
 }
 async function saveMysqlUser(user) {
-  const pool = await getDbPool2();
+  const pool = await getDbPool();
   const id = user.id || `usr-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
   const now = (/* @__PURE__ */ new Date()).toISOString();
   await pool.query(
@@ -775,7 +889,7 @@ async function saveMysqlUser(user) {
   return getMysqlUserById(id);
 }
 async function updateMysqlUserPasswordById(userId, newPasswordHash) {
-  const pool = await getDbPool2();
+  const pool = await getDbPool();
   const [res] = await pool.query(
     "UPDATE users SET password_hash = ?, updated_at = ? WHERE id = ?",
     [newPasswordHash, (/* @__PURE__ */ new Date()).toISOString(), userId]
@@ -811,18 +925,19 @@ function safeJsonParse(val, fallback) {
   }
 }
 async function getMysqlProducts() {
-  const pool = await getDbPool2();
+  const pool = await getDbPool();
   const [rows] = await pool.query("SELECT * FROM products ORDER BY created_at DESC");
   return (rows || []).map(parseProductRow);
 }
 async function getMysqlProductById(id) {
-  const pool = await getDbPool2();
+  const pool = await getDbPool();
   const [rows] = await pool.query("SELECT * FROM products WHERE id = ? LIMIT 1", [id]);
   if (!rows || rows.length === 0) return null;
   return parseProductRow(rows[0]);
 }
 async function saveMysqlProduct(p) {
-  const pool = await getDbPool2();
+  await sanitizeProductImageFields(p);
+  const pool = await getDbPool();
   const id = p.id || `prod-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
   const now = (/* @__PURE__ */ new Date()).toISOString();
   await pool.query(
@@ -905,7 +1020,7 @@ async function saveMysqlProduct(p) {
   return getMysqlProductById(id);
 }
 async function deleteMysqlProduct(id) {
-  const pool = await getDbPool2();
+  const pool = await getDbPool();
   const [res] = await pool.query("DELETE FROM products WHERE id = ?", [id]);
   return res.affectedRows > 0;
 }
@@ -935,18 +1050,18 @@ function parseOrderRow(row) {
   };
 }
 async function getMysqlOrders() {
-  const pool = await getDbPool2();
+  const pool = await getDbPool();
   const [rows] = await pool.query("SELECT * FROM orders ORDER BY date DESC, created_at DESC");
   return (rows || []).map(parseOrderRow);
 }
 async function getMysqlOrderById(id) {
-  const pool = await getDbPool2();
+  const pool = await getDbPool();
   const [rows] = await pool.query("SELECT * FROM orders WHERE id = ? LIMIT 1", [id]);
   if (!rows || rows.length === 0) return null;
   return parseOrderRow(rows[0]);
 }
 async function saveMysqlOrder(order) {
-  const pool = await getDbPool2();
+  const pool = await getDbPool();
   const id = order.id || `ORD-${Date.now()}`;
   const now = (/* @__PURE__ */ new Date()).toISOString();
   const refCode = order.paymentReference || order.mpesaReceiptNumber || null;
@@ -1089,7 +1204,7 @@ async function saveMysqlOrder(order) {
   return getMysqlOrderById(id);
 }
 async function updateMysqlOrderStatus(id, statusOrUpdates, paymentStatus, trackingNumber) {
-  const pool = await getDbPool2();
+  const pool = await getDbPool();
   let targetStatus = typeof statusOrUpdates === "string" && statusOrUpdates !== "[object Object]" ? statusOrUpdates : typeof statusOrUpdates === "object" && typeof statusOrUpdates?.status === "string" && statusOrUpdates.status !== "[object Object]" ? statusOrUpdates.status : void 0;
   let targetPaymentStatus = typeof statusOrUpdates === "object" ? statusOrUpdates?.paymentStatus || statusOrUpdates?.payment_status || paymentStatus : paymentStatus;
   let targetTrackingNumber = typeof statusOrUpdates === "object" ? statusOrUpdates?.trackingNumber || statusOrUpdates?.tracking_number || trackingNumber : trackingNumber;
@@ -1117,12 +1232,12 @@ async function updateMysqlOrderStatus(id, statusOrUpdates, paymentStatus, tracki
   return getMysqlOrderById(id);
 }
 async function deleteMysqlOrder(id) {
-  const pool = await getDbPool2();
+  const pool = await getDbPool();
   const [res] = await pool.query("DELETE FROM orders WHERE id = ?", [id]);
   return res.affectedRows > 0;
 }
 async function getMysqlCategories() {
-  const pool = await getDbPool2();
+  const pool = await getDbPool();
   let [rows] = await pool.query("SELECT * FROM categories ORDER BY display_order ASC, name ASC");
   if (!rows || rows.length === 0) {
     for (const c of DEFAULT_CORE_CATEGORIES) {
@@ -1168,7 +1283,7 @@ async function getMysqlCategories() {
   });
 }
 async function saveMysqlCategory(cat) {
-  const pool = await getDbPool2();
+  const pool = await getDbPool();
   const id = cat.id || `cat-${Date.now()}`;
   const isActive = cat.is_active !== void 0 ? cat.is_active ? 1 : 0 : cat.status === "Inactive" ? 0 : 1;
   const image = cat.imageUrl || cat.image || "";
@@ -1210,12 +1325,12 @@ async function saveMysqlCategory(cat) {
   };
 }
 async function deleteMysqlCategory(id) {
-  const pool = await getDbPool2();
+  const pool = await getDbPool();
   const [res] = await pool.query("DELETE FROM categories WHERE id = ?", [id]);
   return res.affectedRows > 0;
 }
 async function getMysqlSuppliers() {
-  const pool = await getDbPool2();
+  const pool = await getDbPool();
   const [rows] = await pool.query("SELECT * FROM suppliers ORDER BY name ASC");
   return (rows || []).map((s) => ({
     ...s,
@@ -1227,7 +1342,7 @@ async function getMysqlSuppliers() {
   }));
 }
 async function saveMysqlSupplier(s) {
-  const pool = await getDbPool2();
+  const pool = await getDbPool();
   const id = s.id || `sup-${Date.now()}`;
   const now = (/* @__PURE__ */ new Date()).toISOString();
   await pool.query(
@@ -1280,12 +1395,12 @@ async function saveMysqlSupplier(s) {
   return rows[0];
 }
 async function deleteMysqlSupplier(id) {
-  const pool = await getDbPool2();
+  const pool = await getDbPool();
   const [res] = await pool.query("DELETE FROM suppliers WHERE id = ?", [id]);
   return res.affectedRows > 0;
 }
 async function getMysqlSupplierProducts(supplierId) {
-  const pool = await getDbPool2();
+  const pool = await getDbPool();
   const query = supplierId ? "SELECT * FROM supplier_products WHERE supplierId = ? ORDER BY name ASC" : "SELECT * FROM supplier_products ORDER BY name ASC";
   const params = supplierId ? [supplierId] : [];
   const [rows] = await pool.query(query, params);
@@ -1297,7 +1412,7 @@ async function getMysqlSupplierProducts(supplierId) {
   }));
 }
 async function saveMysqlSupplierProduct(sp) {
-  const pool = await getDbPool2();
+  const pool = await getDbPool();
   const id = sp.id || `sp-${Date.now()}`;
   const now = (/* @__PURE__ */ new Date()).toISOString();
   await pool.query(
@@ -1337,7 +1452,7 @@ async function saveMysqlSupplierProduct(sp) {
   return rows[0];
 }
 async function getMysqlSupplierBatches(supplierId) {
-  const pool = await getDbPool2();
+  const pool = await getDbPool();
   const query = supplierId ? "SELECT * FROM supplier_batches WHERE supplierId = ? ORDER BY dateReceived DESC" : "SELECT * FROM supplier_batches ORDER BY dateReceived DESC";
   const params = supplierId ? [supplierId] : [];
   const [rows] = await pool.query(query, params);
@@ -1348,7 +1463,7 @@ async function getMysqlSupplierBatches(supplierId) {
   }));
 }
 async function saveMysqlSupplierBatch(batch) {
-  const pool = await getDbPool2();
+  const pool = await getDbPool();
   const id = batch.id || `batch-${Date.now()}`;
   await pool.query(
     `INSERT INTO supplier_batches (id, supplierId, batchNumber, dateReceived, items, totalCost, status, invoiceNumber, notes, created_at)
@@ -1376,14 +1491,14 @@ async function saveMysqlSupplierBatch(batch) {
   return rows[0];
 }
 async function getMysqlSupplierPayments(supplierId) {
-  const pool = await getDbPool2();
+  const pool = await getDbPool();
   const query = supplierId ? "SELECT * FROM supplier_payments WHERE supplierId = ? ORDER BY date DESC" : "SELECT * FROM supplier_payments ORDER BY date DESC";
   const params = supplierId ? [supplierId] : [];
   const [rows] = await pool.query(query, params);
   return (rows || []).map((p) => ({ ...p, amount: Number(p.amount) }));
 }
 async function saveMysqlSupplierPayment(p) {
-  const pool = await getDbPool2();
+  const pool = await getDbPool();
   const id = p.id || `pay-${Date.now()}`;
   await pool.query(
     `INSERT INTO supplier_payments (id, supplierId, amount, date, paymentMethod, referenceNumber, status, notes, invoiceId, created_at)
@@ -1411,7 +1526,7 @@ async function saveMysqlSupplierPayment(p) {
   return rows[0];
 }
 async function getMysqlSupplierLedger(supplierId) {
-  const pool = await getDbPool2();
+  const pool = await getDbPool();
   const [rows] = await pool.query(
     "SELECT * FROM supplier_ledger WHERE supplierId = ? ORDER BY date ASC, created_at ASC",
     [supplierId]
@@ -1423,7 +1538,7 @@ async function getMysqlSupplierLedger(supplierId) {
   }));
 }
 async function getAllMysqlCustomers() {
-  const pool = await getDbPool2();
+  const pool = await getDbPool();
   const [rows] = await pool.query("SELECT * FROM customers ORDER BY name ASC");
   return (rows || []).map((c) => ({
     ...c,
@@ -1432,7 +1547,7 @@ async function getAllMysqlCustomers() {
   }));
 }
 async function saveMysqlCustomer(c) {
-  const pool = await getDbPool2();
+  const pool = await getDbPool();
   const id = c.id || `cust-${Date.now()}`;
   const now = (/* @__PURE__ */ new Date()).toISOString();
   await pool.query(
@@ -1475,7 +1590,7 @@ async function saveMysqlCustomer(c) {
   return rows[0];
 }
 async function getMysqlSiteSettings() {
-  const pool = await getDbPool2();
+  const pool = await getDbPool();
   const [rows] = await pool.query('SELECT * FROM site_settings WHERE id = "default" LIMIT 1');
   if (!rows || rows.length === 0) return null;
   const raw = rows[0];
@@ -1492,7 +1607,7 @@ async function getMysqlSiteSettings() {
   };
 }
 async function saveMysqlSiteSettings(settings) {
-  const pool = await getDbPool2();
+  const pool = await getDbPool();
   const now = (/* @__PURE__ */ new Date()).toISOString();
   await pool.query(
     `INSERT INTO site_settings (
@@ -1525,7 +1640,7 @@ async function saveMysqlSiteSettings(settings) {
   return getMysqlSiteSettings();
 }
 async function getMysqlHeroBanners() {
-  const pool = await getDbPool2();
+  const pool = await getDbPool();
   const [rows] = await pool.query("SELECT * FROM hero_banners ORDER BY order_index ASC");
   return (rows || []).map((b) => ({
     ...b,
@@ -1534,7 +1649,7 @@ async function getMysqlHeroBanners() {
   }));
 }
 async function saveMysqlHeroBanners(banners) {
-  const pool = await getDbPool2();
+  const pool = await getDbPool();
   await pool.query("DELETE FROM hero_banners");
   for (let i = 0; i < banners.length; i++) {
     const b = banners[i];
@@ -1558,7 +1673,7 @@ async function saveMysqlHeroBanners(banners) {
   return getMysqlHeroBanners();
 }
 async function getMysqlReviews(productId) {
-  const pool = await getDbPool2();
+  const pool = await getDbPool();
   const query = productId ? "SELECT * FROM reviews WHERE productId = ? ORDER BY date DESC" : "SELECT * FROM reviews ORDER BY date DESC";
   const params = productId ? [productId] : [];
   const [rows] = await pool.query(query, params);
@@ -1570,7 +1685,7 @@ async function getMysqlReviews(productId) {
   }));
 }
 async function saveMysqlReview(r) {
-  const pool = await getDbPool2();
+  const pool = await getDbPool();
   const id = r.id || `rev-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
   const now = (/* @__PURE__ */ new Date()).toISOString();
   await pool.query(
@@ -1601,12 +1716,12 @@ async function saveMysqlReview(r) {
   return rows[0];
 }
 async function deleteMysqlReview(id) {
-  const pool = await getDbPool2();
+  const pool = await getDbPool();
   const [res] = await pool.query("DELETE FROM reviews WHERE id = ?", [id]);
   return res.affectedRows > 0;
 }
 async function getMysqlCoupons() {
-  const pool = await getDbPool2();
+  const pool = await getDbPool();
   const [rows] = await pool.query("SELECT * FROM coupons ORDER BY created_at DESC");
   return (rows || []).map((c) => ({
     ...c,
@@ -1620,7 +1735,7 @@ async function getMysqlCoupons() {
   }));
 }
 async function getMysqlCustomClothingRequests(filters) {
-  const pool = await getDbPool2();
+  const pool = await getDbPool();
   const [rows] = await pool.query("SELECT * FROM custom_clothing_requests ORDER BY created_at DESC");
   let list = (rows || []).map((r) => ({
     ...r,
@@ -1643,7 +1758,7 @@ async function getMysqlCustomClothingRequests(filters) {
   return list;
 }
 async function saveMysqlCustomClothingRequest(req) {
-  const pool = await getDbPool2();
+  const pool = await getDbPool();
   const id = req.id || `req-custom-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
   const refNo = req.referenceNo || req.reference_no || `ROP-CC-${(/* @__PURE__ */ new Date()).getFullYear()}-${Math.floor(1e3 + Math.random() * 9e3)}`;
   const now = (/* @__PURE__ */ new Date()).toISOString();
@@ -1683,7 +1798,7 @@ async function saveMysqlCustomClothingRequest(req) {
   return rows[0];
 }
 async function updateMysqlCustomClothingRequestStatus(id, status) {
-  const pool = await getDbPool2();
+  const pool = await getDbPool();
   await pool.query(
     "UPDATE custom_clothing_requests SET status = ?, updated_at = ? WHERE id = ? OR reference_no = ?",
     [status, (/* @__PURE__ */ new Date()).toISOString(), id, id]
@@ -1695,7 +1810,7 @@ async function updateMysqlCustomClothingRequestStatus(id, status) {
   return rows[0] || null;
 }
 async function getMysqlInventoryAuditLogs(limit = 100) {
-  const pool = await getDbPool2();
+  const pool = await getDbPool();
   const [rows] = await pool.query(
     "SELECT * FROM inventory_audit_logs ORDER BY timestamp DESC LIMIT ?",
     [Number(limit)]
@@ -1707,7 +1822,7 @@ async function getMysqlInventoryAuditLogs(limit = 100) {
   }));
 }
 async function addMysqlInventoryAuditLog(log) {
-  const pool = await getDbPool2();
+  const pool = await getDbPool();
   const id = `inv-log-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
   const timestamp = (/* @__PURE__ */ new Date()).toISOString();
   await pool.query(
@@ -1728,7 +1843,7 @@ async function addMysqlInventoryAuditLog(log) {
   return { id, timestamp, ...log };
 }
 async function createMysqlPasswordResetToken(data) {
-  const pool = await getDbPool2();
+  const pool = await getDbPool();
   const id = `prt-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
   const now = (/* @__PURE__ */ new Date()).toISOString();
   await pool.query(
@@ -1747,7 +1862,7 @@ async function createMysqlPasswordResetToken(data) {
   return { id, ...data, createdAt: now };
 }
 async function getMysqlPasswordResetToken(tokenHash) {
-  const pool = await getDbPool2();
+  const pool = await getDbPool();
   const [rows] = await pool.query(
     "SELECT * FROM password_reset_tokens WHERE token_hash = ? LIMIT 1",
     [tokenHash]
@@ -1756,7 +1871,7 @@ async function getMysqlPasswordResetToken(tokenHash) {
   return rows[0];
 }
 async function consumeMysqlPasswordResetToken(tokenHash, newPasswordHash, nowIso = (/* @__PURE__ */ new Date()).toISOString()) {
-  const pool = await getDbPool2();
+  const pool = await getDbPool();
   const [updateRes] = await pool.query(
     "UPDATE password_reset_tokens SET used_at = ? WHERE token_hash = ? AND used_at IS NULL AND expires_at >= ?",
     [nowIso, tokenHash, nowIso]
@@ -1782,7 +1897,7 @@ async function consumeMysqlPasswordResetToken(tokenHash, newPasswordHash, nowIso
   return { success: true, userId: tokenRecord.user_id };
 }
 async function cleanupExpiredMysqlResetTokens(nowIso = (/* @__PURE__ */ new Date()).toISOString()) {
-  const pool = await getDbPool2();
+  const pool = await getDbPool();
   const [res] = await pool.query(
     "DELETE FROM password_reset_tokens WHERE expires_at < ? OR used_at IS NOT NULL",
     [nowIso]
@@ -1790,13 +1905,13 @@ async function cleanupExpiredMysqlResetTokens(nowIso = (/* @__PURE__ */ new Date
   return res.affectedRows || 0;
 }
 async function getMysqlCartSession(sessionId) {
-  const pool = await getDbPool2();
+  const pool = await getDbPool();
   const [rows] = await pool.query("SELECT items FROM cart_sessions WHERE session_id = ? LIMIT 1", [sessionId]);
   if (!rows || rows.length === 0) return null;
   return safeJsonParse(rows[0].items, []);
 }
 async function saveMysqlCartSession(sessionId, items, userId) {
-  const pool = await getDbPool2();
+  const pool = await getDbPool();
   const id = `cart-${sessionId}`;
   const now = (/* @__PURE__ */ new Date()).toISOString();
   await pool.query(
@@ -1961,6 +2076,9 @@ async function ensureDefaultCustomers() {
 async function ensureDefaultProducts() {
   try {
     const existing = await getMysqlProducts();
+    if (existing && existing.length > 0) {
+      return;
+    }
     const existingIds = new Set(existing.map((p) => p.id));
     const DEFAULT_PRODUCTS = [
       {
@@ -2117,7 +2235,7 @@ async function ensureDefaultHeroBanners() {
 }
 async function getAppSetting(key, defaultValue = null) {
   try {
-    const pool = await getDbPool2();
+    const pool = await getDbPool();
     const [rows] = await pool.query("SELECT setting_value FROM app_settings WHERE setting_key = ? LIMIT 1", [key]);
     if (rows && rows.length > 0 && rows[0].setting_value) {
       try {
@@ -2133,7 +2251,7 @@ async function getAppSetting(key, defaultValue = null) {
 }
 async function setAppSetting(key, value) {
   try {
-    const pool = await getDbPool2();
+    const pool = await getDbPool();
     const stringVal = typeof value === "string" ? value : JSON.stringify(value);
     await pool.query(
       `INSERT INTO app_settings (setting_key, setting_value)
@@ -2145,8 +2263,46 @@ async function setAppSetting(key, value) {
     console.warn(`[MySQL] setAppSetting('${key}') notice:`, err);
   }
 }
+async function purgeAllMysqlData() {
+  const pool = await getDbPool();
+  const tables = [
+    "orders",
+    "products",
+    "categories",
+    "suppliers",
+    "supplier_products",
+    "supplier_batches",
+    "supplier_payments",
+    "supplier_ledger",
+    "customers",
+    "coupons",
+    "reviews",
+    "hero_banners",
+    "custom_clothing_requests",
+    "inventory_audit_logs",
+    "password_reset_tokens",
+    "returns",
+    "email_queue",
+    "email_logs",
+    "email_subscribers",
+    "email_preferences",
+    "cart_sessions",
+    "payment_submissions",
+    "email_jobs",
+    "scheduled_task_logs",
+    "customer_orders"
+  ];
+  for (const table of tables) {
+    try {
+      await pool.query(`DELETE FROM \`${table}\`;`);
+    } catch (err) {
+      console.warn(`[MySQL Purge] Could not purge table ${table}:`, err?.message);
+    }
+  }
+  console.log("[MySQL] All application data successfully purged.");
+}
 async function getMysqlPendingRegistration(email) {
-  const pool = await getDbPool2();
+  const pool = await getDbPool();
   const [rows] = await pool.query("SELECT * FROM pending_registrations WHERE LOWER(email) = ? LIMIT 1", [
     (email || "").trim().toLowerCase()
   ]);
@@ -2158,7 +2314,7 @@ async function getMysqlPendingRegistration(email) {
   };
 }
 async function saveMysqlPendingRegistration(record) {
-  const pool = await getDbPool2();
+  const pool = await getDbPool();
   const id = record.id || `pr-${Date.now()}`;
   const now = (/* @__PURE__ */ new Date()).toISOString();
   const userDataStr = typeof record.userData === "string" ? record.userData : JSON.stringify(record.userData || {});
@@ -2182,16 +2338,16 @@ async function saveMysqlPendingRegistration(record) {
   );
 }
 async function deleteMysqlPendingRegistration(email) {
-  const pool = await getDbPool2();
+  const pool = await getDbPool();
   await pool.query("DELETE FROM pending_registrations WHERE LOWER(email) = ?", [(email || "").trim().toLowerCase()]);
 }
 async function updateMysqlPendingRegistrationAttempts(email, attempts) {
-  const pool = await getDbPool2();
+  const pool = await getDbPool();
   await pool.query("UPDATE pending_registrations SET attempts = ? WHERE LOWER(email) = ?", [attempts, (email || "").trim().toLowerCase()]);
 }
 async function deleteSqliteProductsBulk(ids) {
   if (!ids || ids.length === 0) return;
-  const pool = await getDbPool2();
+  const pool = await getDbPool();
   await pool.query(`DELETE FROM products WHERE id IN (?)`, [ids]);
 }
 async function saveSqliteCategories(categories) {
@@ -2201,11 +2357,11 @@ async function saveSqliteCategories(categories) {
 }
 async function deleteSqliteCategoriesBulk(ids) {
   if (!ids || ids.length === 0) return;
-  const pool = await getDbPool2();
+  const pool = await getDbPool();
   await pool.query(`DELETE FROM categories WHERE id IN (?)`, [ids]);
 }
 async function getSqliteOrdersByUser(userIdOrEmail) {
-  const pool = await getDbPool2();
+  const pool = await getDbPool();
   const [rows] = await pool.query(
     "SELECT * FROM orders WHERE customerEmail = ? OR customerEmail = (SELECT email FROM users WHERE id = ? LIMIT 1) ORDER BY date DESC",
     [userIdOrEmail, userIdOrEmail]
@@ -2221,7 +2377,7 @@ async function syncSqliteOrders(orders) {
   }
 }
 async function getSqliteSupplierById(id) {
-  const pool = await getDbPool2();
+  const pool = await getDbPool();
   const [rows] = await pool.query("SELECT * FROM suppliers WHERE id = ? LIMIT 1", [id]);
   return rows[0] || null;
 }
@@ -2276,16 +2432,16 @@ async function getSqliteSupplierReport(range) {
   };
 }
 async function getSqliteCustomerById(id) {
-  const pool = await getDbPool2();
+  const pool = await getDbPool();
   const [rows] = await pool.query("SELECT * FROM customers WHERE id = ? LIMIT 1", [id]);
   return rows[0] || null;
 }
 async function deleteSqliteCustomer(id) {
-  const pool = await getDbPool2();
+  const pool = await getDbPool();
   await pool.query("DELETE FROM customers WHERE id = ?", [id]);
 }
 async function saveSqliteDeal(deal) {
-  const pool = await getDbPool2();
+  const pool = await getDbPool();
   const id = deal.id || `deal-${Date.now()}`;
   const now = (/* @__PURE__ */ new Date()).toISOString();
   await pool.query(
@@ -2313,11 +2469,11 @@ async function saveSqliteDeal(deal) {
   return { ...deal, id };
 }
 async function deleteSqliteDeal(id) {
-  const pool = await getDbPool2();
+  const pool = await getDbPool();
   await pool.query("DELETE FROM deals WHERE id = ?", [id]);
 }
 async function saveSqliteInvoice(inv) {
-  const pool = await getDbPool2();
+  const pool = await getDbPool();
   const id = inv.id || `inv-${Date.now()}`;
   const now = (/* @__PURE__ */ new Date()).toISOString();
   const itemsStr = typeof inv.items === "string" ? inv.items : JSON.stringify(inv.items || []);
@@ -2348,11 +2504,11 @@ async function saveSqliteInvoice(inv) {
   return { ...inv, id };
 }
 async function deleteSqliteInvoice(id) {
-  const pool = await getDbPool2();
+  const pool = await getDbPool();
   await pool.query("DELETE FROM invoices WHERE id = ?", [id]);
 }
 async function saveSqliteCustomerOrder(order) {
-  const pool = await getDbPool2();
+  const pool = await getDbPool();
   const id = order.id || `co-${Date.now()}`;
   const now = (/* @__PURE__ */ new Date()).toISOString();
   const itemsStr = typeof order.items === "string" ? order.items : JSON.stringify(order.items || []);
@@ -2389,7 +2545,7 @@ async function saveSqliteCustomerOrder(order) {
   return { ...order, id };
 }
 async function getSqliteReviewsByProduct(productId) {
-  const pool = await getDbPool2();
+  const pool = await getDbPool();
   const [rows] = await pool.query('SELECT * FROM reviews WHERE productId = ? AND status = "approved" ORDER BY date DESC', [productId]);
   return rows || [];
 }
@@ -2397,29 +2553,29 @@ async function updateSqliteReview(review) {
   await saveMysqlReview(review);
 }
 async function toggleSqliteReviewHelpful(reviewId) {
-  const pool = await getDbPool2();
+  const pool = await getDbPool();
   await pool.query("UPDATE reviews SET helpfulCount = helpfulCount + 1 WHERE id = ?", [reviewId]);
   const [rows] = await pool.query("SELECT helpfulCount FROM reviews WHERE id = ? LIMIT 1", [reviewId]);
   return rows[0]?.helpfulCount || 0;
 }
 async function updateSqliteReviewStatus(reviewId, status) {
-  const pool = await getDbPool2();
+  const pool = await getDbPool();
   await pool.query("UPDATE reviews SET status = ? WHERE id = ?", [status, reviewId]);
 }
 async function recomputeSqliteProductRating(productId) {
-  const pool = await getDbPool2();
+  const pool = await getDbPool();
   const [rows] = await pool.query('SELECT AVG(rating) as avgRating, COUNT(*) as count FROM reviews WHERE productId = ? AND status = "approved"', [productId]);
   const avg = rows[0]?.avgRating || 0;
   const count = rows[0]?.count || 0;
   await pool.query("UPDATE products SET rating = ?, reviewsCount = ? WHERE id = ?", [Number(avg).toFixed(1), count, productId]);
 }
 async function getSqliteCustomClothingRequestById(id) {
-  const pool = await getDbPool2();
+  const pool = await getDbPool();
   const [rows] = await pool.query("SELECT * FROM custom_clothing_requests WHERE id = ? LIMIT 1", [id]);
   return rows[0] || null;
 }
 async function getSqliteWishlist(userId) {
-  const pool = await getDbPool2();
+  const pool = await getDbPool();
   const [rows] = await pool.query("SELECT product_ids FROM user_wishlists WHERE user_id = ? LIMIT 1", [userId]);
   if (!rows || rows.length === 0) return [];
   try {
@@ -2433,7 +2589,7 @@ async function addToSqliteWishlist(userId, productId) {
   if (!current.includes(productId)) {
     current.push(productId);
   }
-  const pool = await getDbPool2();
+  const pool = await getDbPool();
   await pool.query(
     `INSERT INTO user_wishlists (user_id, product_ids, updated_at)
      VALUES (?, ?, ?)
@@ -2445,7 +2601,7 @@ async function addToSqliteWishlist(userId, productId) {
 async function removeFromSqliteWishlist(userId, productId) {
   const current = await getSqliteWishlist(userId);
   const next = current.filter((id) => id !== productId);
-  const pool = await getDbPool2();
+  const pool = await getDbPool();
   await pool.query(
     `INSERT INTO user_wishlists (user_id, product_ids, updated_at)
      VALUES (?, ?, ?)
@@ -2464,11 +2620,12 @@ async function saveSqliteCart(userIdOrSession, items) {
 async function clearSqliteCart(userIdOrSession) {
   await saveMysqlCartSession(userIdOrSession, []);
 }
-var import_promise, import_dotenv, dbPool, isInitialized, isInitializing, DEFAULT_CORE_CATEGORIES, getSqliteUserByEmail, getSqliteUserById, saveSqliteUser, getAllSqliteUsers, getSqlitePendingRegistration, saveSqlitePendingRegistration, deleteSqlitePendingRegistration, updateSqlitePendingRegistrationAttempts, deleteSqliteProduct, getAllSqliteCategories, deleteSqliteCategory, getAllSqliteOrders, getSqliteOrderById, saveSqliteOrder, deleteSqliteOrder, getAllSqliteSuppliers, saveSqliteSupplier, deleteSqliteSupplier, getAllSqliteSupplierProducts, saveSqliteSupplierProduct, getAllSqliteSupplierIntakes, saveSqliteSupplierIntake, getAllSqliteSupplierPayments, saveSqliteSupplierPayment, getAllSqliteCustomers, saveSqliteCustomer, getAllSqliteHeroBanners, saveSqliteHeroBanners, getAllSqliteReviews, saveSqliteReview, deleteSqliteReview, getSqliteReviewRequestLogs, getSqliteReviewRequestSettings, saveSqliteReviewRequestSettings, addSqliteReviewOptOut, getSqliteReviewOptOutsCount, getSqliteCustomClothingRequests, saveSqliteCustomClothingRequest, updateSqliteCustomClothingRequestStatus, getSqliteInventoryAuditLogs, addSqliteInventoryAuditLog, pullSyncDataSqlite2;
+var import_promise, import_dotenv, dbPool, isInitialized, isInitializing, DEFAULT_CORE_CATEGORIES, getSqliteUserByEmail, getSqliteUserById, saveSqliteUser, getAllSqliteUsers, getSqlitePendingRegistration, saveSqlitePendingRegistration, deleteSqlitePendingRegistration, updateSqlitePendingRegistrationAttempts, deleteSqliteProduct, getAllSqliteCategories, deleteSqliteCategory, getAllSqliteOrders, getSqliteOrderById, saveSqliteOrder, deleteSqliteOrder, getAllSqliteSuppliers, saveSqliteSupplier, deleteSqliteSupplier, getAllSqliteSupplierProducts, saveSqliteSupplierProduct, getAllSqliteSupplierIntakes, saveSqliteSupplierIntake, getAllSqliteSupplierPayments, saveSqliteSupplierPayment, getAllSqliteCustomers, saveSqliteCustomer, getAllSqliteHeroBanners, saveSqliteHeroBanners, getAllSqliteReviews, saveSqliteReview, deleteSqliteReview, getSqliteReviewRequestLogs, getSqliteReviewRequestSettings, saveSqliteReviewRequestSettings, addSqliteReviewOptOut, getSqliteReviewOptOutsCount, getSqliteCustomClothingRequests, saveSqliteCustomClothingRequest, updateSqliteCustomClothingRequestStatus, getSqliteInventoryAuditLogs, addSqliteInventoryAuditLog, pullSyncDataSqlite;
 var init_mysql_db = __esm({
   "src/lib/mysql-db.ts"() {
     import_promise = __toESM(require("mysql2/promise"), 1);
     import_dotenv = __toESM(require("dotenv"), 1);
+    init_image_storage();
     import_dotenv.default.config();
     dbPool = null;
     isInitialized = false;
@@ -2560,7 +2717,7 @@ var init_mysql_db = __esm({
     updateSqliteCustomClothingRequestStatus = updateMysqlCustomClothingRequestStatus;
     getSqliteInventoryAuditLogs = getMysqlInventoryAuditLogs;
     addSqliteInventoryAuditLog = addMysqlInventoryAuditLog;
-    pullSyncDataSqlite2 = pullSyncData;
+    pullSyncDataSqlite = pullSyncData;
   }
 });
 
@@ -2582,9 +2739,14 @@ function getEmailConfig() {
   const frontendUrl = (process.env.APP_URL || process.env.FRONTEND_URL || "http://localhost:3000").replace(/\/+$/, "");
   const adminUrl = (process.env.ADMIN_URL || frontendUrl).replace(/\/+$/, "");
   const enabled = process.env.EMAIL_ENABLED !== "false";
-  const isDev = process.env.NODE_ENV !== "production";
-  const devMode = process.env.EMAIL_DEV_MODE !== void 0 ? process.env.EMAIL_DEV_MODE === "true" : isDev;
-  const devRedirectTo = process.env.EMAIL_DEV_REDIRECT_TO || (devMode ? replyTo : void 0);
+  const isExplicitProd = process.env.NODE_ENV === "production";
+  const isBundledServer = Boolean(process.argv[1]) && (process.argv[1].endsWith(".cjs") || process.argv[1].includes("dist"));
+  const isLiveDomain = Boolean(frontendUrl && !frontendUrl.includes("localhost") && !frontendUrl.includes("127.0.0.1"));
+  const isProduction = isExplicitProd || isBundledServer || isLiveDomain;
+  const explicitDevModeRequested = process.env.EMAIL_DEV_MODE === "true";
+  const forceDevRedirect = process.env.FORCE_EMAIL_DEV_REDIRECT === "true";
+  const devMode = explicitDevModeRequested && (!isProduction || forceDevRedirect);
+  const devRedirectTo = devMode ? process.env.EMAIL_DEV_REDIRECT_TO || replyTo : void 0;
   const digestEnabled = process.env.ADMIN_DIGEST_ENABLED !== "false";
   const digestTimesRaw = process.env.ADMIN_DIGEST_TIMES || "08:00,17:00";
   const digestTimes = digestTimesRaw.split(",").map((t) => t.trim()).filter(Boolean);
@@ -2665,11 +2827,11 @@ var init_config = __esm({
 
 // server/email/db.ts
 async function logEmail(record) {
-  const id = `elog-${Date.now()}-${import_crypto.default.randomBytes(4).toString("hex")}`;
+  const id = `elog-${Date.now()}-${import_crypto2.default.randomBytes(4).toString("hex")}`;
   const now = (/* @__PURE__ */ new Date()).toISOString();
   const metadataStr = record.metadata ? typeof record.metadata === "string" ? record.metadata : JSON.stringify(record.metadata) : null;
   try {
-    const pool = await getDbPool2();
+    const pool = await getDbPool();
     await pool.query(
       `INSERT INTO email_logs (id, recipient, email_type, subject, status, attempts, error_message, related_order_id, related_user_id, dedupe_key, metadata, created_at, sent_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -2702,7 +2864,7 @@ async function logEmail(record) {
 async function isDedupeKeyProcessed(dedupeKey) {
   if (!dedupeKey) return false;
   try {
-    const pool = await getDbPool2();
+    const pool = await getDbPool();
     const [rows] = await pool.query(
       `SELECT id FROM email_logs WHERE dedupe_key = ? AND status = 'sent' LIMIT 1`,
       [dedupeKey]
@@ -2719,13 +2881,13 @@ async function enqueueEmailJob(job) {
     console.log(`[Email Queue] \u23ED\uFE0F Skipping enqueue: dedupeKey "${dedupeKey}" already sent.`);
     return null;
   }
-  const id = `job-${Date.now()}-${import_crypto.default.randomBytes(4).toString("hex")}`;
+  const id = `job-${Date.now()}-${import_crypto2.default.randomBytes(4).toString("hex")}`;
   const now = /* @__PURE__ */ new Date();
   const nextAttempt = new Date(now.getTime() + (job.delaySeconds || 0) * 1e3).toISOString();
   const nowIso = now.toISOString();
   const payloadStr = typeof job.payload === "string" ? job.payload : JSON.stringify(job.payload || {});
   try {
-    const pool = await getDbPool2();
+    const pool = await getDbPool();
     await pool.query(
       `INSERT INTO email_jobs (id, email_type, recipient, subject, payload, status, attempts, max_attempts, next_attempt_at, dedupe_key, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, 'queued', 0, ?, ?, ?, ?, ?)
@@ -2754,7 +2916,7 @@ async function fetchDueEmailJobs(limit = 10) {
   const nowIso = now.toISOString();
   const staleThresholdIso = new Date(now.getTime() - 2 * 60 * 1e3).toISOString();
   try {
-    const pool = await getDbPool2();
+    const pool = await getDbPool();
     const [rows] = await pool.query(
       `SELECT id, email_type, recipient, subject, payload, status, attempts, max_attempts, next_attempt_at, error_message, dedupe_key, created_at, updated_at
        FROM email_jobs
@@ -2787,7 +2949,7 @@ async function fetchDueEmailJobs(limit = 10) {
 async function updateEmailJobStatus(jobId, status, details) {
   const nowIso = (/* @__PURE__ */ new Date()).toISOString();
   try {
-    const pool = await getDbPool2();
+    const pool = await getDbPool();
     await pool.query(
       `UPDATE email_jobs SET
         status = ?,
@@ -2811,7 +2973,7 @@ async function updateEmailJobStatus(jobId, status, details) {
 }
 async function fetchEmailJobs(status, limit = 50) {
   try {
-    const pool = await getDbPool2();
+    const pool = await getDbPool();
     const query = status ? `SELECT * FROM email_jobs WHERE status = ? ORDER BY created_at DESC LIMIT ?` : `SELECT * FROM email_jobs ORDER BY created_at DESC LIMIT ?`;
     const params = status ? [status, limit] : [limit];
     const [rows] = await pool.query(query, params);
@@ -2828,7 +2990,7 @@ async function fetchEmailJobs(status, limit = 50) {
 async function retryFailedJobs() {
   const nowIso = (/* @__PURE__ */ new Date()).toISOString();
   try {
-    const pool = await getDbPool2();
+    const pool = await getDbPool();
     const [result] = await pool.query(
       `UPDATE email_jobs SET status = 'queued', attempts = 0, next_attempt_at = ?, updated_at = ? WHERE status = 'failed'`,
       [nowIso, nowIso]
@@ -2842,7 +3004,7 @@ async function retryFailedJobs() {
 async function createPaymentSubmission(submission) {
   const cleanCode = submission.mpesaReceiptCode.trim().toUpperCase();
   const cleanPhone = submission.phoneNumber.trim().replace(/\s+/g, "");
-  const id = `claim-${Date.now()}-${import_crypto.default.randomBytes(3).toString("hex")}`;
+  const id = `claim-${Date.now()}-${import_crypto2.default.randomBytes(3).toString("hex")}`;
   const nowIso = (/* @__PURE__ */ new Date()).toISOString();
   const existing = await getPaymentSubmissionByMpesaCode(cleanCode);
   if (existing) {
@@ -2853,7 +3015,7 @@ async function createPaymentSubmission(submission) {
     };
   }
   try {
-    const pool = await getDbPool2();
+    const pool = await getDbPool();
     await pool.query(
       `INSERT INTO payment_submissions (id, order_id, mpesa_receipt_code, phone_number, amount_claimed, payment_method, status, admin_notes, submitted_at)
        VALUES (?, ?, ?, ?, ?, ?, 'pending_verification', ?, ?)`,
@@ -2879,7 +3041,7 @@ async function createPaymentSubmission(submission) {
 async function getPaymentSubmissionByMpesaCode(code) {
   const cleanCode = code.trim().toUpperCase();
   try {
-    const pool = await getDbPool2();
+    const pool = await getDbPool();
     const [rows] = await pool.query(
       `SELECT id, order_id, mpesa_receipt_code, phone_number, amount_claimed, payment_method, status, admin_notes, submitted_at, verified_at, verified_by
        FROM payment_submissions WHERE UPPER(mpesa_receipt_code) = UPPER(?) LIMIT 1`,
@@ -2893,7 +3055,7 @@ async function getPaymentSubmissionByMpesaCode(code) {
 }
 async function getPaymentSubmissionsForOrder(orderId) {
   try {
-    const pool = await getDbPool2();
+    const pool = await getDbPool();
     const [rows] = await pool.query(
       `SELECT id, order_id, mpesa_receipt_code, phone_number, amount_claimed, payment_method, status, admin_notes, submitted_at, verified_at, verified_by
        FROM payment_submissions WHERE order_id = ? ORDER BY submitted_at DESC`,
@@ -2907,7 +3069,7 @@ async function getPaymentSubmissionsForOrder(orderId) {
 async function updatePaymentSubmissionStatus(submissionId, status, details) {
   const nowIso = (/* @__PURE__ */ new Date()).toISOString();
   try {
-    const pool = await getDbPool2();
+    const pool = await getDbPool();
     await pool.query(
       `UPDATE payment_submissions SET
         status = ?,
@@ -2934,7 +3096,7 @@ async function getEmailPreferences(email) {
     updated_at: (/* @__PURE__ */ new Date()).toISOString()
   };
   try {
-    const pool = await getDbPool2();
+    const pool = await getDbPool();
     const [rows] = await pool.query(
       `SELECT id, email, allow_marketing, allow_review_requests, allow_abandoned_cart, allow_price_drop, unsubscribed_all, updated_at
        FROM email_preferences WHERE email = ? LIMIT 1`,
@@ -2969,7 +3131,7 @@ async function isEmailOptedOut(email, category) {
 }
 async function wasScheduledTaskExecuted(dedupeKey) {
   try {
-    const pool = await getDbPool2();
+    const pool = await getDbPool();
     const [rows] = await pool.query(
       `SELECT id FROM scheduled_task_logs WHERE dedupe_key = ? AND status = 'success' LIMIT 1`,
       [dedupeKey]
@@ -2980,10 +3142,10 @@ async function wasScheduledTaskExecuted(dedupeKey) {
   }
 }
 async function recordScheduledTaskExecution(taskName, dedupeKey, details) {
-  const id = `task-${Date.now()}-${import_crypto.default.randomBytes(3).toString("hex")}`;
+  const id = `task-${Date.now()}-${import_crypto2.default.randomBytes(3).toString("hex")}`;
   const nowIso = (/* @__PURE__ */ new Date()).toISOString();
   try {
-    const pool = await getDbPool2();
+    const pool = await getDbPool();
     await pool.query(
       `INSERT INTO scheduled_task_logs (id, task_name, dedupe_key, executed_at, status, details)
        VALUES (?, ?, ?, ?, 'success', ?)
@@ -3005,7 +3167,7 @@ async function isRecipientOptedOut(email, emailType) {
 async function updateOrderPaymentStatus(orderId, status, details) {
   const nowIso = (/* @__PURE__ */ new Date()).toISOString();
   try {
-    const pool = await getDbPool2();
+    const pool = await getDbPool();
     await pool.query(
       `UPDATE orders SET
         paymentStatus = ?,
@@ -3107,7 +3269,7 @@ async function fetchAuthoritativeOrderById(orderId) {
   if (!orderId) return null;
   const cleanId = String(orderId).trim();
   try {
-    const pool = await getDbPool2();
+    const pool = await getDbPool();
     const [rows] = await pool.query(`SELECT * FROM orders WHERE UPPER(id) = UPPER(?) LIMIT 1`, [cleanId]);
     if (rows && rows.length > 0) {
       return normalizeOrderRecord(rows[0]);
@@ -3125,7 +3287,7 @@ async function getUnpaidOrders(olderThanHours = 0) {
   const thresholdIso = new Date(Date.now() - olderThanHours * 3600 * 1e3).toISOString();
   const resultMap = /* @__PURE__ */ new Map();
   try {
-    const pool = await getDbPool2();
+    const pool = await getDbPool();
     const [rows] = await pool.query(
       `SELECT * FROM orders
        WHERE (paymentStatus = 'unpaid' OR paymentStatus = 'pending' OR paymentStatus IS NULL)
@@ -3161,7 +3323,7 @@ async function getUnpaidOrders(olderThanHours = 0) {
 }
 async function hasUnprocessedPaymentSubmission(orderId) {
   try {
-    const pool = await getDbPool2();
+    const pool = await getDbPool();
     const [rows] = await pool.query(
       `SELECT id FROM payment_submissions WHERE order_id = ? AND status = 'pending_verification' LIMIT 1`,
       [orderId]
@@ -3171,10 +3333,10 @@ async function hasUnprocessedPaymentSubmission(orderId) {
     return false;
   }
 }
-var import_crypto, recordPaymentSubmission, getPaymentSubmissionByCode, hasScheduledTaskRun;
+var import_crypto2, recordPaymentSubmission, getPaymentSubmissionByCode, hasScheduledTaskRun;
 var init_db = __esm({
   "server/email/db.ts"() {
-    import_crypto = __toESM(require("crypto"), 1);
+    import_crypto2 = __toESM(require("crypto"), 1);
     init_mysql_db();
     recordPaymentSubmission = createPaymentSubmission;
     getPaymentSubmissionByCode = getPaymentSubmissionByMpesaCode;
@@ -3226,13 +3388,17 @@ async function sendRawMail(options) {
   const rawRecipient = Array.isArray(options.to) ? options.to.join(", ") : options.to;
   let targetRecipient = rawRecipient;
   let devModeRedirected = false;
-  if (config2.behavior.devMode) {
+  if (config2.behavior.devMode && config2.behavior.devRedirectTo) {
     const isTestAccount = rawRecipient.includes("ropenix") || rawRecipient.includes("admin") || rawRecipient.includes("localhost");
-    if (!isTestAccount && config2.behavior.devRedirectTo) {
+    if (!isTestAccount) {
       targetRecipient = config2.behavior.devRedirectTo;
       devModeRedirected = true;
       console.log(`[Email Dev Mode] \u{1F6E1}\uFE0F Redirecting email originally destined for <${rawRecipient}> to dev inbox: <${targetRecipient}>`);
+    } else {
+      console.log(`[Email Dev Mode] \u{1F9EA} Test account match: sending directly to <${targetRecipient}>`);
     }
+  } else {
+    console.log(`[Email Dispatch] \u{1F4E4} Dispatching "${options.subject}" directly to recipient: <${targetRecipient}>`);
   }
   const mailOptions = {
     from: config2.smtp.defaultFrom,
@@ -3294,10 +3460,10 @@ var init_types = __esm({
 });
 
 // server/email/urlHelper.ts
-function buildUrl(path2 = "", params) {
+function buildUrl(path3 = "", params) {
   const config2 = getEmailConfig();
   const base = config2.urls.frontendUrl.replace(/\/+$/, "");
-  const cleanPath = path2.startsWith("/") ? path2 : path2 ? `/${path2}` : "";
+  const cleanPath = path3.startsWith("/") ? path3 : path3 ? `/${path3}` : "";
   let url = `${base}${cleanPath || "/"}`;
   if (params) {
     const searchParams = new URLSearchParams();
@@ -3316,10 +3482,10 @@ function buildUrl(path2 = "", params) {
 function buildTrackUrl(orderId) {
   return buildUrl("/", { trackOrder: orderId });
 }
-function buildAdminUrl(path2 = "", params) {
+function buildAdminUrl(path3 = "", params) {
   const config2 = getEmailConfig();
   const base = config2.urls.adminUrl.replace(/\/+$/, "");
-  const cleanPath = path2.startsWith("/") ? path2 : `/${path2}`;
+  const cleanPath = path3.startsWith("/") ? path3 : `/${path3}`;
   let url = `${base}${cleanPath}`;
   if (params) {
     const searchParams = new URLSearchParams();
@@ -5180,13 +5346,63 @@ function stopEmailQueueWorker() {
 }
 async function enqueueEmail(options) {
   const res = await enqueueEmailJob(options);
-  if (!options.delaySeconds || options.delaySeconds <= 0) {
-    setImmediate(() => {
-      processQueueBatch().catch(() => {
+  if (res) {
+    if (!options.delaySeconds || options.delaySeconds <= 0) {
+      setImmediate(() => {
+        processQueueBatch().catch(() => {
+        });
       });
-    });
+    }
+    return res;
   }
-  return res;
+  if (options.dedupeKey) {
+    const alreadySent = await isDedupeKeyProcessed(options.dedupeKey).catch(() => false);
+    if (alreadySent) {
+      console.log(`[Email Queue] \u23ED\uFE0F Skipping: dedupeKey "${options.dedupeKey}" was already sent.`);
+      return null;
+    }
+  }
+  console.warn(`[Email Queue] \u26A0\uFE0F MySQL queue unavailable for ${options.emailType} -> ${options.recipient}. Initiating direct fallback dispatch...`);
+  try {
+    const rendered = renderJobContent({
+      id: `direct-fallback-${Date.now()}`,
+      email_type: options.emailType,
+      recipient: options.recipient,
+      subject: options.subject,
+      payload: options.payload,
+      status: "queued",
+      attempts: 0,
+      max_attempts: 1,
+      next_attempt_at: (/* @__PURE__ */ new Date()).toISOString(),
+      created_at: (/* @__PURE__ */ new Date()).toISOString(),
+      updated_at: (/* @__PURE__ */ new Date()).toISOString()
+    });
+    const sendRes = await sendEmail({
+      to: options.recipient,
+      subject: rendered.subject || options.subject,
+      html: rendered.html,
+      text: rendered.text,
+      replyTo: options.payload?.replyTo
+    });
+    if (sendRes.success) {
+      console.log(`[Email Queue] \u2705 Direct fallback send succeeded for ${options.emailType} -> ${options.recipient}`);
+      await logEmail({
+        recipient: options.recipient,
+        email_type: options.emailType,
+        subject: rendered.subject || options.subject,
+        status: "sent",
+        attempts: 1,
+        related_order_id: options.payload?.id || options.payload?.orderId,
+        dedupe_key: options.dedupeKey,
+        sent_at: (/* @__PURE__ */ new Date()).toISOString()
+      }).catch(() => {
+      });
+      return `direct-${Date.now()}`;
+    }
+  } catch (directErr) {
+    console.error(`[Email Queue] \u274C Direct fallback send error for ${options.emailType} -> ${options.recipient}:`, directErr);
+  }
+  return null;
 }
 var BACKOFF_SECONDS, isWorkerRunning, workerTimer, isProcessingBatch;
 var init_queue = __esm({
@@ -5209,21 +5425,27 @@ function registerEmailEventListeners() {
     try {
       const shortId = order.id.startsWith("ROP-") ? order.id : `ROP-${order.id.slice(-6).toUpperCase()}`;
       const totalFormatted = formatKES(order.total);
-      if (order.customerEmail) {
+      const customerEmail = (order.customerEmail || order.customer_email || order.email || "").trim().toLowerCase();
+      const customerName = (order.customerName || order.customer_name || "Valued Customer").trim();
+      if (customerEmail && customerEmail.includes("@")) {
+        console.log(`[Email Events] \u{1F6D2} Enqueueing customer confirmation for order ${shortId} -> ${customerEmail}`);
         await enqueueEmail({
           emailType: "order_confirmation",
-          recipient: order.customerEmail,
+          recipient: customerEmail,
           subject: `Order Confirmed: ${shortId} (${totalFormatted}) - Ropenix Collections`,
-          payload: order,
+          payload: { ...order, customerEmail, customerName },
           dedupeKey: `order_confirmation:${order.id}`
         });
+      } else {
+        console.warn(`[Email Events] \u26A0\uFE0F Order ${order.id} has no valid customerEmail ("${customerEmail}"). Customer confirmation email skipped.`);
       }
       if (adminEmail) {
+        console.log(`[Email Events] \u{1F514} Enqueueing admin alert for order ${shortId} -> ${adminEmail}`);
         await enqueueEmail({
           emailType: "admin_new_order",
           recipient: adminEmail,
-          subject: `\u{1F514} [NEW ORDER] ${shortId} by ${order.customerName} (${totalFormatted})`,
-          payload: order,
+          subject: `\u{1F514} [NEW ORDER] ${shortId} by ${customerName} (${totalFormatted})`,
+          payload: { ...order, customerEmail, customerName },
           dedupeKey: `admin_new_order:${order.id}`
         });
       }
@@ -5234,12 +5456,13 @@ function registerEmailEventListeners() {
   emailEvents.on("payment:submitted", async (data) => {
     try {
       const shortId = data.orderId.startsWith("ROP-") ? data.orderId : `ROP-${data.orderId.slice(-6).toUpperCase()}`;
-      if (data.customerEmail) {
+      const customerEmail = (data.customerEmail || data.customer_email || data.email || "").trim().toLowerCase();
+      if (customerEmail && customerEmail.includes("@")) {
         await enqueueEmail({
           emailType: "payment_submission_received",
-          recipient: data.customerEmail,
+          recipient: customerEmail,
           subject: `Payment Claim Received: ${data.mpesaCode} for Order ${shortId}`,
-          payload: data,
+          payload: { ...data, customerEmail },
           dedupeKey: `payment_submitted_cust:${data.orderId}:${data.mpesaCode}`
         });
       }
@@ -5248,7 +5471,7 @@ function registerEmailEventListeners() {
           emailType: "admin_payment_submitted",
           recipient: adminEmail,
           subject: `\u{1F4B0} [VERIFY PAYMENT] M-Pesa ${data.mpesaCode.toUpperCase()} for Order ${shortId}`,
-          payload: data,
+          payload: { ...data, customerEmail },
           dedupeKey: `payment_submitted_admin:${data.orderId}:${data.mpesaCode}`
         });
       }
@@ -5260,12 +5483,13 @@ function registerEmailEventListeners() {
     try {
       const shortId = order.id.startsWith("ROP-") ? order.id : `ROP-${order.id.slice(-6).toUpperCase()}`;
       const totalFormatted = formatKES(order.total);
-      if (order.customerEmail) {
+      const customerEmail = (order.customerEmail || order.customer_email || order.email || "").trim().toLowerCase();
+      if (customerEmail && customerEmail.includes("@")) {
         await enqueueEmail({
           emailType: "payment_receipt",
-          recipient: order.customerEmail,
+          recipient: customerEmail,
           subject: `Payment Confirmed & Official Receipt: ${shortId} (${totalFormatted})`,
-          payload: order,
+          payload: { ...order, customerEmail },
           dedupeKey: `payment_receipt:${order.id}`
         });
       }
@@ -5276,12 +5500,13 @@ function registerEmailEventListeners() {
   emailEvents.on("payment:issue", async (order) => {
     try {
       const shortId = order.id.startsWith("ROP-") ? order.id : `ROP-${order.id.slice(-6).toUpperCase()}`;
-      if (order.customerEmail) {
+      const customerEmail = (order.customerEmail || order.customer_email || order.email || "").trim().toLowerCase();
+      if (customerEmail && customerEmail.includes("@")) {
         await enqueueEmail({
           emailType: "payment_issue",
-          recipient: order.customerEmail,
+          recipient: customerEmail,
           subject: `Action Needed: Payment Verification Issue for Order ${shortId}`,
-          payload: order,
+          payload: { ...order, customerEmail },
           // Dedupe per timestamp to allow re-sending if subsequent issues occur
           dedupeKey: `payment_issue:${order.id}:${Date.now()}`
         });
@@ -5293,12 +5518,13 @@ function registerEmailEventListeners() {
   emailEvents.on("order:shipped", async (order) => {
     try {
       const shortId = order.id.startsWith("ROP-") ? order.id : `ROP-${order.id.slice(-6).toUpperCase()}`;
-      if (order.customerEmail) {
+      const customerEmail = (order.customerEmail || order.customer_email || order.email || "").trim().toLowerCase();
+      if (customerEmail && customerEmail.includes("@")) {
         await enqueueEmail({
           emailType: "order_shipped",
-          recipient: order.customerEmail,
+          recipient: customerEmail,
           subject: `\u{1F69A} Your Order is on the Way: ${shortId}`,
-          payload: order,
+          payload: { ...order, customerEmail },
           dedupeKey: `order_shipped:${order.id}`
         });
       }
@@ -5309,12 +5535,13 @@ function registerEmailEventListeners() {
   emailEvents.on("order:delivered", async (order) => {
     try {
       const shortId = order.id.startsWith("ROP-") ? order.id : `ROP-${order.id.slice(-6).toUpperCase()}`;
-      if (order.customerEmail) {
+      const customerEmail = (order.customerEmail || order.customer_email || order.email || "").trim().toLowerCase();
+      if (customerEmail && customerEmail.includes("@")) {
         await enqueueEmail({
           emailType: "order_delivered",
-          recipient: order.customerEmail,
+          recipient: customerEmail,
           subject: `\u{1F389} Order Delivered: ${shortId} - Enjoy Your Items!`,
-          payload: order,
+          payload: { ...order, customerEmail },
           dedupeKey: `order_delivered:${order.id}`
         });
       }
@@ -5325,12 +5552,13 @@ function registerEmailEventListeners() {
   emailEvents.on("order:cancelled", async (order) => {
     try {
       const shortId = order.id.startsWith("ROP-") ? order.id : `ROP-${order.id.slice(-6).toUpperCase()}`;
-      if (order.customerEmail) {
+      const customerEmail = (order.customerEmail || order.customer_email || order.email || "").trim().toLowerCase();
+      if (customerEmail && customerEmail.includes("@")) {
         await enqueueEmail({
           emailType: "order_cancelled",
-          recipient: order.customerEmail,
+          recipient: customerEmail,
           subject: `Order Cancellation Notice: ${shortId} - Ropenix Collections`,
-          payload: order,
+          payload: { ...order, customerEmail },
           dedupeKey: `order_cancelled:${order.id}`
         });
       }
@@ -5342,12 +5570,13 @@ function registerEmailEventListeners() {
     try {
       const shortId = order.id.startsWith("ROP-") ? order.id : `ROP-${order.id.slice(-6).toUpperCase()}`;
       const refundFormatted = formatKES(order.refundAmount);
-      if (order.customerEmail) {
+      const customerEmail = (order.customerEmail || order.customer_email || order.email || "").trim().toLowerCase();
+      if (customerEmail && customerEmail.includes("@")) {
         await enqueueEmail({
           emailType: "refund_processed",
-          recipient: order.customerEmail,
+          recipient: customerEmail,
           subject: `Refund Processed: ${shortId} (${refundFormatted}) - Ropenix Collections`,
-          payload: order,
+          payload: { ...order, customerEmail },
           dedupeKey: `refund_processed:${order.id}:${order.refundReference || Date.now()}`
         });
       }
@@ -6079,8 +6308,8 @@ module.exports = __toCommonJS(server_exports);
 
 // server/index.ts
 var import_express19 = __toESM(require("express"), 1);
-var import_path = __toESM(require("path"), 1);
-var import_fs = __toESM(require("fs"), 1);
+var import_path2 = __toESM(require("path"), 1);
+var import_fs2 = __toESM(require("fs"), 1);
 var import_url = require("url");
 var import_dotenv4 = __toESM(require("dotenv"), 1);
 init_mysql_db();
@@ -6174,7 +6403,7 @@ function getNairobiTime() {
 }
 async function getPendingPaymentSubmissions() {
   try {
-    const pool = await getDbPool2();
+    const pool = await getDbPool();
     const [rows] = await pool.query(`
       SELECT ps.id, ps.order_id as orderId, ps.mpesa_receipt_code as mpesaCode, ps.amount_claimed as amount, ps.phone_number, ps.submitted_at as submittedAt,
              o.customer_name as customerName, o.customer_email as customerEmail, o.total
@@ -6364,7 +6593,7 @@ async function performExpiryBackgroundCheck(isManualTrigger = false) {
   console.log(`[Expiry Check] Initializing background inventory scan... (Manual: ${isManualTrigger})`);
   const today = /* @__PURE__ */ new Date();
   today.setHours(0, 0, 0, 0);
-  const sqliteData = await pullSyncDataSqlite2();
+  const sqliteData = await pullSyncDataSqlite();
   const products = sqliteData?.veloce_products || [];
   const newlyFlaggedProducts = [];
   const nearExpiryProductsList = [];
@@ -6493,7 +6722,7 @@ function errorHandler(err, _req, res, _next) {
 
 // server/routes/auth.ts
 var import_express = require("express");
-var import_crypto4 = __toESM(require("crypto"), 1);
+var import_crypto5 = __toESM(require("crypto"), 1);
 var import_zod3 = require("zod");
 init_mysql_db();
 
@@ -6574,7 +6803,7 @@ var searchRateLimiter = createRateLimiter({
 });
 
 // server/middleware/auth.ts
-var import_crypto2 = __toESM(require("crypto"), 1);
+var import_crypto3 = __toESM(require("crypto"), 1);
 
 // server/config/index.ts
 var import_dotenv3 = __toESM(require("dotenv"), 1);
@@ -6626,7 +6855,7 @@ function createSignedToken(payload, expiresInSeconds = 86400) {
   const encodedHeader = base64UrlEncode(JSON.stringify(header));
   const encodedPayload = base64UrlEncode(JSON.stringify(fullPayload));
   const dataToSign = `${encodedHeader}.${encodedPayload}`;
-  const signature = import_crypto2.default.createHmac("sha256", config.secrets.jwt).update(dataToSign).digest("base64url");
+  const signature = import_crypto3.default.createHmac("sha256", config.secrets.jwt).update(dataToSign).digest("base64url");
   return `${dataToSign}.${signature}`;
 }
 function verifySignedToken(token) {
@@ -6636,11 +6865,11 @@ function verifySignedToken(token) {
   const [encodedHeader, encodedPayload, signature] = parts;
   const dataToSign = `${encodedHeader}.${encodedPayload}`;
   try {
-    const expectedSignature = import_crypto2.default.createHmac("sha256", config.secrets.jwt).update(dataToSign).digest("base64url");
+    const expectedSignature = import_crypto3.default.createHmac("sha256", config.secrets.jwt).update(dataToSign).digest("base64url");
     const sigBuf = Buffer.from(signature, "base64url");
     const expectedSigBuf = Buffer.from(expectedSignature, "base64url");
     if (sigBuf.length !== expectedSigBuf.length) return null;
-    if (!import_crypto2.default.timingSafeEqual(sigBuf, expectedSigBuf)) return null;
+    if (!import_crypto3.default.timingSafeEqual(sigBuf, expectedSigBuf)) return null;
     const payload = JSON.parse(base64UrlDecode(encodedPayload));
     const now = Math.floor(Date.now() / 1e3);
     if (typeof payload.exp !== "number" || now >= payload.exp) {
@@ -6786,7 +7015,7 @@ init_transporter();
 init_templates();
 
 // server/services/passwordResetService.ts
-var import_crypto3 = __toESM(require("crypto"), 1);
+var import_crypto4 = __toESM(require("crypto"), 1);
 init_mysql_db();
 init_transporter();
 init_templates();
@@ -6796,14 +7025,14 @@ function normalizeEmail(email) {
   return email.trim().toLowerCase();
 }
 function hashResetToken(rawToken) {
-  return import_crypto3.default.createHash("sha256").update(rawToken.trim()).digest("hex");
+  return import_crypto4.default.createHash("sha256").update(rawToken.trim()).digest("hex");
 }
 function generateRawResetToken() {
-  return import_crypto3.default.randomBytes(32).toString("hex");
+  return import_crypto4.default.randomBytes(32).toString("hex");
 }
 function hashPassword(password) {
-  const salt = import_crypto3.default.randomBytes(16).toString("hex");
-  const hash = import_crypto3.default.scryptSync(password, salt, 64).toString("hex");
+  const salt = import_crypto4.default.randomBytes(16).toString("hex");
+  const hash = import_crypto4.default.scryptSync(password, salt, 64).toString("hex");
   return `${salt}:${hash}`;
 }
 function getTokenExpiryMinutes() {
@@ -6894,7 +7123,7 @@ async function requestPasswordReset(email, clientIp = "", originUrl) {
       });
     } else {
       console.warn(`[PasswordReset] \u26A0\uFE0F User account with email <${normalizedEmail}> was NOT found in MySQL database. Returning generic success response (Anti-Enumeration Protection). No email dispatched.`);
-      import_crypto3.default.scryptSync("dummy_timing_mitigation_password", "dummy_salt_for_timing", 64);
+      import_crypto4.default.scryptSync("dummy_timing_mitigation_password", "dummy_salt_for_timing", 64);
     }
   } catch (err) {
     console.error("[PasswordReset] Error processing forgot password request:", err?.message || err);
@@ -7034,7 +7263,7 @@ function normalizeEmail2(email) {
   return email.trim().toLowerCase();
 }
 function hashOtp(otp) {
-  return import_crypto4.default.createHmac("sha256", config.secrets.otpHmac).update(otp.trim()).digest("hex");
+  return import_crypto5.default.createHmac("sha256", config.secrets.otpHmac).update(otp.trim()).digest("hex");
 }
 function verifyOtpHash(inputOtp, storedHash) {
   try {
@@ -7042,14 +7271,14 @@ function verifyOtpHash(inputOtp, storedHash) {
     const bufA = Buffer.from(inputHash, "hex");
     const bufB = Buffer.from(storedHash, "hex");
     if (bufA.length !== bufB.length) return false;
-    return import_crypto4.default.timingSafeEqual(bufA, bufB);
+    return import_crypto5.default.timingSafeEqual(bufA, bufB);
   } catch {
     return false;
   }
 }
 function hashPassword2(password) {
-  const salt = import_crypto4.default.randomBytes(16).toString("hex");
-  const hash = import_crypto4.default.scryptSync(password, salt, 64).toString("hex");
+  const salt = import_crypto5.default.randomBytes(16).toString("hex");
+  const hash = import_crypto5.default.scryptSync(password, salt, 64).toString("hex");
   return `${salt}:${hash}`;
 }
 function verifyPassword(password, storedHash) {
@@ -7058,11 +7287,11 @@ function verifyPassword(password, storedHash) {
     const parts = storedHash.split(":");
     if (parts.length !== 2) return false;
     const [salt, originalHash] = parts;
-    const computedHash = import_crypto4.default.scryptSync(password, salt, 64).toString("hex");
+    const computedHash = import_crypto5.default.scryptSync(password, salt, 64).toString("hex");
     const bufA = Buffer.from(computedHash, "hex");
     const bufB = Buffer.from(originalHash, "hex");
     if (bufA.length !== bufB.length) return false;
-    return import_crypto4.default.timingSafeEqual(bufA, bufB);
+    return import_crypto5.default.timingSafeEqual(bufA, bufB);
   } catch {
     return false;
   }
@@ -7105,7 +7334,7 @@ router.post(
       }
       const isDev = config.isDev;
       const testOtpHeader = req.headers["x-test-otp"];
-      const otp = isDev && testOtpHeader && typeof testOtpHeader === "string" && /^\d{6}$/.test(testOtpHeader) ? testOtpHeader : import_crypto4.default.randomInt(1e5, 1e6).toString();
+      const otp = isDev && testOtpHeader && typeof testOtpHeader === "string" && /^\d{6}$/.test(testOtpHeader) ? testOtpHeader : import_crypto5.default.randomInt(1e5, 1e6).toString();
       const otpHash = hashOtp(otp);
       const passwordHash = hashPassword2(password);
       const otpExpiresAt = new Date(Date.now() + 10 * 60 * 1e3).toISOString();
@@ -7332,7 +7561,7 @@ router.post(
       }
       const isDev = config.isDev;
       const testOtpHeader = req.headers["x-test-otp"];
-      const newOtp = isDev && testOtpHeader && typeof testOtpHeader === "string" && /^\d{6}$/.test(testOtpHeader) ? testOtpHeader : import_crypto4.default.randomInt(1e5, 1e6).toString();
+      const newOtp = isDev && testOtpHeader && typeof testOtpHeader === "string" && /^\d{6}$/.test(testOtpHeader) ? testOtpHeader : import_crypto5.default.randomInt(1e5, 1e6).toString();
       const newOtpHash = hashOtp(newOtp);
       const newExpiresAt = new Date(Date.now() + 10 * 60 * 1e3).toISOString();
       await saveSqlitePendingRegistration({
@@ -7808,7 +8037,7 @@ async function loadProductsCache(force = false) {
   }
   try {
     const products = await getMysqlProducts();
-    if (products && Array.isArray(products) && products.length > 0) {
+    if (products && Array.isArray(products)) {
       productsCache = products;
       isCacheLoaded = true;
     }
@@ -7865,13 +8094,23 @@ function normalizeProductVariants(p) {
       return {};
     }
   })() : {};
-  const hasVar = Boolean(
-    p.hasVariants === true || p.has_variants === true || p.hasVariants === 1 || p.has_variants === 1 || p.hasVariants === "true" || p.has_variants === "true" || opts.length > 0 || matrix.length > 0 || vars.length > 0 || variations.length > 0 || Object.keys(colorImgs || {}).length > 0
+  const explicitFalse = Boolean(
+    p.hasVariants === false || p.has_variants === false || p.hasVariants === 0 || p.has_variants === 0 || p.hasVariants === "false" || p.has_variants === "false"
+  );
+  const hasVar = !explicitFalse && Boolean(
+    p.hasVariants === true || p.has_variants === true || p.hasVariants === 1 || p.has_variants === 1 || p.hasVariants === "true" || p.has_variants === "true"
   );
   return {
     ...p,
     hasVariants: hasVar,
-    has_variants: hasVar
+    has_variants: hasVar,
+    options: hasVar ? opts : [],
+    variantMatrix: hasVar ? matrix : [],
+    variant_matrix: hasVar ? matrix : [],
+    variants: hasVar ? vars : [],
+    variations: hasVar ? variations : [],
+    colorImages: hasVar ? colorImgs : {},
+    color_images: hasVar ? colorImgs : {}
   };
 }
 router3.get(["/categories", "/categories/"], async (_req, res) => {
@@ -8079,7 +8318,10 @@ router3.put("/:id/options", requireAdmin, async (req, res) => {
     return res.status(404).json({ success: false, error: "Product not found" });
   }
   const options = req.body.options || [];
-  const hasVariants = req.body.hasVariants !== void 0 ? req.body.hasVariants : true;
+  const explicitDisabledOptions = Boolean(
+    req.body.hasVariants === false || req.body.has_variants === false || req.body.hasVariants === 0 || req.body.has_variants === 0 || req.body.hasVariants === "false" || req.body.has_variants === "false"
+  );
+  const hasVariants = !explicitDisabledOptions && (req.body.hasVariants !== void 0 ? Boolean(req.body.hasVariants) : req.body.has_variants !== void 0 ? Boolean(req.body.has_variants) : Boolean(productsCache[idx].hasVariants || productsCache[idx].has_variants));
   const optionNames = options.map((opt) => (opt.name || "").trim().toLowerCase()).filter(Boolean);
   const uniqueNames = new Set(optionNames);
   if (uniqueNames.size !== optionNames.length) {
@@ -8168,7 +8410,10 @@ router3.put("/:id/variants", requireAdmin, async (req, res) => {
     return res.status(404).json({ success: false, error: "Product not found" });
   }
   const variants = req.body.variants || [];
-  const hasVariants = req.body.hasVariants !== void 0 ? req.body.hasVariants : true;
+  const explicitDisabledVariants = Boolean(
+    req.body.hasVariants === false || req.body.has_variants === false || req.body.hasVariants === 0 || req.body.has_variants === 0 || req.body.hasVariants === "false" || req.body.has_variants === "false"
+  );
+  const hasVariants = !explicitDisabledVariants && (req.body.hasVariants !== void 0 ? Boolean(req.body.hasVariants) : req.body.has_variants !== void 0 ? Boolean(req.body.has_variants) : Boolean(productsCache[idx].hasVariants || productsCache[idx].has_variants));
   if (hasVariants && variants.length === 0) {
     return res.status(400).json({ success: false, error: "At least one variant must be created when variants are enabled." });
   }
@@ -8276,7 +8521,7 @@ router3.get("/", async (req, res) => {
 });
 router3.get("/:id", async (req, res) => {
   await loadProductsCache();
-  const item = productsCache.find((p) => p.id === req.params.id);
+  const item = productsCache.find((p) => p.id === req.params.id || p.slug === req.params.id);
   if (!item) {
     return res.status(404).json({ success: false, error: "Product not found" });
   }
@@ -8309,10 +8554,28 @@ router3.post("/", requireAdmin, async (req, res) => {
   const rawVars = req.body.variants || req.body.variantMatrix || req.body.variant_matrix || [];
   const rawVariations = req.body.variations || [];
   const rawColorImgs = req.body.color_images || req.body.colorImages || {};
-  const hasVariantsComputed = Boolean(
-    req.body.has_variants === true || req.body.hasVariants === true || req.body.has_variants === 1 || req.body.hasVariants === 1 || req.body.has_variants === "true" || req.body.hasVariants === "true" || Array.isArray(rawOpts) && rawOpts.length > 0 || Array.isArray(rawMatrix) && rawMatrix.length > 0 || Array.isArray(rawVars) && rawVars.length > 0 || Array.isArray(rawVariations) && rawVariations.length > 0 || rawColorImgs && typeof rawColorImgs === "object" && Object.keys(rawColorImgs).length > 0
+  const explicitDisabled = Boolean(
+    req.body.has_variants === false || req.body.hasVariants === false || req.body.has_variants === 0 || req.body.hasVariants === 0 || req.body.has_variants === "false" || req.body.hasVariants === "false"
   );
+  const hasVariantsComputed = !explicitDisabled && Boolean(
+    req.body.has_variants === true || req.body.hasVariants === true || req.body.has_variants === 1 || req.body.hasVariants === 1 || req.body.has_variants === "true" || req.body.hasVariants === "true"
+  );
+  const rawFeatures = req.body.features;
+  let parsedFeatures = [];
+  if (Array.isArray(rawFeatures)) {
+    parsedFeatures = rawFeatures.map((f) => String(f).trim()).filter(Boolean);
+  } else if (typeof rawFeatures === "string" && rawFeatures.trim().startsWith("[")) {
+    try {
+      const parsed = JSON.parse(rawFeatures);
+      if (Array.isArray(parsed)) parsedFeatures = parsed.map((f) => String(f).trim()).filter(Boolean);
+    } catch {
+      parsedFeatures = rawFeatures.split("\n").map((s) => s.trim()).filter(Boolean);
+    }
+  } else if (typeof rawFeatures === "string" && rawFeatures.trim()) {
+    parsedFeatures = rawFeatures.split("\n").map((s) => s.trim()).filter(Boolean);
+  }
   const newProduct = {
+    ...req.body,
     id: req.body.id || `prod-${Date.now()}`,
     sku: req.body.sku || `SKU-${Math.random().toString(36).substring(2, 8).toUpperCase()}`,
     name: req.body.name || "New Product",
@@ -8320,8 +8583,15 @@ router3.post("/", requireAdmin, async (req, res) => {
     countryOfOrigin: req.body.countryOfOrigin || req.body.country_of_origin || "",
     country_of_origin: req.body.country_of_origin || req.body.countryOfOrigin || "",
     description: req.body.description || "",
+    shortDescription: req.body.shortDescription || req.body.short_description || "",
+    detailedDescription: req.body.detailedDescription || req.body.detailed_description || req.body.description || "",
+    features: parsedFeatures,
+    specifications: Array.isArray(req.body.specifications) ? req.body.specifications : Array.isArray(req.body.specs) ? req.body.specs.map((s) => ({ key: s.label, value: s.value })) : [],
+    whatsInTheBox: req.body.whatsInTheBox || "",
     price: Number(req.body.price || 0),
-    original_price: req.body.original_price ? Number(req.body.original_price) : null,
+    original_price: req.body.original_price || req.body.originalPrice || req.body.compareAtPrice || req.body.compare_at_price || req.body.previousPrice ? Number(req.body.original_price ?? req.body.originalPrice ?? req.body.compareAtPrice ?? req.body.compare_at_price ?? req.body.previousPrice) : null,
+    originalPrice: req.body.original_price || req.body.originalPrice || req.body.compareAtPrice || req.body.compare_at_price || req.body.previousPrice ? Number(req.body.original_price ?? req.body.originalPrice ?? req.body.compareAtPrice ?? req.body.compare_at_price ?? req.body.previousPrice) : null,
+    compareAtPrice: req.body.compareAtPrice || req.body.compare_at_price || req.body.original_price || req.body.originalPrice || req.body.previousPrice ? Number(req.body.compareAtPrice ?? req.body.compare_at_price ?? req.body.original_price ?? req.body.originalPrice ?? req.body.previousPrice) : null,
     cost_price: req.body.cost_price !== void 0 && req.body.cost_price !== null && req.body.cost_price !== "" ? Number(req.body.cost_price) : req.body.costPrice !== void 0 && req.body.costPrice !== null && req.body.costPrice !== "" ? Number(req.body.costPrice) : null,
     costPrice: req.body.costPrice !== void 0 && req.body.costPrice !== null && req.body.costPrice !== "" ? Number(req.body.costPrice) : req.body.cost_price !== void 0 && req.body.cost_price !== null && req.body.cost_price !== "" ? Number(req.body.cost_price) : null,
     category: req.body.category || "General",
@@ -8338,13 +8608,13 @@ router3.post("/", requireAdmin, async (req, res) => {
     tags: typeof req.body.tags === "string" ? req.body.tags : Array.isArray(req.body.tags) ? req.body.tags.join(", ") : "",
     has_variants: hasVariantsComputed,
     hasVariants: hasVariantsComputed,
-    options: rawOpts,
-    color_images: rawColorImgs,
-    colorImages: rawColorImgs,
-    variations: rawVariations,
-    variant_matrix: rawMatrix,
-    variantMatrix: rawMatrix,
-    variants: rawVars,
+    options: hasVariantsComputed ? rawOpts : [],
+    color_images: hasVariantsComputed ? rawColorImgs : {},
+    colorImages: hasVariantsComputed ? rawColorImgs : {},
+    variations: hasVariantsComputed ? rawVariations : [],
+    variant_matrix: hasVariantsComputed ? rawMatrix : [],
+    variantMatrix: hasVariantsComputed ? rawMatrix : [],
+    variants: hasVariantsComputed ? rawVars : [],
     unit_measurement: req.body.unit_measurement || req.body.unitMeasurement || "",
     unit_value: req.body.unit_value !== void 0 ? req.body.unit_value : req.body.unitValue,
     weight: req.body.weight || "",
@@ -8352,24 +8622,36 @@ router3.post("/", requireAdmin, async (req, res) => {
     created_at: (/* @__PURE__ */ new Date()).toISOString(),
     updated_at: (/* @__PURE__ */ new Date()).toISOString()
   };
-  productsCache.unshift(newProduct);
-  await persistProductsCache();
-  if (newProduct.stock !== void 0 && newProduct.stock !== null) {
+  let savedProduct = newProduct;
+  try {
+    const saved = await saveMysqlProduct(newProduct);
+    if (saved) savedProduct = saved;
+  } catch (dbErr) {
+    console.error("[Products API] Failed to save product to MySQL database:", dbErr);
+    return res.status(500).json({ success: false, error: dbErr?.message || "Failed to save product to database" });
+  }
+  const existingIdx = productsCache.findIndex((p) => p.id === savedProduct.id);
+  if (existingIdx !== -1) {
+    productsCache[existingIdx] = savedProduct;
+  } else {
+    productsCache.unshift(savedProduct);
+  }
+  if (savedProduct.stock !== void 0 && savedProduct.stock !== null) {
     try {
       await addSqliteInventoryAuditLog({
-        productId: newProduct.id,
-        productName: newProduct.name,
-        productSku: newProduct.sku,
-        changeQuantity: Number(newProduct.stock),
-        newStock: Number(newProduct.stock),
+        productId: savedProduct.id,
+        productName: savedProduct.name,
+        productSku: savedProduct.sku,
+        changeQuantity: Number(savedProduct.stock),
+        newStock: Number(savedProduct.stock),
         reason: "Initial Stock Creation",
-        details: `Initial stock of ${newProduct.stock} units recorded upon product creation.`
+        details: `Initial stock of ${savedProduct.stock} units recorded upon product creation.`
       });
     } catch (auditErr) {
       console.warn("[Products API] Failed to record initial inventory audit log:", auditErr);
     }
   }
-  res.status(201).json({ success: true, message: "Product created successfully.", product: newProduct });
+  res.status(201).json({ success: true, message: "Product created successfully.", product: savedProduct });
 });
 router3.put("/:id", requireAdmin, async (req, res) => {
   await loadProductsCache();
@@ -8397,13 +8679,35 @@ router3.put("/:id", requireAdmin, async (req, res) => {
   const rawVars = req.body.variants || req.body.variantMatrix || req.body.variant_matrix || productsCache[idx].variants || productsCache[idx].variantMatrix || productsCache[idx].variant_matrix || [];
   const rawVariations = req.body.variations || productsCache[idx].variations || [];
   const rawColorImgs = req.body.color_images || req.body.colorImages || productsCache[idx].color_images || productsCache[idx].colorImages || {};
-  const hasVariantsComputed = Boolean(
-    req.body.has_variants === true || req.body.hasVariants === true || req.body.has_variants === 1 || req.body.hasVariants === 1 || req.body.has_variants === "true" || req.body.hasVariants === "true" || Array.isArray(rawOpts) && rawOpts.length > 0 || Array.isArray(rawMatrix) && rawMatrix.length > 0 || Array.isArray(rawVars) && rawVars.length > 0 || Array.isArray(rawVariations) && rawVariations.length > 0 || rawColorImgs && typeof rawColorImgs === "object" && Object.keys(rawColorImgs).length > 0 || productsCache[idx].hasVariants === true || productsCache[idx].has_variants === true
+  const explicitDisabled = Boolean(
+    req.body.has_variants === false || req.body.hasVariants === false || req.body.has_variants === 0 || req.body.hasVariants === 0 || req.body.has_variants === "false" || req.body.hasVariants === "false"
+  );
+  const hasVariantsComputed = !explicitDisabled && Boolean(
+    req.body.has_variants === true || req.body.hasVariants === true || req.body.has_variants === 1 || req.body.hasVariants === 1 || req.body.has_variants === "true" || req.body.hasVariants === "true"
   );
   const updatedStock = req.body.stock !== void 0 ? Number(req.body.stock) : productsCache[idx].stock;
+  let updatedFeatures = productsCache[idx].features || [];
+  if (req.body.features !== void 0) {
+    const rawF = req.body.features;
+    if (Array.isArray(rawF)) {
+      updatedFeatures = rawF.map((f) => String(f).trim()).filter(Boolean);
+    } else if (typeof rawF === "string" && rawF.trim().startsWith("[")) {
+      try {
+        const parsed = JSON.parse(rawF);
+        if (Array.isArray(parsed)) updatedFeatures = parsed.map((f) => String(f).trim()).filter(Boolean);
+      } catch {
+        updatedFeatures = rawF.split("\n").map((s) => s.trim()).filter(Boolean);
+      }
+    } else if (typeof rawF === "string" && rawF.trim()) {
+      updatedFeatures = rawF.split("\n").map((s) => s.trim()).filter(Boolean);
+    } else {
+      updatedFeatures = [];
+    }
+  }
   productsCache[idx] = {
     ...productsCache[idx],
     ...req.body,
+    features: updatedFeatures,
     stock: updatedStock,
     cost_price: costVal !== void 0 ? costVal : null,
     costPrice: costVal !== void 0 ? costVal : null,
@@ -8413,17 +8717,23 @@ router3.put("/:id", requireAdmin, async (req, res) => {
     gallery_images: parsedImages || (primaryImg ? [primaryImg] : []),
     has_variants: hasVariantsComputed,
     hasVariants: hasVariantsComputed,
-    options: rawOpts,
-    color_images: rawColorImgs,
-    colorImages: rawColorImgs,
-    variant_matrix: rawMatrix,
-    variantMatrix: rawMatrix,
-    variants: rawVars,
+    options: hasVariantsComputed ? rawOpts : [],
+    color_images: hasVariantsComputed ? rawColorImgs : {},
+    colorImages: hasVariantsComputed ? rawColorImgs : {},
+    variations: hasVariantsComputed ? rawVariations : [],
+    variant_matrix: hasVariantsComputed ? rawMatrix : [],
+    variantMatrix: hasVariantsComputed ? rawMatrix : [],
+    variants: hasVariantsComputed ? rawVars : [],
     unit_measurement: req.body.unit_measurement || req.body.unitMeasurement || productsCache[idx].unit_measurement || "",
     unit_value: req.body.unit_value !== void 0 ? req.body.unit_value : req.body.unitValue !== void 0 ? req.body.unitValue : productsCache[idx].unit_value,
     updated_at: (/* @__PURE__ */ new Date()).toISOString()
   };
-  await persistProductsCache();
+  try {
+    const saved = await saveMysqlProduct(productsCache[idx]);
+    if (saved) productsCache[idx] = saved;
+  } catch (dbErr) {
+    console.error("[Products API] Failed to update product in MySQL:", dbErr);
+  }
   cartStreamManager.broadcastProductChange(productsCache[idx].id, {
     price: productsCache[idx].price,
     original_price: productsCache[idx].original_price,
@@ -8456,8 +8766,21 @@ router3.put("/:id", requireAdmin, async (req, res) => {
 router3.delete(["/:id", "/:id/"], requireAdmin, async (req, res) => {
   await loadProductsCache();
   const pid = String(req.params.id);
-  const idx = productsCache.findIndex((p) => String(p.id) === pid);
+  let idx = productsCache.findIndex((p) => String(p.id) === pid);
   if (idx === -1) {
+    try {
+      const deletedFromDb = await deleteSqliteProduct(pid);
+      if (deletedFromDb) {
+        await loadProductsCache(true);
+        cartStreamManager.broadcastProductChange(pid, {
+          status: "deleted",
+          deleted: true,
+          stock: 0
+        });
+        return res.json({ success: true, message: "Product deleted successfully." });
+      }
+    } catch {
+    }
     return res.status(404).json({ success: false, error: "Product not found" });
   }
   const deleted = productsCache.splice(idx, 1)[0];
@@ -8677,7 +9000,7 @@ init_events();
 function resolveEffectivePrice(product, selectedVars) {
   const norm = normalizeProductVariants(product);
   let basePrice = Number(norm.price || 0);
-  let originalPrice = norm.original_price ? Number(norm.original_price) : norm.originalPrice ? Number(norm.originalPrice) : null;
+  let originalPrice = norm.original_price ? Number(norm.original_price) : norm.originalPrice ? Number(norm.originalPrice) : norm.compareAtPrice ? Number(norm.compareAtPrice) : norm.compare_at_price ? Number(norm.compare_at_price) : norm.previousPrice ? Number(norm.previousPrice) : null;
   if (selectedVars && Object.keys(selectedVars).length > 0 && Array.isArray(norm.variants)) {
     const matched = norm.variants.find((v) => {
       if (!v.attributes) return false;
@@ -8686,8 +9009,13 @@ function resolveEffectivePrice(product, selectedVars) {
       if (vKeys.length !== sKeys.length) return false;
       return vKeys.every((k) => (v.attributes[k] || "").toLowerCase() === (selectedVars[k] || "").toLowerCase());
     });
-    if (matched && matched.price !== void 0 && matched.price !== null && !isNaN(Number(matched.price))) {
-      basePrice = Number(matched.price);
+    if (matched) {
+      if (matched.price !== void 0 && matched.price !== null && !isNaN(Number(matched.price))) {
+        basePrice = Number(matched.price);
+      }
+      if (matched.compareAtPrice !== void 0 && matched.compareAtPrice !== null && !isNaN(Number(matched.compareAtPrice))) {
+        originalPrice = Number(matched.compareAtPrice);
+      }
     }
   }
   return { price: basePrice, originalPrice };
@@ -9070,7 +9398,7 @@ router5.post("/", validateBody(CreateOrderSchema), async (req, res) => {
     const token = getAuthTokenFromRequest(req);
     const isGuestOrder = Boolean(orderData.isGuest || !token);
     const user = !isGuestOrder && token ? await extractUserFromToken(token) : null;
-    const customerEmail = (orderData.customerEmail || orderData.customer_email || user?.email || "").trim().toLowerCase();
+    const customerEmail = (orderData.customerEmail || orderData.customer_email || orderData.email || user?.email || "").trim().toLowerCase();
     const customerName = (orderData.customerName || orderData.customer_name || (user ? `${user.first_name || ""} ${user.last_name || ""}`.trim() || user.username : "Valued Customer")).trim();
     const customerPhone = (orderData.phone || orderData.customerPhone || orderData.customer_phone || user?.phone || "").trim();
     const incomingItems = Array.isArray(orderData.items) ? orderData.items : [];
@@ -9138,6 +9466,7 @@ router5.post("/", validateBody(CreateOrderSchema), async (req, res) => {
       customer_name: customerName,
       customerEmail,
       customer_email: customerEmail,
+      email: customerEmail,
       phone: customerPhone,
       customerPhone,
       customer_phone: customerPhone,
@@ -9713,7 +10042,7 @@ var customers_default = router7;
 
 // server/routes/settings.ts
 var import_express8 = require("express");
-var import_crypto5 = __toESM(require("crypto"), 1);
+var import_crypto6 = __toESM(require("crypto"), 1);
 init_mysql_db();
 var router8 = (0, import_express8.Router)();
 var DEFAULT_SITE_SETTINGS = {
@@ -10065,7 +10394,7 @@ router8.post("/backups/create", requireAdmin, async (req, res) => {
       file_size_bytes: JSON.stringify(settings).length,
       backup_type: "manual",
       status: "completed",
-      checksum: import_crypto5.default.randomBytes(12).toString("hex"),
+      checksum: import_crypto6.default.randomBytes(12).toString("hex"),
       created_by: admin_email || "admin@ropenix.co.ke",
       notes: notes || "Manual admin snapshot",
       created_at: (/* @__PURE__ */ new Date()).toISOString()
@@ -11092,7 +11421,7 @@ router12.get(["/order/:orderId", "/order/:orderId/"], async (req, res) => {
 });
 router12.get(["/admin/pending", "/admin/pending/"], requireAdmin, async (_req, res) => {
   try {
-    const pool = await getDbPool2();
+    const pool = await getDbPool();
     const [rows] = await pool.query(`
       SELECT ps.id, ps.order_id, ps.mpesa_receipt_code, ps.phone_number, ps.amount_claimed, ps.payment_method, ps.status, ps.submitted_at, ps.admin_notes,
              COALESCE(o.customer_name, '') as customer_name,
@@ -11707,8 +12036,64 @@ var newsletter_default = router13;
 
 // server/routes/upload.ts
 var import_express14 = require("express");
-var import_crypto6 = __toESM(require("crypto"), 1);
+var import_crypto7 = __toESM(require("crypto"), 1);
+init_image_storage();
+var sharp2 = null;
+try {
+  sharp2 = require("sharp");
+} catch (_) {
+  console.warn("[Upload Service] sharp not available, using pure data stream fallback.");
+}
 var router14 = (0, import_express14.Router)();
+async function processImageWithSharp(input, maxWidth = 1600, maxHeight = 1600, quality = 82) {
+  let imageBuffer;
+  if (typeof input === "string") {
+    const base64Data = input.replace(/^data:image\/\w+;base64,/, "");
+    imageBuffer = Buffer.from(base64Data, "base64");
+  } else {
+    imageBuffer = input;
+  }
+  if (sharp2) {
+    const pipeline = sharp2(imageBuffer).rotate().resize(maxWidth, maxHeight, {
+      fit: "inside",
+      withoutEnlargement: true
+    }).webp({ quality, effort: 4 });
+    const { data, info } = await pipeline.toBuffer({ resolveWithObject: true });
+    return {
+      buffer: data,
+      info,
+      dataUri: `data:image/webp;base64,${data.toString("base64")}`
+    };
+  }
+  return {
+    buffer: imageBuffer,
+    info: { format: "original", width: maxWidth, height: maxHeight },
+    dataUri: typeof input === "string" ? input : `data:image/jpeg;base64,${imageBuffer.toString("base64")}`
+  };
+}
+async function generateThumbnailWithSharp(input, size = 300, quality = 78) {
+  let imageBuffer;
+  if (typeof input === "string") {
+    const base64Data = input.replace(/^data:image\/\w+;base64,/, "");
+    imageBuffer = Buffer.from(base64Data, "base64");
+  } else {
+    imageBuffer = input;
+  }
+  if (sharp2) {
+    const data = await sharp2(imageBuffer).rotate().resize(size, size, {
+      fit: "cover",
+      position: "center"
+    }).webp({ quality, effort: 4 }).toBuffer();
+    return {
+      buffer: data,
+      dataUri: `data:image/webp;base64,${data.toString("base64")}`
+    };
+  }
+  return {
+    buffer: imageBuffer,
+    dataUri: typeof input === "string" ? input : `data:image/jpeg;base64,${imageBuffer.toString("base64")}`
+  };
+}
 router14.get("/cloudinary/status", (_req, res) => {
   const cloudName = process.env.CLOUDINARY_CLOUD_NAME || process.env.VITE_CLOUDINARY_CLOUD_NAME || "";
   const apiKey = process.env.CLOUDINARY_API_KEY || "";
@@ -11717,14 +12102,46 @@ router14.get("/cloudinary/status", (_req, res) => {
   const isConfigured = Boolean(cloudName && apiKey && apiSecret);
   res.json({
     configured: isConfigured,
+    sharpAvailable: Boolean(sharp2),
     cloudName: cloudName ? `${cloudName.slice(0, 3)}***` : void 0,
     fullCloudName: cloudName || void 0,
     hasApiKey: Boolean(apiKey),
     hasApiSecret: Boolean(apiSecret),
     uploadPreset: uploadPreset || void 0,
     source: isConfigured ? "backend" : uploadPreset ? "client_preset" : "none",
-    message: isConfigured ? `Cloudinary signed upload active for cloud: ${cloudName}` : "Cloudinary credentials not configured in environment. Using graceful local canvas compression fallback."
+    message: isConfigured ? `Cloudinary signed upload active with server-side WebP optimization.` : "Cloudinary not configured. Using Sharp server-side WebP compression and thumbnail generation."
   });
+});
+router14.post("/optimize", requireAdmin, async (req, res) => {
+  try {
+    const { image, file, maxWidth = 1600, quality = 82 } = req.body || {};
+    const input = image || file;
+    if (!input) {
+      return res.status(400).json({ success: false, error: "Image payload is required." });
+    }
+    const [fullResult, thumbResult] = await Promise.all([
+      processImageWithSharp(input, Number(maxWidth), Number(maxWidth), Number(quality)),
+      generateThumbnailWithSharp(input, 300, 78)
+    ]);
+    const staticUrl = await saveBase64ImageToDisk(fullResult.dataUri, "opt");
+    const staticThumbUrl = await saveBase64ImageToDisk(thumbResult.dataUri, "thumb");
+    return res.json({
+      success: true,
+      url: staticUrl,
+      thumbnail_url: staticThumbUrl,
+      thumbnailUrl: staticThumbUrl,
+      format: "webp",
+      width: fullResult.info.width,
+      height: fullResult.info.height,
+      bytes: fullResult.buffer.length,
+      thumbnail_bytes: thumbResult.buffer.length,
+      compressed: true
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Failed to optimize image";
+    console.error("[Image Optimization Error]:", err);
+    return res.status(500).json({ success: false, error: message });
+  }
 });
 router14.post("/cloudinary", requireAdmin, async (req, res) => {
   try {
@@ -11736,12 +12153,32 @@ router14.post("/cloudinary", requireAdmin, async (req, res) => {
     if (!filePayload) {
       return res.status(400).json({ success: false, error: "Image payload (base64 or URL) is required." });
     }
+    let processedPayload = filePayload;
+    let localThumbDataUri = "";
+    if (typeof filePayload === "string" && filePayload.startsWith("data:image")) {
+      try {
+        const [opt, thumb] = await Promise.all([
+          processImageWithSharp(filePayload, 1600, 1600, 82),
+          generateThumbnailWithSharp(filePayload, 300, 78)
+        ]);
+        processedPayload = opt.dataUri;
+        localThumbDataUri = thumb.dataUri;
+      } catch (optErr) {
+        console.warn("[Upload Pre-compression]:", optErr);
+      }
+    }
     if (!cloudName || !apiKey || !apiSecret) {
+      const staticUrl = await saveBase64ImageToDisk(processedPayload, "prod");
+      const staticThumbUrl = localThumbDataUri ? await saveBase64ImageToDisk(localThumbDataUri, "thumb") : staticUrl;
       return res.status(200).json({
-        success: false,
+        success: true,
         configured: false,
         fallback: true,
-        error: "Cloudinary credentials not configured in environment."
+        url: staticUrl,
+        thumbnail_url: staticThumbUrl,
+        thumbnailUrl: staticThumbUrl,
+        format: "webp",
+        message: "Saved locally as optimized WebP image with 300x300 thumbnail."
       });
     }
     const timestamp = Math.floor(Date.now() / 1e3);
@@ -11760,9 +12197,9 @@ router14.post("/cloudinary", requireAdmin, async (req, res) => {
     }
     const sortedKeys = Object.keys(paramsToSign).sort();
     const toSign = sortedKeys.map((k) => `${k}=${paramsToSign[k]}`).join("&") + apiSecret;
-    const signature = import_crypto6.default.createHash("sha1").update(toSign).digest("hex");
+    const signature = import_crypto7.default.createHash("sha1").update(toSign).digest("hex");
     const uploadPayload = {
-      file: filePayload,
+      file: processedPayload,
       api_key: apiKey,
       timestamp,
       signature,
@@ -11788,10 +12225,14 @@ router14.post("/cloudinary", requireAdmin, async (req, res) => {
         detail: data
       });
     }
+    const finalUrl = data.secure_url || data.url;
+    const thumbUrl = finalUrl.includes("/upload/") ? finalUrl.replace("/upload/", "/upload/c_fill,w_300,h_300,q_auto,f_auto/") : finalUrl;
     return res.json({
       success: true,
-      url: data.secure_url || data.url,
+      url: finalUrl,
       secure_url: data.secure_url,
+      thumbnail_url: thumbUrl,
+      thumbnailUrl: thumbUrl,
       public_id: data.public_id,
       format: data.format,
       width: data.width,
@@ -11820,7 +12261,7 @@ router15.get(["/preferences", "/preferences/"], async (req, res) => {
     if (!email) {
       return res.status(400).json({ success: false, error: "Email parameter is required." });
     }
-    const pool = await getDbPool2();
+    const pool = await getDbPool();
     const [rows] = await pool.query("SELECT * FROM email_preferences WHERE email = ? LIMIT 1", [email]);
     if (rows && rows.length > 0) {
       return res.json({ success: true, preferences: rows[0] });
@@ -11849,7 +12290,7 @@ router15.post(["/preferences", "/preferences/"], async (req, res) => {
     const cleanEmail = email.toLowerCase().trim();
     const nowIso = (/* @__PURE__ */ new Date()).toISOString();
     const id = `pref-${Date.now()}`;
-    const pool = await getDbPool2();
+    const pool = await getDbPool();
     await pool.query(
       `INSERT INTO email_preferences (id, email, allow_marketing, allow_review_requests, allow_abandoned_cart, allow_price_drop, unsubscribed_all, updated_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
@@ -11891,7 +12332,7 @@ router15.get(["/unsubscribe", "/unsubscribe/"], async (req, res) => {
     }
     const nowIso = (/* @__PURE__ */ new Date()).toISOString();
     const id = `pref-${Date.now()}`;
-    const pool = await getDbPool2();
+    const pool = await getDbPool();
     await pool.query(
       `INSERT INTO email_preferences (id, email, allow_marketing, allow_review_requests, allow_abandoned_cart, allow_price_drop, unsubscribed_all, updated_at)
        VALUES (?, ?, 0, 0, 0, 0, 1, ?)
@@ -11940,7 +12381,7 @@ router15.post(["/unsubscribe", "/unsubscribe/"], async (req, res) => {
     }
     const nowIso = (/* @__PURE__ */ new Date()).toISOString();
     const id = `pref-${Date.now()}`;
-    const pool = await getDbPool2();
+    const pool = await getDbPool();
     await pool.query(
       `INSERT INTO email_preferences (id, email, allow_marketing, allow_review_requests, allow_abandoned_cart, allow_price_drop, unsubscribed_all, updated_at)
        VALUES (?, ?, 0, 0, 0, 0, 1, ?)
@@ -11971,7 +12412,7 @@ router15.post(["/resubscribe", "/resubscribe/"], async (req, res) => {
     }
     const nowIso = (/* @__PURE__ */ new Date()).toISOString();
     const id = `pref-${Date.now()}`;
-    const pool = await getDbPool2();
+    const pool = await getDbPool();
     await pool.query(
       `INSERT INTO email_preferences (id, email, allow_marketing, allow_review_requests, allow_abandoned_cart, allow_price_drop, unsubscribed_all, updated_at)
        VALUES (?, ?, 1, 1, 1, 1, 0, ?)
@@ -12000,7 +12441,7 @@ router15.get(["/unsubscribe-status", "/unsubscribe-status/"], async (req, res) =
     if (!email) {
       return res.json({ email: "", unsubscribed: false });
     }
-    const pool = await getDbPool2();
+    const pool = await getDbPool();
     const [rows] = await pool.query("SELECT unsubscribed_all FROM email_preferences WHERE email = ? LIMIT 1", [email]);
     return res.json({ email, unsubscribed: rows && rows.length > 0 ? Boolean(rows[0].unsubscribed_all) : false });
   } catch {
@@ -12009,7 +12450,7 @@ router15.get(["/unsubscribe-status", "/unsubscribe-status/"], async (req, res) =
 });
 router15.get(["/unsubscribed-list", "/unsubscribed-list/"], async (_req, res) => {
   try {
-    const pool = await getDbPool2();
+    const pool = await getDbPool();
     const [rows] = await pool.query("SELECT email FROM email_preferences WHERE unsubscribed_all = 1");
     const emails = (rows || []).map((r) => r.email);
     return res.json({ count: emails.length, emails });
@@ -12140,7 +12581,7 @@ router16.get(["/stats", "/stats/"], async (_req, res) => {
     let sentLogsCount = 0;
     let recentLogs = [];
     try {
-      const pool = await getDbPool2();
+      const pool = await getDbPool();
       const [qRows] = await pool.query(`SELECT status, count(*) as count FROM email_jobs GROUP BY status`);
       (qRows || []).forEach((r) => {
         if (r.status === "queued") queuedJobsCount = parseInt(r.count, 10);
@@ -12296,7 +12737,8 @@ router17.get("/postgres/status", async (_req, res) => {
 });
 router17.post("/sqlite/purge-all", requireAdmin, async (_req, res) => {
   try {
-    await purgeAllSqliteData();
+    await purgeAllMysqlData();
+    await loadProductsCache(true);
     res.json({ success: true, message: "All data purged cleanly from backend database." });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to purge database data.";
@@ -12309,13 +12751,9 @@ router17.post("/sqlite/sync-push", requireAdmin, async (req, res) => {
     if (!payload || typeof payload !== "object") {
       return res.status(400).json({ error: "Invalid sync payload format." });
     }
-    await pushSyncDataSqlite(payload);
+    await pushSyncData(payload);
     try {
       await loadProductsCache(true);
-    } catch (_) {
-    }
-    try {
-      await pushSyncData(payload);
     } catch (_) {
     }
     res.json({ success: true, message: "Database state successfully synchronized." });
@@ -12326,12 +12764,7 @@ router17.post("/sqlite/sync-push", requireAdmin, async (req, res) => {
 });
 router17.get("/sqlite/sync-pull", optionalAuth, async (_req, res) => {
   try {
-    let data = null;
-    try {
-      data = await pullSyncDataSqlite();
-    } catch (_) {
-      data = await pullSyncData();
-    }
+    const data = await pullSyncData();
     res.json({ success: true, data });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Database pull sync failed.";
@@ -12551,7 +12984,7 @@ var getAppDirname = () => {
   try {
     if (typeof __dirname !== "undefined") return __dirname;
     if (typeof import_meta !== "undefined" && import_meta.url) {
-      return import_path.default.dirname((0, import_url.fileURLToPath)(import_meta.url));
+      return import_path2.default.dirname((0, import_url.fileURLToPath)(import_meta.url));
     }
   } catch (_) {
   }
@@ -12559,6 +12992,15 @@ var getAppDirname = () => {
 };
 var appDir = getAppDirname();
 import_dotenv4.default.config();
+if (!process.env.NODE_ENV) {
+  const isCjsOrDist = Boolean(process.argv[1]) && (process.argv[1].endsWith(".cjs") || process.argv[1].includes("dist"));
+  if (isCjsOrDist || typeof global.PhusionPassenger !== "undefined" || process.env.PORT === "passenger") {
+    process.env.NODE_ENV = "production";
+  }
+}
+if (!process.env.EMAIL_DEV_MODE && process.env.NODE_ENV === "production") {
+  process.env.EMAIL_DEV_MODE = "false";
+}
 var app = (0, import_express19.default)();
 var rawPort = process.env.PORT;
 var isNumericPort = rawPort && !isNaN(Number(rawPort));
@@ -12627,6 +13069,14 @@ app.get(["/health", "/api/health"], async (_req, res) => {
 });
 app.use(import_express19.default.json({ limit: "50mb" }));
 app.use(import_express19.default.urlencoded({ limit: "50mb", extended: true }));
+var uploadsStaticDir = import_path2.default.resolve(process.cwd(), "public", "uploads");
+if (!import_fs2.default.existsSync(uploadsStaticDir)) {
+  try {
+    import_fs2.default.mkdirSync(uploadsStaticDir, { recursive: true });
+  } catch (_) {
+  }
+}
+app.use("/uploads", import_express19.default.static(uploadsStaticDir, { maxAge: "30d" }));
 app.use("/auth", auth_default);
 app.use("/api/auth", auth_default);
 app.use("/api/users", users_default);
@@ -12661,7 +13111,11 @@ async function startServer() {
     await initializeDatabaseSchema();
     const dbStatus = await getDbStatus();
     console.log(`[MySQL Database] ${dbStatus.message}`);
-    await loadProductsCache();
+    await ensureDefaultAdminUser().catch((err) => console.warn("[MySQL] Default admin seed notice:", err));
+    await ensureDefaultCustomers().catch((err) => console.warn("[MySQL] Default customer seed notice:", err));
+    await ensureDefaultProducts().catch((err) => console.warn("[MySQL] Default product seed notice:", err));
+    await ensureDefaultHeroBanners().catch((err) => console.warn("[MySQL] Default hero banners seed notice:", err));
+    await loadProductsCache(true);
   } catch (err) {
     console.error("[MySQL Startup] Error initializing MySQL database:", err);
   }
@@ -12670,26 +13124,26 @@ async function startServer() {
   });
   const resolveDistPath = () => {
     const candidates = [
-      import_path.default.resolve(appDir, "dist"),
-      import_path.default.resolve(process.cwd(), "dist"),
-      import_path.default.resolve(appDir, "..", "dist"),
-      import_path.default.resolve(appDir),
-      import_path.default.resolve(process.cwd())
+      import_path2.default.resolve(appDir, "dist"),
+      import_path2.default.resolve(process.cwd(), "dist"),
+      import_path2.default.resolve(appDir, "..", "dist"),
+      import_path2.default.resolve(appDir),
+      import_path2.default.resolve(process.cwd())
     ];
     for (const candidate of candidates) {
-      if (import_fs.default.existsSync(import_path.default.join(candidate, "index.html")) && import_fs.default.existsSync(import_path.default.join(candidate, "assets"))) {
+      if (import_fs2.default.existsSync(import_path2.default.join(candidate, "index.html")) && import_fs2.default.existsSync(import_path2.default.join(candidate, "assets"))) {
         return candidate;
       }
     }
-    if (import_fs.default.existsSync(import_path.default.resolve(process.cwd(), "dist", "index.html"))) {
-      return import_path.default.resolve(process.cwd(), "dist");
+    if (import_fs2.default.existsSync(import_path2.default.resolve(process.cwd(), "dist", "index.html"))) {
+      return import_path2.default.resolve(process.cwd(), "dist");
     }
-    return import_path.default.resolve(process.cwd(), "dist");
+    return import_path2.default.resolve(process.cwd(), "dist");
   };
   const serveStaticProductionAssets = () => {
     const distPath = resolveDistPath();
-    const assetsPath = import_path.default.join(distPath, "assets");
-    if (import_fs.default.existsSync(assetsPath)) {
+    const assetsPath = import_path2.default.join(distPath, "assets");
+    if (import_fs2.default.existsSync(assetsPath)) {
       app.use(
         "/assets",
         import_express19.default.static(assetsPath, {
@@ -12721,8 +13175,8 @@ async function startServer() {
     );
     app.get("*", (_req, res) => {
       res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
-      const indexPath = import_path.default.join(distPath, "index.html");
-      if (import_fs.default.existsSync(indexPath)) {
+      const indexPath = import_path2.default.join(distPath, "index.html");
+      if (import_fs2.default.existsSync(indexPath)) {
         res.sendFile(indexPath);
       } else {
         res.status(404).send(`
@@ -12772,10 +13226,6 @@ async function startServer() {
     console.log(`[Ropenix Orders API] Route registered at /api/orders`);
     console.log(`[Ropenix Suppliers API] Route registered at /api/suppliers`);
   });
-  ensureDefaultAdminUser().catch((err) => console.warn("[MySQL] Default admin seed notice:", err));
-  ensureDefaultCustomers().catch((err) => console.warn("[MySQL] Default customer seed notice:", err));
-  ensureDefaultProducts().catch((err) => console.warn("[MySQL] Default product seed notice:", err));
-  ensureDefaultHeroBanners().catch((err) => console.warn("[MySQL] Default hero banners seed notice:", err));
   registerEmailEventListeners();
   try {
     validateEmailConfigOnStartup();
@@ -12813,6 +13263,14 @@ var server_default2 = server_default;
  * @license
  * SPDX-License-Identifier: Apache-2.0
  * 
+ * Image Storage & Optimization Service
+ * Offloads base64 image data URIs to local disk in public/uploads/ as optimized WebP files
+ * and ensures database records store lightweight static URLs rather than multi-megabyte payloads.
+ */
+/**
+ * @license
+ * SPDX-License-Identifier: Apache-2.0
+ * 
  * Ropenix Unified MySQL Database Engine
  * Primary and standalone database layer powered by MySQL (mysql2/promise).
  * Configured for local XAMPP and production MySQL environments.
@@ -12834,6 +13292,13 @@ var server_default2 = server_default;
  * 
  * Compatibility Bridge: SQLite -> MySQL Migration
  * All SQLite operations are now transparently backed by the unified MySQL database.
+ */
+/**
+ * @license
+ * SPDX-License-Identifier: Apache-2.0
+ * 
+ * High-Performance Image Upload & Optimization Service
+ * Supports Sharp-powered server-side WebP compression, thumbnail generation, and Cloudinary CDN storage.
  */
 /**
  * @license

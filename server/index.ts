@@ -59,6 +59,17 @@ import seoRouter from './routes/seo';
 
 dotenv.config();
 
+// Auto-detect production environment if running compiled bundle or passenger
+if (!process.env.NODE_ENV) {
+  const isCjsOrDist = Boolean(process.argv[1]) && (process.argv[1].endsWith('.cjs') || process.argv[1].includes('dist'));
+  if (isCjsOrDist || typeof (global as any).PhusionPassenger !== 'undefined' || process.env.PORT === 'passenger') {
+    process.env.NODE_ENV = 'production';
+  }
+}
+if (!process.env.EMAIL_DEV_MODE && process.env.NODE_ENV === 'production') {
+  process.env.EMAIL_DEV_MODE = 'false';
+}
+
 const app = express();
 const rawPort = process.env.PORT;
 const isNumericPort = rawPort && !isNaN(Number(rawPort));
@@ -140,6 +151,15 @@ app.get(['/health', '/api/health'], async (_req: Request, res: Response) => {
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
+// Static uploads directory (ensures uploaded images are served directly in dev & prod)
+const uploadsStaticDir = path.resolve(process.cwd(), 'public', 'uploads');
+if (!fs.existsSync(uploadsStaticDir)) {
+  try {
+    fs.mkdirSync(uploadsStaticDir, { recursive: true });
+  } catch (_) {}
+}
+app.use('/uploads', express.static(uploadsStaticDir, { maxAge: '30d' }));
+
 // ============================================================================
 // Mount Modular Domain Routers
 // ============================================================================
@@ -183,7 +203,11 @@ async function startServer() {
     await initializeDatabaseSchema();
     const dbStatus = await getDbStatus();
     console.log(`[MySQL Database] ${dbStatus.message}`);
-    await loadProductsCache();
+    await ensureDefaultAdminUser().catch((err) => console.warn('[MySQL] Default admin seed notice:', err));
+    await ensureDefaultCustomers().catch((err) => console.warn('[MySQL] Default customer seed notice:', err));
+    await ensureDefaultProducts().catch((err) => console.warn('[MySQL] Default product seed notice:', err));
+    await ensureDefaultHeroBanners().catch((err) => console.warn('[MySQL] Default hero banners seed notice:', err));
+    await loadProductsCache(true);
   } catch (err) {
     console.error('[MySQL Startup] Error initializing MySQL database:', err);
   }
@@ -303,10 +327,6 @@ async function startServer() {
     console.log(`[Ropenix Suppliers API] Route registered at /api/suppliers`);
   });
 
-  ensureDefaultAdminUser().catch((err) => console.warn('[MySQL] Default admin seed notice:', err));
-  ensureDefaultCustomers().catch((err) => console.warn('[MySQL] Default customer seed notice:', err));
-  ensureDefaultProducts().catch((err) => console.warn('[MySQL] Default product seed notice:', err));
-  ensureDefaultHeroBanners().catch((err) => console.warn('[MySQL] Default hero banners seed notice:', err));
   registerEmailEventListeners();
   try {
     validateEmailConfigOnStartup();

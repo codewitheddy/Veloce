@@ -9,6 +9,7 @@ import {
   updateEmailJobStatus,
   logEmail,
   isRecipientOptedOut,
+  isDedupeKeyProcessed,
   EmailJobRecord,
 } from './db';
 import { sendEmail } from './transporter';
@@ -252,10 +253,67 @@ export async function enqueueEmail(options: {
   maxAttempts?: number;
 }): Promise<string | null> {
   const res = await enqueueEmailJob(options);
-  if (!options.delaySeconds || options.delaySeconds <= 0) {
-    setImmediate(() => {
-      processQueueBatch().catch(() => {});
-    });
+  if (res) {
+    if (!options.delaySeconds || options.delaySeconds <= 0) {
+      setImmediate(() => {
+        processQueueBatch().catch(() => {});
+      });
+    }
+    return res;
   }
-  return res;
+
+  // If enqueueEmailJob returned null, check why:
+  // If already sent via dedupeKey, skip cleanly.
+  if (options.dedupeKey) {
+    const alreadySent = await isDedupeKeyProcessed(options.dedupeKey).catch(() => false);
+    if (alreadySent) {
+      console.log(`[Email Queue] ⏭️ Skipping: dedupeKey "${options.dedupeKey}" was already sent.`);
+      return null;
+    }
+  }
+
+  // Fallback: If MySQL queue is unavailable, dispatch directly so customer receipt is never lost
+  console.warn(`[Email Queue] ⚠️ MySQL queue unavailable for ${options.emailType} -> ${options.recipient}. Initiating direct fallback dispatch...`);
+  try {
+    const rendered = renderJobContent({
+      id: `direct-fallback-${Date.now()}`,
+      email_type: options.emailType,
+      recipient: options.recipient,
+      subject: options.subject,
+      payload: options.payload,
+      status: 'queued',
+      attempts: 0,
+      max_attempts: 1,
+      next_attempt_at: new Date().toISOString(),
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    });
+
+    const sendRes = await sendEmail({
+      to: options.recipient,
+      subject: rendered.subject || options.subject,
+      html: rendered.html,
+      text: rendered.text,
+      replyTo: options.payload?.replyTo,
+    });
+
+    if (sendRes.success) {
+      console.log(`[Email Queue] ✅ Direct fallback send succeeded for ${options.emailType} -> ${options.recipient}`);
+      await logEmail({
+        recipient: options.recipient,
+        email_type: options.emailType,
+        subject: rendered.subject || options.subject,
+        status: 'sent',
+        attempts: 1,
+        related_order_id: options.payload?.id || options.payload?.orderId,
+        dedupe_key: options.dedupeKey,
+        sent_at: new Date().toISOString(),
+      }).catch(() => {});
+      return `direct-${Date.now()}`;
+    }
+  } catch (directErr) {
+    console.error(`[Email Queue] ❌ Direct fallback send error for ${options.emailType} -> ${options.recipient}:`, directErr);
+  }
+
+  return null;
 }

@@ -98,6 +98,7 @@ DB_NAME="cpaneluser_ropenix"
 
 # Zoho Mail SMTP Gateway (or cPanel Webmail)
 EMAIL_ENABLED=true
+# Must be false so customer order confirmations are sent to customer inboxes
 EMAIL_DEV_MODE=false
 EMAIL_HOST="smtppro.zoho.com"
 EMAIL_PORT=465
@@ -128,6 +129,9 @@ ADMIN_DIGEST_ENABLED=true
 ADMIN_DIGEST_TIMES="08:00,17:00"
 ADMIN_DIGEST_RECIPIENTS="admin@ropenix.co.ke,ropenixkenya@gmail.com"
 ```
+
+> [!IMPORTANT]
+> **Customer Email Delivery**: Ensure `EMAIL_DEV_MODE=false` is set in your `.env`. When `EMAIL_DEV_MODE=false`, customer order confirmations and digital receipts are delivered directly to customer inboxes, while admin alerts are sent to `ADMIN_EMAIL`.
 
 5. Save the file.
 

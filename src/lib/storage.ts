@@ -90,27 +90,10 @@ export function freeUpLocalStorageSpace(targetKey?: string): boolean {
     trimLogKey('veloce_category_audit_logs', 15);
     trimLogKey('customer_support_tickets', 15);
 
-    // Priority 4: If target key is not 'veloce_products' and products are huge, try stripping base64 images from cached products
-    if (targetKey !== 'veloce_products') {
-      try {
-        const rawProd = localStorage.getItem('veloce_products');
-        if (rawProd && rawProd.length > 500000) {
-          const prods = JSON.parse(rawProd);
-          if (Array.isArray(prods)) {
-            const sanitized = prods.map((p: any) => ({
-              ...p,
-              image: p.image?.startsWith('data:') ? 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?auto=format&fit=crop&q=80&w=600' : p.image,
-              images: Array.isArray(p.images)
-                ? p.images.map((img: string) => img.startsWith('data:') ? 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?auto=format&fit=crop&q=80&w=600' : img)
-                : p.images
-            }));
-            localStorage.setItem('veloce_products', JSON.stringify(sanitized));
-          }
-        }
-      } catch {
-        // ignore
-      }
-    }
+    // Ensure any legacy veloce_products cache is completely purged
+    try {
+      localStorage.removeItem('veloce_products');
+    } catch {}
 
     return true;
   } catch (err) {
@@ -136,11 +119,18 @@ export function sanitizeCartForStorage(cartItems: any[]): any[] {
       safeImageUrl = ''; // Will be seamlessly rehydrated from active product catalog
     }
 
+    const rawOrig = p.originalPrice || p.original_price || p.compareAtPrice || p.compare_at_price || p.previousPrice || p.previous_price;
+    const safeOrig = rawOrig !== undefined && rawOrig !== null && !isNaN(Number(rawOrig)) && Number(rawOrig) > 0 ? Number(rawOrig) : undefined;
+
     const safeProduct = {
       id: String(p.id || ''),
       name: String(p.name || 'Product'),
       price: Number(p.price || 0),
-      originalPrice: p.originalPrice ? Number(p.originalPrice) : undefined,
+      originalPrice: safeOrig,
+      original_price: safeOrig,
+      compareAtPrice: safeOrig,
+      compare_at_price: safeOrig,
+      previousPrice: safeOrig,
       category: String(p.category || 'General'),
       subcategory: String(p.subcategory || ''),
       stock: Number(p.stock !== undefined ? p.stock : 99),
@@ -212,41 +202,14 @@ export function safeLocalStorageSetItem(key: string, value: string): boolean {
     }
   }
 
-  // 2. Critical Products Storage (Persist to both localStorage and IndexedDB)
+  // 2. Products Storage - Caching to localStorage & IndexedDB is permanently disabled.
+  // Catalog products are strictly retrieved live from backend MySQL database.
   if (key === 'veloce_products') {
     try {
-      const parsed = JSON.parse(value);
-      saveToIndexedDb('veloce_cache', key, parsed).catch(() => {});
-    } catch {
-      saveToIndexedDb('veloce_cache', key, value).catch(() => {});
-    }
-
-    try {
-      localStorage.setItem(key, value);
-      return true;
-    } catch (err: unknown) {
-      if (isQuotaExceededError(err)) {
-        freeUpLocalStorageSpace(key);
-        try {
-          // If still tight, save sanitized version without huge base64 images to localStorage
-          const parsed = JSON.parse(value);
-          if (Array.isArray(parsed)) {
-            const lightweight = parsed.map((p: any) => ({
-              ...p,
-              image: (typeof p.image === 'string' && p.image.startsWith('data:'))
-                ? 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?auto=format&fit=crop&q=80&w=600'
-                : p.image,
-              images: Array.isArray(p.images)
-                ? p.images.map((img: string) => (typeof img === 'string' && img.startsWith('data:')) ? 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?auto=format&fit=crop&q=80&w=600' : img)
-                : p.images
-            }));
-            localStorage.setItem(key, JSON.stringify(lightweight));
-            return true;
-          }
-        } catch {}
-      }
-      return false;
-    }
+      localStorage.removeItem(key);
+      deleteFromIndexedDb('veloce_cache', key).catch(() => {});
+    } catch {}
+    return true;
   }
 
   // 3. Large payload (> 500 KB) IndexedDB handling
@@ -298,6 +261,15 @@ export function safeLocalStorageSetItem(key: string, value: string): boolean {
  */
 export function safeLocalStorageGetItem<T>(key: string, defaultValue: T): T {
   if (typeof window === 'undefined' || !window.localStorage) return defaultValue;
+
+  // Products caching is disabled - strictly live from backend MySQL database
+  if (key === 'veloce_products') {
+    try {
+      localStorage.removeItem(key);
+      deleteFromIndexedDb('veloce_cache', key).catch(() => {});
+    } catch {}
+    return defaultValue;
+  }
 
   try {
     const raw = localStorage.getItem(key);
@@ -383,6 +355,27 @@ export async function getFromIndexedDb<T>(storeName: string, key: string, defaul
     });
   } catch {
     return defaultValue;
+  }
+}
+
+export async function deleteFromIndexedDb(storeName: string, key: string): Promise<boolean> {
+  try {
+    const db = await openIndexedDb();
+    return new Promise((resolve) => {
+      const tx = db.transaction('veloce_cache', 'readwrite');
+      const store = tx.objectStore('veloce_cache');
+      store.delete(key);
+      tx.oncomplete = () => {
+        db.close();
+        resolve(true);
+      };
+      tx.onerror = () => {
+        db.close();
+        resolve(false);
+      };
+    });
+  } catch {
+    return false;
   }
 }
 

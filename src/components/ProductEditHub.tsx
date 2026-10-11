@@ -34,7 +34,7 @@ import {
 } from 'lucide-react';
 import { Product } from '../types';
 import { formatPrice, CurrencyType } from '../lib/currency';
-import { getProductDiscountInfo, getCountryFlag } from '../utils/productUtils';
+import { getProductDiscountInfo, getCountryFlag, checkProductHasVariants } from '../utils/productUtils';
 
 interface ProductEditHubProps {
   products: Product[];
@@ -487,7 +487,7 @@ export default function ProductEditHub({
                                 (e.target as HTMLElement).style.display = 'none';
                               }}
                             />
-                            {product.type && (
+                            {product.type && product.type !== 'physical' && (
                               <span className="absolute bottom-0.5 left-0.5 px-1 py-0.2 rounded bg-black/75 text-white font-mono text-[7px] uppercase font-bold">
                                 {product.type}
                               </span>
@@ -585,11 +585,11 @@ export default function ProductEditHub({
                       {/* Variants & Matrix */}
                       <td className="px-4 py-3.5">
                         <span className="text-[11px] font-mono text-gray-600 dark:text-gray-300">
-                          {product.variantMatrix && product.variantMatrix.length > 0 ? (
+                          {checkProductHasVariants(product) && product.variantMatrix && product.variantMatrix.length > 0 ? (
                             <span className="px-2 py-0.5 rounded-md bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 font-bold border border-purple-200/60 dark:border-purple-800/40">
                               {product.variantMatrix.length} Matrix Types
                             </span>
-                          ) : product.variations && product.variations.length > 0 ? (
+                          ) : checkProductHasVariants(product) && product.variations && product.variations.length > 0 ? (
                             <span className="px-2 py-0.5 rounded-md bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 font-bold border border-blue-200/60 dark:border-blue-800/40">
                               {product.variations.length} Options
                             </span>
@@ -724,7 +724,7 @@ export default function ProductEditHub({
                           (e.target as HTMLElement).style.display = 'none';
                         }}
                       />
-                      {product.type && (
+                      {product.type && product.type !== 'physical' && (
                         <span className="absolute bottom-1 left-1 px-1 py-0.2 rounded bg-black/70 text-white font-mono text-[8px] uppercase">
                           {product.type}
                         </span>
@@ -803,9 +803,9 @@ export default function ProductEditHub({
                     <div className="flex items-center gap-1.5 justify-end">
                       <span className="text-gray-400 text-[11px]">Variants:</span>
                       <span className="font-semibold text-gray-700 dark:text-gray-300 font-mono">
-                        {product.variantMatrix && product.variantMatrix.length > 0
+                        {checkProductHasVariants(product) && product.variantMatrix && product.variantMatrix.length > 0
                           ? `${product.variantMatrix.length} types`
-                          : product.variations && product.variations.length > 0
+                          : checkProductHasVariants(product) && product.variations && product.variations.length > 0
                           ? `${product.variations.length} options`
                           : 'Standard'}
                       </span>

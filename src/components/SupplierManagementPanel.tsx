@@ -134,6 +134,7 @@ export default function SupplierManagementPanel({
   });
 
   const [showIntakeModal, setShowIntakeModal] = useState<boolean>(false);
+  const [editingIntake, setEditingIntake] = useState<SupplierIntakeBatch | null>(null);
   const [intakeFormData, setIntakeFormData] = useState({
     supplier: '',
     product_name: '',
@@ -311,14 +312,34 @@ export default function SupplierManagementPanel({
     }
   };
 
-  // Create Stock Intake (GRN)
+  // Create or Update Stock Intake (GRN)
   const handleSaveIntake = async () => {
     if (!intakeFormData.supplier || !intakeFormData.product_name) return;
     try {
-      const created = await supplierApi.createIntakeBatch(intakeFormData);
-      setIntakes((prev) => [created, ...prev]);
+      if (editingIntake) {
+        // Update existing intake
+        const updated = await supplierApi.updateIntakeBatch(editingIntake.id, intakeFormData);
+        setIntakes((prev) => prev.map((i) => (i.id === updated.id ? updated : i)));
+        setStatusMessage(`GRN ${updated.batch_number} updated successfully.`);
+      } else {
+        // Create new intake
+        const created = await supplierApi.createIntakeBatch(intakeFormData);
+        setIntakes((prev) => [created, ...prev]);
+        setStatusMessage(`Stock intake ${created.batch_number} recorded.`);
+      }
       setShowIntakeModal(false);
-      setStatusMessage(`Stock intake ${created.batch_number} recorded.`);
+      setEditingIntake(null);
+      setIntakeFormData({
+        supplier: '',
+        product_name: '',
+        product_sku: '',
+        quantity_received: 10,
+        unit_cost: 1500,
+        delivery_note_ref: '',
+        invoice_ref: '',
+        notes: '',
+        received_by: 'Warehouse Manager'
+      });
       loadAllData();
       setTimeout(() => setStatusMessage(''), 3500);
     } catch (err: any) {
@@ -333,6 +354,25 @@ export default function SupplierManagementPanel({
           : null) ||
         err?.message ||
         'Failed to record stock intake.';
+      setStatusMessage(errMsg);
+      setTimeout(() => setStatusMessage(''), 5000);
+    }
+  };
+
+  // Delete Stock Intake
+  const handleDeleteIntake = async (intake: SupplierIntakeBatch) => {
+    if (!window.confirm(`Are you sure you want to delete GRN batch ${intake.batch_number}? This will remove this intake record.`)) {
+      return;
+    }
+    try {
+      await supplierApi.deleteIntakeBatch(intake.id);
+      setIntakes((prev) => prev.filter((i) => i.id !== intake.id));
+      setStatusMessage(`GRN batch ${intake.batch_number} deleted.`);
+      loadAllData();
+      setTimeout(() => setStatusMessage(''), 3500);
+    } catch (err: any) {
+      console.error('Error deleting intake batch:', err);
+      const errMsg = err?.response?.data?.detail || err?.response?.data?.message || err?.message || 'Failed to delete intake batch.';
       setStatusMessage(errMsg);
       setTimeout(() => setStatusMessage(''), 5000);
     }
@@ -369,10 +409,10 @@ export default function SupplierManagementPanel({
   const handleQuickPay = (supplier: Supplier) => {
     setPaymentFormData({
       supplier: supplier.id,
-      amount: Math.round(supplier.outstanding_balance),
+      amount: Math.round(supplier.outstanding_balance || 0),
       payment_method: supplier.mpesa_number ? 'M-PESA' : 'Bank Transfer',
       transaction_code: '',
-      notes: `Settlement for outstanding balance of KSh ${supplier.outstanding_balance.toLocaleString()}`,
+      notes: `Settlement for outstanding balance of KSh ${(supplier.outstanding_balance || 0).toLocaleString()}`,
       processed_by: 'Finance Controller'
     });
     setShowPaymentModal(true);
@@ -619,10 +659,10 @@ export default function SupplierManagementPanel({
         <div className="flex gap-1 py-2">
           {[
             { id: 'dashboard', label: 'Management Dashboard', icon: BarChart3 },
-            { id: 'suppliers', label: 'Suppliers Directory', icon: Briefcase, badge: suppliers.length },
-            { id: 'products', label: 'Sourced Products & Profitability', icon: Layers, badge: supplierProducts.length },
-            { id: 'intakes', label: 'Goods Received Notes (GRN)', icon: Package, badge: intakes.length },
-            { id: 'payments', label: 'Disbursements & Payouts', icon: DollarSign, badge: payments.length },
+            { id: 'suppliers', label: 'Suppliers Directory', icon: Briefcase, badge: suppliers?.length || 0 },
+            { id: 'products', label: 'Sourced Products & Profitability', icon: Layers, badge: supplierProducts?.length || 0 },
+            { id: 'intakes', label: 'Goods Received Notes (GRN)', icon: Package, badge: intakes?.length || 0 },
+            { id: 'payments', label: 'Disbursements & Payouts', icon: DollarSign, badge: payments?.length || 0 },
             { id: 'reports', label: '10 Management Reports', icon: FileText }
           ].map((tab) => {
             const Icon = tab.icon;
@@ -672,10 +712,10 @@ export default function SupplierManagementPanel({
                   <Briefcase className="h-4 w-4 text-indigo-600" />
                 </div>
                 <div className="text-2xl font-black font-mono text-gray-950 dark:text-white">
-                  {dashboardMetrics.metrics.total_suppliers}
+                  {dashboardMetrics?.metrics?.total_suppliers || 0}
                 </div>
                 <div className="text-[11px] text-gray-400 font-light flex items-center gap-1">
-                  <span>{dashboardMetrics.metrics.total_products_sourced} sourced products</span>
+                  <span>{dashboardMetrics?.metrics?.total_products_sourced || 0} sourced products</span>
                 </div>
               </div>
 
@@ -686,10 +726,10 @@ export default function SupplierManagementPanel({
                   <TrendingUp className="h-4 w-4 text-emerald-600" />
                 </div>
                 <div className="text-2xl font-black font-mono text-gray-950 dark:text-white">
-                  {currency} {dashboardMetrics.metrics.total_sales_revenue.toLocaleString()}
+                  {currency} {(dashboardMetrics?.metrics?.total_sales_revenue || 0).toLocaleString()}
                 </div>
                 <div className="text-[11px] text-emerald-600 dark:text-emerald-400 font-medium">
-                  {dashboardMetrics.metrics.total_units_sold} units sold
+                  {dashboardMetrics?.metrics?.total_units_sold || 0} units sold
                 </div>
               </div>
 
@@ -700,7 +740,7 @@ export default function SupplierManagementPanel({
                   <Receipt className="h-4 w-4 text-amber-600" />
                 </div>
                 <div className="text-2xl font-black font-mono text-amber-600 dark:text-amber-400">
-                  {currency} {dashboardMetrics.metrics.total_supplier_costs.toLocaleString()}
+                  {currency} {(dashboardMetrics?.metrics?.total_supplier_costs || 0).toLocaleString()}
                 </div>
                 <div className="text-[11px] text-gray-400 font-light">
                   Cumulative cost for sold items
@@ -714,7 +754,7 @@ export default function SupplierManagementPanel({
                   <CreditCard className="h-4 w-4 text-indigo-600" />
                 </div>
                 <div className="text-2xl font-black font-mono text-gray-950 dark:text-white">
-                  {currency} {dashboardMetrics.metrics.total_paid_to_suppliers.toLocaleString()}
+                  {currency} {(dashboardMetrics?.metrics?.total_paid_to_suppliers || 0).toLocaleString()}
                 </div>
                 <div className="text-[11px] text-indigo-600 dark:text-indigo-400 font-medium">
                   Paid via M-PESA &amp; EFT
@@ -728,7 +768,7 @@ export default function SupplierManagementPanel({
                   <AlertTriangle className="h-4 w-4 text-rose-600" />
                 </div>
                 <div className="text-2xl font-black font-mono text-rose-700 dark:text-rose-400">
-                  {currency} {dashboardMetrics.metrics.total_outstanding_balance.toLocaleString()}
+                  {currency} {(dashboardMetrics?.metrics?.total_outstanding_balance || 0).toLocaleString()}
                 </div>
                 <div className="text-[11px] text-rose-600/80 dark:text-rose-300 font-light">
                   Pending settlement payments
@@ -742,7 +782,7 @@ export default function SupplierManagementPanel({
                   <DollarSign className="h-4 w-4 text-emerald-600" />
                 </div>
                 <div className="text-2xl font-black font-mono text-emerald-700 dark:text-emerald-400">
-                  {currency} {dashboardMetrics.metrics.total_gross_profit.toLocaleString()}
+                  {currency} {(dashboardMetrics?.metrics?.total_gross_profit || 0).toLocaleString()}
                 </div>
                 <div className="text-[11px] text-emerald-600/80 dark:text-emerald-300 font-light">
                   Revenue − Supplier Cost
@@ -756,7 +796,7 @@ export default function SupplierManagementPanel({
                   <Percent className="h-4 w-4 text-indigo-600" />
                 </div>
                 <div className="text-2xl font-black font-mono text-indigo-600 dark:text-indigo-400">
-                  {dashboardMetrics.metrics.overall_profit_margin}%
+                  {dashboardMetrics?.metrics?.overall_profit_margin || 0}%
                 </div>
                 <div className="text-[11px] text-gray-400 font-light">
                   Weighted margin on sourced goods
@@ -770,10 +810,10 @@ export default function SupplierManagementPanel({
                   <Package className="h-4 w-4 text-indigo-600" />
                 </div>
                 <div className="text-2xl font-black font-mono text-gray-950 dark:text-white">
-                  {currency} {dashboardMetrics.metrics.total_received_value.toLocaleString()}
+                  {currency} {(dashboardMetrics?.metrics?.total_received_value || 0).toLocaleString()}
                 </div>
                 <div className="text-[11px] text-gray-400 font-light">
-                  {dashboardMetrics.metrics.total_units_received} total units supplied
+                  {dashboardMetrics?.metrics?.total_units_received || 0} total units supplied
                 </div>
               </div>
             </div>
@@ -800,7 +840,7 @@ export default function SupplierManagementPanel({
                     <div className="flex justify-between text-xs font-medium mb-1">
                       <span className="text-gray-700 dark:text-gray-300">Sales Revenue</span>
                       <span className="font-mono font-bold text-gray-950 dark:text-white">
-                        {currency} {dashboardMetrics.metrics.total_sales_revenue.toLocaleString()} (100%)
+                        {currency} {(dashboardMetrics?.metrics?.total_sales_revenue || 0).toLocaleString()} (100%)
                       </span>
                     </div>
                     <div className="h-3.5 w-full bg-gray-100 dark:bg-gray-800 rounded-full overflow-hidden">
@@ -813,9 +853,9 @@ export default function SupplierManagementPanel({
                     <div className="flex justify-between text-xs font-medium mb-1">
                       <span className="text-amber-700 dark:text-amber-300">Supplier Cost (COGS)</span>
                       <span className="font-mono font-bold text-amber-700 dark:text-amber-300">
-                        {currency} {dashboardMetrics.metrics.total_supplier_costs.toLocaleString()} (
-                        {dashboardMetrics.metrics.total_sales_revenue > 0
-                          ? Math.round((dashboardMetrics.metrics.total_supplier_costs / dashboardMetrics.metrics.total_sales_revenue) * 100)
+                        {currency} {(dashboardMetrics?.metrics?.total_supplier_costs || 0).toLocaleString()} (
+                        {dashboardMetrics?.metrics?.total_sales_revenue > 0
+                          ? Math.round((((dashboardMetrics?.metrics?.total_supplier_costs) || 0) / (dashboardMetrics?.metrics?.total_sales_revenue || 1)) * 100)
                           : 0}
                         %)
                       </span>
@@ -825,8 +865,8 @@ export default function SupplierManagementPanel({
                         className="h-full bg-amber-500 rounded-full"
                         style={{
                           width: `${
-                            dashboardMetrics.metrics.total_sales_revenue > 0
-                              ? (dashboardMetrics.metrics.total_supplier_costs / dashboardMetrics.metrics.total_sales_revenue) * 100
+                            (dashboardMetrics?.metrics?.total_sales_revenue || 0) > 0
+                              ? (((dashboardMetrics?.metrics?.total_supplier_costs) || 0) / ((dashboardMetrics?.metrics?.total_sales_revenue) || 1)) * 100
                               : 0
                           }%`
                         }}
@@ -839,14 +879,14 @@ export default function SupplierManagementPanel({
                     <div className="flex justify-between text-xs font-medium mb-1">
                       <span className="text-emerald-700 dark:text-emerald-300">Retained Gross Profit</span>
                       <span className="font-mono font-bold text-emerald-700 dark:text-emerald-300">
-                        {currency} {dashboardMetrics.metrics.total_gross_profit.toLocaleString()} ({dashboardMetrics.metrics.overall_profit_margin}%)
+                        {currency} {(dashboardMetrics?.metrics?.total_gross_profit || 0).toLocaleString()} ({dashboardMetrics?.metrics?.overall_profit_margin || 0}%)
                       </span>
                     </div>
                     <div className="h-3.5 w-full bg-gray-100 dark:bg-gray-800 rounded-full overflow-hidden">
                       <div
                         className="h-full bg-emerald-500 rounded-full"
                         style={{
-                          width: `${Math.min(100, Math.max(0, dashboardMetrics.metrics.overall_profit_margin))}%`
+                          width: `${Math.min(100, Math.max(0, dashboardMetrics?.metrics?.overall_profit_margin || 0))}%`
                         }}
                       />
                     </div>
@@ -858,8 +898,8 @@ export default function SupplierManagementPanel({
                   <div className="flex justify-between text-xs font-medium mb-1">
                     <span className="text-gray-600 dark:text-gray-400">Settlement Progress (Paid vs Pending Owed)</span>
                     <span className="font-mono font-bold text-gray-900 dark:text-white">
-                      {dashboardMetrics.metrics.total_supplier_costs > 0
-                        ? Math.round((dashboardMetrics.metrics.total_paid_to_suppliers / dashboardMetrics.metrics.total_supplier_costs) * 100)
+                      {(dashboardMetrics?.metrics?.total_supplier_costs || 0) > 0
+                        ? Math.round((((dashboardMetrics?.metrics?.total_paid_to_suppliers) || 0) / ((dashboardMetrics?.metrics?.total_supplier_costs) || 1)) * 100)
                         : 100}
                       % Settled
                     </span>
@@ -869,12 +909,12 @@ export default function SupplierManagementPanel({
                       className="h-full bg-emerald-600 rounded-l-full"
                       style={{
                         width: `${
-                          dashboardMetrics.metrics.total_supplier_costs > 0
-                            ? (dashboardMetrics.metrics.total_paid_to_suppliers / dashboardMetrics.metrics.total_supplier_costs) * 100
+                          (dashboardMetrics?.metrics?.total_supplier_costs || 0) > 0
+                            ? (((dashboardMetrics?.metrics?.total_paid_to_suppliers) || 0) / ((dashboardMetrics?.metrics?.total_supplier_costs) || 1)) * 100
                             : 100
                         }%`
                       }}
-                      title={`Paid: ${currency} ${dashboardMetrics.metrics.total_paid_to_suppliers.toLocaleString()}`}
+                      title={`Paid: ${currency} ${(dashboardMetrics?.metrics?.total_paid_to_suppliers || 0).toLocaleString()}`}
                     />
                   </div>
                 </div>
@@ -894,7 +934,7 @@ export default function SupplierManagementPanel({
                       <span className="text-xs font-bold text-emerald-900 dark:text-emerald-200">Fully Paid / Clear</span>
                     </div>
                     <span className="font-mono font-bold text-sm text-emerald-800 dark:text-emerald-300">
-                      {dashboardMetrics.status_distribution.Paid}
+                      {dashboardMetrics?.status_distribution?.Paid || 0}
                     </span>
                   </div>
 
@@ -904,7 +944,7 @@ export default function SupplierManagementPanel({
                       <span className="text-xs font-bold text-amber-900 dark:text-amber-200">Partially Paid</span>
                     </div>
                     <span className="font-mono font-bold text-sm text-amber-800 dark:text-amber-300">
-                      {dashboardMetrics.status_distribution['Partially Paid']}
+                      {dashboardMetrics?.status_distribution?.['Partially Paid'] || 0}
                     </span>
                   </div>
 
@@ -914,7 +954,7 @@ export default function SupplierManagementPanel({
                       <span className="text-xs font-bold text-rose-900 dark:text-rose-200">Pending / Unpaid</span>
                     </div>
                     <span className="font-mono font-bold text-sm text-rose-800 dark:text-rose-300">
-                      {dashboardMetrics.status_distribution.Pending}
+                      {dashboardMetrics?.status_distribution?.Pending || 0}
                     </span>
                   </div>
                 </div>
@@ -951,29 +991,29 @@ export default function SupplierManagementPanel({
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100 dark:divide-gray-800/60 font-medium">
-                    {dashboardMetrics.top_profitable_products.map((prod) => (
+                    {(dashboardMetrics?.top_profitable_products || []).map((prod) => (
                       <tr key={prod.product_id} className="hover:bg-gray-50 dark:hover:bg-gray-800/50">
                         <td className="py-2.5 px-3">
-                          <div className="font-bold text-gray-950 dark:text-white">{prod.product_name}</div>
-                          <span className="font-mono text-[10px] text-gray-400">{prod.sku}</span>
+                          <div className="font-bold text-gray-950 dark:text-white">{prod.product_name || 'N/A'}</div>
+                          <span className="font-mono text-[10px] text-gray-400">{prod.sku || '-'}</span>
                         </td>
                         <td className="py-2.5 px-3 font-mono text-gray-600 dark:text-gray-300">
-                          {currency} {prod.supplier_cost.toLocaleString()}
+                          {currency} {(prod.supplier_cost || 0).toLocaleString()}
                         </td>
                         <td className="py-2.5 px-3 font-mono font-bold text-gray-900 dark:text-white">
-                          {currency} {prod.selling_price.toLocaleString()}
+                          {currency} {(prod.selling_price || 0).toLocaleString()}
                         </td>
                         <td className="py-2.5 px-3 font-mono text-gray-600 dark:text-gray-300">
-                          {prod.quantity_sold}
+                          {prod.quantity_sold || 0}
                         </td>
                         <td className="py-2.5 px-3 font-mono text-indigo-600 dark:text-indigo-400 font-bold">
-                          {currency} {prod.revenue.toLocaleString()}
+                          {currency} {(prod.revenue || 0).toLocaleString()}
                         </td>
                         <td className="py-2.5 px-3 font-mono text-emerald-600 dark:text-emerald-400 font-black">
-                          {currency} {prod.gross_profit.toLocaleString()}
+                          {currency} {(prod.gross_profit || 0).toLocaleString()}
                         </td>
                         <td className="py-2.5 px-3 font-mono text-right font-bold text-emerald-600">
-                          {prod.profit_margin}%
+                          {prod.profit_margin || 0}%
                         </td>
                       </tr>
                     ))}
@@ -997,9 +1037,9 @@ export default function SupplierManagementPanel({
                   <Briefcase className="h-4 w-4 text-indigo-600" />
                 </div>
                 <div className="text-xl font-black font-mono text-gray-950 dark:text-white mt-1 flex items-baseline gap-1.5">
-                  <span>{filteredSuppliers.length}</span>
+                  <span>{filteredSuppliers?.length || 0}</span>
                   <span className="text-xs font-medium text-gray-400 font-sans">
-                    / {suppliers.length} active
+                    / {suppliers?.length || 0} active
                   </span>
                 </div>
               </div>
@@ -1356,7 +1396,7 @@ export default function SupplierManagementPanel({
                                 {hasBalance ? (
                                   <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl text-xs font-mono font-black bg-rose-50 dark:bg-rose-950/50 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-900 shadow-2xs">
                                     <span className="h-1.5 w-1.5 rounded-full bg-rose-500 animate-pulse" />
-                                    <span>{currency} {supplier.outstanding_balance.toLocaleString()}</span>
+                                    <span>{currency} {(supplier.outstanding_balance || 0).toLocaleString()}</span>
                                   </span>
                                 ) : (
                                   <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl text-xs font-mono font-bold bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800">
@@ -1372,7 +1412,7 @@ export default function SupplierManagementPanel({
                                   {currency} {(supplier.gross_profit || 0).toLocaleString()}
                                 </div>
                                 <div className="text-[10px] font-bold text-gray-500 dark:text-gray-400">
-                                  {supplier.profit_margin_percent}% margin
+                                  {supplier.profit_margin_percent || 0}% margin
                                 </div>
                               </td>
 
@@ -1390,7 +1430,7 @@ export default function SupplierManagementPanel({
                                   {isPaid && <CheckCircle2 className="h-2.5 w-2.5" />}
                                   {isPartial && <Clock className="h-2.5 w-2.5" />}
                                   {isPending && <AlertTriangle className="h-2.5 w-2.5" />}
-                                  <span>{supplier.payment_status.toUpperCase()}</span>
+                                  <span>{(supplier.payment_status || 'Pending').toUpperCase()}</span>
                                 </span>
                               </td>
 
@@ -1427,7 +1467,7 @@ export default function SupplierManagementPanel({
                                         ? 'bg-emerald-600 hover:bg-emerald-700 text-white font-bold ring-1 ring-emerald-500/30'
                                         : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-200'
                                     }`}
-                                    title={hasBalance ? `Disburse payout of ${currency} ${supplier.outstanding_balance.toLocaleString()}` : 'Record custom payment'}
+                                    title={hasBalance ? `Disburse payout of ${currency} ${(supplier.outstanding_balance || 0).toLocaleString()}` : 'Record custom payment'}
                                   >
                                     <Coins className="h-3 w-3" />
                                     <span>Pay</span>
@@ -1542,7 +1582,7 @@ export default function SupplierManagementPanel({
                                       <div className="flex items-center justify-between">
                                         <h5 className="font-bold text-gray-900 dark:text-white flex items-center gap-1.5 text-[11px] uppercase tracking-wider">
                                           <Layers className="h-3.5 w-3.5 text-indigo-600" />
-                                          Sourced Catalog ({supplierProducts.filter((p) => p.supplier === supplier.id).length})
+                                          Sourced Catalog ({supplierProducts?.filter((p) => p.supplier === supplier.id)?.length || 0})
                                         </h5>
                                         <button
                                           type="button"
@@ -1557,7 +1597,7 @@ export default function SupplierManagementPanel({
                                       </div>
 
                                       <div className="space-y-1.5 max-h-28 overflow-y-auto pr-1">
-                                        {supplierProducts.filter((p) => p.supplier === supplier.id).length > 0 ? (
+                                        {(supplierProducts?.filter((p) => p.supplier === supplier.id)?.length || 0) > 0 ? (
                                           supplierProducts
                                             .filter((p) => p.supplier === supplier.id)
                                             .slice(0, 3)
@@ -1571,7 +1611,7 @@ export default function SupplierManagementPanel({
                                                   <span className="font-mono text-[9.5px] text-gray-400 block">{p.product_sku}</span>
                                                 </div>
                                                 <div className="text-right font-mono text-[10px]">
-                                                  <span className="text-gray-500">Cost: {currency} {p.agreed_cost_price.toLocaleString()}</span>
+                                                  <span className="text-gray-500">Cost: {currency} {(p.agreed_cost_price || 0).toLocaleString()}</span>
                                                 </div>
                                               </div>
                                             ))
@@ -1646,7 +1686,7 @@ export default function SupplierManagementPanel({
                                 : 'bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300 border border-rose-200'
                             }`}
                           >
-                            {supplier.payment_status.toUpperCase()}
+                            {(supplier.payment_status || 'Pending').toUpperCase()}
                           </span>
                         </div>
 
@@ -1679,13 +1719,13 @@ export default function SupplierManagementPanel({
                           <div className="flex justify-between text-[11px]">
                             <span className="text-gray-500">Sales Cost Owed:</span>
                             <span className="font-mono font-bold text-gray-900 dark:text-white">
-                              {currency} {supplier.total_cost_owed.toLocaleString()}
+                              {currency} {(supplier.total_cost_owed || 0).toLocaleString()}
                             </span>
                           </div>
                           <div className="flex justify-between text-[11px]">
                             <span className="text-gray-500">Amount Paid:</span>
                             <span className="font-mono font-bold text-emerald-600 dark:text-emerald-400">
-                              {currency} {supplier.total_amount_paid.toLocaleString()}
+                              {currency} {(supplier.total_amount_paid || 0).toLocaleString()}
                             </span>
                           </div>
                           <div className="flex justify-between text-xs pt-1 border-t border-gray-200 dark:border-gray-700">
@@ -1697,7 +1737,7 @@ export default function SupplierManagementPanel({
                                   : 'text-emerald-600 dark:text-emerald-400'
                               }`}
                             >
-                              {currency} {supplier.outstanding_balance.toLocaleString()}
+                              {currency} {(supplier.outstanding_balance || 0).toLocaleString()}
                             </span>
                           </div>
                         </div>
@@ -1706,7 +1746,7 @@ export default function SupplierManagementPanel({
                         <div className="mt-2 flex items-center justify-between text-[11px] font-mono px-1">
                           <span className="text-gray-400">Gross Profit:</span>
                           <span className="font-bold text-emerald-600">
-                            {currency} {supplier.gross_profit.toLocaleString()} ({supplier.profit_margin_percent}%)
+                            {currency} {(supplier.gross_profit || 0).toLocaleString()} ({supplier.profit_margin_percent || 0}%)
                           </span>
                         </div>
                       </div>
@@ -1775,7 +1815,7 @@ export default function SupplierManagementPanel({
             )}
 
             {/* Empty State */}
-            {filteredSuppliers.length === 0 && (
+            {(filteredSuppliers?.length || 0) === 0 && (
               <div className="p-12 text-center border border-dashed border-gray-300 dark:border-gray-700 rounded-2xl bg-white dark:bg-gray-900 space-y-3">
                 <div className="h-12 w-12 rounded-2xl bg-gray-100 dark:bg-gray-800 text-gray-400 flex items-center justify-center mx-auto">
                   <Briefcase className="h-6 w-6 text-gray-400" />
@@ -1888,26 +1928,26 @@ export default function SupplierManagementPanel({
                         {suppliers.find((s) => s.id === sp.supplier)?.name || 'Artisan'}
                       </td>
                       <td className="py-2.5 px-3 font-mono text-gray-600 dark:text-gray-300">
-                        {currency} {sp.agreed_cost_price.toLocaleString()}
+                        {currency} {(sp.agreed_cost_price || 0).toLocaleString()}
                       </td>
                       <td className="py-2.5 px-3 font-mono font-bold text-gray-900 dark:text-white">
-                        {currency} {sp.selling_price.toLocaleString()}
+                        {currency} {(sp.selling_price || 0).toLocaleString()}
                       </td>
                       <td className="py-2.5 px-3 text-center font-mono">
-                        <span className="text-gray-600 dark:text-gray-300">{sp.quantity_received}</span>
+                        <span className="text-gray-600 dark:text-gray-300">{sp.quantity_received || 0}</span>
                         <span className="text-gray-400"> / </span>
-                        <span className="text-emerald-600 font-bold">{sp.quantity_sold}</span>
+                        <span className="text-emerald-600 font-bold">{sp.quantity_sold || 0}</span>
                         <span className="text-gray-400"> / </span>
-                        <span className="text-indigo-600 font-bold">{sp.remaining_stock}</span>
+                        <span className="text-indigo-600 font-bold">{sp.remaining_stock || 0}</span>
                       </td>
                       <td className="py-2.5 px-3 font-mono text-amber-600 dark:text-amber-400 font-bold">
-                        {currency} {sp.total_cost_owed.toLocaleString()}
+                        {currency} {(sp.total_cost_owed || 0).toLocaleString()}
                       </td>
                       <td className="py-2.5 px-3 font-mono text-indigo-600 dark:text-indigo-400 font-bold">
-                        {currency} {sp.total_sales_revenue.toLocaleString()}
+                        {currency} {(sp.total_sales_revenue || 0).toLocaleString()}
                       </td>
                       <td className="py-2.5 px-3 font-mono text-emerald-600 dark:text-emerald-400 font-black">
-                        {currency} {sp.gross_profit.toLocaleString()}
+                        {currency} {(sp.gross_profit || 0).toLocaleString()}
                       </td>
                       <td className="py-2.5 px-3 font-mono text-right font-bold text-emerald-600">
                         {Math.round(sp.profit_margin_percent * 10) / 10}%
@@ -1980,18 +2020,48 @@ export default function SupplierManagementPanel({
                         {batch.quantity_received} units
                       </td>
                       <td className="py-2.5 px-3 font-mono text-gray-600 dark:text-gray-300">
-                        {currency} {batch.unit_cost.toLocaleString()}
+                        {currency} {(batch.unit_cost || 0).toLocaleString()}
                       </td>
                       <td className="py-2.5 px-3 font-mono text-gray-950 dark:text-white font-black">
-                        {currency} {batch.total_cost.toLocaleString()}
+                        {currency} {(batch.total_cost || 0).toLocaleString()}
                       </td>
                       <td className="py-2.5 px-3 font-mono text-[11px] text-gray-500">
                         {batch.delivery_note_ref || '-'}
                       </td>
-                      <td className="py-2.5 px-3 text-right">
+                      <td className="py-2.5 px-3 text-right flex items-center justify-end gap-1.5">
                         <span className="px-2 py-0.5 rounded-full text-[9px] font-mono font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">
                           {batch.status}
                         </span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditingIntake(batch);
+                            setIntakeFormData({
+                              supplier: batch.supplier,
+                              product_name: batch.product_name,
+                              product_sku: batch.product_sku,
+                              quantity_received: batch.quantity_received,
+                              unit_cost: batch.unit_cost,
+                              delivery_note_ref: batch.delivery_note_ref || '',
+                              invoice_ref: batch.invoice_ref || '',
+                              notes: batch.notes || '',
+                              received_by: batch.received_by
+                            });
+                            setShowIntakeModal(true);
+                          }}
+                          className="p-1 rounded-lg border border-gray-250 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-500 hover:text-gray-700 text-xs transition-colors cursor-pointer shadow-2xs"
+                          title="Edit GRN"
+                        >
+                          <Edit2 className="h-3 w-3" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteIntake(batch)}
+                          className="p-1 rounded-lg border border-rose-200 dark:border-rose-900/50 bg-rose-50 dark:bg-rose-950/30 text-rose-600 hover:text-rose-700 text-xs transition-colors cursor-pointer shadow-2xs"
+                          title="Delete GRN"
+                        >
+                          <Trash2 className="h-3 w-3" />
+                        </button>
                       </td>
                     </tr>
                   ))}
@@ -2053,7 +2123,7 @@ export default function SupplierManagementPanel({
                         {p.supplier_name || suppliers.find((s) => s.id === p.supplier)?.name || 'Supplier'}
                       </td>
                       <td className="py-2.5 px-3 font-mono text-emerald-600 dark:text-emerald-400 font-black">
-                        {currency} {p.amount.toLocaleString()}
+                        {currency} {(p.amount || 0).toLocaleString()}
                       </td>
                       <td className="py-2.5 px-3 font-medium text-gray-700 dark:text-gray-300">
                         <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-gray-100 dark:bg-gray-800 font-mono text-[10.5px]">
@@ -2185,7 +2255,7 @@ export default function SupplierManagementPanel({
                           {Object.values(row).map((val, cIdx) => (
                             <td key={cIdx} className="py-2.5 px-3 font-mono text-[11px]">
                               {typeof val === 'number'
-                                ? val.toLocaleString()
+                                ? (val || 0).toLocaleString()
                                 : String(val)}
                             </td>
                           ))}
@@ -2382,11 +2452,14 @@ export default function SupplierManagementPanel({
             <div className="flex items-center justify-between border-b border-gray-150 dark:border-gray-800 pb-3">
               <h4 className="text-sm font-bold text-gray-900 dark:text-white flex items-center gap-1.5">
                 <Package className="h-4 w-4 text-indigo-600" />
-                Record Goods Received Note (GRN)
+                {editingIntake ? 'Edit Goods Received Note (GRN)' : 'Record Goods Received Note (GRN)'}
               </h4>
               <button
                 type="button"
-                onClick={() => setShowIntakeModal(false)}
+                onClick={() => {
+                  setShowIntakeModal(false);
+                  setEditingIntake(null);
+                }}
                 className="text-gray-400 hover:text-gray-600 cursor-pointer"
               >
                 ✕
@@ -2478,6 +2551,60 @@ export default function SupplierManagementPanel({
                 </div>
               </div>
 
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 mb-1">
+                    Delivery Note Reference
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. DN-2024-001"
+                    value={intakeFormData.delivery_note_ref}
+                    onChange={(e) => setIntakeFormData((p) => ({ ...p, delivery_note_ref: e.target.value }))}
+                    className="h-9 w-full rounded-xl border border-gray-250 dark:border-gray-700 px-3 text-xs bg-white dark:bg-gray-800 text-gray-950 dark:text-white font-mono"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 mb-1">
+                    Invoice Reference
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. INV-2024-001"
+                    value={intakeFormData.invoice_ref}
+                    onChange={(e) => setIntakeFormData((p) => ({ ...p, invoice_ref: e.target.value }))}
+                    className="h-9 w-full rounded-xl border border-gray-250 dark:border-gray-700 px-3 text-xs bg-white dark:bg-gray-800 text-gray-950 dark:text-white font-mono"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 mb-1">
+                  Received By
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. John Warehouse Manager"
+                  value={intakeFormData.received_by}
+                  onChange={(e) => setIntakeFormData((p) => ({ ...p, received_by: e.target.value }))}
+                  className="h-9 w-full rounded-xl border border-gray-250 dark:border-gray-700 px-3 text-xs bg-white dark:bg-gray-800 text-gray-950 dark:text-white"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 mb-1">
+                  Intake Notes
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. Batch damaged on corner, reported to supplier"
+                  value={intakeFormData.notes}
+                  onChange={(e) => setIntakeFormData((p) => ({ ...p, notes: e.target.value }))}
+                  className="h-9 w-full rounded-xl border border-gray-250 dark:border-gray-700 px-3 text-xs bg-white dark:bg-gray-800 text-gray-950 dark:text-white"
+                />
+              </div>
+
               <div className="p-2.5 rounded-xl bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 flex justify-between items-center text-xs">
                 <span className="text-gray-500">Total Batch Intake Value:</span>
                 <span className="font-mono font-black text-indigo-600 dark:text-indigo-400">
@@ -2489,7 +2616,10 @@ export default function SupplierManagementPanel({
             <div className="flex items-center justify-end gap-2 pt-3 border-t border-gray-150 dark:border-gray-800">
               <button
                 type="button"
-                onClick={() => setShowIntakeModal(false)}
+                onClick={() => {
+                  setShowIntakeModal(false);
+                  setEditingIntake(null);
+                }}
                 className="px-3.5 py-1.5 rounded-xl border border-gray-200 dark:border-gray-700 text-xs font-bold text-gray-600 dark:text-gray-300 hover:bg-gray-50 cursor-pointer"
               >
                 Cancel
@@ -2500,7 +2630,7 @@ export default function SupplierManagementPanel({
                 disabled={!intakeFormData.supplier || !intakeFormData.product_name}
                 className="px-4 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold cursor-pointer disabled:opacity-50"
               >
-                Save Goods Received
+                {editingIntake ? 'Update Goods Received' : 'Save Goods Received'}
               </button>
             </div>
           </div>
@@ -2548,7 +2678,7 @@ export default function SupplierManagementPanel({
                   <option value="">-- Select Supplier --</option>
                   {suppliers.map((s) => (
                     <option key={s.id} value={s.id}>
-                      {s.name} (Pending Owed: {currency} {s.outstanding_balance.toLocaleString()})
+                      {s.name} (Pending Owed: {currency} {(s.outstanding_balance || 0).toLocaleString()})
                     </option>
                   ))}
                 </select>
@@ -2677,21 +2807,21 @@ export default function SupplierManagementPanel({
               <div className="p-3 rounded-xl bg-gray-50 dark:bg-gray-800/80 border border-gray-200 dark:border-gray-700 space-y-1">
                 <span className="text-[10px] text-gray-500 uppercase font-bold">Total Sales Cost Owed</span>
                 <div className="text-base font-bold font-mono text-gray-900 dark:text-white">
-                  {currency} {selectedStatementSupplier.total_cost_owed.toLocaleString()}
+                  {currency} {(selectedStatementSupplier?.total_cost_owed || 0).toLocaleString()}
                 </div>
               </div>
 
               <div className="p-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 space-y-1">
                 <span className="text-[10px] text-emerald-800 dark:text-emerald-300 uppercase font-bold">Total Amount Paid</span>
                 <div className="text-base font-bold font-mono text-emerald-700 dark:text-emerald-400">
-                  {currency} {selectedStatementSupplier.total_amount_paid.toLocaleString()}
+                  {currency} {(selectedStatementSupplier?.total_amount_paid || 0).toLocaleString()}
                 </div>
               </div>
 
               <div className="p-3 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 space-y-1">
                 <span className="text-[10px] text-rose-800 dark:text-rose-300 uppercase font-bold">Closing Balance Owed</span>
                 <div className="text-base font-bold font-mono text-rose-700 dark:text-rose-400">
-                  {currency} {selectedStatementSupplier.outstanding_balance.toLocaleString()}
+                  {currency} {(selectedStatementSupplier?.outstanding_balance || 0).toLocaleString()}
                 </div>
               </div>
             </div>
@@ -2707,7 +2837,7 @@ export default function SupplierManagementPanel({
                   <RefreshCw className="h-5 w-5 animate-spin mx-auto text-indigo-600 mb-1" />
                   Loading ledger entries...
                 </div>
-              ) : statementData && statementData.transactions.length > 0 ? (
+              ) : statementData && (statementData?.transactions?.length || 0) > 0 ? (
                 <div className="overflow-x-auto border border-gray-200 dark:border-gray-800 rounded-xl">
                   <table className="w-full text-left border-collapse text-xs">
                     <thead>
@@ -2731,13 +2861,13 @@ export default function SupplierManagementPanel({
                           </td>
                           <td className="py-2 px-3 font-sans text-gray-800 dark:text-gray-200">{tx.description}</td>
                           <td className="py-2 px-3 text-right text-emerald-600 font-bold">
-                            {tx.debit > 0 ? `${currency} ${tx.debit.toLocaleString()}` : '-'}
+                            {tx.debit > 0 ? `${currency} ${(tx.debit || 0).toLocaleString()}` : '-'}
                           </td>
                           <td className="py-2 px-3 text-right text-amber-600 font-bold">
-                            {tx.credit > 0 ? `${currency} ${tx.credit.toLocaleString()}` : '-'}
+                            {tx.credit > 0 ? `${currency} ${(tx.credit || 0).toLocaleString()}` : '-'}
                           </td>
                           <td className="py-2 px-3 text-right font-black text-gray-900 dark:text-white">
-                            {currency} {tx.running_balance.toLocaleString()}
+                            {currency} {(tx.running_balance || 0).toLocaleString()}
                           </td>
                         </tr>
                       ))}

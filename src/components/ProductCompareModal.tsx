@@ -253,7 +253,7 @@ export default function ProductCompareModal({
               >
                 {products.map(p => (
                   <option key={p.id} value={p.id} disabled={rightProduct?.id === p.id}>
-                    [{p.type.toUpperCase()}] {p.name} — {formatPrice(p.price, currency)}
+                    {p.name} — {formatPrice(p.price, currency)}
                   </option>
                 ))}
               </select>
@@ -273,7 +273,7 @@ export default function ProductCompareModal({
                 <option value="" disabled>-- Select secondary product --</option>
                 {products.map(p => (
                   <option key={p.id} value={p.id} disabled={leftProduct?.id === p.id}>
-                    [{p.type.toUpperCase()}] {p.name} — {formatPrice(p.price, currency)}
+                    {p.name} — {formatPrice(p.price, currency)}
                   </option>
                 ))}
               </select>
@@ -293,9 +293,11 @@ export default function ProductCompareModal({
                       className="w-full h-full object-contain object-center"
                       referrerPolicy="no-referrer"
                     />
-                    <span className="absolute top-2.5 left-2.5 bg-indigo-650 text-white text-[9px] font-mono font-bold px-2 py-0.5 rounded shadow-sm border border-indigo-500 uppercase">
-                      {leftProduct.type}
-                    </span>
+                    {leftProduct.type && leftProduct.type !== 'physical' && (
+                      <span className="absolute top-2.5 left-2.5 bg-indigo-650 text-white text-[9px] font-mono font-bold px-2 py-0.5 rounded shadow-sm border border-indigo-500 uppercase">
+                        {leftProduct.type}
+                      </span>
+                    )}
                     {leftCheaper && (
                       <span className="absolute top-2.5 right-2.5 bg-emerald-600 text-white text-[9px] font-bold px-2 py-0.5 rounded shadow-sm border border-emerald-400 uppercase flex items-center gap-1">
                         <Award className="h-3 w-3" /> Best Price
@@ -364,9 +366,11 @@ export default function ProductCompareModal({
                       className="w-full h-full object-contain object-center"
                       referrerPolicy="no-referrer"
                     />
-                    <span className="absolute top-2.5 left-2.5 bg-indigo-650 text-white text-[9px] font-mono font-bold px-2 py-0.5 rounded shadow-sm border border-indigo-500 uppercase">
-                      {rightProduct.type}
-                    </span>
+                    {rightProduct.type && rightProduct.type !== 'physical' && (
+                      <span className="absolute top-2.5 left-2.5 bg-indigo-650 text-white text-[9px] font-mono font-bold px-2 py-0.5 rounded shadow-sm border border-indigo-500 uppercase">
+                        {rightProduct.type}
+                      </span>
+                    )}
                     {rightCheaper && (
                       <span className="absolute top-2.5 right-2.5 bg-emerald-600 text-white text-[9px] font-bold px-2 py-0.5 rounded shadow-sm border border-emerald-400 uppercase flex items-center gap-1">
                         <Award className="h-3 w-3" /> Best Price

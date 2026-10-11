@@ -57,7 +57,6 @@ import {
 } from './types';
 
 import {
-  INITIAL_PRODUCTS,
   INITIAL_BLOGS,
   INITIAL_ORDERS,
   COUPONS,
@@ -66,7 +65,7 @@ import {
 } from './data';
 import api, { fetchProducts, productService, pushOrderToBackend, orderService, mapBackendProductToFrontend } from './services/api';
 import { mapBackendOrderToFrontend } from './api/orders';
-import { clearVeloceLocalStorageItems, safeLocalStorageSetItem, safeLocalStorageGetItem, saveToIndexedDb, getFromIndexedDb } from './lib/storage';
+import { clearVeloceLocalStorageItems, safeLocalStorageSetItem, safeLocalStorageGetItem, saveToIndexedDb, getFromIndexedDb, deleteFromIndexedDb } from './lib/storage';
 import { siteSettingsApi } from './services/siteSettingsApi';
 import { hasValidAdminSession } from './utils/authTokens';
 import { useCartSync } from './hooks/useCartSync';
@@ -471,20 +470,27 @@ export default function App() {
     });
   };
 
-  const [products, setProducts] = useState<Product[]>(() => {
-    const raw = safeLocalStorageGetItem<Product[]>('veloce_products', isClearedData() ? [] : INITIAL_PRODUCTS);
-    return Array.isArray(raw) ? sortProductsLatestFirst(raw) : [];
-  });
+  const [products, setProducts] = useState<Product[]>([]);
 
-  // Asynchronous IndexedDB product recovery fallback if localStorage is empty on initial load
+  // Purge any legacy cached products from localStorage and IndexedDB on startup
   useEffect(() => {
-    if (products.length === 0 && !isClearedData()) {
-      getFromIndexedDb<Product[]>('veloce_cache', 'veloce_products', []).then((idbProducts) => {
-        if (Array.isArray(idbProducts) && idbProducts.length > 0) {
-          setProducts((prev) => (prev.length === 0 ? sortProductsLatestFirst(idbProducts) : prev));
+    try {
+      localStorage.removeItem('veloce_products');
+      deleteFromIndexedDb('veloce_cache', 'veloce_products').catch(() => {});
+    } catch {}
+  }, []);
+
+  // When network comes back online, fetch latest products automatically from backend
+  useEffect(() => {
+    const handleOnline = () => {
+      fetchProducts().then((fetchedProducts) => {
+        if (Array.isArray(fetchedProducts)) {
+          setProducts(sortProductsLatestFirst(fetchedProducts));
         }
       }).catch(() => {});
-    }
+    };
+    window.addEventListener('online', handleOnline);
+    return () => window.removeEventListener('online', handleOnline);
   }, []);
 
   const [selectedCategory, setSelectedCategory] = useState<string>(() => {
@@ -578,14 +584,12 @@ export default function App() {
   useEffect(() => {
     let isMounted = true;
     const loadBackendData = async () => {
-      // 1. Authoritative Products from Backend API
+      // 1. Authoritative Products from Backend API (strictly live, no local cache)
       try {
         const fetchedProducts = await fetchProducts();
-        if (isMounted && Array.isArray(fetchedProducts) && fetchedProducts.length > 0) {
+        if (isMounted && Array.isArray(fetchedProducts)) {
           const sorted = sortProductsLatestFirst(fetchedProducts);
           setProducts(sorted);
-          safeLocalStorageSetItem('veloce_products', JSON.stringify(sorted));
-          saveToIndexedDb('veloce_cache', 'veloce_products', sorted).catch(() => {});
         }
       } catch (err) {
         console.warn('[App] Could not fetch products from backend API:', err);
@@ -690,7 +694,7 @@ export default function App() {
     }
   }, []);
 
-  // Rehydrate cart items with fresh product details (full resolution images, stock, variations)
+  // Rehydrate cart items with fresh product details (full resolution images, stock, variations, discounts)
   useEffect(() => {
     if (products.length > 0) {
       setCart((prevCart) => {
@@ -702,13 +706,18 @@ export default function App() {
             const hasMissingImage = !item.product?.imageUrl && freshProd.imageUrl;
             const priceChanged = item.product?.price !== freshProd.price;
             const stockChanged = item.product?.stock !== freshProd.stock;
-            if (hasMissingImage || priceChanged || stockChanged) {
+            const hasMissingOrig = !item.product?.originalPrice && Boolean(freshProd.originalPrice || (freshProd as any).original_price || freshProd.compareAtPrice);
+            if (hasMissingImage || priceChanged || stockChanged || hasMissingOrig) {
               changed = true;
               return {
                 ...item,
                 product: {
                   ...freshProd,
                   ...item.product,
+                  originalPrice: item.product?.originalPrice ?? freshProd.originalPrice ?? (freshProd as any).original_price ?? freshProd.compareAtPrice,
+                  original_price: (item.product as any)?.original_price ?? (freshProd as any).original_price ?? freshProd.originalPrice ?? freshProd.compareAtPrice,
+                  compareAtPrice: item.product?.compareAtPrice ?? freshProd.compareAtPrice ?? (freshProd as any).compare_at_price ?? freshProd.originalPrice,
+                  compare_at_price: (item.product as any)?.compare_at_price ?? (freshProd as any).compare_at_price ?? freshProd.compareAtPrice ?? freshProd.originalPrice,
                   imageUrl: freshProd.imageUrl || item.product.imageUrl,
                 },
               };
@@ -734,20 +743,7 @@ export default function App() {
   }, [returnRequests]);
 
   // Selected product state for Store deep-sheet modal with initial reload recovery
-  const [selectedProduct, setSelectedProduct] = useState<Product | null>(() => {
-    if (typeof window !== 'undefined') {
-      const params = new URLSearchParams(window.location.search);
-      const prodId = params.get('product') || params.get('productId') || sessionStorage.getItem('veloce_selected_product_id');
-      if (prodId) {
-        const initialList = safeLocalStorageGetItem<Product[]>('veloce_products', isClearedData() ? [] : INITIAL_PRODUCTS);
-        const found = initialList.find(
-          (p) => String(p.id).toLowerCase() === prodId.toLowerCase() || (p.slug && p.slug.toLowerCase() === prodId.toLowerCase())
-        );
-        if (found) return found;
-      }
-    }
-    return null;
-  });
+  const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
 
   // Rehydrate selected product if present in URL/storage when products load asynchronously
   useEffect(() => {
@@ -1266,16 +1262,7 @@ export default function App() {
     return saved ? JSON.parse(saved) : { text: '', code: '', active: false };
   });
 
-  // Synchronize product state to localStorage and IndexedDB cache
-  useEffect(() => {
-    if (Array.isArray(products) && products.length > 0) {
-      safeLocalStorageSetItem('veloce_products', JSON.stringify(products));
-      saveToIndexedDb('veloce_cache', 'veloce_products', products).catch(() => {});
-    } else if (isClearedData()) {
-      safeLocalStorageSetItem('veloce_products', JSON.stringify([]));
-      saveToIndexedDb('veloce_cache', 'veloce_products', []).catch(() => {});
-    }
-  }, [products]);
+
 
   useEffect(() => {
     safeLocalStorageSetItem('veloce_orders', JSON.stringify(orders));
@@ -1309,7 +1296,6 @@ export default function App() {
         safeLocalStorageSetItem('veloce_cart', JSON.stringify(cart));
         safeLocalStorageSetItem('veloce_orders', JSON.stringify(orders));
         safeLocalStorageSetItem('veloce_inventory_audit_logs', JSON.stringify(inventoryAuditLogs));
-        saveToIndexedDb('veloce_cache', 'veloce_products', products).catch(() => {});
         safeLocalStorageSetItem('veloce_wishlist', JSON.stringify(wishlist));
         safeLocalStorageSetItem('veloce_return_requests', JSON.stringify(returnRequests));
         safeLocalStorageSetItem('veloce_coupons', JSON.stringify(coupons));
@@ -1587,15 +1573,25 @@ export default function App() {
   const handleAddProduct = (newProduct: Product) => {
     setProducts((prev) => {
       const updated = [newProduct, ...prev.filter((p) => p.id !== newProduct.id)];
-      safeLocalStorageSetItem('veloce_products', JSON.stringify(updated));
-      saveToIndexedDb('veloce_cache', 'veloce_products', updated).catch(() => {});
+      window.dispatchEvent(new CustomEvent('veloce_products_updated', { detail: updated }));
       return updated;
     });
 
-    // Asynchronously push to backend SQLite API so product is saved server-side
-    productService.createProduct(newProduct).catch((err) => {
-      console.warn('[App] Failed to save new product to backend API endpoint:', err);
-    });
+    // Asynchronously push to backend SQLite/MySQL API so product is saved server-side (AJAX)
+    productService.createProduct(newProduct)
+      .then((saved) => {
+        if (saved && (saved.id || (saved as any).product?.id)) {
+          const actualSaved = (saved as any).product || saved;
+          setProducts((prev) => {
+            const next = prev.map((p) => (p.id === newProduct.id ? { ...p, ...actualSaved } : p));
+            window.dispatchEvent(new CustomEvent('veloce_products_updated', { detail: next }));
+            return next;
+          });
+        }
+      })
+      .catch((err) => {
+        console.warn('[App] Failed to save new product to backend API endpoint:', err);
+      });
   };
 
   const handleUpdateProductStock = (id: string, newStock: number) => {
@@ -1618,8 +1614,8 @@ export default function App() {
       }
     }
 
-    setProducts((prevProducts) =>
-      prevProducts.map((p) => {
+    setProducts((prevProducts) => {
+      const updatedList = prevProducts.map((p) => {
         if (p.id === id) {
           // If product is out of stock (stock is 0) and new stock is > 0, trigger backInStockAlert
           const wasOutOfStock = p.stock === 0;
@@ -1631,8 +1627,10 @@ export default function App() {
           };
         }
         return p;
-      })
-    );
+      });
+      window.dispatchEvent(new CustomEvent('veloce_products_updated', { detail: updatedList }));
+      return updatedList;
+    });
     setSelectedProduct((prev) => {
       if (prev && prev.id === id) {
         const wasOutOfStock = prev.stock === 0;
@@ -1657,8 +1655,8 @@ export default function App() {
         ? (previousPrice === null ? undefined : previousPrice)
         : (newPrice < p.price ? p.price : p.previousPrice);
 
-    setProducts((prevProducts) =>
-      prevProducts.map((p) => {
+    setProducts((prevProducts) => {
+      const updatedList = prevProducts.map((p) => {
         if (p.id === id) {
           const prevP = calculatedPreviousPrice(p);
           return {
@@ -1668,8 +1666,10 @@ export default function App() {
           };
         }
         return p;
-      })
-    );
+      });
+      window.dispatchEvent(new CustomEvent('veloce_products_updated', { detail: updatedList }));
+      return updatedList;
+    });
     setSelectedProduct((prev) => {
       if (prev && prev.id === id) {
         const prevP = calculatedPreviousPrice(prev);
@@ -1690,8 +1690,8 @@ export default function App() {
   };
 
   const handleDismissProductNotification = (id: string, type: 'price' | 'stock') => {
-    setProducts((prevProducts) =>
-      prevProducts.map((p) => {
+    setProducts((prevProducts) => {
+      const updatedList = prevProducts.map((p) => {
         if (p.id === id) {
           if (type === 'price') {
             return { ...p, previousPrice: undefined };
@@ -1700,8 +1700,10 @@ export default function App() {
           }
         }
         return p;
-      })
-    );
+      });
+      window.dispatchEvent(new CustomEvent('veloce_products_updated', { detail: updatedList }));
+      return updatedList;
+    });
     setSelectedProduct((prev) => {
       if (prev && prev.id === id) {
         if (type === 'price') {
@@ -1717,9 +1719,11 @@ export default function App() {
   };
 
   const handleUpdateProductSku = (id: string, newSku: string) => {
-    setProducts((prevProducts) =>
-      prevProducts.map((p) => (p.id === id ? { ...p, sku: newSku } : p))
-    );
+    setProducts((prevProducts) => {
+      const updatedList = prevProducts.map((p) => (p.id === id ? { ...p, sku: newSku } : p));
+      window.dispatchEvent(new CustomEvent('veloce_products_updated', { detail: updatedList }));
+      return updatedList;
+    });
     setSelectedProduct((prev) => {
       if (prev && prev.id === id) {
         return { ...prev, sku: newSku };
@@ -1733,9 +1737,11 @@ export default function App() {
   };
 
   const handleUpdateProductPaymentRestriction = (id: string, restriction: 'prepaid' | 'cod' | 'both') => {
-    setProducts((prevProducts) =>
-      prevProducts.map((p) => (p.id === id ? { ...p, paymentRestriction: restriction } : p))
-    );
+    setProducts((prevProducts) => {
+      const updatedList = prevProducts.map((p) => (p.id === id ? { ...p, paymentRestriction: restriction } : p));
+      window.dispatchEvent(new CustomEvent('veloce_products_updated', { detail: updatedList }));
+      return updatedList;
+    });
     setSelectedProduct((prev) => {
       if (prev && prev.id === id) {
         return { ...prev, paymentRestriction: restriction };
@@ -1749,9 +1755,11 @@ export default function App() {
   };
 
   const handleUpdateProductThreshold = (id: string, newThreshold: number) => {
-    setProducts((prevProducts) =>
-      prevProducts.map((p) => (p.id === id ? { ...p, lowStockThreshold: newThreshold } : p))
-    );
+    setProducts((prevProducts) => {
+      const updatedList = prevProducts.map((p) => (p.id === id ? { ...p, lowStockThreshold: newThreshold } : p));
+      window.dispatchEvent(new CustomEvent('veloce_products_updated', { detail: updatedList }));
+      return updatedList;
+    });
     setSelectedProduct((prev) => {
       if (prev && prev.id === id) {
         return { ...prev, lowStockThreshold: newThreshold };
@@ -1765,9 +1773,11 @@ export default function App() {
   };
 
   const handleUpdateProductStatus = (id: string, newStatus: 'Active' | 'Inactive' | 'Draft' | 'Archived') => {
-    setProducts((prevProducts) =>
-      prevProducts.map((p) => (p.id === id ? { ...p, status: newStatus } : p))
-    );
+    setProducts((prevProducts) => {
+      const updatedList = prevProducts.map((p) => (p.id === id ? { ...p, status: newStatus } : p));
+      window.dispatchEvent(new CustomEvent('veloce_products_updated', { detail: updatedList }));
+      return updatedList;
+    });
     setSelectedProduct((prev) => {
       if (prev && prev.id === id) {
         return { ...prev, status: newStatus };
@@ -1795,6 +1805,7 @@ export default function App() {
 
     setProducts((prevProducts) => {
       const updatedList = prevProducts.map((p) => (p.id === id ? { ...p, ...normalizedFields } : p));
+      window.dispatchEvent(new CustomEvent('veloce_products_updated', { detail: updatedList }));
       return updatedList;
     });
     setSelectedProduct((prev) => {
@@ -2194,8 +2205,7 @@ export default function App() {
 
     setProducts((prev) => {
       const next = prev.filter((p) => p.id !== id);
-      safeLocalStorageSetItem('veloce_products', JSON.stringify(next));
-      saveToIndexedDb('veloce_cache', 'veloce_products', next).catch(() => {});
+      window.dispatchEvent(new CustomEvent('veloce_products_updated', { detail: next }));
       return next;
     });
     productService.deleteProduct(id).catch(() => {});
@@ -2206,8 +2216,7 @@ export default function App() {
     const idsSet = new Set(ids.map(id => String(id)));
     setProducts((prev) => {
       const next = prev.filter((p) => !idsSet.has(String(p.id)));
-      safeLocalStorageSetItem('veloce_products', JSON.stringify(next));
-      saveToIndexedDb('veloce_cache', 'veloce_products', next).catch(() => {});
+      window.dispatchEvent(new CustomEvent('veloce_products_updated', { detail: next }));
       return next;
     });
     try {

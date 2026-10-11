@@ -170,7 +170,7 @@ export default function SmtpHealthValidator({
           <div>
             <div className="flex items-center gap-2">
               <h4 className="font-bold text-sm text-slate-800 dark:text-slate-100">
-                cPanel & Django SMTP Gateway Health
+                SMTP Gateway Health
               </h4>
               {isValidating ? (
                 <span className="px-2 py-0.5 text-[10px] font-bold bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 rounded-full border border-amber-200">
@@ -189,7 +189,7 @@ export default function SmtpHealthValidator({
               )}
             </div>
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-              {data?.message || 'On-demand verification of backend .env mail server credentials'}
+              Email server status
             </p>
           </div>
         </div>
@@ -202,7 +202,7 @@ export default function SmtpHealthValidator({
             className="px-3.5 py-2 text-xs font-semibold bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-lg shadow-2xs flex items-center gap-1.5 transition cursor-pointer disabled:opacity-50"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${isValidating ? 'animate-spin text-blue-500' : ''}`} />
-            <span>Validate Configuration</span>
+            <span>Verify</span>
           </button>
 
           {onOpenFullDiagnostics && (
@@ -231,7 +231,7 @@ export default function SmtpHealthValidator({
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div className="p-3 bg-slate-50 dark:bg-slate-900 rounded-lg border border-slate-200/70 dark:border-slate-800">
               <div className="flex items-center justify-between text-slate-500 mb-1">
-                <span className="font-semibold">.env Config Status</span>
+                <span className="font-semibold">Config</span>
                 {data.checks.envLoaded ? (
                   <CheckCircle2 className="w-4 h-4 text-emerald-500" />
                 ) : (
@@ -245,7 +245,7 @@ export default function SmtpHealthValidator({
 
             <div className="p-3 bg-slate-50 dark:bg-slate-900 rounded-lg border border-slate-200/70 dark:border-slate-800">
               <div className="flex items-center justify-between text-slate-500 mb-1">
-                <span className="font-semibold">DNS Name Resolution</span>
+                <span className="font-semibold">DNS</span>
                 {data.checks.dnsResolved ? (
                   <CheckCircle2 className="w-4 h-4 text-emerald-500" />
                 ) : (
@@ -253,13 +253,13 @@ export default function SmtpHealthValidator({
                 )}
               </div>
               <p className="font-mono text-slate-800 dark:text-slate-200 font-bold truncate">
-                {data.checks.dnsResolved ? 'Resolved A Record' : 'Resolution Failed'}
+                {data.checks.dnsResolved ? 'Resolved' : 'Failed'}
               </p>
             </div>
 
             <div className="p-3 bg-slate-50 dark:bg-slate-900 rounded-lg border border-slate-200/70 dark:border-slate-800">
               <div className="flex items-center justify-between text-slate-500 mb-1">
-                <span className="font-semibold">SMTP Handshake & Auth</span>
+                <span className="font-semibold">Auth</span>
                 {data.checks.authSuccess ? (
                   <CheckCircle2 className="w-4 h-4 text-emerald-500" />
                 ) : (
@@ -267,16 +267,14 @@ export default function SmtpHealthValidator({
                 )}
               </div>
               <p className="font-mono text-slate-800 dark:text-slate-200 font-bold truncate">
-                {data.checks.authSuccess ? 'Login Accepted (250 OK)' : 'Authentication Rejected'}
+                {data.checks.authSuccess ? 'Success' : 'Failed'}
               </p>
             </div>
           </div>
 
           <div className="flex flex-wrap items-center justify-between text-[11px] text-slate-400 font-mono pt-2 border-t border-slate-100 dark:border-slate-900">
             <span>User: <strong>{data.config.user}</strong></span>
-            <span>Sender: <strong>{data.config.defaultFrom}</strong></span>
-            <span>SSL/TLS: <strong>{data.config.useSsl ? 'Active' : 'Disabled'}</strong></span>
-            <span>Validated: <strong>{new Date(data.validatedAt).toLocaleTimeString()}</strong></span>
+            <span>SSL: <strong>{data.config.useSsl ? 'Enabled' : 'Disabled'}</strong></span>
           </div>
         </div>
       )}

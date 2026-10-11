@@ -48,7 +48,6 @@ import {
   ChevronLeft,
   ChevronRight,
   SlidersHorizontal,
-  CreditCard,
   ExternalLink,
   Sparkles,
   CheckCircle2
@@ -160,7 +159,7 @@ export default function UserAccount({
   // Order filters and view state
   const [orderViewMode, setOrderViewMode] = useState<'list' | 'cards'>('list');
   const [searchQuery, setSearchQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'shipped' | 'completed' | 'cancelled'>('all');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'processing' | 'shipped' | 'completed' | 'cancelled'>('all');
   const [expandedOrderId, setExpandedOrderId] = useState<string | null>(null);
   const [editingNoteOrderId, setEditingNoteOrderId] = useState<string | null>(null);
   const [tempNoteText, setTempNoteText] = useState('');
@@ -1631,17 +1630,6 @@ export default function UserAccount({
                             <Truck className="h-3.5 w-3.5" />
                             <span>Track</span>
                           </button>
-
-                          {order.paymentStatus !== 'paid' && order.status !== 'cancelled' && (
-                            <button
-                              onClick={() => setClaimPaymentOrder(order)}
-                              className="inline-flex h-8 items-center gap-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white px-3 text-xs font-semibold transition-colors cursor-pointer shadow-xs whitespace-nowrap"
-                              title="Submit M-Pesa transaction confirmation"
-                            >
-                              <CreditCard className="h-3.5 w-3.5" />
-                              <span>Pay M-Pesa</span>
-                            </button>
-                          )}
 
                           <button
                             onClick={() => setExpandedOrderId(isExpanded ? null : order.id)}

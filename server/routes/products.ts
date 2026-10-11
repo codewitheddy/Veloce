@@ -38,7 +38,7 @@ export async function loadProductsCache(force: boolean = false): Promise<any[]> 
   }
   try {
     const products = await getMysqlProducts();
-    if (products && Array.isArray(products) && products.length > 0) {
+    if (products && Array.isArray(products)) {
       productsCache = products;
       isCacheLoaded = true;
     }
@@ -88,24 +88,35 @@ export function normalizeProductVariants(p: any): any {
     ? (() => { try { return JSON.parse(p.colorImages || p.color_images); } catch { return {}; } })()
     : {};
 
-  const hasVar = Boolean(
+  const explicitFalse = Boolean(
+    p.hasVariants === false ||
+    p.has_variants === false ||
+    p.hasVariants === 0 ||
+    p.has_variants === 0 ||
+    p.hasVariants === 'false' ||
+    p.has_variants === 'false'
+  );
+
+  const hasVar = !explicitFalse && Boolean(
     p.hasVariants === true ||
     p.has_variants === true ||
     p.hasVariants === 1 ||
     p.has_variants === 1 ||
     p.hasVariants === 'true' ||
-    p.has_variants === 'true' ||
-    opts.length > 0 ||
-    matrix.length > 0 ||
-    vars.length > 0 ||
-    variations.length > 0 ||
-    Object.keys(colorImgs || {}).length > 0
+    p.has_variants === 'true'
   );
 
   return {
     ...p,
     hasVariants: hasVar,
     has_variants: hasVar,
+    options: hasVar ? opts : [],
+    variantMatrix: hasVar ? matrix : [],
+    variant_matrix: hasVar ? matrix : [],
+    variants: hasVar ? vars : [],
+    variations: hasVar ? variations : [],
+    colorImages: hasVar ? colorImgs : {},
+    color_images: hasVar ? colorImgs : {},
   };
 }
 
@@ -346,7 +357,21 @@ router.put('/:id/options', requireAdmin, async (req: Request, res: Response) => 
   }
 
   const options = req.body.options || [];
-  const hasVariants = req.body.hasVariants !== undefined ? req.body.hasVariants : true;
+  const explicitDisabledOptions = Boolean(
+    req.body.hasVariants === false ||
+    req.body.has_variants === false ||
+    req.body.hasVariants === 0 ||
+    req.body.has_variants === 0 ||
+    req.body.hasVariants === 'false' ||
+    req.body.has_variants === 'false'
+  );
+  const hasVariants = !explicitDisabledOptions && (
+    req.body.hasVariants !== undefined
+      ? Boolean(req.body.hasVariants)
+      : (req.body.has_variants !== undefined
+        ? Boolean(req.body.has_variants)
+        : Boolean(productsCache[idx].hasVariants || productsCache[idx].has_variants))
+  );
 
   const optionNames = options.map((opt: any) => (opt.name || '').trim().toLowerCase()).filter(Boolean);
   const uniqueNames = new Set(optionNames);
@@ -455,7 +480,21 @@ router.put('/:id/variants', requireAdmin, async (req: Request, res: Response) =>
   }
 
   const variants: any[] = req.body.variants || [];
-  const hasVariants = req.body.hasVariants !== undefined ? req.body.hasVariants : true;
+  const explicitDisabledVariants = Boolean(
+    req.body.hasVariants === false ||
+    req.body.has_variants === false ||
+    req.body.hasVariants === 0 ||
+    req.body.has_variants === 0 ||
+    req.body.hasVariants === 'false' ||
+    req.body.has_variants === 'false'
+  );
+  const hasVariants = !explicitDisabledVariants && (
+    req.body.hasVariants !== undefined
+      ? Boolean(req.body.hasVariants)
+      : (req.body.has_variants !== undefined
+        ? Boolean(req.body.has_variants)
+        : Boolean(productsCache[idx].hasVariants || productsCache[idx].has_variants))
+  );
 
   if (hasVariants && variants.length === 0) {
     return res.status(400).json({ success: false, error: 'At least one variant must be created when variants are enabled.' });
@@ -590,7 +629,7 @@ router.get('/', async (req: Request, res: Response) => {
 
 router.get('/:id', async (req: Request, res: Response) => {
   await loadProductsCache();
-  const item = productsCache.find(p => p.id === req.params.id);
+  const item = productsCache.find(p => p.id === req.params.id || p.slug === req.params.id);
   if (!item) {
     return res.status(404).json({ success: false, error: 'Product not found' });
   }
@@ -627,21 +666,41 @@ router.post('/', requireAdmin, async (req: Request, res: Response) => {
   const rawVariations = req.body.variations || [];
   const rawColorImgs = req.body.color_images || req.body.colorImages || {};
 
-  const hasVariantsComputed = Boolean(
+  const explicitDisabled = Boolean(
+    req.body.has_variants === false ||
+    req.body.hasVariants === false ||
+    req.body.has_variants === 0 ||
+    req.body.hasVariants === 0 ||
+    req.body.has_variants === 'false' ||
+    req.body.hasVariants === 'false'
+  );
+
+  const hasVariantsComputed = !explicitDisabled && Boolean(
     req.body.has_variants === true ||
     req.body.hasVariants === true ||
     req.body.has_variants === 1 ||
     req.body.hasVariants === 1 ||
     req.body.has_variants === 'true' ||
-    req.body.hasVariants === 'true' ||
-    (Array.isArray(rawOpts) && rawOpts.length > 0) ||
-    (Array.isArray(rawMatrix) && rawMatrix.length > 0) ||
-    (Array.isArray(rawVars) && rawVars.length > 0) ||
-    (Array.isArray(rawVariations) && rawVariations.length > 0) ||
-    (rawColorImgs && typeof rawColorImgs === 'object' && Object.keys(rawColorImgs).length > 0)
+    req.body.hasVariants === 'true'
   );
 
+  const rawFeatures = req.body.features;
+  let parsedFeatures: string[] = [];
+  if (Array.isArray(rawFeatures)) {
+    parsedFeatures = rawFeatures.map((f: any) => String(f).trim()).filter(Boolean);
+  } else if (typeof rawFeatures === 'string' && rawFeatures.trim().startsWith('[')) {
+    try {
+      const parsed = JSON.parse(rawFeatures);
+      if (Array.isArray(parsed)) parsedFeatures = parsed.map((f: any) => String(f).trim()).filter(Boolean);
+    } catch {
+      parsedFeatures = rawFeatures.split('\n').map((s: string) => s.trim()).filter(Boolean);
+    }
+  } else if (typeof rawFeatures === 'string' && rawFeatures.trim()) {
+    parsedFeatures = rawFeatures.split('\n').map((s: string) => s.trim()).filter(Boolean);
+  }
+
   const newProduct = {
+    ...req.body,
     id: req.body.id || `prod-${Date.now()}`,
     sku: req.body.sku || `SKU-${Math.random().toString(36).substring(2, 8).toUpperCase()}`,
     name: req.body.name || 'New Product',
@@ -649,8 +708,21 @@ router.post('/', requireAdmin, async (req: Request, res: Response) => {
     countryOfOrigin: req.body.countryOfOrigin || req.body.country_of_origin || '',
     country_of_origin: req.body.country_of_origin || req.body.countryOfOrigin || '',
     description: req.body.description || '',
+    shortDescription: req.body.shortDescription || req.body.short_description || '',
+    detailedDescription: req.body.detailedDescription || req.body.detailed_description || req.body.description || '',
+    features: parsedFeatures,
+    specifications: Array.isArray(req.body.specifications) ? req.body.specifications : (Array.isArray(req.body.specs) ? req.body.specs.map((s: any) => ({ key: s.label, value: s.value })) : []),
+    whatsInTheBox: req.body.whatsInTheBox || '',
     price: Number(req.body.price || 0),
-    original_price: req.body.original_price ? Number(req.body.original_price) : null,
+    original_price: (req.body.original_price || req.body.originalPrice || req.body.compareAtPrice || req.body.compare_at_price || req.body.previousPrice)
+      ? Number(req.body.original_price ?? req.body.originalPrice ?? req.body.compareAtPrice ?? req.body.compare_at_price ?? req.body.previousPrice)
+      : null,
+    originalPrice: (req.body.original_price || req.body.originalPrice || req.body.compareAtPrice || req.body.compare_at_price || req.body.previousPrice)
+      ? Number(req.body.original_price ?? req.body.originalPrice ?? req.body.compareAtPrice ?? req.body.compare_at_price ?? req.body.previousPrice)
+      : null,
+    compareAtPrice: (req.body.compareAtPrice || req.body.compare_at_price || req.body.original_price || req.body.originalPrice || req.body.previousPrice)
+      ? Number(req.body.compareAtPrice ?? req.body.compare_at_price ?? req.body.original_price ?? req.body.originalPrice ?? req.body.previousPrice)
+      : null,
     cost_price: req.body.cost_price !== undefined && req.body.cost_price !== null && req.body.cost_price !== ''
       ? Number(req.body.cost_price)
       : req.body.costPrice !== undefined && req.body.costPrice !== null && req.body.costPrice !== ''
@@ -675,13 +747,13 @@ router.post('/', requireAdmin, async (req: Request, res: Response) => {
     tags: typeof req.body.tags === 'string' ? req.body.tags : (Array.isArray(req.body.tags) ? req.body.tags.join(', ') : ''),
     has_variants: hasVariantsComputed,
     hasVariants: hasVariantsComputed,
-    options: rawOpts,
-    color_images: rawColorImgs,
-    colorImages: rawColorImgs,
-    variations: rawVariations,
-    variant_matrix: rawMatrix,
-    variantMatrix: rawMatrix,
-    variants: rawVars,
+    options: hasVariantsComputed ? rawOpts : [],
+    color_images: hasVariantsComputed ? rawColorImgs : {},
+    colorImages: hasVariantsComputed ? rawColorImgs : {},
+    variations: hasVariantsComputed ? rawVariations : [],
+    variant_matrix: hasVariantsComputed ? rawMatrix : [],
+    variantMatrix: hasVariantsComputed ? rawMatrix : [],
+    variants: hasVariantsComputed ? rawVars : [],
     unit_measurement: req.body.unit_measurement || req.body.unitMeasurement || '',
     unit_value: req.body.unit_value !== undefined ? req.body.unit_value : req.body.unitValue,
     weight: req.body.weight || '',
@@ -690,27 +762,40 @@ router.post('/', requireAdmin, async (req: Request, res: Response) => {
     updated_at: new Date().toISOString(),
   };
 
-  productsCache.unshift(newProduct);
-  await persistProductsCache();
+  let savedProduct = newProduct;
+  try {
+    const saved = await saveMysqlProduct(newProduct);
+    if (saved) savedProduct = saved;
+  } catch (dbErr: any) {
+    console.error('[Products API] Failed to save product to MySQL database:', dbErr);
+    return res.status(500).json({ success: false, error: dbErr?.message || 'Failed to save product to database' });
+  }
+
+  const existingIdx = productsCache.findIndex(p => p.id === savedProduct.id);
+  if (existingIdx !== -1) {
+    productsCache[existingIdx] = savedProduct;
+  } else {
+    productsCache.unshift(savedProduct);
+  }
 
   // Record initial inventory audit log
-  if (newProduct.stock !== undefined && newProduct.stock !== null) {
+  if (savedProduct.stock !== undefined && savedProduct.stock !== null) {
     try {
       await addSqliteInventoryAuditLog({
-        productId: newProduct.id,
-        productName: newProduct.name,
-        productSku: newProduct.sku,
-        changeQuantity: Number(newProduct.stock),
-        newStock: Number(newProduct.stock),
+        productId: savedProduct.id,
+        productName: savedProduct.name,
+        productSku: savedProduct.sku,
+        changeQuantity: Number(savedProduct.stock),
+        newStock: Number(savedProduct.stock),
         reason: 'Initial Stock Creation',
-        details: `Initial stock of ${newProduct.stock} units recorded upon product creation.`,
+        details: `Initial stock of ${savedProduct.stock} units recorded upon product creation.`,
       });
     } catch (auditErr) {
       console.warn('[Products API] Failed to record initial inventory audit log:', auditErr);
     }
   }
 
-  res.status(201).json({ success: true, message: 'Product created successfully.', product: newProduct });
+  res.status(201).json({ success: true, message: 'Product created successfully.', product: savedProduct });
 });
 
 router.put('/:id', requireAdmin, async (req: Request, res: Response) => {
@@ -748,27 +833,49 @@ router.put('/:id', requireAdmin, async (req: Request, res: Response) => {
   const rawVariations = req.body.variations || productsCache[idx].variations || [];
   const rawColorImgs = req.body.color_images || req.body.colorImages || productsCache[idx].color_images || productsCache[idx].colorImages || {};
 
-  const hasVariantsComputed = Boolean(
+  const explicitDisabled = Boolean(
+    req.body.has_variants === false ||
+    req.body.hasVariants === false ||
+    req.body.has_variants === 0 ||
+    req.body.hasVariants === 0 ||
+    req.body.has_variants === 'false' ||
+    req.body.hasVariants === 'false'
+  );
+
+  const hasVariantsComputed = !explicitDisabled && Boolean(
     req.body.has_variants === true ||
     req.body.hasVariants === true ||
     req.body.has_variants === 1 ||
     req.body.hasVariants === 1 ||
     req.body.has_variants === 'true' ||
-    req.body.hasVariants === 'true' ||
-    (Array.isArray(rawOpts) && rawOpts.length > 0) ||
-    (Array.isArray(rawMatrix) && rawMatrix.length > 0) ||
-    (Array.isArray(rawVars) && rawVars.length > 0) ||
-    (Array.isArray(rawVariations) && rawVariations.length > 0) ||
-    (rawColorImgs && typeof rawColorImgs === 'object' && Object.keys(rawColorImgs).length > 0) ||
-    productsCache[idx].hasVariants === true ||
-    productsCache[idx].has_variants === true
+    req.body.hasVariants === 'true'
   );
 
   const updatedStock = req.body.stock !== undefined ? Number(req.body.stock) : productsCache[idx].stock;
 
+  let updatedFeatures = productsCache[idx].features || [];
+  if (req.body.features !== undefined) {
+    const rawF = req.body.features;
+    if (Array.isArray(rawF)) {
+      updatedFeatures = rawF.map((f: any) => String(f).trim()).filter(Boolean);
+    } else if (typeof rawF === 'string' && rawF.trim().startsWith('[')) {
+      try {
+        const parsed = JSON.parse(rawF);
+        if (Array.isArray(parsed)) updatedFeatures = parsed.map((f: any) => String(f).trim()).filter(Boolean);
+      } catch {
+        updatedFeatures = rawF.split('\n').map((s: string) => s.trim()).filter(Boolean);
+      }
+    } else if (typeof rawF === 'string' && rawF.trim()) {
+      updatedFeatures = rawF.split('\n').map((s: string) => s.trim()).filter(Boolean);
+    } else {
+      updatedFeatures = [];
+    }
+  }
+
   productsCache[idx] = {
     ...productsCache[idx],
     ...req.body,
+    features: updatedFeatures,
     stock: updatedStock,
     cost_price: costVal !== undefined ? costVal : null,
     costPrice: costVal !== undefined ? costVal : null,
@@ -778,18 +885,24 @@ router.put('/:id', requireAdmin, async (req: Request, res: Response) => {
     gallery_images: parsedImages || (primaryImg ? [primaryImg] : []),
     has_variants: hasVariantsComputed,
     hasVariants: hasVariantsComputed,
-    options: rawOpts,
-    color_images: rawColorImgs,
-    colorImages: rawColorImgs,
-    variant_matrix: rawMatrix,
-    variantMatrix: rawMatrix,
-    variants: rawVars,
+    options: hasVariantsComputed ? rawOpts : [],
+    color_images: hasVariantsComputed ? rawColorImgs : {},
+    colorImages: hasVariantsComputed ? rawColorImgs : {},
+    variations: hasVariantsComputed ? rawVariations : [],
+    variant_matrix: hasVariantsComputed ? rawMatrix : [],
+    variantMatrix: hasVariantsComputed ? rawMatrix : [],
+    variants: hasVariantsComputed ? rawVars : [],
     unit_measurement: req.body.unit_measurement || req.body.unitMeasurement || productsCache[idx].unit_measurement || '',
     unit_value: req.body.unit_value !== undefined ? req.body.unit_value : (req.body.unitValue !== undefined ? req.body.unitValue : productsCache[idx].unit_value),
     updated_at: new Date().toISOString(),
   };
 
-  await persistProductsCache();
+  try {
+    const saved = await saveMysqlProduct(productsCache[idx]);
+    if (saved) productsCache[idx] = saved;
+  } catch (dbErr) {
+    console.error('[Products API] Failed to update product in MySQL:', dbErr);
+  }
 
   // Broadcast real-time changes to active cart streams
   cartStreamManager.broadcastProductChange(productsCache[idx].id, {
@@ -828,8 +941,20 @@ router.put('/:id', requireAdmin, async (req: Request, res: Response) => {
 router.delete(['/:id', '/:id/'], requireAdmin, async (req: Request, res: Response) => {
   await loadProductsCache();
   const pid = String(req.params.id);
-  const idx = productsCache.findIndex(p => String(p.id) === pid);
+  let idx = productsCache.findIndex(p => String(p.id) === pid);
   if (idx === -1) {
+    try {
+      const deletedFromDb = await deleteSqliteProduct(pid);
+      if (deletedFromDb) {
+        await loadProductsCache(true);
+        cartStreamManager.broadcastProductChange(pid, {
+          status: 'deleted',
+          deleted: true,
+          stock: 0,
+        });
+        return res.json({ success: true, message: 'Product deleted successfully.' });
+      }
+    } catch {}
     return res.status(404).json({ success: false, error: 'Product not found' });
   }
 

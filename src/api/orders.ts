@@ -107,7 +107,10 @@ export const ordersApi = {
     const payload = {
       id: orderData.id || undefined,
       customer_name: (orderData.customerName || 'Customer').trim(),
-      customer_email: (orderData.customerEmail || '').trim(),
+      customerName: (orderData.customerName || 'Customer').trim(),
+      customer_email: (orderData.customerEmail || (orderData as any).customer_email || (orderData as any).email || '').trim(),
+      customerEmail: (orderData.customerEmail || (orderData as any).customer_email || (orderData as any).email || '').trim(),
+      email: (orderData.customerEmail || (orderData as any).customer_email || (orderData as any).email || '').trim(),
       customer_phone: (orderData.phone || '').trim(),
       subtotal: orderData.subtotal,
       discount: orderData.discount || 0,
