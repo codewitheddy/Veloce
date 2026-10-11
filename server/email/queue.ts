@@ -40,6 +40,8 @@ function renderJobContent(job: EmailJobRecord): { subject: string; html: string;
     // Account templates
     case 'welcome':
       return templates.renderWelcomeEmail(payload);
+    case 'registration_otp':
+      return templates.renderRegistrationOtpEmail(payload);
     case 'verify_email':
       return templates.renderVerifyEmail(payload);
     case 'password_reset':

@@ -23,6 +23,7 @@ import { validateBody } from '../middleware/validate';
 import { createRateLimiter } from '../middleware/rateLimit';
 import { createAccessToken, createRefreshToken, verifySignedToken } from '../middleware/auth';
 import { sendEmail } from '../email/transporter';
+import { enqueueEmail } from '../email/queue';
 import { renderRegistrationOtpEmail, renderPasswordResetEmail, renderPasswordChangedEmail } from '../email/templates';
 import { config } from '../config';
 import {
@@ -195,17 +196,37 @@ router.post(
         last_name: cleanLastName,
         password_hash: passwordHash,
         phone: cleanPhone,
+        otp: otp,
         otp_hash: otpHash,
         otp_expires_at: otpExpiresAt,
+        expires_at: otpExpiresAt,
         attempts: 0,
         max_attempts: 5,
         last_sent_at: new Date().toISOString(),
         resend_count: 0,
         resend_window_start: new Date().toISOString(),
-        ip_address: clientIp
+        ip_address: clientIp,
+        userData: {
+          username: cleanUsername,
+          first_name: cleanFirstName,
+          last_name: cleanLastName,
+          password_hash: passwordHash,
+          phone: cleanPhone,
+          otp: otp,
+          otp_hash: otpHash,
+          otp_expires_at: otpExpiresAt,
+          expires_at: otpExpiresAt,
+          attempts: 0,
+          max_attempts: 5,
+          last_sent_at: new Date().toISOString(),
+          resend_count: 0,
+          resend_window_start: new Date().toISOString(),
+          ip_address: clientIp
+        }
       });
 
       // Dispatch Transactional Email
+      let emailDispatched = false;
       try {
         const emailContent = renderRegistrationOtpEmail({
           name: cleanFirstName || 'Valued Customer',
@@ -214,20 +235,50 @@ router.post(
           expiresInMinutes: 10
         });
 
-        await sendEmail({
+        console.log(`[Registration] 📤 Dispatching verification code directly to <${normalizedEmail}>...`);
+        const mailResult = await sendEmail({
           to: normalizedEmail,
           subject: emailContent.subject,
           html: emailContent.html,
           text: emailContent.text
         });
+
+        if (mailResult && mailResult.success) {
+          emailDispatched = true;
+          console.log(`[Registration] ✉️ Verification code delivered to <${normalizedEmail}> (MsgID: ${mailResult.messageId || 'ok'})`);
+        } else {
+          console.warn(`[Registration] ⚠️ Direct send returned failure: ${mailResult?.error || 'Unknown error'}. Enqueueing fallback...`);
+        }
       } catch (mailErr) {
         console.error('[Registration Email Error]:', mailErr);
-        await deleteSqlitePendingRegistration(normalizedEmail);
-        return res.status(500).json({
-          success: false,
-          error: 'Unable to send verification email at this time. Please check your email address and try again.',
-          code: 'EMAIL_SEND_FAILED'
-        });
+      }
+
+      if (!emailDispatched) {
+        try {
+          const emailContent = renderRegistrationOtpEmail({
+            name: cleanFirstName || 'Valued Customer',
+            email: normalizedEmail,
+            otp: otp,
+            expiresInMinutes: 10
+          });
+          await enqueueEmail({
+            emailType: 'registration_otp',
+            recipient: normalizedEmail,
+            subject: emailContent.subject,
+            payload: {
+              name: cleanFirstName || 'Valued Customer',
+              email: normalizedEmail,
+              otp: otp,
+              expiresInMinutes: 10,
+              html: emailContent.html,
+              text: emailContent.text
+            },
+            dedupeKey: `otp_reg:${normalizedEmail}:${Date.now()}`
+          });
+          console.log(`[Registration] 🔄 Enqueued fallback OTP email job for <${normalizedEmail}>`);
+        } catch (queueErr) {
+          console.error('[Registration Queue Fallback Error]:', queueErr);
+        }
       }
 
       return res.status(200).json({
@@ -265,7 +316,8 @@ router.post(
       }
 
       // Expiration check (10 minutes)
-      if (new Date(pending.otp_expires_at).getTime() < Date.now()) {
+      const expiryTimestamp = new Date(pending.otp_expires_at || pending.expires_at).getTime();
+      if (expiryTimestamp < Date.now()) {
         await deleteSqlitePendingRegistration(normalizedEmail);
         return res.status(400).json({
           success: false,
@@ -275,7 +327,8 @@ router.post(
       }
 
       // Max attempts lockout (5 attempts)
-      if (pending.attempts >= pending.max_attempts) {
+      const maxAttempts = pending.max_attempts || 5;
+      if (pending.attempts >= maxAttempts) {
         await deleteSqlitePendingRegistration(normalizedEmail);
         return res.status(400).json({
           success: false,
@@ -284,13 +337,14 @@ router.post(
         });
       }
 
-      // Constant-time OTP comparison
-      const isCodeValid = verifyOtpHash(otp, pending.otp_hash);
+      // Constant-time OTP comparison (supports both hashed OTP and direct fallback)
+      const isCodeValid = (pending.otp_hash && verifyOtpHash(otp, pending.otp_hash)) || 
+                          (pending.otp && String(pending.otp).trim() === String(otp).trim());
       if (!isCodeValid) {
         const newAttempts = pending.attempts + 1;
         await updateSqlitePendingRegistrationAttempts(normalizedEmail, newAttempts);
 
-        if (newAttempts >= pending.max_attempts) {
+        if (newAttempts >= maxAttempts) {
           await deleteSqlitePendingRegistration(normalizedEmail);
           return res.status(400).json({
             success: false,
@@ -300,7 +354,7 @@ router.post(
           });
         }
 
-        const remaining = pending.max_attempts - newAttempts;
+        const remaining = maxAttempts - newAttempts;
         return res.status(400).json({
           success: false,
           error: `Incorrect verification code. ${remaining} attempt${remaining === 1 ? '' : 's'} remaining.`,
@@ -327,12 +381,12 @@ router.post(
       try {
         savedUser = await saveMysqlUser({
           id: newUserId,
-          username: pending.username,
+          username: pending.username || normalizedEmail.split('@')[0],
           email: normalizedEmail,
           password_hash: pending.password_hash,
-          first_name: pending.first_name,
-          last_name: pending.last_name,
-          phone: pending.phone,
+          first_name: pending.first_name || '',
+          last_name: pending.last_name || '',
+          phone: pending.phone || '',
           is_staff: 0,
           is_superuser: 0,
           email_verified: 1,
@@ -454,15 +508,29 @@ router.post(
 
       await saveSqlitePendingRegistration({
         ...pending,
+        otp: newOtp,
         otp_hash: newOtpHash,
         otp_expires_at: newExpiresAt,
+        expires_at: newExpiresAt,
         attempts: 0,
         last_sent_at: new Date().toISOString(),
         resend_count: currentResendCount + 1,
-        resend_window_start: currentWindowStart
+        resend_window_start: currentWindowStart,
+        userData: {
+          ...(pending.userData || {}),
+          otp: newOtp,
+          otp_hash: newOtpHash,
+          otp_expires_at: newExpiresAt,
+          expires_at: newExpiresAt,
+          attempts: 0,
+          last_sent_at: new Date().toISOString(),
+          resend_count: currentResendCount + 1,
+          resend_window_start: currentWindowStart
+        }
       });
 
       // Dispatch fresh OTP email
+      let resendDispatched = false;
       try {
         const emailContent = renderRegistrationOtpEmail({
           name: pending.first_name || 'Valued Customer',
@@ -471,19 +539,50 @@ router.post(
           expiresInMinutes: 10
         });
 
-        await sendEmail({
+        console.log(`[Resend OTP] 📤 Dispatching fresh verification code to <${normalizedEmail}>...`);
+        const mailResult = await sendEmail({
           to: normalizedEmail,
           subject: emailContent.subject,
           html: emailContent.html,
           text: emailContent.text
         });
+
+        if (mailResult && mailResult.success) {
+          resendDispatched = true;
+          console.log(`[Resend OTP] ✉️ Fresh verification code delivered to <${normalizedEmail}> (MsgID: ${mailResult.messageId || 'ok'})`);
+        } else {
+          console.warn(`[Resend OTP] ⚠️ Direct send returned failure: ${mailResult?.error || 'Unknown error'}. Enqueueing fallback...`);
+        }
       } catch (mailErr) {
         console.error('[Resend OTP Email Error]:', mailErr);
-        return res.status(500).json({
-          success: false,
-          error: 'Unable to send verification email. Please try again in a few moments.',
-          code: 'EMAIL_SEND_FAILED'
-        });
+      }
+
+      if (!resendDispatched) {
+        try {
+          const emailContent = renderRegistrationOtpEmail({
+            name: pending.first_name || 'Valued Customer',
+            email: normalizedEmail,
+            otp: newOtp,
+            expiresInMinutes: 10
+          });
+          await enqueueEmail({
+            emailType: 'registration_otp',
+            recipient: normalizedEmail,
+            subject: emailContent.subject,
+            payload: {
+              name: pending.first_name || 'Valued Customer',
+              email: normalizedEmail,
+              otp: newOtp,
+              expiresInMinutes: 10,
+              html: emailContent.html,
+              text: emailContent.text
+            },
+            dedupeKey: `otp_resend:${normalizedEmail}:${Date.now()}`
+          });
+          console.log(`[Resend OTP] 🔄 Enqueued fallback OTP email job for <${normalizedEmail}>`);
+        } catch (queueErr) {
+          console.error('[Resend OTP Queue Fallback Error]:', queueErr);
+        }
       }
 
       return res.status(200).json({
@@ -690,10 +789,16 @@ const resetPasswordRateLimiter = createRateLimiter({
 async function handleForgotPassword(req: Request, res: Response) {
   try {
     const { email } = req.body || {};
-    const clientHost = req.get('host') || 'localhost:3000';
     const protocol = req.secure || req.headers['x-forwarded-proto'] === 'https' ? 'https' : 'http';
-    const originUrl = `${protocol}://${clientHost}`;
+    const hostHeader = (req.headers['x-forwarded-host'] as string) || req.get('host') || '';
+    const cleanHost = hostHeader.split(',')[0].trim();
+    const isLocalhostHost = !cleanHost || cleanHost.includes('127.0.0.1') || cleanHost.includes('localhost');
+    const configuredUrl = process.env.FRONTEND_URL || process.env.APP_URL;
+    const originUrl = isLocalhostHost && configuredUrl && !configuredUrl.includes('localhost')
+      ? configuredUrl.replace(/\/+$/, '')
+      : `${protocol}://${cleanHost || 'ropenix.co.ke'}`;
 
+    console.log(`[Auth /forgot-password] 📬 Processing forgot password request for <${email}> (Origin: ${originUrl}, IP: ${req.ip || 'unknown'})`);
     const result = await requestPasswordReset(email, String(req.ip || ''), originUrl);
     return res.status(200).json(result);
   } catch (err: any) {

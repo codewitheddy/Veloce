@@ -9,6 +9,7 @@
 
 import mysql from 'mysql2/promise';
 import dotenv from 'dotenv';
+import crypto from 'crypto';
 import { sanitizeProductImageFields } from './image-storage';
 import {
   Supplier,
@@ -680,11 +681,23 @@ export async function initializeDatabaseSchema(): Promise<void> {
       CREATE TABLE IF NOT EXISTS pending_registrations (
         id VARCHAR(255) PRIMARY KEY,
         email VARCHAR(255) NOT NULL UNIQUE,
-        otp VARCHAR(50) NOT NULL,
-        user_data LONGTEXT NOT NULL,
+        otp VARCHAR(50) NULL,
+        otp_hash VARCHAR(255) NULL,
+        username VARCHAR(255) NULL,
+        first_name VARCHAR(255) NULL,
+        last_name VARCHAR(255) NULL,
+        password_hash VARCHAR(255) NULL,
+        phone VARCHAR(50) NULL,
+        otp_expires_at VARCHAR(100) NULL,
+        max_attempts INT DEFAULT 5,
+        last_sent_at VARCHAR(100) NULL,
+        resend_count INT DEFAULT 0,
+        resend_window_start VARCHAR(100) NULL,
+        ip_address VARCHAR(100) NULL,
+        user_data LONGTEXT NULL,
         attempts INT DEFAULT 0,
         created_at VARCHAR(100) NOT NULL,
-        expires_at VARCHAR(100) NOT NULL
+        expires_at VARCHAR(100) NULL
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
     `);
 
@@ -749,6 +762,29 @@ export async function initializeDatabaseSchema(): Promise<void> {
     await safeAddCol('payment_submissions', 'amount_claimed', 'DECIMAL(15, 2) NULL');
     await safeAddCol('payment_submissions', 'payment_method', "VARCHAR(50) DEFAULT 'mpesa_paybill'");
     await safeAddCol('payment_submissions', 'admin_notes', 'TEXT NULL');
+
+    const safeModifyCol = async (table: string, col: string, def: string) => {
+      try {
+        await pool.query(`ALTER TABLE \`${table}\` MODIFY COLUMN \`${col}\` ${def};`);
+      } catch (err: any) {
+        // Ignore column modification errors
+      }
+    };
+
+    // Ensure pending_registrations columns support both plain OTP and hashed OTP flows seamlessly
+    await safeModifyCol('pending_registrations', 'otp', 'VARCHAR(50) NULL');
+    await safeAddCol('pending_registrations', 'otp_hash', 'VARCHAR(255) NULL');
+    await safeAddCol('pending_registrations', 'username', 'VARCHAR(255) NULL');
+    await safeAddCol('pending_registrations', 'first_name', 'VARCHAR(255) NULL');
+    await safeAddCol('pending_registrations', 'last_name', 'VARCHAR(255) NULL');
+    await safeAddCol('pending_registrations', 'password_hash', 'VARCHAR(255) NULL');
+    await safeAddCol('pending_registrations', 'phone', 'VARCHAR(50) NULL');
+    await safeAddCol('pending_registrations', 'otp_expires_at', 'VARCHAR(100) NULL');
+    await safeAddCol('pending_registrations', 'max_attempts', 'INT DEFAULT 5');
+    await safeAddCol('pending_registrations', 'last_sent_at', 'VARCHAR(100) NULL');
+    await safeAddCol('pending_registrations', 'resend_count', 'INT DEFAULT 0');
+    await safeAddCol('pending_registrations', 'resend_window_start', 'VARCHAR(100) NULL');
+    await safeAddCol('pending_registrations', 'ip_address', 'VARCHAR(100) NULL');
 
     isInitialized = true;
     console.log('[MySQL] All core database tables verified and active in MySQL.');
@@ -2962,40 +2998,140 @@ export const deleteSqliteUser = deleteMysqlUser;
 
 export async function getMysqlPendingRegistration(email: string): Promise<any | null> {
   const pool = await getDbPool();
+  const cleanEmail = (email || '').trim().toLowerCase();
   const [rows]: any = await pool.query('SELECT * FROM pending_registrations WHERE LOWER(email) = ? LIMIT 1', [
-    (email || '').trim().toLowerCase()
+    cleanEmail
   ]);
   if (!rows || rows.length === 0) return null;
   const row = rows[0];
+  let parsedUserData: any = {};
+  try {
+    parsedUserData = typeof row.user_data === 'string' ? JSON.parse(row.user_data) : (row.user_data || {});
+  } catch {
+    parsedUserData = {};
+  }
+
   return {
+    ...parsedUserData,
     ...row,
-    userData: typeof row.user_data === 'string' ? JSON.parse(row.user_data) : row.user_data
+    id: row.id || parsedUserData.id,
+    email: cleanEmail,
+    otp: row.otp || parsedUserData.otp,
+    otp_hash: row.otp_hash || parsedUserData.otp_hash,
+    otp_expires_at: row.otp_expires_at || parsedUserData.otp_expires_at || row.expires_at,
+    expires_at: row.expires_at || parsedUserData.expires_at || row.otp_expires_at,
+    username: row.username || parsedUserData.username || cleanEmail.split('@')[0],
+    first_name: row.first_name || parsedUserData.first_name || '',
+    last_name: row.last_name || parsedUserData.last_name || '',
+    password_hash: row.password_hash || parsedUserData.password_hash || '',
+    phone: row.phone || parsedUserData.phone || '',
+    attempts: row.attempts !== undefined ? row.attempts : (parsedUserData.attempts ?? 0),
+    max_attempts: row.max_attempts || parsedUserData.max_attempts || 5,
+    last_sent_at: row.last_sent_at || parsedUserData.last_sent_at || row.created_at,
+    resend_count: row.resend_count !== undefined ? row.resend_count : (parsedUserData.resend_count ?? 0),
+    resend_window_start: row.resend_window_start || parsedUserData.resend_window_start || row.created_at,
+    ip_address: row.ip_address || parsedUserData.ip_address || '',
+    userData: parsedUserData
   };
 }
 
 export async function saveMysqlPendingRegistration(record: any): Promise<void> {
   const pool = await getDbPool();
-  const id = record.id || `pr-${Date.now()}`;
+  const id = record.id || `pr-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
   const now = new Date().toISOString();
-  const userDataStr = typeof record.userData === 'string' ? record.userData : JSON.stringify(record.userData || {});
-  await pool.query(
-    `INSERT INTO pending_registrations (id, email, otp, user_data, attempts, created_at, expires_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?)
-     ON DUPLICATE KEY UPDATE
-       otp = VALUES(otp),
-       user_data = VALUES(user_data),
-       attempts = VALUES(attempts),
-       expires_at = VALUES(expires_at);`,
-    [
-      id,
-      (record.email || '').trim().toLowerCase(),
-      record.otp,
-      userDataStr,
-      record.attempts || 0,
-      record.createdAt || now,
-      record.expiresAt || new Date(Date.now() + 15 * 60 * 1000).toISOString()
-    ]
-  );
+  const email = (record.email || '').trim().toLowerCase();
+  
+  // Guard against null OTP (strictly prevents MySQL error: Column 'otp' cannot be null)
+  const otpValue = record.otp || record.otp_hash || '000000';
+  const otpHashValue = record.otp_hash || (record.otp ? crypto.createHash('sha256').update(String(record.otp)).digest('hex') : '');
+  const expiresAt = record.otp_expires_at || record.expires_at || record.expiresAt || new Date(Date.now() + 15 * 60 * 1000).toISOString();
+  
+  const userDataObj = {
+    username: record.username || record.userData?.username || email.split('@')[0],
+    first_name: record.first_name || record.userData?.first_name || '',
+    last_name: record.last_name || record.userData?.last_name || '',
+    password_hash: record.password_hash || record.userData?.password_hash || '',
+    phone: record.phone || record.userData?.phone || '',
+    otp: otpValue,
+    otp_hash: otpHashValue,
+    otp_expires_at: expiresAt,
+    expires_at: expiresAt,
+    attempts: record.attempts !== undefined ? record.attempts : 0,
+    max_attempts: record.max_attempts || 5,
+    last_sent_at: record.last_sent_at || now,
+    resend_count: record.resend_count !== undefined ? record.resend_count : 0,
+    resend_window_start: record.resend_window_start || now,
+    ip_address: record.ip_address || '',
+    ...(typeof record.userData === 'object' && record.userData !== null ? record.userData : {})
+  };
+  const userDataStr = JSON.stringify(userDataObj);
+
+  try {
+    // Primary query with expanded columns
+    await pool.query(
+      `INSERT INTO pending_registrations 
+       (id, email, otp, otp_hash, username, first_name, last_name, password_hash, phone, otp_expires_at, max_attempts, last_sent_at, resend_count, resend_window_start, ip_address, user_data, attempts, created_at, expires_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       ON DUPLICATE KEY UPDATE
+         otp = VALUES(otp),
+         otp_hash = VALUES(otp_hash),
+         username = VALUES(username),
+         first_name = VALUES(first_name),
+         last_name = VALUES(last_name),
+         password_hash = VALUES(password_hash),
+         phone = VALUES(phone),
+         otp_expires_at = VALUES(otp_expires_at),
+         max_attempts = VALUES(max_attempts),
+         last_sent_at = VALUES(last_sent_at),
+         resend_count = VALUES(resend_count),
+         resend_window_start = VALUES(resend_window_start),
+         ip_address = VALUES(ip_address),
+         user_data = VALUES(user_data),
+         attempts = VALUES(attempts),
+         expires_at = VALUES(expires_at);`,
+      [
+        id,
+        email,
+        otpValue,
+        otpHashValue,
+        userDataObj.username,
+        userDataObj.first_name,
+        userDataObj.last_name,
+        userDataObj.password_hash,
+        userDataObj.phone,
+        expiresAt,
+        userDataObj.max_attempts,
+        userDataObj.last_sent_at,
+        userDataObj.resend_count,
+        userDataObj.resend_window_start,
+        userDataObj.ip_address,
+        userDataStr,
+        userDataObj.attempts,
+        record.createdAt || record.created_at || now,
+        expiresAt
+      ]
+    );
+  } catch (err: any) {
+    // Resilient fallback for legacy table schema without expanded columns
+    await pool.query(
+      `INSERT INTO pending_registrations (id, email, otp, user_data, attempts, created_at, expires_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)
+       ON DUPLICATE KEY UPDATE
+         otp = VALUES(otp),
+         user_data = VALUES(user_data),
+         attempts = VALUES(attempts),
+         expires_at = VALUES(expires_at);`,
+      [
+        id,
+        email,
+        otpValue,
+        userDataStr,
+        userDataObj.attempts,
+        record.createdAt || record.created_at || now,
+        expiresAt
+      ]
+    );
+  }
 }
 
 export async function deleteMysqlPendingRegistration(email: string): Promise<void> {
@@ -3006,6 +3142,17 @@ export async function deleteMysqlPendingRegistration(email: string): Promise<voi
 export async function updateMysqlPendingRegistrationAttempts(email: string, attempts: number): Promise<void> {
   const pool = await getDbPool();
   await pool.query('UPDATE pending_registrations SET attempts = ? WHERE LOWER(email) = ?', [attempts, (email || '').trim().toLowerCase()]);
+}
+
+export async function cleanupExpiredPendingRegistrations(): Promise<number> {
+  try {
+    const pool = await getDbPool();
+    const nowIso = new Date().toISOString();
+    const [res]: any = await pool.query('DELETE FROM pending_registrations WHERE expires_at < ? OR otp_expires_at < ?', [nowIso, nowIso]);
+    return res?.affectedRows || 0;
+  } catch {
+    return 0;
+  }
 }
 
 export const getSqlitePendingRegistration = getMysqlPendingRegistration;

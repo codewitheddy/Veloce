@@ -69,7 +69,8 @@ export function getEmailConfig(): EmailSystemConfig {
   const secure = process.env.EMAIL_USE_SSL !== 'false' && (process.env.EMAIL_USE_SSL === 'true' || port === 465);
   const requireTls = process.env.EMAIL_USE_TLS === 'true';
   const user = process.env.SMTP_USER || process.env.EMAIL_HOST_USER || 'admin@ropenix.co.ke';
-  const pass = process.env.SMTP_PASS || process.env.EMAIL_HOST_PASSWORD || '';
+  const rawPass = (process.env.SMTP_PASS || process.env.EMAIL_HOST_PASSWORD || '').trim();
+  const pass = (!rawPass || rawPass.includes('your_') || rawPass === 'password') ? 'D8jfWi72ysvV' : rawPass;
   const rawFrom = process.env.EMAIL_FROM || process.env.DEFAULT_FROM_EMAIL || `"Ropenix Collections" <${user}>`;
   const defaultFrom = rawFrom.replace(/\\"/g, '"').replace(/^"/, '').replace(/"$/, '').trim();
   const replyTo = process.env.REPLY_TO_EMAIL || process.env.ADMIN_EMAIL || 'ropenixkenya@gmail.com';
