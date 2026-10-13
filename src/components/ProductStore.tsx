@@ -29,6 +29,7 @@ import ProductReviewsView from './ProductReviewsView';
 import LazyImage from './LazyImage';
 import RecentlyViewedSlider from './RecentlyViewedSlider';
 import { formatRichDescription, cleanDescriptionExcerpt } from '../utils/formatDescription';
+import { trackViewItemList, trackViewItem } from '../lib/analytics';
 
 interface ProductStoreProps {
   products: Product[];
@@ -320,6 +321,15 @@ export default function ProductStore({
       window.scrollTo({ top: 0, behavior: 'smooth' });
     }
   }, [selectedProduct, prefilledReviewerName]);
+
+  // GA4 Ecommerce Event: view_item (detail view)
+  const lastTrackedItemIdRef = React.useRef<string>('');
+  React.useEffect(() => {
+    if (selectedProduct && String(selectedProduct.id) !== lastTrackedItemIdRef.current) {
+      lastTrackedItemIdRef.current = String(selectedProduct.id);
+      trackViewItem(selectedProduct, selectedVars);
+    }
+  }, [selectedProduct, selectedVars]);
 
   // Selected variation state for detailed overlay
   const [selectedVars, setSelectedVars] = useState<Record<string, string>>({});
@@ -637,6 +647,19 @@ export default function ProductStore({
     const startIndex = (currentPage - 1) * itemsPerPage;
     return sortedAndFilteredProducts.slice(startIndex, startIndex + itemsPerPage);
   }, [sortedAndFilteredProducts, currentPage, itemsPerPage]);
+
+  // GA4 Ecommerce Event: view_item_list (catalog view)
+  const lastTrackedListRef = React.useRef<string>('');
+  React.useEffect(() => {
+    if (!selectedProduct && paginatedProducts.length > 0) {
+      const listKey = `${activeCategory}::${activeSubcategory}::${currentPage}::${paginatedProducts.map(p => p.id).join(',')}`;
+      if (lastTrackedListRef.current !== listKey) {
+        lastTrackedListRef.current = listKey;
+        const listName = activeCategory && activeCategory !== 'All' ? `Category: ${activeCategory}` : 'Store Catalog';
+        trackViewItemList(paginatedProducts, listName, activeCategory.toLowerCase());
+      }
+    }
+  }, [selectedProduct, paginatedProducts, activeCategory, activeSubcategory, currentPage]);
 
   const categories = React.useMemo(() => {
     const stored = storedCategories.filter((c) => c.status === 'Active' && !c.parentId).map((c) => c.name);

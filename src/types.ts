@@ -278,7 +278,7 @@ export interface Order {
   phone?: string;
   trackingNumber?: string;
   notes?: string;
-  status: 'pending' | 'awaiting_delivery_quote' | 'delivery_quoted' | 'processing' | 'completed' | 'cancelled' | 'pending-cancellation' | 'shipped' | 'delivered';
+  status: OrderLifecycleStatus | 'pending' | 'awaiting_delivery_quote' | 'delivery_quoted' | 'processing' | 'completed' | 'cancelled' | 'pending-cancellation' | 'shipped' | 'delivered';
   date: string;
   couponCode?: string;
   customNote?: string;
@@ -312,8 +312,68 @@ export interface Order {
   deliveredAt?: string;
   deliveryPerson?: string;
   deliveryNote?: string;
+  cancellationReason?: string;
+  cancellation_reason?: string;
+  cancelledBy?: string;
+  cancelled_by?: string;
+  cancelledAt?: string;
+  cancelled_at?: string;
+  paymentCollectedBy?: string;
+  payment_collected_by?: string;
+  paymentCollectedAt?: string;
+  payment_collected_at?: string;
+  paymentConfirmedBy?: string;
+  payment_confirmed_by?: string;
+  paymentConfirmedAt?: string;
+  payment_confirmed_at?: string;
+  paymentAmount?: number;
+  payment_amount?: number;
+  refundClaim?: RefundClaim | null;
   review_request_sent_at?: string | null;
   review_request_status?: 'pending_delay' | 'sent' | 'opted_out' | 'already_reviewed' | 'cancelled';
+}
+
+export type OrderLifecycleStatus =
+  | 'order_received'
+  | 'payment_confirmed'
+  | 'processing'
+  | 'shipped'
+  | 'payment_received'
+  | 'completed'
+  | 'cancelled';
+
+export interface RefundClaim {
+  id: string;
+  order_id: string;
+  amount: number;
+  reason: string;
+  payment_reference?: string;
+  status: 'refund_requested' | 'refund_approved' | 'refund_paid' | 'refund_rejected';
+  customer_name?: string;
+  customer_email?: string;
+  customer_phone?: string;
+  refund_payment_reference?: string;
+  approved_by?: string;
+  approved_at?: string;
+  refunded_by?: string;
+  refunded_at?: string;
+  rejected_by?: string;
+  rejected_at?: string;
+  rejection_reason?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface OrderStatusHistoryRecord {
+  id: string;
+  order_id: string;
+  from_status: string;
+  to_status: string;
+  changed_by: string;
+  note?: string;
+  metadata?: any;
+  created_at: string;
+  timestamp: string;
 }
 
 export interface ReviewRequestLog {

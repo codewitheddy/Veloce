@@ -327,15 +327,16 @@ export default function Header({
           </div>
 
           {/* Right: Currency, Language */}
-          <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+          <div className="flex items-center gap-2 sm:gap-3 shrink-0 notranslate" translate="no">
 
             {/* Currency Selector */}
-            <div className="relative shrink-0">
+            <div className="relative shrink-0 notranslate" translate="no">
               <select
                 value={currency}
                 onChange={(e) => onChangeCurrency(e.target.value as CurrencyType)}
                 aria-label="Currency Selector"
-                className="bg-slate-800 border border-slate-700 hover:border-slate-500 rounded px-2 py-0.5 text-[10px] sm:text-[11px] font-bold text-white cursor-pointer focus:outline-none appearance-none pr-5"
+                className="bg-slate-800 border border-slate-700 hover:border-slate-500 rounded px-2 py-0.5 text-[10px] sm:text-[11px] font-bold text-white cursor-pointer focus:outline-none appearance-none pr-5 notranslate"
+                translate="no"
               >
                 <option value="KSh" className="bg-slate-900 text-white">KES</option>
                 <option value="USD" className="bg-slate-900 text-white">USD</option>
@@ -356,12 +357,13 @@ export default function Header({
             </div>
 
             {/* Multi-Language Selector */}
-            <div className="relative shrink-0">
+            <div className="relative shrink-0 notranslate" translate="no">
               <select
                 value={language}
                 onChange={(e) => setLanguage(e.target.value as any)}
                 aria-label="Select Language"
-                className="bg-slate-800 border border-slate-700 hover:border-slate-500 rounded px-2 py-0.5 text-[10px] sm:text-[11px] font-bold text-white cursor-pointer focus:outline-none appearance-none pr-5 shrink-0"
+                className="bg-slate-800 border border-slate-700 hover:border-slate-500 rounded px-2 py-0.5 text-[10px] sm:text-[11px] font-bold text-white cursor-pointer focus:outline-none appearance-none pr-5 shrink-0 notranslate"
+                translate="no"
               >
                 {supportedLanguages.map((lang) => (
                   <option key={lang.code} value={lang.code} className="bg-slate-900 text-white">
@@ -1030,6 +1032,51 @@ export default function Header({
               </div>
             </div>
           )}
+
+          {/* Quick Settings: Language & Currency in Mobile Drawer */}
+          <div className="pt-2 border-t border-slate-800 flex items-center justify-between gap-3 text-xs notranslate" translate="no">
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] text-slate-400 font-semibold">{t('language') || 'Language'}:</span>
+              <select
+                value={language}
+                onChange={(e) => setLanguage(e.target.value as any)}
+                aria-label="Mobile Select Language"
+                className="bg-slate-800 border border-slate-700 rounded px-2 py-1 text-xs font-bold text-white cursor-pointer focus:outline-none notranslate"
+                translate="no"
+              >
+                {supportedLanguages.map((lang) => (
+                  <option key={lang.code} value={lang.code} className="bg-slate-900 text-white">
+                    {lang.flag} {lang.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] text-slate-400 font-semibold">{t('currency') || 'Currency'}:</span>
+              <select
+                value={currency}
+                onChange={(e) => onChangeCurrency(e.target.value as CurrencyType)}
+                aria-label="Mobile Select Currency"
+                className="bg-slate-800 border border-slate-700 rounded px-2 py-1 text-xs font-bold text-white cursor-pointer focus:outline-none notranslate"
+                translate="no"
+              >
+                <option value="KSh" className="bg-slate-900 text-white">KES</option>
+                <option value="USD" className="bg-slate-900 text-white">USD</option>
+                <option value="EUR" className="bg-slate-900 text-white">EUR</option>
+                <option value="GBP" className="bg-slate-900 text-white">GBP</option>
+                <option value="AED" className="bg-slate-900 text-white">AED</option>
+                <option value="CAD" className="bg-slate-900 text-white">CAD</option>
+                <option value="AUD" className="bg-slate-900 text-white">AUD</option>
+                <option value="CNY" className="bg-slate-900 text-white">CNY</option>
+                <option value="JPY" className="bg-slate-900 text-white">JPY</option>
+                <option value="KRW" className="bg-slate-900 text-white">KRW</option>
+                <option value="INR" className="bg-slate-900 text-white">INR</option>
+                <option value="ZAR" className="bg-slate-900 text-white">ZAR</option>
+                <option value="UGX" className="bg-slate-900 text-white">UGX</option>
+                <option value="TZS" className="bg-slate-900 text-white">TZS</option>
+              </select>
+            </div>
+          </div>
         </div>
       )}
 

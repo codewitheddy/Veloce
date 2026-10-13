@@ -255,6 +255,20 @@
     font-family: inherit;
   }
 
+  /* Universal high-contrast readability defaults for all form controls */
+  input:not([type="checkbox"]):not([type="radio"]):not([type="submit"]):not([type="button"]):not([type="reset"]):not([type="file"]),
+  select,
+  textarea {
+    color: var(--color-slate-900, #0f172a);
+  }
+
+  .dark input:not([type="checkbox"]):not([type="radio"]):not([type="submit"]):not([type="button"]):not([type="reset"]):not([type="file"]),
+  .dark select,
+  .dark textarea {
+    color: #ffffff;
+  }
+
+
   /* Universal Crisp Checkbox & Radio Styling (Outline only on default state) */
   input[type="checkbox"] {
     -webkit-appearance: none !important;

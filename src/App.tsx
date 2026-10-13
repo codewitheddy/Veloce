@@ -69,6 +69,8 @@ import { clearVeloceLocalStorageItems, safeLocalStorageSetItem, safeLocalStorage
 import { siteSettingsApi } from './services/siteSettingsApi';
 import { hasValidAdminSession } from './utils/authTokens';
 import { useCartSync } from './hooks/useCartSync';
+import { usePageTracking } from './hooks/usePageTracking';
+import { trackAddToCart, trackRemoveFromCart } from './lib/analytics';
 
 export default function App() {
   const { settings } = useSiteSettings();
@@ -745,6 +747,9 @@ export default function App() {
   // Selected product state for Store deep-sheet modal with initial reload recovery
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
 
+  // Track Google Analytics 4 page views on first load and navigation (deduplicated & storefront only)
+  usePageTracking(currentTab, selectedProduct?.id);
+
   // Rehydrate selected product if present in URL/storage when products load asynchronously
   useEffect(() => {
     if (typeof window === 'undefined' || products.length === 0) return;
@@ -1322,6 +1327,9 @@ export default function App() {
 
   // Real-time operations
   const handleAddToCart = (product: Product, quantity: number, vars: Record<string, string>) => {
+    // GA4 Ecommerce Event: add_to_cart (currency KES)
+    trackAddToCart(product, quantity, vars);
+
     setCart((prevCart) => {
       // Find matching item by ID and exact variations match
       const existingIdx = prevCart.findIndex(
@@ -1356,6 +1364,16 @@ export default function App() {
   };
 
   const handleRemoveFromCart = (productId: string, vars: Record<string, string>) => {
+    // GA4 Ecommerce Event: remove_from_cart (currency KES)
+    const targetItem = cart.find(
+      (item) =>
+        item.product.id === productId &&
+        JSON.stringify(item.selectedVariations) === JSON.stringify(vars)
+    );
+    if (targetItem) {
+      trackRemoveFromCart(targetItem.product, targetItem.quantity, vars);
+    }
+
     setCart((prevCart) => {
       const updated = prevCart.filter(
         (item) =>
@@ -1906,8 +1924,8 @@ export default function App() {
     const targetOrder = orders.find((o) => o.id === orderId);
     if (!targetOrder) return;
 
-    // Strict Enforcement: An order can NEVER be completed before payment is confirmed by admin
-    const isPaid = targetOrder.paymentStatus === 'paid';
+    // Strict Enforcement: An order can NEVER be completed before payment is confirmed by admin (or cash collected upon delivery for COD)
+    const isPaid = targetOrder.paymentStatus === 'paid' || targetOrder.isPaid || targetOrder.paymentMethod === 'cod';
 
     if (status === 'completed' && !isPaid) {
       console.warn(`[Order Lifecycle] Blocked attempt to mark unpaid order #${orderId} as completed. Payment confirmation required.`);
@@ -1949,8 +1967,8 @@ export default function App() {
     // Persist status change directly to Django/Express backend
     api.put(`/orders/${orderId}/`, {
       status,
-      isDeliveryConfirmed: status === 'completed',
-      deliveryConfirmed: status === 'completed',
+      isDeliveryConfirmed: status === 'completed' || status === 'delivered',
+      deliveryConfirmed: status === 'completed' || status === 'delivered',
       trackingNumber: trackingNumber || targetOrder.trackingNumber,
       courierName
     }).catch((err) => {
@@ -2004,11 +2022,20 @@ export default function App() {
               note
             });
           }
+
+          const isFinalCompleted = status === 'completed';
+          const isDeliveredState = status === 'delivered' || status === 'completed';
+
           return {
             ...o,
             status,
             statusHistory: history,
             trackingNumber: trackingNumber || o.trackingNumber,
+            deliveryConfirmed: isDeliveredState ? true : o.deliveryConfirmed,
+            deliveredAt: isDeliveredState && !o.deliveredAt ? nowIso : o.deliveredAt,
+            paymentStatus: isFinalCompleted ? 'paid' : o.paymentStatus,
+            isPaid: isFinalCompleted ? true : o.isPaid,
+            paidAt: isFinalCompleted && !o.paidAt ? nowIso : o.paidAt,
           };
         }
         return o;

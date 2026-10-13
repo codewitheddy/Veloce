@@ -607,6 +607,16 @@ export default function DashboardAnalytics({
     return () => window.removeEventListener('veloce_products_updated', handleProductsUpdated);
   }, []);
 
+  React.useEffect(() => {
+    const handleOrdersUpdated = (e: any) => {
+      if (e.detail && Array.isArray(e.detail)) {
+        setLiveDbOrders(e.detail);
+      }
+    };
+    window.addEventListener('veloce_orders_updated', handleOrdersUpdated);
+    return () => window.removeEventListener('veloce_orders_updated', handleOrdersUpdated);
+  }, []);
+
   const effectiveOrders = liveDbOrders !== null ? liveDbOrders : orders;
   const effectiveProducts = liveDbProducts !== null ? liveDbProducts : products;
 
@@ -656,13 +666,19 @@ export default function DashboardAnalytics({
   const [workflowDialog, setWorkflowDialog] = useState<{
     isOpen: boolean;
     order: Order | null;
-    actionType: 'confirm-payment' | 'mark-shipped' | 'confirm-delivery' | 'mark-completed' | 'cancel' | 'view-timeline' | 'quote-delivery' | null;
+    actionType: 'confirm-payment' | 'start-processing' | 'mark-shipped' | 'payment-received' | 'confirm-delivery' | 'mark-completed' | 'cancel' | 'view-timeline' | 'quote-delivery' | 'refund-claim' | null;
     trackingNumber: string;
     courierName: string;
     deliveryPerson: string;
     deliveryNote: string;
     deliveryFeeInput: string;
     quotedCourier: string;
+    transactionCode: string;
+    amountInput: string;
+    phoneInput: string;
+    refundMpesaRef: string;
+    refundRejectReason: string;
+    timelineHistory: any[];
     notes: string;
     isLoading: boolean;
     error: string | null;
@@ -676,37 +692,70 @@ export default function DashboardAnalytics({
     deliveryNote: 'Package confirmed received by customer',
     deliveryFeeInput: '',
     quotedCourier: 'uber',
+    transactionCode: '',
+    amountInput: '',
+    phoneInput: '',
+    refundMpesaRef: '',
+    refundRejectReason: '',
+    timelineHistory: [],
     notes: '',
     isLoading: false,
     error: null,
   });
 
-  const openWorkflowDialog = (order: Order, actionType: 'confirm-payment' | 'mark-shipped' | 'confirm-delivery' | 'mark-completed' | 'cancel' | 'view-timeline' | 'quote-delivery') => {
+  const openWorkflowDialog = (order: Order, actionType: 'confirm-payment' | 'start-processing' | 'mark-shipped' | 'payment-received' | 'confirm-delivery' | 'mark-completed' | 'cancel' | 'view-timeline' | 'quote-delivery' | 'refund-claim') => {
     const defaultCourier = order.preferredCourier && order.preferredCourier !== 'any' ? order.preferredCourier : 'uber';
+    const rawRef = order.paymentReference || '';
+    const initialTx = rawRef && !rawRef.includes('PENDING') && !rawRef.includes('UNPAID') ? rawRef : '';
+
     setWorkflowDialog({
       isOpen: true,
       order,
       actionType,
       trackingNumber: order.trackingNumber || `ROP-TRK-${String(order.id).slice(-6).toUpperCase()}`,
-      courierName: order.quotedCourier || 'Uber Package',
-      deliveryPerson: order.deliveryPerson || 'Assigned Courier Rider',
+      courierName: order.quotedCourier || 'Ropenix Express Courier',
+      deliveryPerson: order.deliveryPerson || order.paymentCollectedBy || 'Assigned Courier Rider',
       deliveryNote: order.deliveryNote || 'Package confirmed received by customer',
       deliveryFeeInput: order.quotedDeliveryFee ? String(order.quotedDeliveryFee) : (order.shippingFee ? String(order.shippingFee) : '250'),
       quotedCourier: defaultCourier,
+      transactionCode: initialTx,
+      amountInput: String(order.total || 0),
+      phoneInput: order.phone || order.mpesaPhone || '',
+      refundMpesaRef: '',
+      refundRejectReason: '',
+      timelineHistory: Array.isArray(order.statusHistory) ? order.statusHistory : [],
       notes: order.deliveryQuoteNotes || '',
       isLoading: false,
       error: null,
     });
+
+    // If viewing timeline or refund claim, fetch authoritative data asynchronously
+    if (actionType === 'view-timeline' || actionType === 'refund-claim') {
+      ordersApi.getOrderHistory(order.id).then((hist) => {
+        if (Array.isArray(hist) && hist.length > 0) {
+          setWorkflowDialog(prev => ({ ...prev, timelineHistory: hist }));
+        }
+      }).catch(() => {});
+
+      ordersApi.getOrderRefundClaim(order.id).then((claim) => {
+        if (claim) {
+          setWorkflowDialog(prev => prev.order ? ({ ...prev, order: { ...prev.order, refundClaim: claim } }) : prev);
+        }
+      }).catch(() => {});
+    }
   };
 
-  const handleExecuteWorkflow = async () => {
+  const handleExecuteWorkflow = async (overrideAction?: string) => {
     if (!workflowDialog.order || !workflowDialog.actionType) return;
     const ord = workflowDialog.order;
+    const action = overrideAction || workflowDialog.actionType;
     setWorkflowDialog(prev => ({ ...prev, isLoading: true, error: null }));
 
     try {
       let updated: Order;
-      if (workflowDialog.actionType === 'quote-delivery') {
+      let claimUpdated: any = null;
+
+      if (action === 'quote-delivery') {
         const fee = parseFloat(workflowDialog.deliveryFeeInput) || 0;
         const courier = workflowDialog.quotedCourier || 'uber';
         const sub = ord.subtotal ?? (ord.total - (ord.shippingFee || 0));
@@ -718,7 +767,6 @@ export default function DashboardAnalytics({
           notes: `Delivery fee quoted: KSh ${fee.toLocaleString('en-KE')} via ${courier.toUpperCase()}. ${workflowDialog.notes ? `Note: ${workflowDialog.notes}` : ''}`,
         });
 
-        // Enrich updated order properties
         updated.shippingFee = fee;
         updated.quotedDeliveryFee = fee;
         updated.quotedCourier = courier;
@@ -726,31 +774,82 @@ export default function DashboardAnalytics({
         updated.deliveryQuoteNotes = workflowDialog.notes || undefined;
         updated.total = newTotal;
         updated.status = 'delivery_quoted';
-      } else if (workflowDialog.actionType === 'confirm-payment') {
-        updated = await ordersApi.confirmPayment(ord.id, {
-          paymentReference: workflowDialog.notes || 'CONFIRMED-BY-ADMIN',
-          adminNotes: workflowDialog.notes || 'Payment confirmed by administrator',
+      } else if (action === 'confirm-payment') {
+        if (!workflowDialog.transactionCode.trim()) {
+          setWorkflowDialog(prev => ({ ...prev, isLoading: false, error: 'M-Pesa transaction code is required to verify payment.' }));
+          return;
+        }
+        const res = await ordersApi.transitionOrderStatus(ord.id, 'payment_confirmed', {
+          transactionCode: workflowDialog.transactionCode.trim().toUpperCase(),
+          amount: parseFloat(workflowDialog.amountInput) || ord.total,
+          phone: workflowDialog.phoneInput.trim() || ord.phone,
+          notes: workflowDialog.notes || 'Payment confirmed by administrator',
         });
+        updated = res.order;
         if (onUpdateOrderPaymentStatus) {
           onUpdateOrderPaymentStatus(ord.id, 'paid');
         }
-      } else if (workflowDialog.actionType === 'mark-shipped') {
-        updated = await ordersApi.markShipped(ord.id, {
+      } else if (action === 'start-processing') {
+        const res = await ordersApi.transitionOrderStatus(ord.id, 'processing', {
+          notes: workflowDialog.notes || 'Order moved to fulfillment and processing',
+        });
+        updated = res.order;
+      } else if (action === 'mark-shipped') {
+        const res = await ordersApi.transitionOrderStatus(ord.id, 'shipped', {
           trackingNumber: workflowDialog.trackingNumber || `ROP-TRK-${String(ord.id).slice(-6).toUpperCase()}`,
           courierName: workflowDialog.courierName || 'Ropenix Express Courier',
           notes: workflowDialog.notes,
         });
-      } else if (workflowDialog.actionType === 'confirm-delivery') {
+        updated = res.order;
+      } else if (action === 'payment-received') {
+        if (!workflowDialog.deliveryPerson.trim()) {
+          setWorkflowDialog(prev => ({ ...prev, isLoading: false, error: 'Collector or rider name is required when marking cash received.' }));
+          return;
+        }
+        updated = await ordersApi.confirmCodPaymentReceived(ord.id, {
+          amount: parseFloat(workflowDialog.amountInput) || ord.total,
+          collectedBy: workflowDialog.deliveryPerson.trim(),
+          notes: workflowDialog.notes || 'Cash on delivery collected',
+        });
+        if (onUpdateOrderPaymentStatus) {
+          onUpdateOrderPaymentStatus(ord.id, 'paid');
+        }
+      } else if (action === 'confirm-delivery') {
         updated = await ordersApi.confirmDelivery(ord.id, {
           deliveryPerson: workflowDialog.deliveryPerson || 'Assigned Courier Rider',
           deliveryNote: workflowDialog.deliveryNote || 'Package confirmed received by customer',
         });
-      } else if (workflowDialog.actionType === 'mark-completed') {
+      } else if (action === 'mark-completed') {
         updated = await ordersApi.markCompleted(ord.id, workflowDialog.notes);
-      } else if (workflowDialog.actionType === 'cancel') {
-        updated = await ordersApi.updateOrderStatus(ord.id, 'cancelled', {
-          notes: workflowDialog.notes || 'Cancelled by administrator',
+      } else if (action === 'cancel') {
+        if (!workflowDialog.notes.trim()) {
+          setWorkflowDialog(prev => ({ ...prev, isLoading: false, error: 'Cancellation reason is required to cancel this order.' }));
+          return;
+        }
+        const res = await ordersApi.cancelOrder(ord.id, workflowDialog.notes.trim());
+        updated = res.order;
+        claimUpdated = res.refundClaim;
+      } else if (action === 'refund-approve' && ord.refundClaim) {
+        claimUpdated = await ordersApi.processRefundClaim(ord.refundClaim.id, 'approve');
+        updated = { ...ord, refundClaim: claimUpdated };
+      } else if (action === 'refund-pay' && ord.refundClaim) {
+        if (!workflowDialog.refundMpesaRef.trim()) {
+          setWorkflowDialog(prev => ({ ...prev, isLoading: false, error: 'M-Pesa reference code is required to mark refund as paid.' }));
+          return;
+        }
+        claimUpdated = await ordersApi.processRefundClaim(ord.refundClaim.id, 'pay', {
+          refundPaymentReference: workflowDialog.refundMpesaRef.trim().toUpperCase(),
         });
+        updated = { ...ord, refundClaim: claimUpdated };
+      } else if (action === 'refund-reject' && ord.refundClaim) {
+        if (!workflowDialog.refundRejectReason.trim()) {
+          setWorkflowDialog(prev => ({ ...prev, isLoading: false, error: 'Rejection reason is required.' }));
+          return;
+        }
+        claimUpdated = await ordersApi.processRefundClaim(ord.refundClaim.id, 'reject', {
+          rejectionReason: workflowDialog.refundRejectReason.trim(),
+        });
+        updated = { ...ord, refundClaim: claimUpdated };
       } else {
         return;
       }
@@ -758,6 +857,19 @@ export default function DashboardAnalytics({
       if (onUpdateOrderStatus) {
         onUpdateOrderStatus(ord.id, updated.status);
       }
+
+      setLiveDbOrders(prev => {
+        if (!prev) return null;
+        return prev.map(o => o.id === ord.id ? {
+          ...o,
+          ...updated,
+          status: updated.status,
+          refundClaim: claimUpdated || updated.refundClaim || o.refundClaim,
+          deliveryConfirmed: updated.deliveryConfirmed ?? (updated.status === 'completed' || updated.status === 'delivered'),
+          paymentStatus: updated.status === 'completed' || updated.status === 'payment_confirmed' || updated.status === 'payment_received' ? 'paid' : (updated.paymentStatus || o.paymentStatus),
+          isPaid: updated.status === 'completed' || updated.status === 'payment_confirmed' || updated.status === 'payment_received' ? true : (updated.isPaid || o.isPaid),
+        } : o);
+      });
 
       setWorkflowDialog({
         isOpen: false,
@@ -769,6 +881,12 @@ export default function DashboardAnalytics({
         deliveryNote: 'Package confirmed received by customer',
         deliveryFeeInput: '',
         quotedCourier: 'uber',
+        transactionCode: '',
+        amountInput: '',
+        phoneInput: '',
+        refundMpesaRef: '',
+        refundRejectReason: '',
+        timelineHistory: [],
         notes: '',
         isLoading: false,
         error: null,
@@ -6347,6 +6465,24 @@ admin@ropenix.co.ke`;
                               const eligible = orders.filter((o) => selectedOrderIds.includes(o.id) && o.status !== 'completed' && o.status !== 'delivered');
                               const blocked = selectedOrderIds.length - eligible.length;
                               if (blocked > 0) {
+                                alert(`⚠️ Notice: ${blocked} order(s) are already Completed/Delivered and cannot be reverted to Pending.`);
+                              }
+                              eligible.forEach((o) => onUpdateOrderStatus(o.id, 'pending'));
+                              setSelectedOrderIds([]);
+                              setIsOrderBulkActionMenuOpen(false);
+                            }}
+                            className="w-full flex items-center gap-2 px-3 py-2 text-xs font-bold text-amber-700 hover:bg-amber-50 rounded-lg transition-colors cursor-pointer text-left"
+                          >
+                            <AlertCircle className="h-3.5 w-3.5 text-amber-600" />
+                            <span>Mark as Pending</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const eligible = orders.filter((o) => selectedOrderIds.includes(o.id) && o.status !== 'completed' && o.status !== 'delivered');
+                              const blocked = selectedOrderIds.length - eligible.length;
+                              if (blocked > 0) {
                                 alert(`⚠️ Notice: ${blocked} order(s) are already Completed/Delivered and cannot be reverted to Processing.`);
                               }
                               eligible.forEach((o) => onUpdateOrderStatus(o.id, 'processing'));
@@ -6404,19 +6540,14 @@ admin@ropenix.co.ke`;
                           <button
                             type="button"
                             onClick={() => {
-                              const eligible = orders.filter((o) => selectedOrderIds.includes(o.id) && o.status !== 'completed' && o.status !== 'delivered');
-                              const blocked = selectedOrderIds.length - eligible.length;
-                              if (blocked > 0) {
-                                alert(`⚠️ Notice: ${blocked} order(s) are already Completed/Delivered and cannot be reverted to Pending.`);
-                              }
-                              eligible.forEach((o) => onUpdateOrderStatus(o.id, 'pending'));
+                              selectedOrderIds.forEach((id) => onUpdateOrderStatus(id, 'pending-cancellation'));
                               setSelectedOrderIds([]);
                               setIsOrderBulkActionMenuOpen(false);
                             }}
-                            className="w-full flex items-center gap-2 px-3 py-2 text-xs font-bold text-amber-700 hover:bg-amber-50 rounded-lg transition-colors cursor-pointer text-left"
+                            className="w-full flex items-center gap-2 px-3 py-2 text-xs font-bold text-orange-700 hover:bg-orange-50 rounded-lg transition-colors cursor-pointer text-left"
                           >
-                            <AlertCircle className="h-3.5 w-3.5 text-amber-600" />
-                            <span>Mark as Pending</span>
+                            <AlertTriangle className="h-3.5 w-3.5 text-orange-600" />
+                            <span>Mark as Pending Cancellation</span>
                           </button>
 
                           <button
@@ -6430,19 +6561,6 @@ admin@ropenix.co.ke`;
                           >
                             <X className="h-3.5 w-3.5 text-rose-600" />
                             <span>Mark as Cancelled</span>
-                          </button>
-
-                          <button
-                            type="button"
-                            onClick={() => {
-                              selectedOrderIds.forEach((id) => onUpdateOrderStatus(id, 'pending-cancellation'));
-                              setSelectedOrderIds([]);
-                              setIsOrderBulkActionMenuOpen(false);
-                            }}
-                            className="w-full flex items-center gap-2 px-3 py-2 text-xs font-bold text-orange-700 hover:bg-orange-50 rounded-lg transition-colors cursor-pointer text-left"
-                          >
-                            <AlertTriangle className="h-3.5 w-3.5 text-orange-600" />
-                            <span>Mark as Pending Cancellation</span>
                           </button>
 
                           {onUpdateOrderPaymentStatus && (
@@ -6758,163 +6876,239 @@ admin@ropenix.co.ke`;
                                 })()}
                               </td>
                               <td className="py-3">
-                                {ord.status === 'awaiting_delivery_quote' && (
-                                  <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-50 dark:bg-amber-950/50 text-amber-800 dark:text-amber-300 border border-amber-200/80 dark:border-amber-800 px-2.5 py-1 text-[10px] font-bold uppercase font-mono shadow-3xs animate-pulse">
-                                    <Truck className="h-3 w-3 text-amber-600 dark:text-amber-400 shrink-0" />
-                                    Awaiting Quote
-                                  </span>
-                                )}
-                                {ord.status === 'delivery_quoted' && (
-                                  <span className="inline-flex items-center gap-1.5 rounded-full bg-sky-50 dark:bg-sky-950/50 text-sky-800 dark:text-sky-300 border border-sky-200/80 dark:border-sky-800 px-2.5 py-1 text-[10px] font-bold uppercase font-mono shadow-3xs">
-                                    <Calculator className="h-3 w-3 text-sky-600 dark:text-sky-400 shrink-0" />
-                                    Delivery Quoted
-                                  </span>
-                                )}
-                                {ord.status === 'completed' && (
-                                  <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200/60 px-2.5 py-1 text-[10px] font-bold uppercase font-mono shadow-3xs">
-                                    <CheckCircle2 className="h-3 w-3 text-emerald-600 shrink-0" />
-                                    Completed
-                                  </span>
-                                )}
-                                {(ord.status === 'shipped' || ord.status === 'delivered') && (
-                                  <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-bold uppercase font-mono shadow-3xs ${
-                                    ord.deliveryConfirmed
-                                      ? 'bg-emerald-50 text-emerald-700 border border-emerald-200/60'
-                                      : 'bg-blue-50 text-blue-700 border border-blue-200/60'
-                                  }`}>
-                                    {ord.deliveryConfirmed ? (
-                                      <>
-                                        <Check className="h-3 w-3 text-emerald-600 shrink-0" />
-                                        Delivered (Pending Close)
-                                      </>
-                                    ) : (
-                                      <>
+                                {(() => {
+                                  const normStatus = (ord.status || 'order_received').toLowerCase();
+                                  const isCod = (ord.paymentMethod || '').toLowerCase().includes('cod') || (ord.paymentMethod || '').toLowerCase().includes('cash');
+
+                                  if (normStatus === 'order_received' || (normStatus === 'pending' && !isOrderPaid(ord))) {
+                                    return (
+                                      <div className="flex flex-col gap-0.5">
+                                        <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-50 dark:bg-amber-950/50 text-amber-800 dark:text-amber-300 border border-amber-200/80 dark:border-amber-800 px-2.5 py-1 text-[10px] font-bold uppercase font-mono shadow-3xs">
+                                          <AlertCircle className="h-3 w-3 text-amber-600 dark:text-amber-400 shrink-0 animate-pulse" />
+                                          {isCod ? 'Order Received (COD)' : 'Order Received (Awaiting M-Pesa)'}
+                                        </span>
+                                      </div>
+                                    );
+                                  }
+
+                                  if (normStatus === 'payment_confirmed') {
+                                    return (
+                                      <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 dark:bg-emerald-950/50 text-emerald-800 dark:text-emerald-300 border border-emerald-200/80 dark:border-emerald-800 px-2.5 py-1 text-[10px] font-bold uppercase font-mono shadow-3xs">
+                                        <ShieldCheck className="h-3 w-3 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                                        M-Pesa Verified ✓
+                                      </span>
+                                    );
+                                  }
+
+                                  if (normStatus === 'processing' || (normStatus === 'pending' && isOrderPaid(ord))) {
+                                    return (
+                                      <span className="inline-flex items-center gap-1.5 rounded-full bg-purple-50 dark:bg-purple-950/50 text-purple-700 dark:text-purple-300 border border-purple-200/60 dark:border-purple-800 px-2.5 py-1 text-[10px] font-bold uppercase font-mono shadow-3xs">
+                                        <RefreshCw className="h-3 w-3 text-purple-600 shrink-0 animate-spin" />
+                                        Processing
+                                      </span>
+                                    );
+                                  }
+
+                                  if (normStatus === 'shipped' || normStatus === 'delivered') {
+                                    return (
+                                      <span className="inline-flex items-center gap-1.5 rounded-full bg-blue-50 dark:bg-blue-950/50 text-blue-700 dark:text-blue-300 border border-blue-200/60 dark:border-blue-800 px-2.5 py-1 text-[10px] font-bold uppercase font-mono shadow-3xs">
                                         <Truck className="h-3 w-3 text-blue-600 shrink-0" />
-                                        In Transit
-                                      </>
-                                    )}
-                                  </span>
-                                )}
-                                {((ord.status === 'pending' && isOrderPaid(ord)) || ord.status === 'processing') && (
-                                  <span className="inline-flex items-center gap-1.5 rounded-full bg-purple-50 text-purple-700 border border-purple-200/60 px-2.5 py-1 text-[10px] font-bold uppercase font-mono shadow-3xs">
-                                    <RefreshCw className="h-3 w-3 text-purple-600 shrink-0 animate-spin" />
-                                    Paid & Processing
-                                  </span>
-                                )}
-                                {ord.status === 'pending' && !isOrderPaid(ord) && (
-                                  <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-50 text-amber-800 border border-amber-200/60 px-2.5 py-1 text-[10px] font-bold uppercase font-mono shadow-3xs">
-                                    <AlertCircle className="h-3 w-3 text-amber-600 shrink-0 animate-pulse" />
-                                    Awaiting Payment
-                                  </span>
-                                )}
-                                {ord.status === 'pending-cancellation' && (
-                                  <span className="inline-flex items-center gap-1.5 rounded-full bg-orange-50 text-orange-800 border border-orange-200/60 px-2.5 py-1 text-[10px] font-bold uppercase font-mono animate-pulse shadow-3xs">
-                                    <AlertTriangle className="h-3 w-3 text-orange-600 shrink-0" />
-                                    Pending Cancel
-                                  </span>
-                                )}
-                                {ord.status === 'cancelled' && (
-                                  <span className="inline-flex items-center gap-1.5 rounded-full bg-rose-50 text-rose-700 border border-rose-200/60 px-2.5 py-1 text-[10px] font-bold uppercase font-mono shadow-3xs">
-                                    <AlertOctagon className="h-3 w-3 text-rose-600 shrink-0" />
-                                    Cancelled
-                                  </span>
-                                )}
+                                        Shipped / In Transit
+                                      </span>
+                                    );
+                                  }
+
+                                  if (normStatus === 'payment_received') {
+                                    return (
+                                      <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 dark:bg-emerald-950/50 text-emerald-800 dark:text-emerald-300 border border-emerald-200/80 dark:border-emerald-800 px-2.5 py-1 text-[10px] font-bold uppercase font-mono shadow-3xs">
+                                        <DollarSign className="h-3 w-3 text-emerald-600 shrink-0" />
+                                        Cash Collected ✓
+                                      </span>
+                                    );
+                                  }
+
+                                  if (normStatus === 'completed') {
+                                    return (
+                                      <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 border border-emerald-200/60 dark:border-emerald-800 px-2.5 py-1 text-[10px] font-bold uppercase font-mono shadow-3xs">
+                                        <CheckCircle2 className="h-3 w-3 text-emerald-600 shrink-0" />
+                                        Completed
+                                      </span>
+                                    );
+                                  }
+
+                                  if (normStatus === 'cancelled') {
+                                    return (
+                                      <div className="flex flex-col gap-1 items-start">
+                                        <span className="inline-flex items-center gap-1.5 rounded-full bg-rose-50 dark:bg-rose-950/50 text-rose-700 dark:text-rose-300 border border-rose-200/60 dark:border-rose-900 px-2.5 py-1 text-[10px] font-bold uppercase font-mono shadow-3xs">
+                                          <AlertOctagon className="h-3 w-3 text-rose-600 shrink-0" />
+                                          Cancelled
+                                        </span>
+                                        {ord.refundClaim && (
+                                          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[9px] font-mono font-bold uppercase ${
+                                            ord.refundClaim.status === 'refund_paid' ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300' :
+                                            ord.refundClaim.status === 'refund_approved' ? 'bg-indigo-100 text-indigo-800 dark:bg-indigo-950 dark:text-indigo-300' :
+                                            ord.refundClaim.status === 'refund_rejected' ? 'bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300' :
+                                            'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300'
+                                          }`}>
+                                            Refund: {ord.refundClaim.status.replace('refund_', '')}
+                                          </span>
+                                        )}
+                                      </div>
+                                    );
+                                  }
+
+                                  return (
+                                    <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-slate-100 text-slate-700 text-[10px] font-mono uppercase">
+                                      {normStatus}
+                                    </span>
+                                  );
+                                })()}
                               </td>
                               <td className="py-3 text-right">
                                 <div className="flex items-center justify-end gap-1.5">
-                                  {/* Strict Single Next Action Button */}
-                                  {ord.status === 'awaiting_delivery_quote' && (
+                                  {/* Strictly enforce only valid next action based on payment method lifecycle */}
+                                  {(() => {
+                                    const normStatus = (ord.status || 'order_received').toLowerCase();
+                                    const isCod = (ord.paymentMethod || '').toLowerCase().includes('cod') || (ord.paymentMethod || '').toLowerCase().includes('cash');
+
+                                    if (isCod) {
+                                      // COD Flow: order_received → processing → shipped → payment_received → completed
+                                      if (normStatus === 'order_received' || (normStatus === 'pending' && !isOrderPaid(ord))) {
+                                        return (
+                                          <button
+                                            type="button"
+                                            onClick={() => openWorkflowDialog(ord, 'start-processing')}
+                                            className="rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white px-2.5 py-1 text-[11px] font-bold cursor-pointer flex items-center gap-1 shadow-xs transition-all shrink-0"
+                                            title="Start order processing for Cash on Delivery order"
+                                          >
+                                            <Package className="h-3.5 w-3.5" />
+                                            <span>Start Processing</span>
+                                          </button>
+                                        );
+                                      }
+                                      if (normStatus === 'processing') {
+                                        return (
+                                          <button
+                                            type="button"
+                                            onClick={() => openWorkflowDialog(ord, 'mark-shipped')}
+                                            className="rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white px-2.5 py-1 text-[11px] font-bold cursor-pointer flex items-center gap-1 shadow-xs transition-all shrink-0"
+                                            title="Mark order as Dispatched / Shipped with courier"
+                                          >
+                                            <Truck className="h-3.5 w-3.5" />
+                                            <span>Mark Shipped</span>
+                                          </button>
+                                        );
+                                      }
+                                      if (normStatus === 'shipped') {
+                                        return (
+                                          <button
+                                            type="button"
+                                            onClick={() => openWorkflowDialog(ord, 'payment-received')}
+                                            className="rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white px-2.5 py-1 text-[11px] font-bold cursor-pointer flex items-center gap-1 shadow-xs transition-all shrink-0"
+                                            title="Record cash collected by courier or delivery agent"
+                                          >
+                                            <DollarSign className="h-3.5 w-3.5" />
+                                            <span>Collect Cash</span>
+                                          </button>
+                                        );
+                                      }
+                                      if (normStatus === 'payment_received' || normStatus === 'delivered') {
+                                        return (
+                                          <button
+                                            type="button"
+                                            onClick={() => openWorkflowDialog(ord, 'mark-completed')}
+                                            className="rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white px-2.5 py-1 text-[11px] font-bold cursor-pointer flex items-center gap-1 shadow-xs transition-all shrink-0"
+                                            title="Complete Cash on Delivery Order Lifecycle"
+                                          >
+                                            <CheckCircle2 className="h-3.5 w-3.5" />
+                                            <span>Complete Order</span>
+                                          </button>
+                                        );
+                                      }
+                                    } else {
+                                      // M-Pesa Flow: order_received → payment_confirmed → processing → shipped → completed
+                                      if (normStatus === 'order_received' || (normStatus === 'pending' && !isOrderPaid(ord))) {
+                                        return (
+                                          <button
+                                            type="button"
+                                            onClick={() => openWorkflowDialog(ord, 'confirm-payment')}
+                                            className="rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white px-2.5 py-1 text-[11px] font-bold cursor-pointer flex items-center gap-1 shadow-xs transition-all shrink-0"
+                                            title="Verify M-Pesa transaction code & confirm payment"
+                                          >
+                                            <CreditCard className="h-3.5 w-3.5" />
+                                            <span>Confirm M-Pesa</span>
+                                          </button>
+                                        );
+                                      }
+                                      if (normStatus === 'payment_confirmed') {
+                                        return (
+                                          <button
+                                            type="button"
+                                            onClick={() => openWorkflowDialog(ord, 'start-processing')}
+                                            className="rounded-lg bg-purple-600 hover:bg-purple-700 text-white px-2.5 py-1 text-[11px] font-bold cursor-pointer flex items-center gap-1 shadow-xs transition-all shrink-0"
+                                            title="Move verified prepaid order to fulfillment"
+                                          >
+                                            <Package className="h-3.5 w-3.5" />
+                                            <span>Start Processing</span>
+                                          </button>
+                                        );
+                                      }
+                                      if (normStatus === 'processing') {
+                                        return (
+                                          <button
+                                            type="button"
+                                            onClick={() => openWorkflowDialog(ord, 'mark-shipped')}
+                                            className="rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white px-2.5 py-1 text-[11px] font-bold cursor-pointer flex items-center gap-1 shadow-xs transition-all shrink-0"
+                                            title="Mark order as Dispatched / Shipped"
+                                          >
+                                            <Truck className="h-3.5 w-3.5" />
+                                            <span>Mark Shipped</span>
+                                          </button>
+                                        );
+                                      }
+                                      if (normStatus === 'shipped') {
+                                        return (
+                                          <button
+                                            type="button"
+                                            onClick={() => openWorkflowDialog(ord, 'mark-completed')}
+                                            className="rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white px-2.5 py-1 text-[11px] font-bold cursor-pointer flex items-center gap-1 shadow-xs transition-all shrink-0"
+                                            title="Complete Prepaid Order Lifecycle"
+                                          >
+                                            <CheckCircle2 className="h-3.5 w-3.5" />
+                                            <span>Complete Order</span>
+                                          </button>
+                                        );
+                                      }
+                                    }
+
+                                    if (normStatus === 'completed') {
+                                      return (
+                                        <span className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-1 px-1.5 py-1">
+                                          <CheckCircle className="h-3.5 w-3.5" />
+                                          <span>Finished</span>
+                                        </span>
+                                      );
+                                    }
+
+                                    return null;
+                                  })()}
+
+                                  {/* Manage Refund Claim button if order has one */}
+                                  {ord.refundClaim && (
                                     <button
                                       type="button"
-                                      onClick={() => openWorkflowDialog(ord, 'quote-delivery')}
-                                      className="rounded-lg bg-amber-600 hover:bg-amber-700 text-white px-2.5 py-1 text-[11px] font-bold cursor-pointer flex items-center gap-1 shadow-xs transition-all shrink-0"
-                                      title="Calculate courier quote (Uber/Bolt/PickUp Mtaani) and send to customer"
+                                      onClick={() => openWorkflowDialog(ord, 'refund-claim')}
+                                      className="rounded bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/40 dark:hover:bg-amber-900/50 border border-amber-300 dark:border-amber-800 px-2 py-1 text-[10px] font-bold text-amber-800 dark:text-amber-300 cursor-pointer flex items-center gap-1 transition-colors"
+                                      title="Review and process customer refund claim"
                                     >
-                                      <Calculator className="h-3.5 w-3.5" />
-                                      <span>Quote Delivery</span>
+                                      <RotateCcw className="h-3 w-3" />
+                                      <span>Refund</span>
                                     </button>
                                   )}
 
-                                  {ord.status === 'delivery_quoted' && !isOrderPaid(ord) && (
-                                    <div className="flex items-center gap-1 shrink-0">
-                                      <button
-                                        type="button"
-                                        onClick={() => openWorkflowDialog(ord, 'quote-delivery')}
-                                        className="rounded-lg bg-sky-600 hover:bg-sky-700 text-white px-2 py-1 text-[10px] font-bold cursor-pointer flex items-center gap-1 shadow-xs transition-all shrink-0"
-                                        title="Revise quoted courier fee or re-notify customer"
-                                      >
-                                        <Truck className="h-3 w-3" />
-                                        <span>Update Quote</span>
-                                      </button>
-                                      <button
-                                        type="button"
-                                        onClick={() => openWorkflowDialog(ord, 'confirm-payment')}
-                                        className="rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white px-2.5 py-1 text-[11px] font-bold cursor-pointer flex items-center gap-1 shadow-xs transition-all shrink-0"
-                                        title="Confirm customer payment"
-                                      >
-                                        <CreditCard className="h-3.5 w-3.5" />
-                                        <span>Confirm Paid</span>
-                                      </button>
-                                    </div>
-                                  )}
-
-                                  {ord.status === 'pending' && !isOrderPaid(ord) && (
-                                    <button
-                                      type="button"
-                                      onClick={() => openWorkflowDialog(ord, 'confirm-payment')}
-                                      className="rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white px-2.5 py-1 text-[11px] font-bold cursor-pointer flex items-center gap-1 shadow-xs transition-all shrink-0"
-                                      title="Confirm customer payment and automatically advance to Processing"
-                                    >
-                                      <CreditCard className="h-3.5 w-3.5" />
-                                      <span>Confirm Payment</span>
-                                    </button>
-                                  )}
-
-                                  {(ord.status === 'processing' || (ord.status === 'pending' && isOrderPaid(ord))) && (
-                                    <button
-                                      type="button"
-                                      onClick={() => openWorkflowDialog(ord, 'mark-shipped')}
-                                      className="rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white px-2.5 py-1 text-[11px] font-bold cursor-pointer flex items-center gap-1 shadow-xs transition-all shrink-0"
-                                      title="Mark order as Dispatched with courier partner"
-                                    >
-                                      <Truck className="h-3.5 w-3.5" />
-                                      <span>Mark as Shipped</span>
-                                    </button>
-                                  )}
-
-                                  {ord.status === 'shipped' && !ord.deliveryConfirmed && (
-                                    <button
-                                      type="button"
-                                      onClick={() => openWorkflowDialog(ord, 'confirm-delivery')}
-                                      className="rounded-lg bg-amber-500 hover:bg-amber-600 text-white px-2.5 py-1 text-[11px] font-bold cursor-pointer flex items-center gap-1 shadow-xs transition-all shrink-0"
-                                      title="Confirm courier delivery before completing order"
-                                    >
-                                      <MapPin className="h-3.5 w-3.5" />
-                                      <span>Mark as Delivered</span>
-                                    </button>
-                                  )}
-
-                                  {(ord.status === 'delivered' || (ord.status === 'shipped' && ord.deliveryConfirmed)) && (
-                                    <button
-                                      type="button"
-                                      onClick={() => openWorkflowDialog(ord, 'mark-completed')}
-                                      className="rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white px-2.5 py-1 text-[11px] font-bold cursor-pointer flex items-center gap-1 shadow-xs transition-all shrink-0"
-                                      title="Complete Order Lifecycle"
-                                    >
-                                      <CheckCircle2 className="h-3.5 w-3.5" />
-                                      <span>Mark Completed</span>
-                                    </button>
-                                  )}
-
-                                  {ord.status === 'completed' && (
-                                    <span className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-1 px-1.5 py-1">
-                                      <CheckCircle className="h-3.5 w-3.5" />
-                                      <span>Finished</span>
-                                    </span>
-                                  )}
-
-                                  {/* Utility Actions: Timeline, Search, Print, Cancel */}
+                                  {/* Strict Timeline & Audit Trail */}
                                   <button
+                                    type="button"
                                     onClick={() => openWorkflowDialog(ord, 'view-timeline')}
                                     className="rounded bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 p-1 text-slate-700 dark:text-slate-200 cursor-pointer flex items-center justify-center transition-colors"
                                     title="View Strict Workflow Timeline & Audit Log"
@@ -6922,6 +7116,7 @@ admin@ropenix.co.ke`;
                                     <Clock className="h-3.5 w-3.5" />
                                   </button>
                                   <button
+                                    type="button"
                                     onClick={() => {
                                       setLookupQuery(ord.id);
                                       setSelectedLookupOrder(ord);
@@ -6933,6 +7128,7 @@ admin@ropenix.co.ke`;
                                     <Search className="h-3.5 w-3.5" />
                                   </button>
                                   <button
+                                    type="button"
                                     onClick={() => {
                                       setSelectedAdminDetailOrder(ord);
                                       setAutoPrintOnce(false);
@@ -6944,9 +7140,10 @@ admin@ropenix.co.ke`;
                                   </button>
                                   {ord.status !== 'completed' && ord.status !== 'cancelled' && (
                                     <button
+                                      type="button"
                                       onClick={() => openWorkflowDialog(ord, 'cancel')}
                                       className="rounded bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 dark:hover:bg-rose-900/50 border border-rose-200 dark:border-rose-900 p-1 text-rose-700 dark:text-rose-300 cursor-pointer flex items-center justify-center transition-colors"
-                                      title="Cancel Order"
+                                      title="Cancel Order with Mandatory Reason & Auto-Restock"
                                     >
                                       <X className="h-3.5 w-3.5" />
                                     </button>
@@ -8720,7 +8917,7 @@ admin@ropenix.co.ke`;
                                   onTriggerEmailToast({
                                     ...selectedLookupOrder,
                                     status: st
-                                  }, st === 'completed' ? 'delivered' : st === 'shipped' ? 'shipped' : 'pending');
+                                  }, st === 'completed' ? 'completed' : st === 'shipped' ? 'shipped' : 'pending');
                                 }
                               }}
                               className={`rounded-md px-2 py-1 text-[10px] font-mono font-bold capitalize transition-all cursor-pointer ${
@@ -8729,7 +8926,7 @@ admin@ropenix.co.ke`;
                                   : 'text-gray-450 hover:text-gray-750 hover:bg-gray-100'
                               }`}
                             >
-                              {st === 'pending' ? 'placed' : st === 'completed' ? 'delivered' : st === 'pending-cancellation' ? 'pending cancel' : st}
+                              {st === 'pending' ? 'placed' : st === 'completed' ? 'completed' : st === 'pending-cancellation' ? 'pending cancel' : st}
                             </button>
                           );
                         })}
@@ -9519,32 +9716,41 @@ admin@ropenix.co.ke`;
                 <div className={`h-10 w-10 rounded-xl flex items-center justify-center shrink-0 ${
                   workflowDialog.actionType === 'quote-delivery' ? 'bg-amber-100 dark:bg-amber-950/60 text-amber-600' :
                   workflowDialog.actionType === 'confirm-payment' ? 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-600' :
+                  workflowDialog.actionType === 'start-processing' ? 'bg-purple-100 dark:bg-purple-950/60 text-purple-600' :
                   workflowDialog.actionType === 'mark-shipped' ? 'bg-indigo-100 dark:bg-indigo-950/60 text-indigo-600' :
+                  workflowDialog.actionType === 'payment-received' ? 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-600' :
                   workflowDialog.actionType === 'confirm-delivery' ? 'bg-amber-100 dark:bg-amber-950/60 text-amber-600' :
                   workflowDialog.actionType === 'mark-completed' ? 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-600' :
+                  workflowDialog.actionType === 'refund-claim' ? 'bg-amber-100 dark:bg-amber-950/60 text-amber-600' :
                   workflowDialog.actionType === 'cancel' ? 'bg-rose-100 dark:bg-rose-950/60 text-rose-600' :
                   'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300'
                 }`}>
                   {workflowDialog.actionType === 'quote-delivery' && <Calculator className="h-5 w-5" />}
                   {workflowDialog.actionType === 'confirm-payment' && <CreditCard className="h-5 w-5" />}
+                  {workflowDialog.actionType === 'start-processing' && <Package className="h-5 w-5" />}
                   {workflowDialog.actionType === 'mark-shipped' && <Truck className="h-5 w-5" />}
+                  {workflowDialog.actionType === 'payment-received' && <DollarSign className="h-5 w-5" />}
                   {workflowDialog.actionType === 'confirm-delivery' && <MapPin className="h-5 w-5" />}
                   {workflowDialog.actionType === 'mark-completed' && <CheckCircle2 className="h-5 w-5" />}
+                  {workflowDialog.actionType === 'refund-claim' && <RotateCcw className="h-5 w-5" />}
                   {workflowDialog.actionType === 'cancel' && <AlertOctagon className="h-5 w-5" />}
                   {workflowDialog.actionType === 'view-timeline' && <Clock className="h-5 w-5" />}
                 </div>
                 <div>
                   <h3 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-wide">
                     {workflowDialog.actionType === 'quote-delivery' && 'Calculate & Send Courier Delivery Quote'}
-                    {workflowDialog.actionType === 'confirm-payment' && 'Confirm Payment & Move to Processing'}
+                    {workflowDialog.actionType === 'confirm-payment' && 'Verify & Confirm M-Pesa Payment'}
+                    {workflowDialog.actionType === 'start-processing' && 'Start Order Processing & Fulfillment'}
                     {workflowDialog.actionType === 'mark-shipped' && 'Dispatch Order (Mark as Shipped)'}
+                    {workflowDialog.actionType === 'payment-received' && 'Record Cash on Delivery (COD) Payment'}
                     {workflowDialog.actionType === 'confirm-delivery' && 'Confirm Courier Delivery Handover'}
                     {workflowDialog.actionType === 'mark-completed' && 'Complete Order Lifecycle'}
-                    {workflowDialog.actionType === 'cancel' && 'Cancel Order'}
+                    {workflowDialog.actionType === 'refund-claim' && 'Process Customer Refund Claim'}
+                    {workflowDialog.actionType === 'cancel' && 'Cancel Order & Restock Inventory'}
                     {workflowDialog.actionType === 'view-timeline' && `Order #${workflowDialog.order.id} Lifecycle & Audit Trail`}
                   </h3>
                   <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                    Order ID: <span className="font-mono font-bold text-slate-800 dark:text-slate-200">#{workflowDialog.order.id}</span> • Customer: <span className="font-semibold text-slate-700 dark:text-slate-300">{workflowDialog.order.customerName}</span>
+                    Order ID: <span className="font-mono font-bold text-slate-800 dark:text-slate-200">#{workflowDialog.order.id}</span> • Customer: <span className="font-semibold text-slate-700 dark:text-slate-300">{workflowDialog.order.customerName}</span> • Payment: <span className="font-bold uppercase text-indigo-600 dark:text-indigo-400 font-mono text-[11px]">{workflowDialog.order.paymentMethod || 'M-Pesa'}</span>
                   </p>
                 </div>
               </div>
@@ -9568,232 +9774,97 @@ admin@ropenix.co.ke`;
               </div>
             )}
 
-            {/* Content: Quote Delivery */}
-            {workflowDialog.actionType === 'quote-delivery' && (
-              <div className="space-y-4 text-xs">
-                <div className="bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/50 rounded-xl p-3.5 text-amber-900 dark:text-amber-300 space-y-1">
-                  <div className="font-bold flex items-center gap-1.5">
-                    <Truck className="h-4 w-4 text-amber-600" />
-                    Courier Rate Calculation & Customer Notification
-                  </div>
-                  <p className="text-[11px] text-amber-800 dark:text-amber-400 leading-relaxed font-light">
-                    Review customer location details, check actual live courier pricing (Uber / Bolt / PickUp Mtaani), input the delivery fee in KES below, and notify the customer to confirm dispatch.
-                  </p>
-                </div>
-
-                {/* Customer Delivery Details Card */}
-                <div className="bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/60 rounded-xl p-3 space-y-2">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px]">
-                    <div>
-                      <span className="text-slate-500 dark:text-slate-400 block">Recipient Phone:</span>
-                      <strong className="text-slate-800 dark:text-slate-200 font-mono text-xs">{workflowDialog.order.phone || 'No phone provided'}</strong>
-                    </div>
-                    <div>
-                      <span className="text-slate-500 dark:text-slate-400 block">Goods Subtotal:</span>
-                      <strong className="text-slate-800 dark:text-slate-200 font-mono text-xs">
-                        KSh {(workflowDialog.order.subtotal ?? (workflowDialog.order.total - (workflowDialog.order.shippingFee || 0))).toLocaleString('en-KE')}
-                      </strong>
-                    </div>
-                    <div>
-                      <span className="text-slate-500 dark:text-slate-400 block">Area / Estate:</span>
-                      <strong className="text-slate-900 dark:text-white font-medium">{workflowDialog.order.areaEstate || 'Not specified'}</strong>
-                    </div>
-                    <div>
-                      <span className="text-slate-500 dark:text-slate-400 block">Landmark:</span>
-                      <strong className="text-slate-900 dark:text-white font-medium">{workflowDialog.order.landmark || 'None provided'}</strong>
-                    </div>
-                  </div>
-
-                  <div className="pt-2 border-t border-slate-200/80 dark:border-slate-700/60 text-[11px]">
-                    <span className="text-slate-500 dark:text-slate-400 block">Full Delivery Address:</span>
-                    <span className="font-semibold text-slate-800 dark:text-slate-200">{workflowDialog.order.shippingAddress || 'Nairobi'}</span>
-                  </div>
-
-                  {workflowDialog.order.preferredCourier && (
-                    <div className="pt-2 border-t border-slate-200/80 dark:border-slate-700/60 text-[11px] flex items-center justify-between">
-                      <span className="text-slate-500 dark:text-slate-400">Customer Preferred Courier:</span>
-                      <span className="px-2 py-0.5 rounded bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200 dark:border-indigo-800 text-indigo-700 dark:text-indigo-300 font-bold uppercase">
-                        {workflowDialog.order.preferredCourier === 'uber' ? 'Uber Package' :
-                         workflowDialog.order.preferredCourier === 'bolt' ? 'Bolt Send' :
-                         workflowDialog.order.preferredCourier === 'pickup_mtaani' ? 'PickUp Mtaani' :
-                         workflowDialog.order.preferredCourier.toUpperCase()}
-                      </span>
-                    </div>
-                  )}
-
-                  {workflowDialog.order.pickupMtaaniPoint && (
-                    <div className="pt-2 border-t border-slate-200/80 dark:border-slate-700/60 text-[11px] flex items-center justify-between">
-                      <span className="text-slate-500 dark:text-slate-400">PickUp Mtaani Location Point:</span>
-                      <strong className="text-amber-700 dark:text-amber-400 font-bold">{workflowDialog.order.pickupMtaaniPoint}</strong>
-                    </div>
-                  )}
-                </div>
-
-                {/* Courier Selection & Fee Input */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div className="space-y-1.5">
-                    <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300">
-                      Assigned Courier Partner *
-                    </label>
-                    <select
-                      value={workflowDialog.quotedCourier}
-                      onChange={(e) => setWorkflowDialog(prev => ({ ...prev, quotedCourier: e.target.value }))}
-                      className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold focus:outline-hidden focus:ring-2 focus:ring-amber-500"
-                    >
-                      <option value="uber">🚗 Uber Package (Live App Quote)</option>
-                      <option value="bolt">🛵 Bolt Send (Motorbike / Boda)</option>
-                      <option value="pickup_mtaani">📦 PickUp Mtaani (Agent Dropoff)</option>
-                      <option value="fargo">🚛 Fargo Courier (Countrywide)</option>
-                      <option value="rider">🏍️ Dedicated Store Rider</option>
-                    </select>
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300">
-                      Delivery Fee (KES) *
-                    </label>
-                    <div className="relative">
-                      <span className="absolute left-3 top-2 text-slate-400 font-bold text-xs">KSh</span>
-                      <input
-                        type="number"
-                        min="0"
-                        step="10"
-                        value={workflowDialog.deliveryFeeInput}
-                        onChange={(e) => setWorkflowDialog(prev => ({ ...prev, deliveryFeeInput: e.target.value }))}
-                        placeholder="e.g. 250"
-                        className="w-full pl-11 pr-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-mono font-bold text-slate-900 dark:text-white focus:outline-hidden focus:ring-2 focus:ring-amber-500"
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                {/* Quick Fee Presets */}
-                <div className="flex items-center gap-1.5 flex-wrap">
-                  <span className="text-[10px] text-slate-400 font-mono">Quick Rates:</span>
-                  {[150, 200, 250, 300, 350, 450, 500].map(amt => (
-                    <button
-                      key={amt}
-                      type="button"
-                      onClick={() => setWorkflowDialog(prev => ({ ...prev, deliveryFeeInput: String(amt) }))}
-                      className="px-2 py-0.5 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-amber-100 dark:hover:bg-amber-950/60 text-slate-700 dark:text-slate-300 text-[10px] font-mono font-bold transition-colors cursor-pointer border border-slate-200 dark:border-slate-700"
-                    >
-                      KSh {amt}
-                    </button>
-                  ))}
-                </div>
-
-                {/* Recalculated Order Summary Banner */}
-                {(() => {
-                  const fee = parseFloat(workflowDialog.deliveryFeeInput) || 0;
-                  const sub = workflowDialog.order.subtotal ?? (workflowDialog.order.total - (workflowDialog.order.shippingFee || 0));
-                  const tax = workflowDialog.order.taxTotal ?? 0;
-                  const discount = workflowDialog.order.discountAmount ?? 0;
-                  const newTotal = sub + tax + fee - discount;
-
-                  return (
-                    <div className="p-3 rounded-xl bg-sky-50/80 dark:bg-sky-950/30 border border-sky-200 dark:border-sky-800/50 flex items-center justify-between text-xs">
-                      <div>
-                        <span className="text-[10px] text-sky-800 dark:text-sky-400 font-bold uppercase block">Updated Grand Total (Goods + Delivery):</span>
-                        <span className="text-[11px] text-slate-600 dark:text-slate-300">
-                          Subtotal KSh {sub.toLocaleString()} + Delivery KSh {fee.toLocaleString()} {discount > 0 ? `- Discount KSh ${discount.toLocaleString()}` : ''}
-                        </span>
-                      </div>
-                      <div className="text-right">
-                        <span className="font-mono font-black text-sky-900 dark:text-sky-200 text-sm">
-                          KSh {newTotal.toLocaleString('en-KE')}
-                        </span>
-                      </div>
-                    </div>
-                  );
-                })()}
-
-                {/* Quoting Notes / Instructions */}
-                <div className="space-y-1.5">
-                  <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300">
-                    Quote Notes / Tracking Reference (Optional)
-                  </label>
-                  <input
-                    type="text"
-                    value={workflowDialog.notes}
-                    onChange={(e) => setWorkflowDialog(prev => ({ ...prev, notes: e.target.value }))}
-                    placeholder="e.g. Uber Motorbike delivery estimated 45 mins after payment"
-                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs focus:outline-hidden focus:ring-2 focus:ring-amber-500"
-                  />
-                </div>
-
-                {/* Instant WhatsApp Quote Messenger Button */}
-                {workflowDialog.order.phone && (
-                  <div className="pt-1">
-                    {(() => {
-                      const fee = parseFloat(workflowDialog.deliveryFeeInput) || 0;
-                      const sub = workflowDialog.order.subtotal ?? (workflowDialog.order.total - (workflowDialog.order.shippingFee || 0));
-                      const newTotal = sub + (workflowDialog.order.taxTotal ?? 0) + fee - (workflowDialog.order.discountAmount ?? 0);
-                      const courierLabel = workflowDialog.quotedCourier === 'uber' ? 'Uber Package' :
-                        workflowDialog.quotedCourier === 'bolt' ? 'Bolt Send' :
-                        workflowDialog.quotedCourier === 'pickup_mtaani' ? 'PickUp Mtaani' :
-                        workflowDialog.quotedCourier === 'fargo' ? 'Fargo Courier' : 'Local Courier Rider';
-
-                      const rawPhone = (workflowDialog.order.phone || '').replace(/[^0-9]/g, '');
-                      const cleanPhone = rawPhone.startsWith('0') ? '254' + rawPhone.slice(1) : (rawPhone.startsWith('+') ? rawPhone.slice(1) : rawPhone);
-
-                      const msg = `Hi ${workflowDialog.order.customerName},\nThank you for placing order *#${workflowDialog.order.id}* on Ropenix!\n\n📦 *Delivery Quote Update:*\n• *Destination:* ${workflowDialog.order.shippingAddress || 'Nairobi'}${workflowDialog.order.areaEstate ? ` (${workflowDialog.order.areaEstate})` : ''}\n• *Courier Partner:* ${courierLabel}\n• *Quoted Delivery Fee:* KES ${fee.toLocaleString('en-KE')}\n• *Goods Subtotal:* KES ${sub.toLocaleString('en-KE')}\n• *Grand Total:* KES ${newTotal.toLocaleString('en-KE')}\n\n💳 *Payment Details:*\nLipa na M-PESA Paybill: *303030*\nAccount Number: *${workflowDialog.order.id.toUpperCase()}*\nAmount: *KES ${newTotal.toLocaleString('en-KE')}*\n\nPlease reply or share your M-Pesa confirmation code to approve and dispatch your order. Thank you!`;
-
-                      const waUrl = `https://wa.me/${cleanPhone}?text=${encodeURIComponent(msg)}`;
-
-                      return (
-                        <a
-                          href={waUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="w-full py-2 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-xs transition-colors"
-                        >
-                          <span>📱 Send Quoted Fee via WhatsApp to Customer ({workflowDialog.order.phone})</span>
-                        </a>
-                      );
-                    })()}
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Content: Confirm Payment */}
+            {/* Content: Confirm Payment (M-Pesa) */}
             {workflowDialog.actionType === 'confirm-payment' && (
               <div className="space-y-4 text-xs">
                 <div className="bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800/50 rounded-xl p-3.5 text-emerald-900 dark:text-emerald-300 space-y-1">
                   <div className="font-bold flex items-center gap-1.5">
                     <ShieldCheck className="h-4 w-4 text-emerald-600" />
-                    Automated Action & Notification
+                    M-Pesa Verification Requirement
                   </div>
                   <p className="text-[11px] text-emerald-800 dark:text-emerald-400 leading-relaxed font-light">
-                    Confirming payment sets <code className="font-mono font-bold">isPaid = true</code>, records <code className="font-mono font-bold">paidAt</code> timestamp, automatically moves status from <strong>Pending Payment</strong> to <strong>Processing</strong>, and triggers an official payment receipt email to <strong className="underline">{workflowDialog.order.customerEmail}</strong>.
+                    Per prepaid workflow rules, moving to <strong>payment_confirmed</strong> requires verified M-Pesa details. Enter the Safaricom transaction code, verified amount, and sender phone number.
                   </p>
                 </div>
 
-                <div className="bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/60 rounded-xl p-3 space-y-2">
-                  <div className="flex justify-between items-center text-[11px]">
-                    <span className="text-slate-500 dark:text-slate-400">Order Total:</span>
-                    <span className="font-mono font-black text-slate-900 dark:text-white text-sm">KSh {workflowDialog.order.total.toLocaleString('en-KE')}</span>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300">
+                      M-Pesa Transaction Code *
+                    </label>
+                    <input
+                      type="text"
+                      value={workflowDialog.transactionCode}
+                      onChange={(e) => setWorkflowDialog(prev => ({ ...prev, transactionCode: e.target.value.toUpperCase() }))}
+                      placeholder="e.g. QKH7XYZ123"
+                      className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-mono font-bold uppercase focus:outline-hidden focus:ring-2 focus:ring-emerald-500"
+                    />
                   </div>
-                  <div className="flex justify-between items-center text-[11px]">
-                    <span className="text-slate-500 dark:text-slate-400">Recipient:</span>
-                    <span className="font-semibold text-slate-700 dark:text-slate-300">{workflowDialog.order.customerName} ({workflowDialog.order.phone || 'No phone'})</span>
-                  </div>
-                  <div className="flex justify-between items-center text-[11px]">
-                    <span className="text-slate-500 dark:text-slate-400">Destination:</span>
-                    <span className="font-medium text-slate-700 dark:text-slate-300 truncate max-w-[240px]">{workflowDialog.order.shippingAddress || 'Nairobi'}</span>
+
+                  <div className="space-y-1.5">
+                    <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300">
+                      Verified Amount (KES) *
+                    </label>
+                    <input
+                      type="number"
+                      value={workflowDialog.amountInput}
+                      onChange={(e) => setWorkflowDialog(prev => ({ ...prev, amountInput: e.target.value }))}
+                      className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-mono font-bold focus:outline-hidden focus:ring-2 focus:ring-emerald-500"
+                    />
                   </div>
                 </div>
 
                 <div className="space-y-1.5">
                   <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300">
-                    Payment Reference / M-Pesa Code
+                    Sender Phone Number (Optional)
+                  </label>
+                  <input
+                    type="text"
+                    value={workflowDialog.phoneInput}
+                    onChange={(e) => setWorkflowDialog(prev => ({ ...prev, phoneInput: e.target.value }))}
+                    placeholder="e.g. 254712345678"
+                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-mono focus:outline-hidden focus:ring-2 focus:ring-emerald-500"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300">
+                    Admin Verification Note (Optional)
                   </label>
                   <input
                     type="text"
                     value={workflowDialog.notes}
                     onChange={(e) => setWorkflowDialog(prev => ({ ...prev, notes: e.target.value }))}
-                    placeholder="e.g. SGH7XYZ123 or SAFARICOM-VERIFIED"
-                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-mono focus:outline-hidden focus:ring-2 focus:ring-emerald-500"
+                    placeholder="e.g. Confirmed via Safaricom Daraja Portal"
+                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs focus:outline-hidden focus:ring-2 focus:ring-emerald-500"
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* Content: Start Processing */}
+            {workflowDialog.actionType === 'start-processing' && (
+              <div className="space-y-4 text-xs">
+                <div className="bg-purple-50 dark:bg-purple-950/30 border border-purple-200 dark:border-purple-800/50 rounded-xl p-3.5 text-purple-900 dark:text-purple-300 space-y-1">
+                  <div className="font-bold flex items-center gap-1.5">
+                    <Package className="h-4 w-4 text-purple-600" />
+                    Fulfillment Hub Preparation
+                  </div>
+                  <p className="text-[11px] text-purple-800 dark:text-purple-400 leading-relaxed font-light">
+                    This order will advance to <strong>processing</strong>. Warehouse staff will package and prepare the items for courier dispatch.
+                  </p>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300">
+                    Fulfillment Notes (Optional)
+                  </label>
+                  <input
+                    type="text"
+                    value={workflowDialog.notes}
+                    onChange={(e) => setWorkflowDialog(prev => ({ ...prev, notes: e.target.value }))}
+                    placeholder="e.g. Items picked from shelf A3, packaged with bubble wrap"
+                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs focus:outline-hidden focus:ring-2 focus:ring-purple-500"
                   />
                 </div>
               </div>
@@ -9808,7 +9879,7 @@ admin@ropenix.co.ke`;
                     Courier Dispatch & Tracking Notification
                   </div>
                   <p className="text-[11px] text-indigo-800 dark:text-indigo-400 leading-relaxed font-light">
-                    Transitions the order from <strong>Processing</strong> to <strong>Shipped</strong>. An automated dispatch email containing the tracking code and live tracking link will be sent to <strong className="underline">{workflowDialog.order.customerEmail}</strong>.
+                    Transitions the order from <strong>Processing</strong> to <strong>Shipped</strong>. An automated dispatch email containing the tracking code will be sent to the customer.
                   </p>
                 </div>
 
@@ -9833,7 +9904,7 @@ admin@ropenix.co.ke`;
                       type="text"
                       value={workflowDialog.courierName}
                       onChange={(e) => setWorkflowDialog(prev => ({ ...prev, courierName: e.target.value }))}
-                      placeholder="e.g. Ropenix Express Courier"
+                      placeholder="e.g. Ropenix Express / Fargo Courier"
                       className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs focus:outline-hidden focus:ring-2 focus:ring-indigo-500"
                     />
                   </div>
@@ -9854,42 +9925,56 @@ admin@ropenix.co.ke`;
               </div>
             )}
 
-            {/* Content: Confirm Delivery */}
-            {workflowDialog.actionType === 'confirm-delivery' && (
+            {/* Content: Payment Received (COD) */}
+            {workflowDialog.actionType === 'payment-received' && (
               <div className="space-y-4 text-xs">
-                <div className="bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/50 rounded-xl p-3.5 text-amber-900 dark:text-amber-300 space-y-1">
+                <div className="bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800/50 rounded-xl p-3.5 text-emerald-900 dark:text-emerald-300 space-y-1">
                   <div className="font-bold flex items-center gap-1.5">
-                    <MapPin className="h-4 w-4 text-amber-600" />
-                    Courier Delivery Verification Step
+                    <DollarSign className="h-4 w-4 text-emerald-600" />
+                    Cash on Delivery Collection Step
                   </div>
-                  <p className="text-[11px] text-amber-800 dark:text-amber-400 leading-relaxed font-light">
-                    Per strict fulfillment rules, an in-transit order must be confirmed as delivered by the courier before it can be marked as Completed. Record the delivery person's confirmation below.
+                  <p className="text-[11px] text-emerald-800 dark:text-emerald-400 leading-relaxed font-light">
+                    Per Cash on Delivery workflow rules, the order cannot be marked completed until cash payment is received and logged. Record the rider/agent who collected the money and the cash amount.
                   </p>
                 </div>
 
-                <div className="space-y-1.5">
-                  <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300">
-                    Delivery Courier / Rider Name *
-                  </label>
-                  <input
-                    type="text"
-                    value={workflowDialog.deliveryPerson}
-                    onChange={(e) => setWorkflowDialog(prev => ({ ...prev, deliveryPerson: e.target.value }))}
-                    placeholder="e.g. John Kamau (Rider 04)"
-                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold focus:outline-hidden focus:ring-2 focus:ring-amber-500"
-                  />
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300">
+                      Collected By (Rider / Agent) *
+                    </label>
+                    <input
+                      type="text"
+                      value={workflowDialog.deliveryPerson}
+                      onChange={(e) => setWorkflowDialog(prev => ({ ...prev, deliveryPerson: e.target.value }))}
+                      placeholder="e.g. Peter Mwangi (Rider 03)"
+                      className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold focus:outline-hidden focus:ring-2 focus:ring-emerald-500"
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300">
+                      Amount Collected (KES) *
+                    </label>
+                    <input
+                      type="number"
+                      value={workflowDialog.amountInput}
+                      onChange={(e) => setWorkflowDialog(prev => ({ ...prev, amountInput: e.target.value }))}
+                      className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-mono font-bold focus:outline-hidden focus:ring-2 focus:ring-emerald-500"
+                    />
+                  </div>
                 </div>
 
                 <div className="space-y-1.5">
                   <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300">
-                    Delivery Note / Recipient Confirmation
+                    Collection Notes (Optional)
                   </label>
                   <input
                     type="text"
-                    value={workflowDialog.deliveryNote}
-                    onChange={(e) => setWorkflowDialog(prev => ({ ...prev, deliveryNote: e.target.value }))}
-                    placeholder="e.g. Package handed directly to customer at doorstep"
-                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs focus:outline-hidden focus:ring-2 focus:ring-amber-500"
+                    value={workflowDialog.notes}
+                    onChange={(e) => setWorkflowDialog(prev => ({ ...prev, notes: e.target.value }))}
+                    placeholder="e.g. Exact cash collected and remitted to office"
+                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs focus:outline-hidden focus:ring-2 focus:ring-emerald-500"
                   />
                 </div>
               </div>
@@ -9904,21 +9989,8 @@ admin@ropenix.co.ke`;
                     Final Order Completion
                   </div>
                   <p className="text-[11px] text-emerald-800 dark:text-emerald-400 leading-relaxed font-light">
-                    Delivery has been verified! Completing the order will close the lifecycle and send a final order delivered & completion email with feedback link to <strong className="underline">{workflowDialog.order.customerEmail}</strong>.
+                    All payment and fulfillment prerequisites have been met. Marking the order completed closes the lifecycle permanently.
                   </p>
-                </div>
-
-                <div className="bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/60 rounded-xl p-3 space-y-1.5 text-[11px]">
-                  <div className="flex justify-between">
-                    <span className="text-slate-500 dark:text-slate-400">Delivery Courier:</span>
-                    <span className="font-semibold text-slate-800 dark:text-slate-200">{workflowDialog.order.deliveryPerson || 'Verified Courier'}</span>
-                  </div>
-                  {workflowDialog.order.deliveryNote && (
-                    <div className="flex justify-between">
-                      <span className="text-slate-500 dark:text-slate-400">Delivery Note:</span>
-                      <span className="text-slate-700 dark:text-slate-300 italic">{workflowDialog.order.deliveryNote}</span>
-                    </div>
-                  )}
                 </div>
 
                 <div className="space-y-1.5">
@@ -9929,7 +10001,7 @@ admin@ropenix.co.ke`;
                     type="text"
                     value={workflowDialog.notes}
                     onChange={(e) => setWorkflowDialog(prev => ({ ...prev, notes: e.target.value }))}
-                    placeholder="e.g. Order delivered smoothly, customer satisfied"
+                    placeholder="e.g. Delivered successfully and accepted by customer"
                     className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs focus:outline-hidden focus:ring-2 focus:ring-emerald-500"
                   />
                 </div>
@@ -9942,143 +10014,266 @@ admin@ropenix.co.ke`;
                 <div className="bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-800/50 rounded-xl p-3.5 text-rose-900 dark:text-rose-300 space-y-1">
                   <div className="font-bold flex items-center gap-1.5">
                     <AlertOctagon className="h-4 w-4 text-rose-600" />
-                    Order Cancellation Notice
+                    Cancellation & Restock Notice
                   </div>
                   <p className="text-[11px] text-rose-800 dark:text-rose-400 leading-relaxed font-light">
-                    Cancelling this order will mark it as cancelled in the database and send a formal cancellation notification email to <strong className="underline">{workflowDialog.order.customerEmail}</strong>.
+                    Cancelling this order will automatically restock all items in the inventory.
+                    {workflowDialog.order.paymentStatus === 'paid' || workflowDialog.order.isPaid ? (
+                      <strong className="block mt-1 text-rose-700 dark:text-rose-300">
+                        ⚠️ Because this order was paid, a Refund Claim with status <span className="font-mono">refund_requested</span> for KSh {workflowDialog.order.total.toLocaleString()} will be automatically created in the database.
+                      </strong>
+                    ) : (
+                      <span className="block mt-1 text-slate-600 dark:text-slate-400">
+                        Since no payment was made, no refund claim will be created.
+                      </span>
+                    )}
                   </p>
                 </div>
 
                 <div className="space-y-1.5">
                   <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300">
-                    Cancellation Reason
+                    Cancellation Reason * (Required)
                   </label>
                   <textarea
                     rows={2}
                     value={workflowDialog.notes}
                     onChange={(e) => setWorkflowDialog(prev => ({ ...prev, notes: e.target.value }))}
-                    placeholder="e.g. Out of stock / Customer requested cancellation / Invalid address"
+                    placeholder="e.g. Customer changed mind / duplicate order / damaged item during packing"
                     className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs focus:outline-hidden focus:ring-2 focus:ring-rose-500"
                   />
                 </div>
               </div>
             )}
 
+            {/* Content: Manage Refund Claim */}
+            {workflowDialog.actionType === 'refund-claim' && workflowDialog.order.refundClaim && (
+              <div className="space-y-4 text-xs">
+                <div className="bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/50 rounded-xl p-3.5 text-amber-900 dark:text-amber-300 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div className="font-bold flex items-center gap-1.5">
+                      <RotateCcw className="h-4 w-4 text-amber-600" />
+                      Refund Claim #{workflowDialog.order.refundClaim.id}
+                    </div>
+                    <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold uppercase ${
+                      workflowDialog.order.refundClaim.status === 'refund_paid' ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300' :
+                      workflowDialog.order.refundClaim.status === 'refund_approved' ? 'bg-indigo-100 text-indigo-800 dark:bg-indigo-950 dark:text-indigo-300' :
+                      workflowDialog.order.refundClaim.status === 'refund_rejected' ? 'bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300' :
+                      'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300'
+                    }`}>
+                      {workflowDialog.order.refundClaim.status}
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 text-[11px] pt-1 border-t border-amber-200/60 dark:border-amber-800/60">
+                    <div>
+                      <span className="text-amber-700 dark:text-amber-400 block">Claim Amount:</span>
+                      <strong className="font-mono text-xs">KSh {workflowDialog.order.refundClaim.amount?.toLocaleString()}</strong>
+                    </div>
+                    <div>
+                      <span className="text-amber-700 dark:text-amber-400 block">Original Payment Ref:</span>
+                      <strong className="font-mono text-xs">{workflowDialog.order.refundClaim.paymentReference || 'N/A'}</strong>
+                    </div>
+                  </div>
+                  <div className="text-[11px] pt-1">
+                    <span className="text-amber-700 dark:text-amber-400 block">Reason:</span>
+                    <p className="italic">{workflowDialog.order.refundClaim.reason}</p>
+                  </div>
+                </div>
+
+                {workflowDialog.order.refundClaim.status === 'refund_requested' && (
+                  <div className="space-y-3 pt-2">
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        disabled={workflowDialog.isLoading}
+                        onClick={() => handleExecuteWorkflow('refund-approve')}
+                        className="flex-1 py-2 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-xs transition-colors cursor-pointer"
+                      >
+                        <Check className="h-4 w-4" />
+                        <span>Approve Refund Claim</span>
+                      </button>
+                    </div>
+
+                    <div className="space-y-1.5 pt-2 border-t border-slate-100 dark:border-slate-800">
+                      <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300">
+                        Reject Reason
+                      </label>
+                      <input
+                        type="text"
+                        value={workflowDialog.refundRejectReason}
+                        onChange={(e) => setWorkflowDialog(prev => ({ ...prev, refundRejectReason: e.target.value }))}
+                        placeholder="e.g. Order was already fulfilled or refund policy expired"
+                        className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs focus:outline-hidden focus:ring-2 focus:ring-rose-500"
+                      />
+                      <button
+                        type="button"
+                        disabled={workflowDialog.isLoading}
+                        onClick={() => handleExecuteWorkflow('refund-reject')}
+                        className="w-full py-1.5 px-3 rounded-xl bg-rose-100 hover:bg-rose-200 text-rose-800 dark:bg-rose-950/60 dark:hover:bg-rose-900/80 dark:text-rose-300 font-bold text-xs transition-colors cursor-pointer"
+                      >
+                        Reject Claim
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {workflowDialog.order.refundClaim.status === 'refund_approved' && (
+                  <div className="space-y-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+                    <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300">
+                      M-Pesa Payout Reference Code *
+                    </label>
+                    <input
+                      type="text"
+                      value={workflowDialog.refundMpesaRef}
+                      onChange={(e) => setWorkflowDialog(prev => ({ ...prev, refundMpesaRef: e.target.value.toUpperCase() }))}
+                      placeholder="e.g. QKH9REF123 (Safaricom B2C Reference)"
+                      className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-mono font-bold uppercase focus:outline-hidden focus:ring-2 focus:ring-emerald-500"
+                    />
+                    <button
+                      type="button"
+                      disabled={workflowDialog.isLoading}
+                      onClick={() => handleExecuteWorkflow('refund-pay')}
+                      className="w-full py-2 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-xs transition-colors cursor-pointer"
+                    >
+                      <DollarSign className="h-4 w-4" />
+                      <span>Confirm Refund Paid via M-Pesa</span>
+                    </button>
+                  </div>
+                )}
+
+                {workflowDialog.order.refundClaim.status === 'refund_paid' && (
+                  <div className="p-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300 font-mono text-xs">
+                    ✓ Refund Paid via M-Pesa. Payout Ref: <strong>{workflowDialog.order.refundClaim.refundPaymentReference || 'CONFIRMED'}</strong>
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* Content: View Lifecycle Timeline & Audit Trail */}
             {workflowDialog.actionType === 'view-timeline' && (
               <div className="space-y-5 text-xs">
-                {/* Visual Progress Stepper */}
-                <div className="bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/60 rounded-xl p-4">
-                  <div className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-3">
-                    Strict Lifecycle Progress
-                  </div>
-                  <div className="flex items-center justify-between relative">
-                    <div className="absolute left-0 top-1/2 -translate-y-1/2 h-0.5 w-full bg-slate-200 dark:bg-slate-700 -z-0" />
-                    
-                    {/* Step 1: Pending Payment */}
-                    <div className="relative z-10 flex flex-col items-center bg-white dark:bg-slate-900 px-1">
-                      <div className={`h-7 w-7 rounded-full flex items-center justify-center text-xs font-bold ${
-                        isOrderPaid(workflowDialog.order) || workflowDialog.order.status !== 'pending'
-                          ? 'bg-emerald-600 text-white'
-                          : 'bg-amber-500 text-white animate-pulse'
-                      }`}>
-                        {isOrderPaid(workflowDialog.order) || workflowDialog.order.status !== 'pending' ? <Check className="h-3.5 w-3.5" /> : '1'}
-                      </div>
-                      <span className="text-[10px] font-bold mt-1 text-slate-700 dark:text-slate-300">Payment</span>
-                    </div>
+                {/* Visual Progress Stepper customized per Payment Method */}
+                {(() => {
+                  const isCod = (workflowDialog.order.paymentMethod || '').toLowerCase().includes('cod');
+                  const s = (workflowDialog.order.status || '').toLowerCase();
 
-                    {/* Step 2: Processing */}
-                    <div className="relative z-10 flex flex-col items-center bg-white dark:bg-slate-900 px-1">
-                      <div className={`h-7 w-7 rounded-full flex items-center justify-center text-xs font-bold ${
-                        ['processing', 'shipped', 'delivered', 'completed'].includes(workflowDialog.order.status)
-                          ? 'bg-emerald-600 text-white'
-                          : 'bg-slate-200 dark:bg-slate-700 text-slate-400'
-                      }`}>
-                        {['shipped', 'delivered', 'completed'].includes(workflowDialog.order.status) ? <Check className="h-3.5 w-3.5" /> : '2'}
-                      </div>
-                      <span className="text-[10px] font-bold mt-1 text-slate-700 dark:text-slate-300">Processing</span>
-                    </div>
+                  // M-Pesa: order_received (1) -> payment_confirmed (2) -> processing (3) -> shipped (4) -> completed (5)
+                  // COD: order_received (1) -> processing (2) -> shipped (3) -> payment_received (4) -> completed (5)
+                  const steps = isCod ? [
+                    { key: 'order_received', label: 'Received' },
+                    { key: 'processing', label: 'Processing' },
+                    { key: 'shipped', label: 'Shipped' },
+                    { key: 'payment_received', label: 'Cash Paid' },
+                    { key: 'completed', label: 'Completed' },
+                  ] : [
+                    { key: 'order_received', label: 'Received' },
+                    { key: 'payment_confirmed', label: 'M-Pesa Paid' },
+                    { key: 'processing', label: 'Processing' },
+                    { key: 'shipped', label: 'Shipped' },
+                    { key: 'completed', label: 'Completed' },
+                  ];
 
-                    {/* Step 3: Shipped */}
-                    <div className="relative z-10 flex flex-col items-center bg-white dark:bg-slate-900 px-1">
-                      <div className={`h-7 w-7 rounded-full flex items-center justify-center text-xs font-bold ${
-                        ['shipped', 'delivered', 'completed'].includes(workflowDialog.order.status)
-                          ? 'bg-emerald-600 text-white'
-                          : 'bg-slate-200 dark:bg-slate-700 text-slate-400'
-                      }`}>
-                        {workflowDialog.order.status === 'completed' || workflowDialog.order.deliveryConfirmed ? <Check className="h-3.5 w-3.5" /> : '3'}
-                      </div>
-                      <span className="text-[10px] font-bold mt-1 text-slate-700 dark:text-slate-300">Shipped</span>
-                    </div>
+                  const getStepIndex = (st: string) => {
+                    if (st === 'cancelled') return -1;
+                    if (isCod) {
+                      if (st === 'completed') return 4;
+                      if (st === 'payment_received' || st === 'delivered') return 3;
+                      if (st === 'shipped') return 2;
+                      if (st === 'processing') return 1;
+                      return 0;
+                    } else {
+                      if (st === 'completed') return 4;
+                      if (st === 'shipped' || st === 'delivered') return 3;
+                      if (st === 'processing') return 2;
+                      if (st === 'payment_confirmed' || (st === 'pending' && workflowDialog.order.isPaid)) return 1;
+                      return 0;
+                    }
+                  };
 
-                    {/* Step 4: Delivery Confirmed */}
-                    <div className="relative z-10 flex flex-col items-center bg-white dark:bg-slate-900 px-1">
-                      <div className={`h-7 w-7 rounded-full flex items-center justify-center text-xs font-bold ${
-                        workflowDialog.order.deliveryConfirmed || workflowDialog.order.status === 'completed'
-                          ? 'bg-emerald-600 text-white'
-                          : 'bg-slate-200 dark:bg-slate-700 text-slate-400'
-                      }`}>
-                        {workflowDialog.order.deliveryConfirmed || workflowDialog.order.status === 'completed' ? <Check className="h-3.5 w-3.5" /> : '4'}
-                      </div>
-                      <span className="text-[10px] font-bold mt-1 text-slate-700 dark:text-slate-300">Delivered</span>
-                    </div>
+                  const curIdx = getStepIndex(s);
 
-                    {/* Step 5: Completed */}
-                    <div className="relative z-10 flex flex-col items-center bg-white dark:bg-slate-900 px-1">
-                      <div className={`h-7 w-7 rounded-full flex items-center justify-center text-xs font-bold ${
-                        workflowDialog.order.status === 'completed'
-                          ? 'bg-emerald-600 text-white'
-                          : 'bg-slate-200 dark:bg-slate-700 text-slate-400'
-                      }`}>
-                        {workflowDialog.order.status === 'completed' ? <Check className="h-3.5 w-3.5" /> : '5'}
+                  return (
+                    <div className="bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/60 rounded-xl p-4">
+                      <div className="flex items-center justify-between mb-3">
+                        <div className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                          {isCod ? 'Cash on Delivery (COD) Lifecycle' : 'M-Pesa Prepaid Lifecycle'}
+                        </div>
+                        <span className="font-mono text-[10px] text-indigo-600 dark:text-indigo-400 font-bold">
+                          Current: {s}
+                        </span>
                       </div>
-                      <span className="text-[10px] font-bold mt-1 text-slate-700 dark:text-slate-300">Completed</span>
+
+                      {s === 'cancelled' ? (
+                        <div className="p-3 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900 text-rose-800 dark:text-rose-300">
+                          <div className="font-bold flex items-center gap-1.5 text-xs">
+                            <AlertOctagon className="h-4 w-4 text-rose-600" />
+                            Order Cancelled
+                          </div>
+                          <p className="text-[11px] mt-1">
+                            Reason: {workflowDialog.order.cancellationReason || 'Admin cancellation'}
+                          </p>
+                          {workflowDialog.order.cancelledBy && (
+                            <p className="text-[10px] text-rose-600 dark:text-rose-400 font-mono mt-0.5">
+                              Cancelled by: {workflowDialog.order.cancelledBy} • {workflowDialog.order.cancelledAt || ''}
+                            </p>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="flex items-center justify-between relative">
+                          <div className="absolute left-0 top-1/2 -translate-y-1/2 h-0.5 w-full bg-slate-200 dark:bg-slate-700 -z-0" />
+                          {steps.map((st, idx) => {
+                            const isDone = curIdx > idx;
+                            const isCurrent = curIdx === idx;
+                            return (
+                              <div key={st.key} className="relative z-10 flex flex-col items-center bg-white dark:bg-slate-900 px-1">
+                                <div className={`h-7 w-7 rounded-full flex items-center justify-center text-xs font-bold transition-all ${
+                                  isDone ? 'bg-emerald-600 text-white' :
+                                  isCurrent ? 'bg-indigo-600 text-white ring-4 ring-indigo-100 dark:ring-indigo-950 animate-pulse' :
+                                  'bg-slate-200 dark:bg-slate-700 text-slate-400'
+                                }`}>
+                                  {isDone ? <Check className="h-3.5 w-3.5" /> : idx + 1}
+                                </div>
+                                <span className="text-[10px] font-bold mt-1 text-slate-700 dark:text-slate-300 text-center whitespace-nowrap">
+                                  {st.label}
+                                </span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
                     </div>
-                  </div>
-                </div>
+                  );
+                })()}
 
                 {/* Status History & Audit Log */}
                 <div className="space-y-2">
                   <div className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                    Audit Log & Email Dispatch Status ({workflowDialog.order.statusHistory?.length || 0} events)
+                    Database Audit Trail ({workflowDialog.timelineHistory?.length || 0} transitions recorded)
                   </div>
 
-                  {Array.isArray(workflowDialog.order.statusHistory) && workflowDialog.order.statusHistory.length > 0 ? (
+                  {Array.isArray(workflowDialog.timelineHistory) && workflowDialog.timelineHistory.length > 0 ? (
                     <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
-                      {workflowDialog.order.statusHistory.map((item, idx) => (
+                      {workflowDialog.timelineHistory.map((item: any, idx: number) => (
                         <div key={idx} className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200/80 dark:border-slate-700/50 flex items-start justify-between gap-2">
                           <div className="space-y-1">
                             <div className="flex items-center gap-2">
                               <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold uppercase bg-slate-200 dark:bg-slate-700 text-slate-800 dark:text-slate-200">
-                                {item.status}
+                                {item.from_status || item.fromStatus || 'start'} → {item.to_status || item.toStatus || item.status}
                               </span>
                               <span className="text-[10px] text-slate-400">
-                                by <strong className="text-slate-600 dark:text-slate-300">{item.changedBy || 'System'}</strong>
+                                by <strong className="text-slate-600 dark:text-slate-300">{item.changed_by || item.changedBy || 'System'}</strong>
                               </span>
                             </div>
                             {item.note && (
                               <p className="text-[11px] text-slate-600 dark:text-slate-300">{item.note}</p>
                             )}
-                            <div className="text-[10px] text-slate-400 font-mono">{item.timestamp}</div>
-                          </div>
-
-                          <div className="shrink-0 text-right">
-                            {item.emailSent === true ? (
-                              <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60 px-2 py-0.5 rounded-full">
-                                <Mail className="h-2.5 w-2.5" /> Email Sent
-                              </span>
-                            ) : item.emailSent === false ? (
-                              <span className="inline-flex items-center gap-1 text-[10px] font-medium text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-full">
-                                No email
-                              </span>
-                            ) : null}
+                            <div className="text-[10px] text-slate-400 font-mono">{item.created_at || item.timestamp}</div>
                           </div>
                         </div>
                       ))}
                     </div>
                   ) : (
                     <div className="p-4 text-center text-slate-400 text-xs italic bg-slate-50 dark:bg-slate-800/30 rounded-xl border border-dashed border-slate-200 dark:border-slate-700">
-                      No status history records found for this order.
+                      No status transitions logged yet in database.
                     </div>
                   )}
                 </div>
@@ -10092,19 +10287,19 @@ admin@ropenix.co.ke`;
                 onClick={() => setWorkflowDialog(prev => ({ ...prev, isOpen: false, order: null, actionType: null, error: null }))}
                 className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-700 cursor-pointer transition-colors"
               >
-                {workflowDialog.actionType === 'view-timeline' ? 'Close' : 'Cancel'}
+                {workflowDialog.actionType === 'view-timeline' || workflowDialog.actionType === 'refund-claim' ? 'Close' : 'Cancel'}
               </button>
 
-              {workflowDialog.actionType !== 'view-timeline' && (
+              {workflowDialog.actionType !== 'view-timeline' && workflowDialog.actionType !== 'refund-claim' && (
                 <button
                   type="button"
                   disabled={workflowDialog.isLoading}
-                  onClick={handleExecuteWorkflow}
+                  onClick={() => handleExecuteWorkflow()}
                   className={`px-4 py-2 rounded-xl text-xs font-black text-white shadow-md cursor-pointer transition-all flex items-center gap-1.5 disabled:opacity-50 ${
-                    workflowDialog.actionType === 'quote-delivery' ? 'bg-amber-600 hover:bg-amber-700 shadow-amber-600/20' :
                     workflowDialog.actionType === 'confirm-payment' ? 'bg-emerald-600 hover:bg-emerald-700 shadow-emerald-600/20' :
+                    workflowDialog.actionType === 'start-processing' ? 'bg-purple-600 hover:bg-purple-700 shadow-purple-600/20' :
                     workflowDialog.actionType === 'mark-shipped' ? 'bg-indigo-600 hover:bg-indigo-700 shadow-indigo-600/20' :
-                    workflowDialog.actionType === 'confirm-delivery' ? 'bg-amber-600 hover:bg-amber-700 shadow-amber-600/20' :
+                    workflowDialog.actionType === 'payment-received' ? 'bg-emerald-600 hover:bg-emerald-700 shadow-emerald-600/20' :
                     workflowDialog.actionType === 'mark-completed' ? 'bg-emerald-600 hover:bg-emerald-700 shadow-emerald-600/20' :
                     'bg-rose-600 hover:bg-rose-700 shadow-rose-600/20'
                   }`}
@@ -10112,22 +10307,22 @@ admin@ropenix.co.ke`;
                   {workflowDialog.isLoading ? (
                     <>
                       <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                      <span>Updating...</span>
+                      <span>Processing...</span>
                     </>
                   ) : (
                     <>
-                      {workflowDialog.actionType === 'quote-delivery' && <Calculator className="h-3.5 w-3.5" />}
                       {workflowDialog.actionType === 'confirm-payment' && <CreditCard className="h-3.5 w-3.5" />}
+                      {workflowDialog.actionType === 'start-processing' && <Package className="h-3.5 w-3.5" />}
                       {workflowDialog.actionType === 'mark-shipped' && <Truck className="h-3.5 w-3.5" />}
-                      {workflowDialog.actionType === 'confirm-delivery' && <MapPin className="h-3.5 w-3.5" />}
+                      {workflowDialog.actionType === 'payment-received' && <DollarSign className="h-3.5 w-3.5" />}
                       {workflowDialog.actionType === 'mark-completed' && <CheckCircle2 className="h-3.5 w-3.5" />}
                       {workflowDialog.actionType === 'cancel' && <AlertOctagon className="h-3.5 w-3.5" />}
                       <span>
-                        {workflowDialog.actionType === 'quote-delivery' && 'Save & Quote Delivery Fee'}
-                        {workflowDialog.actionType === 'confirm-payment' && 'Confirm Payment & Move to Processing'}
+                        {workflowDialog.actionType === 'confirm-payment' && 'Verify & Confirm Payment'}
+                        {workflowDialog.actionType === 'start-processing' && 'Start Processing'}
                         {workflowDialog.actionType === 'mark-shipped' && 'Mark as Shipped'}
-                        {workflowDialog.actionType === 'confirm-delivery' && 'Confirm Delivery'}
-                        {workflowDialog.actionType === 'mark-completed' && 'Mark as Completed'}
+                        {workflowDialog.actionType === 'payment-received' && 'Confirm Cash Collected'}
+                        {workflowDialog.actionType === 'mark-completed' && 'Complete Order'}
                         {workflowDialog.actionType === 'cancel' && 'Confirm Cancellation'}
                       </span>
                     </>

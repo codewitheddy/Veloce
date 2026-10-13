@@ -568,7 +568,7 @@ export function SiteSettingsPanel() {
                       general: { ...p.general, site_name: e.target.value }
                     }))
                   }
-                  className="h-9 w-full rounded-xl border border-gray-250 dark:border-gray-700 px-3 text-xs bg-white dark:bg-gray-900 font-medium text-gray-950 dark:text-white"
+                  className="h-9 w-full rounded-xl border border-gray-300 dark:border-gray-600 px-3 text-xs bg-white dark:bg-gray-900 font-medium text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-gray-500 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 focus:outline-none transition-colors"
                 />
               </div>
 
@@ -585,7 +585,7 @@ export function SiteSettingsPanel() {
                       general: { ...p.general, tagline: e.target.value }
                     }))
                   }
-                  className="h-9 w-full rounded-xl border border-gray-250 dark:border-gray-700 px-3 text-xs bg-white dark:bg-gray-900 font-medium text-gray-950 dark:text-white"
+                  className="h-9 w-full rounded-xl border border-gray-300 dark:border-gray-600 px-3 text-xs bg-white dark:bg-gray-900 font-medium text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-gray-500 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 focus:outline-none transition-colors"
                 />
               </div>
 
@@ -602,7 +602,7 @@ export function SiteSettingsPanel() {
                       general: { ...p.general, business_email: e.target.value }
                     }))
                   }
-                  className="h-9 w-full rounded-xl border border-gray-250 dark:border-gray-700 px-3 text-xs bg-white dark:bg-gray-900 font-medium text-gray-950 dark:text-white"
+                  className="h-9 w-full rounded-xl border border-gray-300 dark:border-gray-600 px-3 text-xs bg-white dark:bg-gray-900 font-medium text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-gray-500 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 focus:outline-none transition-colors"
                 />
               </div>
 
@@ -619,7 +619,7 @@ export function SiteSettingsPanel() {
                       general: { ...p.general, support_phone: e.target.value }
                     }))
                   }
-                  className="h-9 w-full rounded-xl border border-gray-250 dark:border-gray-700 px-3 text-xs bg-white dark:bg-gray-900 font-mono text-gray-950 dark:text-white"
+                  className="h-9 w-full rounded-xl border border-gray-300 dark:border-gray-600 px-3 text-xs bg-white dark:bg-gray-900 font-mono text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-gray-500 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 focus:outline-none transition-colors"
                 />
               </div>
 
@@ -636,7 +636,7 @@ export function SiteSettingsPanel() {
                       general: { ...p.general, physical_address: e.target.value }
                     }))
                   }
-                  className="h-9 w-full rounded-xl border border-gray-250 dark:border-gray-700 px-3 text-xs bg-white dark:bg-gray-900 font-medium text-gray-950 dark:text-white"
+                  className="h-9 w-full rounded-xl border border-gray-300 dark:border-gray-600 px-3 text-xs bg-white dark:bg-gray-900 font-medium text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-gray-500 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 focus:outline-none transition-colors"
                 />
               </div>
 
@@ -656,12 +656,12 @@ export function SiteSettingsPanel() {
                       }
                     }))
                   }
-                  className="h-9 w-full rounded-xl border border-gray-250 dark:border-gray-700 px-3 text-xs bg-white dark:bg-gray-900 font-mono text-gray-950 dark:text-white"
+                  className="h-9 w-full rounded-xl border border-gray-300 dark:border-gray-600 px-3 text-xs bg-white dark:bg-gray-900 font-mono text-gray-900 dark:text-white focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 focus:outline-none transition-colors cursor-pointer"
                 >
-                  <option value="KES">KES - Kenyan Shilling (KSh)</option>
-                  <option value="USD">USD - United States Dollar ($)</option>
-                  <option value="EUR">EUR - Euro (€)</option>
-                  <option value="GBP">GBP - British Pound (£)</option>
+                  <option value="KES" className="bg-white dark:bg-gray-900 text-gray-900 dark:text-white">KES - Kenyan Shilling (KSh)</option>
+                  <option value="USD" className="bg-white dark:bg-gray-900 text-gray-900 dark:text-white">USD - United States Dollar ($)</option>
+                  <option value="EUR" className="bg-white dark:bg-gray-900 text-gray-900 dark:text-white">EUR - Euro (€)</option>
+                  <option value="GBP" className="bg-white dark:bg-gray-900 text-gray-900 dark:text-white">GBP - British Pound (£)</option>
                 </select>
               </div>
 
@@ -677,12 +677,12 @@ export function SiteSettingsPanel() {
                       general: { ...p.general, timezone: e.target.value }
                     }))
                   }
-                  className="h-9 w-full rounded-xl border border-gray-250 dark:border-gray-700 px-3 text-xs bg-white dark:bg-gray-900 font-mono text-gray-950 dark:text-white"
+                  className="h-9 w-full rounded-xl border border-gray-300 dark:border-gray-600 px-3 text-xs bg-white dark:bg-gray-900 font-mono text-gray-900 dark:text-white focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 focus:outline-none transition-colors cursor-pointer"
                 >
-                  <option value="Africa/Nairobi">Africa/Nairobi (EAT, UTC+3)</option>
-                  <option value="Europe/London">Europe/London (GMT/BST)</option>
-                  <option value="America/New_York">America/New_York (EST/EDT)</option>
-                  <option value="Asia/Dubai">Asia/Dubai (GST, UTC+4)</option>
+                  <option value="Africa/Nairobi" className="bg-white dark:bg-gray-900 text-gray-900 dark:text-white">Africa/Nairobi (EAT, UTC+3)</option>
+                  <option value="Europe/London" className="bg-white dark:bg-gray-900 text-gray-900 dark:text-white">Europe/London (GMT/BST)</option>
+                  <option value="America/New_York" className="bg-white dark:bg-gray-900 text-gray-900 dark:text-white">America/New_York (EST/EDT)</option>
+                  <option value="Asia/Dubai" className="bg-white dark:bg-gray-900 text-gray-900 dark:text-white">Asia/Dubai (GST, UTC+4)</option>
                 </select>
               </div>
             </div>
@@ -746,7 +746,7 @@ export function SiteSettingsPanel() {
                         general: { ...p.general, maintenance_message: e.target.value }
                       }))
                     }
-                    className="h-8 w-full rounded-lg border border-amber-300 dark:border-amber-800 px-3 text-xs bg-white dark:bg-gray-900 text-amber-950 dark:text-amber-100"
+                    className="h-9 w-full rounded-xl border border-amber-300 dark:border-amber-700 px-3 text-xs bg-white dark:bg-gray-900 font-medium text-amber-950 dark:text-amber-100 placeholder:text-amber-700/50 dark:placeholder:text-amber-300/50 focus:border-amber-500 focus:ring-1 focus:ring-amber-500 focus:outline-none transition-colors"
                   />
                 </div>
               )}
@@ -984,13 +984,13 @@ export function SiteSettingsPanel() {
                       type="color"
                       value={settings.appearance.primary_color || '#4f46e5'}
                       onChange={(e) => handleColorChange('primary_color', e.target.value)}
-                      className="h-9 w-12 rounded-lg cursor-pointer border border-gray-300 dark:border-gray-600 p-0.5 bg-white dark:bg-gray-800"
+                      className="h-9 w-12 rounded-lg cursor-pointer border border-gray-300 dark:border-gray-600 p-0.5 bg-white dark:bg-gray-900"
                     />
                     <input
                       type="text"
                       value={settings.appearance.primary_color || '#4f46e5'}
                       onChange={(e) => handleColorChange('primary_color', e.target.value)}
-                      className="h-9 flex-1 rounded-xl border border-gray-250 dark:border-gray-700 px-3 font-mono text-xs uppercase bg-white dark:bg-gray-800 text-gray-950 dark:text-white"
+                      className="h-9 flex-1 rounded-xl border border-gray-300 dark:border-gray-600 px-3 font-mono text-xs uppercase bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 focus:outline-none transition-colors"
                     />
                   </div>
                   <span className="text-[10px] text-gray-400 font-light block">
@@ -1008,13 +1008,13 @@ export function SiteSettingsPanel() {
                       type="color"
                       value={settings.appearance.secondary_color || '#06b6d4'}
                       onChange={(e) => handleColorChange('secondary_color', e.target.value)}
-                      className="h-9 w-12 rounded-lg cursor-pointer border border-gray-300 dark:border-gray-600 p-0.5 bg-white dark:bg-gray-800"
+                      className="h-9 w-12 rounded-lg cursor-pointer border border-gray-300 dark:border-gray-600 p-0.5 bg-white dark:bg-gray-900"
                     />
                     <input
                       type="text"
                       value={settings.appearance.secondary_color || '#06b6d4'}
                       onChange={(e) => handleColorChange('secondary_color', e.target.value)}
-                      className="h-9 flex-1 rounded-xl border border-gray-250 dark:border-gray-700 px-3 font-mono text-xs uppercase bg-white dark:bg-gray-800 text-gray-950 dark:text-white"
+                      className="h-9 flex-1 rounded-xl border border-gray-300 dark:border-gray-600 px-3 font-mono text-xs uppercase bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 focus:outline-none transition-colors"
                     />
                   </div>
                   <span className="text-[10px] text-gray-400 font-light block">
@@ -1032,13 +1032,13 @@ export function SiteSettingsPanel() {
                       type="color"
                       value={settings.appearance.accent_color || '#f59e0b'}
                       onChange={(e) => handleColorChange('accent_color', e.target.value)}
-                      className="h-9 w-12 rounded-lg cursor-pointer border border-gray-300 dark:border-gray-600 p-0.5 bg-white dark:bg-gray-800"
+                      className="h-9 w-12 rounded-lg cursor-pointer border border-gray-300 dark:border-gray-600 p-0.5 bg-white dark:bg-gray-900"
                     />
                     <input
                       type="text"
                       value={settings.appearance.accent_color || '#f59e0b'}
                       onChange={(e) => handleColorChange('accent_color', e.target.value)}
-                      className="h-9 flex-1 rounded-xl border border-gray-250 dark:border-gray-700 px-3 font-mono text-xs uppercase bg-white dark:bg-gray-800 text-gray-950 dark:text-white"
+                      className="h-9 flex-1 rounded-xl border border-gray-300 dark:border-gray-600 px-3 font-mono text-xs uppercase bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 focus:outline-none transition-colors"
                     />
                   </div>
                   <span className="text-[10px] text-gray-400 font-light block">
@@ -1056,13 +1056,13 @@ export function SiteSettingsPanel() {
                       type="color"
                       value={settings.appearance.background_color || '#f8fafc'}
                       onChange={(e) => handleColorChange('background_color', e.target.value)}
-                      className="h-9 w-12 rounded-lg cursor-pointer border border-gray-300 dark:border-gray-600 p-0.5 bg-white dark:bg-gray-800"
+                      className="h-9 w-12 rounded-lg cursor-pointer border border-gray-300 dark:border-gray-600 p-0.5 bg-white dark:bg-gray-900"
                     />
                     <input
                       type="text"
                       value={settings.appearance.background_color || '#f8fafc'}
                       onChange={(e) => handleColorChange('background_color', e.target.value)}
-                      className="h-9 flex-1 rounded-xl border border-gray-250 dark:border-gray-700 px-3 font-mono text-xs uppercase bg-white dark:bg-gray-800 text-gray-950 dark:text-white"
+                      className="h-9 flex-1 rounded-xl border border-gray-300 dark:border-gray-600 px-3 font-mono text-xs uppercase bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 focus:outline-none transition-colors"
                     />
                   </div>
                   <span className="text-[10px] text-gray-400 font-light block">
@@ -1080,13 +1080,13 @@ export function SiteSettingsPanel() {
                       type="color"
                       value={settings.appearance.surface_color || '#ffffff'}
                       onChange={(e) => handleColorChange('surface_color', e.target.value)}
-                      className="h-9 w-12 rounded-lg cursor-pointer border border-gray-300 dark:border-gray-600 p-0.5 bg-white dark:bg-gray-800"
+                      className="h-9 w-12 rounded-lg cursor-pointer border border-gray-300 dark:border-gray-600 p-0.5 bg-white dark:bg-gray-900"
                     />
                     <input
                       type="text"
                       value={settings.appearance.surface_color || '#ffffff'}
                       onChange={(e) => handleColorChange('surface_color', e.target.value)}
-                      className="h-9 flex-1 rounded-xl border border-gray-250 dark:border-gray-700 px-3 font-mono text-xs uppercase bg-white dark:bg-gray-800 text-gray-950 dark:text-white"
+                      className="h-9 flex-1 rounded-xl border border-gray-300 dark:border-gray-600 px-3 font-mono text-xs uppercase bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 focus:outline-none transition-colors"
                     />
                   </div>
                   <span className="text-[10px] text-gray-400 font-light block">
@@ -1104,13 +1104,13 @@ export function SiteSettingsPanel() {
                       type="color"
                       value={settings.appearance.text_color || '#0f172a'}
                       onChange={(e) => handleColorChange('text_color', e.target.value)}
-                      className="h-9 w-12 rounded-lg cursor-pointer border border-gray-300 dark:border-gray-600 p-0.5 bg-white dark:bg-gray-800"
+                      className="h-9 w-12 rounded-lg cursor-pointer border border-gray-300 dark:border-gray-600 p-0.5 bg-white dark:bg-gray-900"
                     />
                     <input
                       type="text"
                       value={settings.appearance.text_color || '#0f172a'}
                       onChange={(e) => handleColorChange('text_color', e.target.value)}
-                      className="h-9 flex-1 rounded-xl border border-gray-250 dark:border-gray-700 px-3 font-mono text-xs uppercase bg-white dark:bg-gray-800 text-gray-950 dark:text-white"
+                      className="h-9 flex-1 rounded-xl border border-gray-300 dark:border-gray-600 px-3 font-mono text-xs uppercase bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 focus:outline-none transition-colors"
                     />
                   </div>
                   <span className="text-[10px] text-gray-400 font-light block">
@@ -1185,7 +1185,7 @@ export function SiteSettingsPanel() {
                         type="datetime-local"
                         value={scheduleStart}
                         onChange={(e) => setScheduleStart(e.target.value)}
-                        className="h-9 w-full rounded-xl border border-gray-250 dark:border-gray-700 px-3 text-xs bg-white dark:bg-gray-800 font-mono text-gray-950 dark:text-white"
+                        className="h-9 w-full rounded-xl border border-gray-300 dark:border-gray-600 px-3 text-xs bg-white dark:bg-gray-900 font-mono text-gray-900 dark:text-white focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 focus:outline-none transition-colors"
                       />
                     </div>
 
@@ -1197,7 +1197,7 @@ export function SiteSettingsPanel() {
                         type="datetime-local"
                         value={scheduleEnd}
                         onChange={(e) => setScheduleEnd(e.target.value)}
-                        className="h-9 w-full rounded-xl border border-gray-250 dark:border-gray-700 px-3 text-xs bg-white dark:bg-gray-800 font-mono text-gray-950 dark:text-white"
+                        className="h-9 w-full rounded-xl border border-gray-300 dark:border-gray-600 px-3 text-xs bg-white dark:bg-gray-900 font-mono text-gray-900 dark:text-white focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 focus:outline-none transition-colors"
                       />
                     </div>
                   </div>
@@ -1206,7 +1206,7 @@ export function SiteSettingsPanel() {
                     <button
                       type="button"
                       onClick={() => setSelectedThemeForSchedule(null)}
-                      className="px-3 py-1.5 rounded-xl border border-gray-200 text-xs font-bold text-gray-600 hover:bg-gray-50 cursor-pointer"
+                      className="px-3 py-1.5 rounded-xl border border-gray-200 dark:border-gray-700 text-xs font-bold text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 cursor-pointer"
                     >
                       Cancel
                     </button>
@@ -1250,7 +1250,7 @@ export function SiteSettingsPanel() {
                         placeholder="e.g. Easter Spring Blossom"
                         value={newTheme.name}
                         onChange={(e) => setNewTheme((p) => ({ ...p, name: e.target.value }))}
-                        className="h-9 w-full rounded-xl border border-gray-250 dark:border-gray-700 px-3 text-xs bg-white dark:bg-gray-800 font-medium"
+                        className="h-9 w-full rounded-xl border border-gray-300 dark:border-gray-600 px-3 text-xs bg-white dark:bg-gray-900 font-medium text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-gray-500 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 focus:outline-none transition-colors"
                       />
                     </div>
 
@@ -1263,13 +1263,13 @@ export function SiteSettingsPanel() {
                           type="color"
                           value={newTheme.primary_color}
                           onChange={(e) => setNewTheme((p) => ({ ...p, primary_color: e.target.value }))}
-                          className="h-8 w-10 rounded cursor-pointer border border-gray-300"
+                          className="h-8 w-10 rounded-lg cursor-pointer border border-gray-300 dark:border-gray-600 p-0.5 bg-white dark:bg-gray-900"
                         />
                         <input
                           type="text"
                           value={newTheme.primary_color}
                           onChange={(e) => setNewTheme((p) => ({ ...p, primary_color: e.target.value }))}
-                          className="h-8 flex-1 rounded-lg border border-gray-250 px-2 font-mono text-xs uppercase"
+                          className="h-8 flex-1 rounded-lg border border-gray-300 dark:border-gray-600 px-2.5 font-mono text-xs uppercase bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 focus:outline-none transition-colors"
                         />
                       </div>
                     </div>
@@ -1283,13 +1283,13 @@ export function SiteSettingsPanel() {
                           type="color"
                           value={newTheme.secondary_color}
                           onChange={(e) => setNewTheme((p) => ({ ...p, secondary_color: e.target.value }))}
-                          className="h-8 w-10 rounded cursor-pointer border border-gray-300"
+                          className="h-8 w-10 rounded-lg cursor-pointer border border-gray-300 dark:border-gray-600 p-0.5 bg-white dark:bg-gray-900"
                         />
                         <input
                           type="text"
                           value={newTheme.secondary_color}
                           onChange={(e) => setNewTheme((p) => ({ ...p, secondary_color: e.target.value }))}
-                          className="h-8 flex-1 rounded-lg border border-gray-250 px-2 font-mono text-xs uppercase"
+                          className="h-8 flex-1 rounded-lg border border-gray-300 dark:border-gray-600 px-2.5 font-mono text-xs uppercase bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 focus:outline-none transition-colors"
                         />
                       </div>
                     </div>
@@ -1303,13 +1303,13 @@ export function SiteSettingsPanel() {
                           type="color"
                           value={newTheme.accent_color}
                           onChange={(e) => setNewTheme((p) => ({ ...p, accent_color: e.target.value }))}
-                          className="h-8 w-10 rounded cursor-pointer border border-gray-300"
+                          className="h-8 w-10 rounded-lg cursor-pointer border border-gray-300 dark:border-gray-600 p-0.5 bg-white dark:bg-gray-900"
                         />
                         <input
                           type="text"
                           value={newTheme.accent_color}
                           onChange={(e) => setNewTheme((p) => ({ ...p, accent_color: e.target.value }))}
-                          className="h-8 flex-1 rounded-lg border border-gray-250 px-2 font-mono text-xs uppercase"
+                          className="h-8 flex-1 rounded-lg border border-gray-300 dark:border-gray-600 px-2.5 font-mono text-xs uppercase bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 focus:outline-none transition-colors"
                         />
                       </div>
                     </div>
@@ -1323,13 +1323,13 @@ export function SiteSettingsPanel() {
                           type="color"
                           value={newTheme.background_color}
                           onChange={(e) => setNewTheme((p) => ({ ...p, background_color: e.target.value }))}
-                          className="h-8 w-10 rounded cursor-pointer border border-gray-300"
+                          className="h-8 w-10 rounded-lg cursor-pointer border border-gray-300 dark:border-gray-600 p-0.5 bg-white dark:bg-gray-900"
                         />
                         <input
                           type="text"
                           value={newTheme.background_color}
                           onChange={(e) => setNewTheme((p) => ({ ...p, background_color: e.target.value }))}
-                          className="h-8 flex-1 rounded-lg border border-gray-250 px-2 font-mono text-xs uppercase"
+                          className="h-8 flex-1 rounded-lg border border-gray-300 dark:border-gray-600 px-2.5 font-mono text-xs uppercase bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 focus:outline-none transition-colors"
                         />
                       </div>
                     </div>
@@ -1559,7 +1559,7 @@ export function SiteSettingsPanel() {
                             type="text"
                             readOnly
                             value={cloudinaryTestResult.optimizedUrl || cloudinaryTestResult.url}
-                            className="h-7 w-full rounded border border-gray-250 dark:border-gray-700 px-2 text-[10px] font-mono bg-white dark:bg-gray-900 text-gray-700 dark:text-gray-300 select-all"
+                            className="h-7 w-full rounded-lg border border-gray-300 dark:border-gray-600 px-2.5 text-[11px] font-mono bg-white dark:bg-gray-900 text-gray-900 dark:text-white select-all focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 focus:outline-none transition-colors"
                           />
                           <button
                             type="button"
@@ -1674,7 +1674,7 @@ export function SiteSettingsPanel() {
                       }))
                     }
                     placeholder="e.g. P051987654Z"
-                    className="h-9 w-full rounded-xl border border-gray-250 dark:border-gray-700 px-3 text-xs bg-white dark:bg-gray-900 font-mono font-bold uppercase text-gray-950 dark:text-white"
+                    className="h-9 w-full rounded-xl border border-gray-300 dark:border-gray-600 px-3 text-xs bg-white dark:bg-gray-900 font-mono font-bold uppercase text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-gray-500 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 focus:outline-none transition-colors"
                   />
                   <Key className="h-3.5 w-3.5 text-gray-400 absolute right-3 top-1/2 -translate-y-1/2" />
                 </div>
@@ -1696,10 +1696,10 @@ export function SiteSettingsPanel() {
                       tax: { ...p.tax, tax_pricing_type: e.target.value as 'inclusive' | 'exclusive' }
                     }))
                   }
-                  className="h-9 w-full rounded-xl border border-gray-250 dark:border-gray-700 px-3 text-xs bg-white dark:bg-gray-900 font-medium text-gray-950 dark:text-white"
+                  className="h-9 w-full rounded-xl border border-gray-300 dark:border-gray-600 px-3 text-xs bg-white dark:bg-gray-900 font-medium text-gray-900 dark:text-white focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 focus:outline-none transition-colors cursor-pointer"
                 >
-                  <option value="inclusive">Tax-Inclusive (Displayed catalog prices include VAT)</option>
-                  <option value="exclusive">Tax-Exclusive (VAT calculated and added at checkout)</option>
+                  <option value="inclusive" className="bg-white dark:bg-gray-900 text-gray-900 dark:text-white">Tax-Inclusive (Displayed catalog prices include VAT)</option>
+                  <option value="exclusive" className="bg-white dark:bg-gray-900 text-gray-900 dark:text-white">Tax-Exclusive (VAT calculated and added at checkout)</option>
                 </select>
                 <p className="text-[10px] text-gray-400 mt-1">
                   Kenya standard retail mandates tax-inclusive pricing with transparent ledger receipts.
@@ -1724,7 +1724,7 @@ export function SiteSettingsPanel() {
                         tax: { ...p.tax, vat_rate: Number(e.target.value) }
                       }))
                     }
-                    className="h-9 w-full rounded-xl border border-gray-250 dark:border-gray-700 px-3 text-xs bg-white dark:bg-gray-900 font-mono font-bold text-gray-950 dark:text-white"
+                    className="h-9 w-full rounded-xl border border-gray-300 dark:border-gray-600 px-3 text-xs bg-white dark:bg-gray-900 font-mono font-bold text-gray-900 dark:text-white focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 focus:outline-none transition-colors"
                   />
                   <span className="absolute right-3 top-1/2 -translate-y-1/2 font-mono text-xs text-gray-400 font-bold">%</span>
                 </div>
@@ -1749,7 +1749,7 @@ export function SiteSettingsPanel() {
                         tax: { ...p.tax, reduced_vat_rate: Number(e.target.value) }
                       }))
                     }
-                    className="h-9 w-full rounded-xl border border-gray-250 dark:border-gray-700 px-3 text-xs bg-white dark:bg-gray-900 font-mono font-bold text-gray-950 dark:text-white"
+                    className="h-9 w-full rounded-xl border border-gray-300 dark:border-gray-600 px-3 text-xs bg-white dark:bg-gray-900 font-mono font-bold text-gray-900 dark:text-white focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 focus:outline-none transition-colors"
                   />
                   <span className="absolute right-3 top-1/2 -translate-y-1/2 font-mono text-xs text-gray-400 font-bold">%</span>
                 </div>
@@ -1769,7 +1769,7 @@ export function SiteSettingsPanel() {
                       tax: { ...p.tax, tax_exemption_note: e.target.value }
                     }))
                   }
-                  className="h-9 w-full rounded-xl border border-gray-250 dark:border-gray-700 px-3 text-xs bg-white dark:bg-gray-900 text-gray-950 dark:text-white"
+                  className="h-9 w-full rounded-xl border border-gray-300 dark:border-gray-600 px-3 text-xs bg-white dark:bg-gray-900 font-medium text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-gray-500 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 focus:outline-none transition-colors"
                 />
               </div>
             </div>
@@ -1806,7 +1806,7 @@ export function SiteSettingsPanel() {
                       receipts: { ...p.receipts, invoice_format: e.target.value }
                     }))
                   }
-                  className="h-9 w-full rounded-xl border border-gray-250 dark:border-gray-700 px-3 text-xs bg-white dark:bg-gray-900 font-mono font-bold text-gray-950 dark:text-white"
+                  className="h-9 w-full rounded-xl border border-gray-300 dark:border-gray-600 px-3 text-xs bg-white dark:bg-gray-900 font-mono font-bold text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-gray-500 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 focus:outline-none transition-colors"
                 />
                 <p className="text-[10px] text-gray-400 mt-1">Variables: <code className="font-mono text-indigo-500">{'{YYYY}'}</code>, <code className="font-mono text-indigo-500">{'{SEQ:5}'}</code>, <code className="font-mono text-indigo-500">{'{MM}'}</code></p>
               </div>
@@ -1824,7 +1824,7 @@ export function SiteSettingsPanel() {
                       receipts: { ...p.receipts, legal_business_name: e.target.value }
                     }))
                   }
-                  className="h-9 w-full rounded-xl border border-gray-250 dark:border-gray-700 px-3 text-xs bg-white dark:bg-gray-900 font-medium text-gray-950 dark:text-white"
+                  className="h-9 w-full rounded-xl border border-gray-300 dark:border-gray-600 px-3 text-xs bg-white dark:bg-gray-900 font-medium text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-gray-500 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 focus:outline-none transition-colors"
                 />
               </div>
 
@@ -1841,7 +1841,7 @@ export function SiteSettingsPanel() {
                       receipts: { ...p.receipts, business_reg_number: e.target.value }
                     }))
                   }
-                  className="h-9 w-full rounded-xl border border-gray-250 dark:border-gray-700 px-3 text-xs bg-white dark:bg-gray-900 font-mono text-gray-950 dark:text-white"
+                  className="h-9 w-full rounded-xl border border-gray-300 dark:border-gray-600 px-3 text-xs bg-white dark:bg-gray-900 font-mono text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-gray-500 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 focus:outline-none transition-colors"
                 />
               </div>
 
@@ -1858,7 +1858,7 @@ export function SiteSettingsPanel() {
                       receipts: { ...p.receipts, receipt_footer_text: e.target.value }
                     }))
                   }
-                  className="h-9 w-full rounded-xl border border-gray-250 dark:border-gray-700 px-3 text-xs bg-white dark:bg-gray-900 text-gray-950 dark:text-white"
+                  className="h-9 w-full rounded-xl border border-gray-300 dark:border-gray-600 px-3 text-xs bg-white dark:bg-gray-900 font-medium text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-gray-500 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 focus:outline-none transition-colors"
                 />
               </div>
             </div>
@@ -1910,7 +1910,7 @@ export function SiteSettingsPanel() {
                         receipts: { ...p.receipts, etims_client_id: e.target.value }
                       }))
                     }
-                    className="h-9 w-full rounded-xl border border-gray-250 dark:border-gray-700 px-3 text-xs bg-white dark:bg-gray-900 font-mono text-gray-950 dark:text-white"
+                    className="h-9 w-full rounded-xl border border-gray-300 dark:border-gray-600 px-3 text-xs bg-white dark:bg-gray-900 font-mono text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-gray-500 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 focus:outline-none transition-colors"
                   />
                 </div>
 
@@ -1928,7 +1928,7 @@ export function SiteSettingsPanel() {
                           receipts: { ...p.receipts, etims_client_secret: e.target.value }
                         }))
                       }
-                      className="h-9 w-full rounded-xl border border-gray-250 dark:border-gray-700 pl-3 pr-9 text-xs bg-white dark:bg-gray-900 font-mono text-gray-950 dark:text-white"
+                      className="h-9 w-full rounded-xl border border-gray-300 dark:border-gray-600 pl-3 pr-9 text-xs bg-white dark:bg-gray-900 font-mono text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-gray-500 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 focus:outline-none transition-colors"
                     />
                     <button
                       type="button"
@@ -1952,10 +1952,10 @@ export function SiteSettingsPanel() {
                         receipts: { ...p.receipts, etims_environment: e.target.value as 'sandbox' | 'production' }
                       }))
                     }
-                    className="h-9 w-full rounded-xl border border-gray-250 dark:border-gray-700 px-3 text-xs bg-white dark:bg-gray-900 font-medium text-gray-950 dark:text-white"
+                    className="h-9 w-full rounded-xl border border-gray-300 dark:border-gray-600 px-3 text-xs bg-white dark:bg-gray-900 font-medium text-gray-900 dark:text-white focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 focus:outline-none transition-colors cursor-pointer"
                   >
-                    <option value="sandbox">Sandbox Test Environment</option>
-                    <option value="production">Production Live VSCU Gateway</option>
+                    <option value="sandbox" className="bg-white dark:bg-gray-900 text-gray-900 dark:text-white">Sandbox Test Environment</option>
+                    <option value="production" className="bg-white dark:bg-gray-900 text-gray-900 dark:text-white">Production Live VSCU Gateway</option>
                   </select>
                 </div>
 
@@ -2052,7 +2052,7 @@ export function SiteSettingsPanel() {
                     placeholder="e.g. Pre-holiday promotional launch snapshot"
                     value={backupNote}
                     onChange={(e) => setBackupNote(e.target.value)}
-                    className="h-9 w-full rounded-xl border border-gray-250 dark:border-gray-700 px-3 text-xs bg-white dark:bg-gray-900 text-gray-950 dark:text-white"
+                    className="h-9 w-full rounded-xl border border-gray-300 dark:border-gray-600 px-3 text-xs bg-white dark:bg-gray-900 font-medium text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-gray-500 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 focus:outline-none transition-colors"
                   />
                 </div>
                 <button
@@ -2087,12 +2087,12 @@ export function SiteSettingsPanel() {
                       backup: { ...p.backup, frequency: e.target.value as any }
                     }))
                   }
-                  className="h-9 w-full rounded-xl border border-gray-250 dark:border-gray-700 px-3 text-xs bg-white dark:bg-gray-900 font-medium"
+                  className="h-9 w-full rounded-xl border border-gray-300 dark:border-gray-600 px-3 text-xs bg-white dark:bg-gray-900 font-medium text-gray-900 dark:text-white focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 focus:outline-none transition-colors cursor-pointer"
                 >
-                  <option value="hourly">Hourly Continuous</option>
-                  <option value="daily">Daily Midnight Snapshot</option>
-                  <option value="weekly">Weekly Archival</option>
-                  <option value="monthly">Monthly Snapshot</option>
+                  <option value="hourly" className="bg-white dark:bg-gray-900 text-gray-900 dark:text-white">Hourly Continuous</option>
+                  <option value="daily" className="bg-white dark:bg-gray-900 text-gray-900 dark:text-white">Daily Midnight Snapshot</option>
+                  <option value="weekly" className="bg-white dark:bg-gray-900 text-gray-900 dark:text-white">Weekly Archival</option>
+                  <option value="monthly" className="bg-white dark:bg-gray-900 text-gray-900 dark:text-white">Monthly Snapshot</option>
                 </select>
               </div>
 
@@ -2111,7 +2111,7 @@ export function SiteSettingsPanel() {
                       backup: { ...p.backup, retention_days: Number(e.target.value) }
                     }))
                   }
-                  className="h-9 w-full rounded-xl border border-gray-250 dark:border-gray-700 px-3 text-xs bg-white dark:bg-gray-900 font-mono font-bold"
+                  className="h-9 w-full rounded-xl border border-gray-300 dark:border-gray-600 px-3 text-xs bg-white dark:bg-gray-900 font-mono font-bold text-gray-900 dark:text-white focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 focus:outline-none transition-colors"
                 />
               </div>
 
@@ -2304,7 +2304,7 @@ export function SiteSettingsPanel() {
                         payments: { ...p.payments, mpesa_paybill: e.target.value }
                       }))
                     }
-                    className="h-9 w-full rounded-xl border border-gray-250 dark:border-gray-700 px-3 text-xs bg-white dark:bg-gray-900 font-mono font-bold"
+                    className="h-9 w-full rounded-xl border border-gray-300 dark:border-gray-600 px-3 text-xs bg-white dark:bg-gray-900 font-mono font-bold text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-gray-500 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 focus:outline-none transition-colors"
                   />
                 </div>
 
@@ -2321,7 +2321,7 @@ export function SiteSettingsPanel() {
                         payments: { ...p.payments, mpesa_account_name: e.target.value }
                       }))
                     }
-                    className="h-9 w-full rounded-xl border border-gray-250 dark:border-gray-700 px-3 text-xs bg-white dark:bg-gray-900 font-medium"
+                    className="h-9 w-full rounded-xl border border-gray-300 dark:border-gray-600 px-3 text-xs bg-white dark:bg-gray-900 font-medium text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-gray-500 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 focus:outline-none transition-colors"
                   />
                 </div>
 
@@ -2338,7 +2338,7 @@ export function SiteSettingsPanel() {
                         payments: { ...p.payments, mpesa_consumer_key: e.target.value }
                       }))
                     }
-                    className="h-9 w-full rounded-xl border border-gray-250 dark:border-gray-700 px-3 text-xs bg-white dark:bg-gray-900 font-mono"
+                    className="h-9 w-full rounded-xl border border-gray-300 dark:border-gray-600 px-3 text-xs bg-white dark:bg-gray-900 font-mono text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-gray-500 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 focus:outline-none transition-colors"
                   />
                 </div>
 
@@ -2356,7 +2356,7 @@ export function SiteSettingsPanel() {
                           payments: { ...p.payments, mpesa_consumer_secret: e.target.value }
                         }))
                       }
-                      className="h-9 w-full rounded-xl border border-gray-250 dark:border-gray-700 pl-3 pr-9 text-xs bg-white dark:bg-gray-900 font-mono"
+                      className="h-9 w-full rounded-xl border border-gray-300 dark:border-gray-600 pl-3 pr-9 text-xs bg-white dark:bg-gray-900 font-mono text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-gray-500 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 focus:outline-none transition-colors"
                     />
                     <button
                       type="button"
@@ -2382,7 +2382,7 @@ export function SiteSettingsPanel() {
                           payments: { ...p.payments, mpesa_passkey: e.target.value }
                         }))
                       }
-                      className="h-9 w-full rounded-xl border border-gray-250 dark:border-gray-700 pl-3 pr-9 text-xs bg-white dark:bg-gray-900 font-mono"
+                      className="h-9 w-full rounded-xl border border-gray-300 dark:border-gray-600 pl-3 pr-9 text-xs bg-white dark:bg-gray-900 font-mono text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-gray-500 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 focus:outline-none transition-colors"
                     />
                     <button
                       type="button"
@@ -2418,7 +2418,7 @@ export function SiteSettingsPanel() {
                         payments: { ...p.payments, cod_max_limit: Number(e.target.value) }
                       }))
                     }
-                    className="h-8 w-24 rounded-lg border border-gray-250 px-2 font-mono text-xs font-bold"
+                    className="h-8 w-28 rounded-lg border border-gray-300 dark:border-gray-600 px-2.5 font-mono text-xs font-bold bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 focus:outline-none transition-colors"
                   />
                 </div>
                 <label className="relative inline-flex items-center cursor-pointer">
@@ -2469,7 +2469,7 @@ export function SiteSettingsPanel() {
                       notifications: { ...p.notifications, smtp_host: e.target.value }
                     }))
                   }
-                  className="h-9 w-full rounded-xl border border-gray-250 dark:border-gray-700 px-3 text-xs bg-white dark:bg-gray-900 font-mono"
+                  className="h-9 w-full rounded-xl border border-gray-300 dark:border-gray-600 px-3 text-xs bg-white dark:bg-gray-900 font-mono text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-gray-500 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 focus:outline-none transition-colors"
                 />
               </div>
 
@@ -2486,7 +2486,7 @@ export function SiteSettingsPanel() {
                       notifications: { ...p.notifications, smtp_port: Number(e.target.value) }
                     }))
                   }
-                  className="h-9 w-full rounded-xl border border-gray-250 dark:border-gray-700 px-3 text-xs bg-white dark:bg-gray-900 font-mono font-bold"
+                  className="h-9 w-full rounded-xl border border-gray-300 dark:border-gray-600 px-3 text-xs bg-white dark:bg-gray-900 font-mono font-bold text-gray-900 dark:text-white focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 focus:outline-none transition-colors"
                 />
               </div>
 
@@ -2503,7 +2503,7 @@ export function SiteSettingsPanel() {
                       notifications: { ...p.notifications, sender_name: e.target.value }
                     }))
                   }
-                  className="h-9 w-full rounded-xl border border-gray-250 dark:border-gray-700 px-3 text-xs bg-white dark:bg-gray-900 font-medium"
+                  className="h-9 w-full rounded-xl border border-gray-300 dark:border-gray-600 px-3 text-xs bg-white dark:bg-gray-900 font-medium text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-gray-500 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 focus:outline-none transition-colors"
                 />
               </div>
 
@@ -2520,7 +2520,7 @@ export function SiteSettingsPanel() {
                       notifications: { ...p.notifications, sender_email: e.target.value }
                     }))
                   }
-                  className="h-9 w-full rounded-xl border border-gray-250 dark:border-gray-700 px-3 text-xs bg-white dark:bg-gray-900 font-medium"
+                  className="h-9 w-full rounded-xl border border-gray-300 dark:border-gray-600 px-3 text-xs bg-white dark:bg-gray-900 font-medium text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-gray-500 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 focus:outline-none transition-colors"
                 />
               </div>
             </div>
@@ -2586,7 +2586,7 @@ export function SiteSettingsPanel() {
                       seo: { ...(p.seo || INITIAL_DEFAULT_SETTINGS.seo), meta_title: e.target.value }
                     }))
                   }
-                  className="h-9 w-full rounded-xl border border-gray-250 dark:border-gray-700 px-3 text-xs bg-white dark:bg-gray-900 font-medium"
+                  className="h-9 w-full rounded-xl border border-gray-300 dark:border-gray-600 px-3 text-xs bg-white dark:bg-gray-900 font-medium text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-gray-500 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 focus:outline-none transition-colors"
                 />
               </div>
 
@@ -2603,7 +2603,7 @@ export function SiteSettingsPanel() {
                       seo: { ...(p.seo || INITIAL_DEFAULT_SETTINGS.seo), meta_description: e.target.value }
                     }))
                   }
-                  className="w-full rounded-xl border border-gray-250 dark:border-gray-700 p-3 text-xs bg-white dark:bg-gray-900 text-gray-950 dark:text-white"
+                  className="w-full rounded-xl border border-gray-300 dark:border-gray-600 p-3 text-xs bg-white dark:bg-gray-900 text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-gray-500 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 focus:outline-none transition-colors"
                 />
               </div>
 
@@ -2622,7 +2622,7 @@ export function SiteSettingsPanel() {
                         seo: { ...(p.seo || INITIAL_DEFAULT_SETTINGS.seo), google_analytics_id: e.target.value }
                       }))
                     }
-                    className="h-9 w-full rounded-xl border border-gray-250 dark:border-gray-700 px-3 text-xs bg-white dark:bg-gray-900 font-mono"
+                    className="h-9 w-full rounded-xl border border-gray-300 dark:border-gray-600 px-3 text-xs bg-white dark:bg-gray-900 font-mono text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-gray-500 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 focus:outline-none transition-colors"
                   />
                 </div>
 
@@ -2639,7 +2639,7 @@ export function SiteSettingsPanel() {
                         seo: { ...(p.seo || INITIAL_DEFAULT_SETTINGS.seo), canonical_base_url: e.target.value }
                       }))
                     }
-                    className="h-9 w-full rounded-xl border border-gray-250 dark:border-gray-700 px-3 text-xs bg-white dark:bg-gray-900 font-mono"
+                    className="h-9 w-full rounded-xl border border-gray-300 dark:border-gray-600 px-3 text-xs bg-white dark:bg-gray-900 font-mono text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-gray-500 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 focus:outline-none transition-colors"
                   />
                 </div>
               </div>
@@ -2727,12 +2727,12 @@ export function SiteSettingsPanel() {
                       access_control: { ...p.access_control, session_timeout_minutes: Number(e.target.value) }
                     }))
                   }
-                  className="h-9 w-full rounded-xl border border-gray-250 dark:border-gray-700 px-3 text-xs bg-white dark:bg-gray-900 font-mono font-bold"
+                  className="h-9 w-full rounded-xl border border-gray-300 dark:border-gray-600 px-3 text-xs bg-white dark:bg-gray-900 font-mono font-bold text-gray-900 dark:text-white focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 focus:outline-none transition-colors cursor-pointer"
                 >
-                  <option value={15}>15 Minutes</option>
-                  <option value={30}>30 Minutes</option>
-                  <option value={60}>60 Minutes (1 Hour)</option>
-                  <option value={240}>240 Minutes (4 Hours)</option>
+                  <option value={15} className="bg-white dark:bg-gray-900 text-gray-900 dark:text-white">15 Minutes</option>
+                  <option value={30} className="bg-white dark:bg-gray-900 text-gray-900 dark:text-white">30 Minutes</option>
+                  <option value={60} className="bg-white dark:bg-gray-900 text-gray-900 dark:text-white">60 Minutes (1 Hour)</option>
+                  <option value={240} className="bg-white dark:bg-gray-900 text-gray-900 dark:text-white">240 Minutes (4 Hours)</option>
                 </select>
               </div>
 
@@ -2750,7 +2750,7 @@ export function SiteSettingsPanel() {
                       access_control: { ...p.access_control, allowed_ip_whitelist: e.target.value }
                     }))
                   }
-                  className="h-9 w-full rounded-xl border border-gray-250 dark:border-gray-700 px-3 text-xs bg-white dark:bg-gray-900 font-mono"
+                  className="h-9 w-full rounded-xl border border-gray-300 dark:border-gray-600 px-3 text-xs bg-white dark:bg-gray-900 font-mono text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-gray-500 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 focus:outline-none transition-colors"
                 />
               </div>
             </div>

@@ -13,7 +13,21 @@ import {
   updateSqliteOrderStatus,
   deleteSqliteOrder,
   syncSqliteOrders,
+  getMysqlOrderStatusHistory,
+  getMysqlRefundClaimByOrderId,
+  getAllMysqlRefundClaims,
+  getMysqlRefundClaimById,
 } from '../../src/lib/sqlite-db';
+import {
+  executeOrderTransition,
+  customerCancelOrder,
+  processRefundClaimAction,
+  normalizePaymentMethod,
+  normalizeOrderStatus,
+  getValidNextStatuses,
+  MPESA_TRANSITION_MAP,
+  COD_TRANSITION_MAP,
+} from '../services/orderStatusWorkflow';
 import { fetchAuthoritativeOrderById } from '../email/db';
 import { emailEvents } from '../email/events';
 import { requireAuth, requireAdmin, getAuthTokenFromRequest, extractUserFromToken } from '../middleware/auth';
@@ -72,7 +86,7 @@ const CreateOrderSchema = z.object({
   customNote: z.string().optional(),
 }).passthrough();
 
-// 1. Public Order Tracking
+// 1. Public Order Tracking (Payment Method Aware)
 router.get('/track/:orderId', trackingRateLimiter, async (req: Request, res: Response) => {
   const { orderId } = req.params;
   try {
@@ -80,7 +94,51 @@ router.get('/track/:orderId', trackingRateLimiter, async (req: Request, res: Res
     if (!order) {
       return res.status(404).json({ success: false, error: 'Order not found' });
     }
+
+    const paymentMethod = normalizePaymentMethod(order.paymentMethod || order.payment_method);
+    const normalizedStatus = normalizeOrderStatus(order.status, paymentMethod);
     const trackingNumber = order.trackingNumber || `ROP-TRK-${String(order.id).slice(-6).toUpperCase()}`;
+
+    // Fetch refund claim if order was cancelled and paid
+    const refundClaim = await getMysqlRefundClaimByOrderId(order.id);
+    const history = await getMysqlOrderStatusHistory(order.id);
+
+    // Build checkpoints tailored to payment method lifecycle
+    let checkpoints: any[] = [];
+    if (paymentMethod === 'cod') {
+      // COD flow: order_received -> processing -> shipped -> payment_received -> completed
+      const isReceived = true;
+      const isProcessing = ['processing', 'shipped', 'payment_received', 'completed'].includes(normalizedStatus);
+      const isShipped = ['shipped', 'payment_received', 'completed'].includes(normalizedStatus);
+      const isPaid = ['payment_received', 'completed'].includes(normalizedStatus) || Boolean(order.isPaid);
+      const isCompleted = normalizedStatus === 'completed';
+
+      checkpoints = [
+        { status: 'Order Received', code: 'order_received', timestamp: order.createdAt || order.date || null, completed: isReceived },
+        { status: 'Processing & Packaging', code: 'processing', timestamp: null, completed: isProcessing },
+        { status: 'Dispatched with Courier', code: 'shipped', timestamp: null, completed: isShipped },
+        { status: 'Cash Payment Received', code: 'payment_received', timestamp: order.payment_collected_at || order.paidAt || null, completed: isPaid },
+        { status: 'Delivered & Completed', code: 'completed', timestamp: order.deliveredAt || null, completed: isCompleted },
+      ];
+    } else {
+      // M-Pesa flow: order_received -> payment_confirmed -> processing -> shipped -> completed
+      const isReceived = true;
+      const isConfirmed = ['payment_confirmed', 'processing', 'shipped', 'completed'].includes(normalizedStatus) || Boolean(order.isPaid || order.paymentStatus === 'paid');
+      const isProcessing = ['processing', 'shipped', 'completed'].includes(normalizedStatus);
+      const isShipped = ['shipped', 'completed'].includes(normalizedStatus);
+      const isCompleted = normalizedStatus === 'completed';
+
+      checkpoints = [
+        { status: 'Order Received', code: 'order_received', timestamp: order.createdAt || order.date || null, completed: isReceived },
+        { status: 'M-Pesa Payment Confirmed', code: 'payment_confirmed', timestamp: order.payment_confirmed_at || order.paidAt || null, completed: isConfirmed },
+        { status: 'Processing & Packaging', code: 'processing', timestamp: null, completed: isProcessing },
+        { status: 'Dispatched with Courier', code: 'shipped', timestamp: null, completed: isShipped },
+        { status: 'Delivered & Completed', code: 'completed', timestamp: order.deliveredAt || null, completed: isCompleted },
+      ];
+    }
+
+    const canCancel = (normalizedStatus === 'order_received' || normalizedStatus === 'processing' || normalizedStatus === 'payment_confirmed') && normalizedStatus !== 'completed' && normalizedStatus !== 'cancelled';
+
     return res.json({
       success: true,
       id: order.id,
@@ -88,8 +146,11 @@ router.get('/track/:orderId', trackingRateLimiter, async (req: Request, res: Res
       customerName: order.customerName,
       customerEmail: order.customerEmail || '',
       phone: order.phone || order.mpesaPhone || '',
-      status: order.status,
+      status: normalizedStatus,
+      rawStatus: order.status,
+      paymentMethod,
       paymentStatus: order.paymentStatus,
+      isPaid: Boolean(order.isPaid || order.paymentStatus === 'paid'),
       fulfillmentType: order.fulfillmentType || 'delivery',
       shippingFee: Number(order.shippingFee || 0),
       quotedCourier: order.quotedCourier || '',
@@ -100,6 +161,12 @@ router.get('/track/:orderId', trackingRateLimiter, async (req: Request, res: Res
       shippingAddress: order.shippingAddress || '',
       total: Number(order.total || 0),
       subtotal: Number(order.subtotal || order.total || 0),
+      cancellationReason: order.cancellation_reason || order.cancellationReason || null,
+      cancelledBy: order.cancelled_by || order.cancelledBy || null,
+      cancelledAt: order.cancelled_at || order.cancelledAt || null,
+      canCancel,
+      refundClaim: refundClaim || null,
+      history: history.length > 0 ? history : undefined,
       items: Array.isArray(order.items)
         ? order.items
         : typeof order.items === 'string'
@@ -107,13 +174,7 @@ router.get('/track/:orderId', trackingRateLimiter, async (req: Request, res: Res
         : [],
       date: order.date || order.createdAt || new Date().toISOString(),
       isGuest: Boolean(order.isGuest),
-      checkpoints: [
-        { status: 'Order Placed', timestamp: order.createdAt || order.date || new Date().toISOString(), completed: true },
-        { status: 'Payment Verified', timestamp: order.paymentConfirmedAt || null, completed: order.paymentStatus === 'paid' },
-        { status: 'Fulfillment & Packaging', timestamp: null, completed: ['processing', 'shipped', 'delivered'].includes(order.status) },
-        { status: 'Dispatched with Courier', timestamp: null, completed: ['shipped', 'delivered'].includes(order.status) },
-        { status: 'Delivered', timestamp: null, completed: order.status === 'delivered' }
-      ]
+      checkpoints,
     });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Error retrieving tracking information';
@@ -140,7 +201,7 @@ router.get('/', async (req: Request, res: Response) => {
       return res.json(allOrders);
     }
 
-    const userOrders = await getSqliteOrdersByUser(user.email, user.id);
+    const userOrders = await getSqliteOrdersByUser(user.email || user.id);
     return res.json(userOrders);
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Failed to retrieve orders';
@@ -340,54 +401,17 @@ router.put(['/:id', '/:id/'], requireAdmin, async (req: Request, res: Response) 
 
     const adminUser = (req as any).user?.email || (req as any).user?.username || 'Admin';
 
-    // 1. If confirming payment directly
-    if (req.body.confirmPayment === true || req.body.paymentStatus === 'paid' || req.body.payment_status === 'paid' || req.body.isPaid === true) {
-      const payResult = await confirmOrderPaymentAndProcess(orderId, adminUser, {
-        paymentReference: req.body.paymentReference || req.body.payment_reference,
-        paymentAmount: req.body.paymentAmount || req.body.amount,
-        adminNotes: req.body.adminNotes || req.body.notes,
-      });
-
-      if (!payResult.success) {
-        return res.status(400).json({ success: false, error: payResult.error });
-      }
-
-      return res.json({
-        success: true,
-        message: `Order #${orderId} payment confirmed. Status automatically updated to Processing and customer notified.`,
-        order: payResult.order,
-      });
-    }
-
-    // 2. If confirming delivery directly
-    if (req.body.confirmDelivery === true || req.body.isDeliveryConfirmed === true) {
-      const delivResult = await confirmOrderDelivery(orderId, adminUser, {
-        deliveryPerson: req.body.deliveryPerson || req.body.courier_name,
-        deliveryNote: req.body.deliveryNote || req.body.notes,
-        deliveredAt: req.body.deliveredAt,
-      });
-
-      if (!delivResult.success) {
-        return res.status(delivResult.statusCode || 400).json({ success: false, error: delivResult.error });
-      }
-
-      return res.json({
-        success: true,
-        message: `Delivery confirmed for order #${orderId}. Ready for completion.`,
-        order: delivResult.order,
-      });
-    }
-
-    // 3. If transitioning status
+    // 1. If transitioning status (Strict Workflow Transition takes highest priority)
     if (req.body.status && req.body.status !== existing.status) {
-      const isDelivConf = Boolean(req.body.isDeliveryConfirmed || req.body.deliveryConfirmed || existing.deliveryConfirmed || req.body.status === 'completed');
-      const transitionResult = await transitionOrderStatus(orderId, req.body.status, adminUser, {
+      const transitionResult = await executeOrderTransition(orderId, req.body.status, adminUser, {
+        note: req.body.notes || req.body.note,
+        transactionCode: req.body.transactionCode || req.body.transaction_code || req.body.paymentReference || req.body.payment_reference,
+        amount: req.body.amount || req.body.paymentAmount || req.body.payment_amount,
+        phone: req.body.phone || req.body.mpesaPhone || req.body.mpesa_phone,
+        collectedBy: req.body.collectedBy || req.body.collected_by || req.body.deliveryPerson || adminUser,
+        cancellationReason: req.body.cancellationReason || req.body.cancellation_reason || req.body.reason || req.body.notes,
         trackingNumber: req.body.trackingNumber || req.body.tracking_number,
         courierName: req.body.courierName || req.body.courier_name,
-        deliveryPerson: req.body.deliveryPerson,
-        deliveryNote: req.body.deliveryNote,
-        isDeliveryConfirmed: isDelivConf,
-        note: req.body.notes || req.body.note,
       });
 
       if (!transitionResult.success) {
@@ -399,23 +423,20 @@ router.put(['/:id', '/:id/'], requireAdmin, async (req: Request, res: Response) 
 
       return res.json({
         success: true,
-        message: `Order #${orderId} status successfully updated to ${req.body.status}. Customer notification enqueued.`,
+        message: `Order #${orderId} status successfully transitioned to ${req.body.status}.`,
         order: transitionResult.order,
+        refundClaim: transitionResult.refundClaim || null,
       });
     }
 
-    // 4. Metadata updates (tracking number, notes, etc. without status change)
-    let targetStatus = typeof req.body.status === 'string' && req.body.status !== '[object Object]' ? req.body.status : existing.status;
-    if (typeof targetStatus !== 'string' || targetStatus === '[object Object]' || !targetStatus) {
-      targetStatus = existing.deliveryConfirmed ? 'delivered' : (existing.trackingNumber ? 'shipped' : (existing.isPaid || existing.paymentStatus === 'paid' ? 'processing' : 'pending'));
-    }
-    const targetPaymentStatus = req.body.paymentStatus || req.body.payment_status || existing.paymentStatus;
+    // 2. Metadata updates (tracking number, notes, etc. without status change)
     const targetTracking = req.body.trackingNumber || req.body.tracking_number || existing.trackingNumber;
+    const targetPaymentStatus = req.body.paymentStatus || req.body.payment_status || existing.paymentStatus;
 
     const updatedPayload = {
       ...existing,
       ...req.body,
-      status: targetStatus,
+      status: existing.status,
       paymentStatus: targetPaymentStatus,
       trackingNumber: targetTracking,
       updated_at: new Date().toISOString(),
@@ -429,38 +450,30 @@ router.put(['/:id', '/:id/'], requireAdmin, async (req: Request, res: Response) 
 });
 
 router.patch(['/:id', '/:id/'], requireAdmin, async (req: Request, res: Response) => {
-  // Delegate patch to put handler for maximum frontend compatibility
   return (router as any).handle(Object.assign(req, { method: 'PUT' }), res);
 });
 
-// 5b. Dedicated Endpoint: Confirm Payment (Admin only)
-router.post(['/:id/confirm-payment', '/:id/confirm-payment/'], requireAdmin, async (req: Request, res: Response) => {
+// 5b. Dedicated Workflow Transition Endpoint
+router.post(['/:id/transition', '/:id/transition/'], requireAdmin, async (req: Request, res: Response) => {
   try {
     const orderId = req.params.id;
     const adminUser = (req as any).user?.email || (req as any).user?.username || 'Admin';
-    const result = await confirmOrderPaymentAndProcess(orderId, adminUser, req.body);
+    const targetStatus = req.body.status;
 
-    if (!result.success) {
-      return res.status(400).json({ success: false, error: result.error });
+    if (!targetStatus) {
+      return res.status(400).json({ success: false, error: 'Target status is required.' });
     }
 
-    return res.json({
-      success: true,
-      message: `Payment confirmed for order #${orderId}. Order is now Processing. Customer notified.`,
-      order: result.order,
+    const result = await executeOrderTransition(orderId, targetStatus, adminUser, {
+      note: req.body.note || req.body.notes,
+      transactionCode: req.body.transactionCode || req.body.transaction_code || req.body.paymentReference,
+      amount: req.body.amount || req.body.paymentAmount,
+      phone: req.body.phone || req.body.mpesaPhone,
+      collectedBy: req.body.collectedBy || req.body.collected_by || adminUser,
+      cancellationReason: req.body.cancellationReason || req.body.cancellation_reason || req.body.reason,
+      trackingNumber: req.body.trackingNumber || req.body.tracking_number,
+      courierName: req.body.courierName || req.body.courier_name,
     });
-  } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : 'Failed to confirm payment';
-    return res.status(500).json({ success: false, error: message });
-  }
-});
-
-// 5c. Dedicated Endpoint: Confirm Delivery (Admin only)
-router.post(['/:id/confirm-delivery', '/:id/confirm-delivery/'], requireAdmin, async (req: Request, res: Response) => {
-  try {
-    const orderId = req.params.id;
-    const adminUser = (req as any).user?.email || (req as any).user?.username || 'Admin';
-    const result = await confirmOrderDelivery(orderId, adminUser, req.body);
 
     if (!result.success) {
       return res.status(result.statusCode || 400).json({ success: false, error: result.error });
@@ -468,33 +481,169 @@ router.post(['/:id/confirm-delivery', '/:id/confirm-delivery/'], requireAdmin, a
 
     return res.json({
       success: true,
-      message: `Delivery confirmed for order #${orderId} by ${req.body.deliveryPerson || 'Courier'}.`,
+      message: `Order #${orderId} moved to ${targetStatus}.`,
       order: result.order,
-    });
-  } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : 'Failed to confirm delivery';
-    return res.status(500).json({ success: false, error: message });
-  }
-});
-
-// 5d. Dedicated Endpoint: Transition Status (Admin only)
-router.post(['/:id/transition-status', '/:id/transition-status/'], requireAdmin, async (req: Request, res: Response) => {
-  try {
-    const orderId = req.params.id;
-    const adminUser = (req as any).user?.email || (req as any).user?.username || 'Admin';
-    const result = await transitionOrderStatus(orderId, req.body.status, adminUser, req.body);
-
-    if (!result.success) {
-      return res.status(result.statusCode || 400).json({ success: false, error: result.error });
-    }
-
-    return res.json({
-      success: true,
-      message: `Order #${orderId} moved to ${req.body.status}.`,
-      order: result.order,
+      refundClaim: result.refundClaim || null,
     });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Failed to transition order status';
+    return res.status(500).json({ success: false, error: message });
+  }
+});
+
+// 5c. Dedicated Cancel Order Endpoint (Customer & Admin)
+router.post(['/:id/cancel', '/:id/cancel/'], async (req: Request, res: Response) => {
+  try {
+    const orderId = req.params.id;
+    const reason = (req.body.cancellationReason || req.body.cancellation_reason || req.body.reason || req.body.notes || '').trim();
+
+    if (!reason) {
+      return res.status(400).json({ success: false, error: 'A cancellation reason is required to cancel this order.' });
+    }
+
+    const token = getAuthTokenFromRequest(req);
+    const user = token ? await extractUserFromToken(token) : null;
+    const isAdmin = Boolean(user && (user.is_staff || user.is_superuser || user.role === 'admin'));
+
+    if (isAdmin) {
+      const adminUser = user?.email || user?.username || 'Admin';
+      const result = await executeOrderTransition(orderId, 'cancelled', adminUser, {
+        cancellationReason: reason,
+        note: `Cancelled by admin (${adminUser}): ${reason}`,
+      });
+      if (!result.success) {
+        return res.status(result.statusCode || 400).json({ success: false, error: result.error });
+      }
+      return res.json({
+        success: true,
+        message: `Order #${orderId} has been cancelled.`,
+        order: result.order,
+        refundClaim: result.refundClaim || null,
+      });
+    }
+
+    // Customer cancellation
+    const existing = await getSqliteOrderById(orderId);
+    if (!existing) {
+      return res.status(404).json({ success: false, error: 'Order not found.' });
+    }
+
+    const customerEmail = user?.email || req.body.customerEmail || existing.customerEmail;
+    const result = await customerCancelOrder(orderId, customerEmail, reason);
+
+    if (!result.success) {
+      return res.status(result.statusCode || 400).json({ success: false, error: result.error });
+    }
+
+    return res.json({
+      success: true,
+      message: `Your order #${orderId} has been cancelled.`,
+      order: result.order,
+      refundClaim: result.refundClaim || null,
+    });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Failed to cancel order';
+    return res.status(500).json({ success: false, error: message });
+  }
+});
+
+// 5d. Order Lifecycle History Timeline (Database backed)
+router.get(['/:id/history', '/:id/history/'], async (req: Request, res: Response) => {
+  try {
+    const orderId = req.params.id;
+    const history = await getMysqlOrderStatusHistory(orderId);
+    if (history && history.length > 0) {
+      return res.json({ success: true, orderId, history });
+    }
+
+    // Fallback to order's statusHistory JSON column if table has not populated yet
+    const order = await getSqliteOrderById(orderId);
+    const fallbackHistory = Array.isArray(order?.statusHistory) ? order.statusHistory : [];
+    return res.json({ success: true, orderId, history: fallbackHistory });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Failed to fetch order history';
+    return res.status(500).json({ success: false, error: message });
+  }
+});
+
+// 5e. Valid Next Actions for Order (Context aware for UI)
+router.get(['/:id/valid-transitions', '/:id/valid-transitions/'], async (req: Request, res: Response) => {
+  try {
+    const orderId = req.params.id;
+    const order = await getSqliteOrderById(orderId);
+    if (!order) {
+      return res.status(404).json({ success: false, error: 'Order not found.' });
+    }
+
+    const paymentMethod = normalizePaymentMethod(order.paymentMethod);
+    const normalizedStatus = normalizeOrderStatus(order.status, paymentMethod);
+    const validNext = getValidNextStatuses(normalizedStatus, paymentMethod);
+
+    return res.json({
+      success: true,
+      orderId,
+      currentStatus: normalizedStatus,
+      rawStatus: order.status,
+      paymentMethod,
+      validNext,
+    });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Failed to retrieve valid transitions';
+    return res.status(500).json({ success: false, error: message });
+  }
+});
+
+// 5f. Refund Claim Linked to Order
+router.get(['/:id/refund-claim', '/:id/refund-claim/'], async (req: Request, res: Response) => {
+  try {
+    const orderId = req.params.id;
+    const claim = await getMysqlRefundClaimByOrderId(orderId);
+    return res.json({ success: true, orderId, refundClaim: claim || null });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Failed to retrieve refund claim';
+    return res.status(500).json({ success: false, error: message });
+  }
+});
+
+// 5g. Admin Refund Claims Management List
+router.get(['/refunds', '/admin/refunds'], requireAdmin, async (req: Request, res: Response) => {
+  try {
+    const statusFilter = req.query.status as string | undefined;
+    const claims = await getAllMysqlRefundClaims(statusFilter);
+    return res.json({ success: true, count: claims.length, refunds: claims });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Failed to list refund claims';
+    return res.status(500).json({ success: false, error: message });
+  }
+});
+
+// 5h. Admin Action on Refund Claim (Approve, Pay with M-Pesa ref, Reject)
+router.post(['/refunds/:id/action', '/admin/refunds/:id/action'], requireAdmin, async (req: Request, res: Response) => {
+  try {
+    const claimId = req.params.id;
+    const adminUser = (req as any).user?.email || (req as any).user?.username || 'Admin';
+    const action = req.body.action as 'approve' | 'reject' | 'pay';
+
+    if (!['approve', 'reject', 'pay'].includes(action)) {
+      return res.status(400).json({ success: false, error: "Invalid action. Supported actions: 'approve', 'reject', 'pay'." });
+    }
+
+    const result = await processRefundClaimAction(claimId, action, adminUser, {
+      refundPaymentReference: req.body.refundPaymentReference || req.body.mpesaReference || req.body.paymentReference,
+      rejectionReason: req.body.rejectionReason || req.body.reason,
+    });
+
+    if (!result.success) {
+      return res.status(result.statusCode || 400).json({ success: false, error: result.error });
+    }
+
+    return res.json({
+      success: true,
+      message: `Refund claim #${claimId} action '${action}' completed successfully.`,
+      claim: result.claim,
+    });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Failed to process refund claim action';
     return res.status(500).json({ success: false, error: message });
   }
 });

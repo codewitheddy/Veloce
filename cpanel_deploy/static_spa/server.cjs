@@ -769,6 +769,46 @@ async function initializeDatabaseSchema() {
         updated_at VARCHAR(100) NULL
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
     `);
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS order_status_history (
+        id VARCHAR(255) PRIMARY KEY,
+        order_id VARCHAR(255) NOT NULL,
+        from_status VARCHAR(50) NOT NULL,
+        to_status VARCHAR(50) NOT NULL,
+        changed_by VARCHAR(255) NOT NULL,
+        note TEXT NULL,
+        metadata LONGTEXT NULL,
+        created_at VARCHAR(100) NOT NULL,
+        timestamp VARCHAR(100) NOT NULL,
+        INDEX idx_osh_order (order_id),
+        INDEX idx_osh_timestamp (timestamp)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    `);
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS refund_claims (
+        id VARCHAR(255) PRIMARY KEY,
+        order_id VARCHAR(255) NOT NULL,
+        amount DECIMAL(15, 2) NOT NULL,
+        reason TEXT NOT NULL,
+        payment_reference VARCHAR(255) NULL,
+        status VARCHAR(50) DEFAULT 'refund_requested',
+        customer_name VARCHAR(255) NULL,
+        customer_email VARCHAR(255) NULL,
+        customer_phone VARCHAR(100) NULL,
+        refund_payment_reference VARCHAR(255) NULL,
+        approved_by VARCHAR(255) NULL,
+        approved_at VARCHAR(100) NULL,
+        refunded_by VARCHAR(255) NULL,
+        refunded_at VARCHAR(100) NULL,
+        rejected_by VARCHAR(255) NULL,
+        rejected_at VARCHAR(100) NULL,
+        rejection_reason TEXT NULL,
+        created_at VARCHAR(100) NOT NULL,
+        updated_at VARCHAR(100) NOT NULL,
+        INDEX idx_rc_order (order_id),
+        INDEX idx_rc_status (status)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    `);
     const safeAddCol = async (table, col, def) => {
       try {
         await pool.query(`ALTER TABLE \`${table}\` ADD COLUMN \`${col}\` ${def};`);
@@ -779,6 +819,14 @@ async function initializeDatabaseSchema() {
     };
     await safeAddCol("orders", "paymentReference", "VARCHAR(255) NULL");
     await safeAddCol("orders", "mpesaPhone", "VARCHAR(100) NULL");
+    await safeAddCol("orders", "cancellation_reason", "TEXT NULL");
+    await safeAddCol("orders", "cancelled_by", "VARCHAR(255) NULL");
+    await safeAddCol("orders", "cancelled_at", "VARCHAR(100) NULL");
+    await safeAddCol("orders", "payment_collected_by", "VARCHAR(255) NULL");
+    await safeAddCol("orders", "payment_collected_at", "VARCHAR(100) NULL");
+    await safeAddCol("orders", "payment_confirmed_by", "VARCHAR(255) NULL");
+    await safeAddCol("orders", "payment_confirmed_at", "VARCHAR(100) NULL");
+    await safeAddCol("orders", "payment_amount", "DECIMAL(15, 2) NULL");
     await safeAddCol("customer_orders", "payment_reference", "VARCHAR(255) NULL");
     await safeAddCol("customer_orders", "payment_status", "VARCHAR(50) DEFAULT 'unpaid'");
     await safeAddCol("customer_orders", "payment_amount", "DECIMAL(15, 2) NULL");
@@ -2743,6 +2791,41 @@ async function saveSqliteCart(userIdOrSession, items) {
 }
 async function clearSqliteCart(userIdOrSession) {
   await saveMysqlCartSession(userIdOrSession, []);
+}
+async function getMysqlOrderStatusHistory(orderId) {
+  const pool = await getDbPool();
+  const [rows] = await pool.query(
+    "SELECT * FROM order_status_history WHERE order_id = ? ORDER BY timestamp ASC, created_at ASC",
+    [orderId]
+  );
+  return (rows || []).map((r) => ({
+    ...r,
+    metadata: typeof r.metadata === "string" ? safeJsonParse(r.metadata, null) : r.metadata
+  }));
+}
+async function getMysqlRefundClaimByOrderId(orderId) {
+  const pool = await getDbPool();
+  const [rows] = await pool.query("SELECT * FROM refund_claims WHERE order_id = ? LIMIT 1", [orderId]);
+  if (!rows || rows.length === 0) return null;
+  const r = rows[0];
+  return {
+    ...r,
+    amount: Number(r.amount)
+  };
+}
+async function getAllMysqlRefundClaims(statusFilter) {
+  const pool = await getDbPool();
+  let query = "SELECT * FROM refund_claims ORDER BY created_at DESC";
+  const params = [];
+  if (statusFilter && statusFilter !== "all") {
+    query = "SELECT * FROM refund_claims WHERE status = ? ORDER BY created_at DESC";
+    params.push(statusFilter);
+  }
+  const [rows] = await pool.query(query, params);
+  return (rows || []).map((r) => ({
+    ...r,
+    amount: Number(r.amount)
+  }));
 }
 var import_promise, import_dotenv, import_crypto2, dbPool, isInitialized, isInitializing, DEFAULT_CORE_CATEGORIES, getSqliteUserByEmail, getSqliteUserById, saveSqliteUser, getAllSqliteUsers, getSqlitePendingRegistration, saveSqlitePendingRegistration, deleteSqlitePendingRegistration, updateSqlitePendingRegistrationAttempts, deleteSqliteProduct, getAllSqliteCategories, deleteSqliteCategory, getAllSqliteOrders, getSqliteOrderById, saveSqliteOrder, deleteSqliteOrder, getAllSqliteSuppliers, saveSqliteSupplier, deleteSqliteSupplier, getAllSqliteSupplierProducts, saveSqliteSupplierProduct, getAllSqliteSupplierIntakes, saveSqliteSupplierIntake, getAllSqliteSupplierPayments, saveSqliteSupplierPayment, getAllSqliteCustomers, saveSqliteCustomer, getAllSqliteHeroBanners, saveSqliteHeroBanners, getAllSqliteReviews, saveSqliteReview, deleteSqliteReview, getSqliteReviewRequestLogs, getSqliteReviewRequestSettings, saveSqliteReviewRequestSettings, addSqliteReviewOptOut, getSqliteReviewOptOutsCount, getSqliteCustomClothingRequests, saveSqliteCustomClothingRequest, updateSqliteCustomClothingRequestStatus, getSqliteInventoryAuditLogs, addSqliteInventoryAuditLog, pullSyncDataSqlite;
 var init_mysql_db = __esm({
@@ -5822,7 +5905,9 @@ function validateStatusTransition(order, nextStatus, options) {
       error: `Invalid status transition: Cannot change order #${order.id} from '${currentStatus}' to '${targetStatus}'. Allowed next steps: ${allowedNext.length > 0 ? allowedNext.join(", ") : "None (Order is in final state)"}.`
     };
   }
-  const isPaid = Boolean(order.isPaid || order.paymentStatus === "paid");
+  const isPaid = Boolean(
+    order.isPaid || order.paymentStatus === "paid" || options?.confirmPayment || order.paymentMethod === "cod" || typeof order.paymentMethod === "string" && order.paymentMethod.toLowerCase().includes("cod")
+  );
   if (targetStatus === "completed" && !isPaid) {
     return {
       valid: false,
@@ -6216,7 +6301,8 @@ async function transitionOrderStatus(orderId, targetStatus, adminUser = "Admin",
   }
   const cleanTarget = (targetStatus || "").toLowerCase().trim();
   const validation = validateStatusTransition(order, cleanTarget, {
-    isDeliveryConfirmed: options?.isDeliveryConfirmed
+    isDeliveryConfirmed: options?.isDeliveryConfirmed,
+    confirmPayment: options?.confirmPayment
   });
   if (!validation.valid) {
     return { success: false, error: validation.error, statusCode: 400 };
@@ -6249,10 +6335,19 @@ async function transitionOrderStatus(orderId, targetStatus, adminUser = "Admin",
   if (options?.deliveryNote) {
     updatedPayload.deliveryNote = options.deliveryNote;
   }
-  if (options?.isDeliveryConfirmed || cleanTarget === "completed") {
+  if (options?.isDeliveryConfirmed || cleanTarget === "completed" || cleanTarget === "delivered") {
     updatedPayload.deliveryConfirmed = true;
     if (!updatedPayload.deliveredAt) {
       updatedPayload.deliveredAt = nowIso;
+    }
+  }
+  if (cleanTarget === "completed") {
+    if (!updatedPayload.isPaid || updatedPayload.paymentStatus !== "paid") {
+      updatedPayload.isPaid = true;
+      updatedPayload.paymentStatus = "paid";
+      if (!updatedPayload.paidAt) {
+        updatedPayload.paidAt = nowIso;
+      }
     }
   }
   const emailRes = await sendOrderStatusEmail(updatedPayload, cleanTarget, {
@@ -6299,6 +6394,7 @@ async function confirmOrderDelivery(orderId, adminUser = "Admin", data) {
   });
   const updatedPayload = {
     ...order,
+    status: "delivered",
     deliveryConfirmed: true,
     deliveredAt: nowIso,
     deliveryPerson,
@@ -9323,6 +9419,529 @@ var categories_default = router4;
 // server/routes/orders.ts
 var import_express5 = require("express");
 var import_zod4 = require("zod");
+
+// server/services/orderStatusWorkflow.ts
+init_mysql_db();
+init_transporter();
+init_baseLayout();
+init_urlHelper();
+var MPESA_TRANSITION_MAP = {
+  order_received: ["payment_confirmed", "cancelled"],
+  payment_confirmed: ["processing", "cancelled"],
+  processing: ["shipped", "cancelled"],
+  shipped: ["completed", "cancelled"],
+  completed: [],
+  // Terminal
+  cancelled: []
+  // Terminal
+};
+var COD_TRANSITION_MAP = {
+  order_received: ["processing", "cancelled"],
+  processing: ["shipped", "cancelled"],
+  shipped: ["payment_received", "cancelled"],
+  payment_received: ["completed", "cancelled"],
+  completed: [],
+  // Terminal
+  cancelled: []
+  // Terminal
+};
+function normalizePaymentMethod(method) {
+  const m = (method || "").toLowerCase().trim();
+  if (m === "cod" || m.includes("cash") || m.includes("delivery")) {
+    return "cod";
+  }
+  return "mpesa";
+}
+function normalizeOrderStatus(status, paymentMethod) {
+  const s = (status || "").toLowerCase().trim();
+  if (!s || s === "pending" || s === "awaiting_delivery_quote" || s === "delivery_quoted") {
+    return "order_received";
+  }
+  if (s === "delivered") {
+    return paymentMethod === "cod" ? "payment_received" : "shipped";
+  }
+  if (s === "paid" && paymentMethod === "mpesa") {
+    return "payment_confirmed";
+  }
+  return s;
+}
+function getValidNextStatuses(currentStatus, paymentMethod) {
+  const normalizedStatus = normalizeOrderStatus(currentStatus, paymentMethod);
+  const map = paymentMethod === "cod" ? COD_TRANSITION_MAP : MPESA_TRANSITION_MAP;
+  return map[normalizedStatus] || [];
+}
+function validateWorkflowTransition(order, targetStatus, payload) {
+  if (!order) {
+    return { valid: false, error: "Order not found.", fromStatus: "", toStatus: targetStatus, paymentMethod: "mpesa" };
+  }
+  const paymentMethod = normalizePaymentMethod(order.paymentMethod || order.payment_method);
+  const fromStatus = normalizeOrderStatus(order.status, paymentMethod);
+  const toStatus = normalizeOrderStatus(targetStatus, paymentMethod);
+  const map = paymentMethod === "cod" ? COD_TRANSITION_MAP : MPESA_TRANSITION_MAP;
+  const pmLabel = paymentMethod === "cod" ? "Cash on Delivery (COD)" : "M-Pesa Prepaid";
+  if (fromStatus === "completed") {
+    return {
+      valid: false,
+      error: `Invalid status transition: Order #${order.id} is already COMPLETED. Completed orders cannot be changed.`,
+      fromStatus,
+      toStatus,
+      paymentMethod
+    };
+  }
+  if (fromStatus === "cancelled") {
+    return {
+      valid: false,
+      error: `Invalid status transition: Order #${order.id} has been CANCELLED. Cancelled orders cannot be reopened.`,
+      fromStatus,
+      toStatus,
+      paymentMethod
+    };
+  }
+  if (fromStatus === toStatus) {
+    return {
+      valid: false,
+      error: `Order #${order.id} is already in '${toStatus}' status.`,
+      fromStatus,
+      toStatus,
+      paymentMethod
+    };
+  }
+  const allowedNext = map[fromStatus] || [];
+  if (!allowedNext.includes(toStatus)) {
+    return {
+      valid: false,
+      error: `Invalid status transition: Cannot move order #${order.id} from '${fromStatus}' to '${toStatus}' for ${pmLabel}. Allowed next steps: ${allowedNext.length > 0 ? allowedNext.join(", ") : "None (Terminal state)"}.`,
+      fromStatus,
+      toStatus,
+      paymentMethod
+    };
+  }
+  if (toStatus === "cancelled") {
+    const reason = (payload?.cancellationReason || order.cancellationReason || "").trim();
+    if (!reason) {
+      return {
+        valid: false,
+        error: `Cancellation reason is required to cancel order #${order.id}.`,
+        fromStatus,
+        toStatus,
+        paymentMethod
+      };
+    }
+  }
+  if (paymentMethod === "mpesa") {
+    if (toStatus === "payment_confirmed") {
+      const txCode = (payload?.transactionCode || order.paymentReference || "").trim();
+      if (!txCode) {
+        return {
+          valid: false,
+          error: `M-Pesa transaction code is required to confirm payment for order #${order.id}.`,
+          fromStatus,
+          toStatus,
+          paymentMethod
+        };
+      }
+    }
+    if (toStatus === "processing" && fromStatus === "order_received") {
+      return {
+        valid: false,
+        error: `M-Pesa payment must be confirmed before order #${order.id} can move to processing.`,
+        fromStatus,
+        toStatus,
+        paymentMethod
+      };
+    }
+  } else if (paymentMethod === "cod") {
+    if (toStatus === "payment_received") {
+      const collectedBy = (payload?.collectedBy || "").trim();
+      if (!collectedBy) {
+        return {
+          valid: false,
+          error: `Delivery agent or collector name is required when marking cash payment received for order #${order.id}.`,
+          fromStatus,
+          toStatus,
+          paymentMethod
+        };
+      }
+    }
+    if (toStatus === "completed" && fromStatus !== "payment_received") {
+      return {
+        valid: false,
+        error: `Cash payment must be received before completing Cash on Delivery order #${order.id}.`,
+        fromStatus,
+        toStatus,
+        paymentMethod
+      };
+    }
+  }
+  return { valid: true, fromStatus, toStatus, paymentMethod };
+}
+async function executeOrderTransition(orderId, targetStatus, changedBy = "Admin", options) {
+  const pool = await getDbPool();
+  const connection = await pool.getConnection();
+  try {
+    await connection.beginTransaction();
+    const [rows] = await connection.query(
+      "SELECT * FROM orders WHERE id = ? FOR UPDATE",
+      [orderId]
+    );
+    if (!rows || rows.length === 0) {
+      await connection.rollback();
+      connection.release();
+      return { success: false, error: `Order #${orderId} not found.`, statusCode: 404 };
+    }
+    const currentOrder = rows[0];
+    const validation = validateWorkflowTransition(currentOrder, targetStatus, {
+      transactionCode: options?.transactionCode,
+      amount: options?.amount,
+      phone: options?.phone,
+      collectedBy: options?.collectedBy,
+      cancellationReason: options?.cancellationReason
+    });
+    if (!validation.valid) {
+      await connection.rollback();
+      connection.release();
+      return { success: false, error: validation.error, statusCode: 400 };
+    }
+    const { fromStatus, toStatus, paymentMethod } = validation;
+    const nowIso = (/* @__PURE__ */ new Date()).toISOString();
+    let refundClaim = null;
+    const updateSets = ["status = ?", "updated_at = ?"];
+    const updateVals = [toStatus, nowIso];
+    if (toStatus === "payment_confirmed") {
+      const txCode = (options?.transactionCode || currentOrder.paymentReference || "MANUAL-ADMIN").trim().toUpperCase();
+      const phone = options?.phone || currentOrder.mpesaPhone || currentOrder.customerPhone || "";
+      const amount = options?.amount !== void 0 ? Number(options.amount) : Number(currentOrder.total);
+      updateSets.push("paymentStatus = ?", "isPaid = 1", "paidAt = ?", "paymentReference = ?", "mpesaReceiptNumber = ?");
+      updateVals.push("paid", nowIso, txCode, txCode);
+      updateSets.push("payment_confirmed_at = ?", "payment_confirmed_by = ?", "payment_amount = ?");
+      updateVals.push(nowIso, changedBy, amount);
+      if (phone) {
+        updateSets.push("mpesaPhone = ?");
+        updateVals.push(phone);
+      }
+    } else if (toStatus === "payment_received") {
+      const collector = (options?.collectedBy || changedBy).trim();
+      const amount = options?.amount !== void 0 ? Number(options.amount) : Number(currentOrder.total);
+      updateSets.push("paymentStatus = ?", "isPaid = 1", "paidAt = ?");
+      updateVals.push("paid", nowIso);
+      updateSets.push("payment_collected_by = ?", "payment_collected_at = ?", "payment_amount = ?");
+      updateVals.push(collector, nowIso, amount);
+    } else if (toStatus === "shipped") {
+      const trk = options?.trackingNumber || currentOrder.trackingNumber || `ROP-TRK-${String(orderId).slice(-6).toUpperCase()}`;
+      updateSets.push("trackingNumber = ?");
+      updateVals.push(trk);
+    } else if (toStatus === "completed") {
+      updateSets.push("deliveryConfirmed = 1");
+      if (!currentOrder.deliveredAt) {
+        updateSets.push("deliveredAt = ?");
+        updateVals.push(nowIso);
+      }
+      if (!currentOrder.isPaid) {
+        updateSets.push("isPaid = 1", "paymentStatus = ?");
+        updateVals.push("paid");
+      }
+    } else if (toStatus === "cancelled") {
+      const reason = (options?.cancellationReason || options?.note || "Cancelled by " + changedBy).trim();
+      updateSets.push("cancellation_reason = ?", "cancelled_by = ?", "cancelled_at = ?");
+      updateVals.push(reason, changedBy, nowIso);
+      let items = [];
+      try {
+        items = typeof currentOrder.items === "string" ? JSON.parse(currentOrder.items) : currentOrder.items || [];
+      } catch {
+        items = [];
+      }
+      for (const it of items) {
+        const prodId = it.productId || it.product || it.id;
+        const qty = Number(it.quantity || 1);
+        if (prodId && qty > 0) {
+          await connection.query(
+            "UPDATE products SET stock = stock + ?, updated_at = ? WHERE id = ?",
+            [qty, nowIso, prodId]
+          );
+          const [pRows] = await connection.query("SELECT name, sku, stock FROM products WHERE id = ? LIMIT 1", [prodId]);
+          const p = pRows?.[0];
+          const auditId = `audit-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+          await connection.query(
+            `INSERT INTO inventory_audit_logs (id, productId, productName, productSku, timestamp, changeQuantity, newStock, reason, details)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [
+              auditId,
+              String(prodId),
+              p?.name || it.name || "Product",
+              p?.sku || it.sku || null,
+              nowIso,
+              qty,
+              p?.stock !== void 0 ? Number(p.stock) : 0,
+              "Order Cancelled Restock",
+              `Auto-restocked ${qty} units due to cancellation of Order #${orderId}. Reason: ${reason}`
+            ]
+          );
+        }
+      }
+      const isPaidOrder = Boolean(
+        currentOrder.isPaid === 1 || currentOrder.paymentStatus === "paid" || fromStatus === "payment_confirmed" || paymentMethod === "mpesa" && ["processing", "shipped"].includes(fromStatus) || fromStatus === "payment_received"
+      );
+      if (isPaidOrder) {
+        const claimId = `ref-claim-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+        const refundAmount = Number(currentOrder.payment_amount || currentOrder.total || 0);
+        const paymentRef = currentOrder.paymentReference || currentOrder.mpesaReceiptNumber || "M-PESA";
+        await connection.query(
+          `INSERT INTO refund_claims (
+            id, order_id, amount, reason, payment_reference, status,
+            customer_name, customer_email, customer_phone, created_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            claimId,
+            orderId,
+            refundAmount,
+            reason,
+            paymentRef,
+            "refund_requested",
+            currentOrder.customerName || "Customer",
+            (currentOrder.customerEmail || "").trim().toLowerCase(),
+            currentOrder.customerPhone || currentOrder.phone || currentOrder.mpesaPhone || "",
+            nowIso,
+            nowIso
+          ]
+        );
+        refundClaim = {
+          id: claimId,
+          order_id: orderId,
+          amount: refundAmount,
+          reason,
+          payment_reference: paymentRef,
+          status: "refund_requested",
+          customer_name: currentOrder.customerName,
+          customer_email: currentOrder.customerEmail,
+          customer_phone: currentOrder.customerPhone,
+          created_at: nowIso,
+          updated_at: nowIso
+        };
+      }
+    }
+    updateVals.push(orderId);
+    await connection.query(
+      `UPDATE orders SET ${updateSets.join(", ")} WHERE id = ?`,
+      updateVals
+    );
+    const historyId = `osh-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+    const historyNote = options?.note || (toStatus === "payment_confirmed" ? `M-Pesa payment confirmed. Ref: ${options?.transactionCode || currentOrder.paymentReference}` : toStatus === "payment_received" ? `Cash collected by ${options?.collectedBy || changedBy}. Amount: KES ${options?.amount || currentOrder.total}` : toStatus === "cancelled" ? `Order cancelled: ${options?.cancellationReason || "No reason specified"}` : `Status transitioned from ${fromStatus} to ${toStatus}`);
+    const historyMetadata = {
+      paymentMethod,
+      transactionCode: options?.transactionCode,
+      amount: options?.amount,
+      collectedBy: options?.collectedBy,
+      cancellationReason: options?.cancellationReason,
+      trackingNumber: options?.trackingNumber,
+      refundClaimId: refundClaim?.id || null
+    };
+    await connection.query(
+      `INSERT INTO order_status_history (id, order_id, from_status, to_status, changed_by, note, metadata, created_at, timestamp)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        historyId,
+        orderId,
+        fromStatus,
+        toStatus,
+        changedBy,
+        historyNote,
+        JSON.stringify(historyMetadata),
+        nowIso,
+        nowIso
+      ]
+    );
+    await connection.commit();
+    connection.release();
+    const [updatedRows] = await pool.query("SELECT * FROM orders WHERE id = ? LIMIT 1", [orderId]);
+    const updatedOrder = updatedRows[0];
+    if (updatedOrder) {
+      if (typeof updatedOrder.items === "string") {
+        try {
+          updatedOrder.items = JSON.parse(updatedOrder.items);
+        } catch {
+        }
+      }
+      if (typeof updatedOrder.shippingAddress === "string") {
+        try {
+          updatedOrder.shippingAddress = JSON.parse(updatedOrder.shippingAddress);
+        } catch {
+        }
+      }
+    }
+    try {
+      sendWorkflowStatusEmail(updatedOrder, toStatus, {
+        note: historyNote,
+        refundClaim,
+        cancellationReason: options?.cancellationReason,
+        trackingNumber: options?.trackingNumber || updatedOrder.trackingNumber
+      }).catch((err) => console.warn("[WorkflowEmail] Warning:", err?.message || err));
+    } catch (_) {
+    }
+    return {
+      success: true,
+      order: updatedOrder,
+      refundClaim,
+      statusCode: 200
+    };
+  } catch (err) {
+    await connection.rollback();
+    connection.release();
+    console.error(`[OrderTransition Error] Order #${orderId} -> ${targetStatus}:`, err);
+    return {
+      success: false,
+      error: err?.message || "Database transaction failure during status transition.",
+      statusCode: 500
+    };
+  }
+}
+async function customerCancelOrder(orderId, customerEmail, cancellationReason) {
+  const pool = await getDbPool();
+  const [rows] = await pool.query("SELECT * FROM orders WHERE id = ? LIMIT 1", [orderId]);
+  if (!rows || rows.length === 0) {
+    return { success: false, error: "Order not found.", statusCode: 404 };
+  }
+  const order = rows[0];
+  const orderEmail = (order.customerEmail || "").trim().toLowerCase();
+  const reqEmail = (customerEmail || "").trim().toLowerCase();
+  if (orderEmail !== reqEmail) {
+    return { success: false, error: "Unauthorized: You can only cancel your own orders.", statusCode: 403 };
+  }
+  const paymentMethod = normalizePaymentMethod(order.paymentMethod);
+  const currentStatus = normalizeOrderStatus(order.status, paymentMethod);
+  if (currentStatus !== "order_received" && currentStatus !== "processing" && currentStatus !== "payment_confirmed") {
+    return {
+      success: false,
+      error: `Cancellation not allowed: Order #${orderId} is currently '${currentStatus}'. Orders that are already shipped or completed cannot be cancelled directly.`,
+      statusCode: 400
+    };
+  }
+  const reason = (cancellationReason || "Customer requested cancellation from storefront.").trim();
+  return executeOrderTransition(orderId, "cancelled", `Customer (${customerEmail})`, {
+    cancellationReason: reason,
+    note: `Cancelled by customer: ${reason}`
+  });
+}
+async function processRefundClaimAction(claimId, action, adminUser = "Admin", payload) {
+  const pool = await getDbPool();
+  const [rows] = await pool.query("SELECT * FROM refund_claims WHERE id = ? LIMIT 1", [claimId]);
+  if (!rows || rows.length === 0) {
+    return { success: false, error: "Refund claim not found.", statusCode: 404 };
+  }
+  const claim = rows[0];
+  const nowIso = (/* @__PURE__ */ new Date()).toISOString();
+  if (claim.status === "refund_paid") {
+    return { success: false, error: "Refund claim is already completed and paid.", statusCode: 400 };
+  }
+  if (claim.status === "refund_rejected") {
+    return { success: false, error: "Refund claim has already been rejected.", statusCode: 400 };
+  }
+  if (action === "approve") {
+    if (claim.status !== "refund_requested") {
+      return { success: false, error: `Cannot approve claim currently in status '${claim.status}'.`, statusCode: 400 };
+    }
+    await pool.query(
+      "UPDATE refund_claims SET status = ?, approved_by = ?, approved_at = ?, updated_at = ? WHERE id = ?",
+      ["refund_approved", adminUser, nowIso, nowIso, claimId]
+    );
+  } else if (action === "pay") {
+    const refCode = (payload?.refundPaymentReference || "").trim();
+    if (!refCode) {
+      return { success: false, error: "M-Pesa transaction reference is required to mark refund as paid.", statusCode: 400 };
+    }
+    await pool.query(
+      "UPDATE refund_claims SET status = ?, refund_payment_reference = ?, refunded_by = ?, refunded_at = ?, updated_at = ? WHERE id = ?",
+      ["refund_paid", refCode.toUpperCase(), adminUser, nowIso, nowIso, claimId]
+    );
+  } else if (action === "reject") {
+    const reason = (payload?.rejectionReason || "Rejected by administrator").trim();
+    await pool.query(
+      "UPDATE refund_claims SET status = ?, rejected_by = ?, rejected_at = ?, rejection_reason = ?, updated_at = ? WHERE id = ?",
+      ["refund_rejected", adminUser, nowIso, reason, nowIso, claimId]
+    );
+  } else {
+    return { success: false, error: `Invalid action '${action}'.`, statusCode: 400 };
+  }
+  const [updatedRows] = await pool.query("SELECT * FROM refund_claims WHERE id = ? LIMIT 1", [claimId]);
+  const updatedClaim = updatedRows[0];
+  if (updatedClaim) {
+    updatedClaim.amount = Number(updatedClaim.amount);
+  }
+  return { success: true, claim: updatedClaim, statusCode: 200 };
+}
+async function sendWorkflowStatusEmail(order, status, extra) {
+  const customerEmail = order.customerEmail || order.customer_email;
+  if (!customerEmail) return;
+  const shortId = String(order.id).slice(-8).toUpperCase();
+  const customerName = order.customerName || "Valued Customer";
+  const trackUrl = buildTrackUrl(order.id);
+  let subject = `Order Update: #${shortId} is ${status.replace(/_/g, " ").toUpperCase()}`;
+  let heading = `Order Status: ${status.replace(/_/g, " ").toUpperCase()}`;
+  let badgeColor = "indigo";
+  let message = `Your order status has been updated to <strong>${escapeHtml(status.replace(/_/g, " "))}</strong>.`;
+  if (status === "payment_confirmed") {
+    badgeColor = "emerald";
+    subject = `Payment Confirmed: Order #${shortId} is Verified!`;
+    heading = "Payment Verified & Confirmed";
+    message = `Thank you! Your M-Pesa payment for order <strong>#${escapeHtml(shortId)}</strong> has been verified. We are now preparing your order for fulfillment.`;
+  } else if (status === "processing") {
+    badgeColor = "indigo";
+    subject = `Order #${shortId} is Now Processing`;
+    heading = "Order in Preparation";
+    message = `Great news! Order <strong>#${escapeHtml(shortId)}</strong> is actively being processed and packaged at our fulfillment hub.`;
+  } else if (status === "shipped") {
+    badgeColor = "indigo";
+    subject = `Order Dispatched: #${shortId} is On the Way!`;
+    heading = "Order Dispatched with Courier";
+    message = `Your package for order <strong>#${escapeHtml(shortId)}</strong> is on the way! Tracking code: <strong>${escapeHtml(extra.trackingNumber || "Available in tracking")}</strong>.`;
+  } else if (status === "payment_received") {
+    badgeColor = "emerald";
+    subject = `Cash Payment Received: Order #${shortId}`;
+    heading = "Payment Collected";
+    message = `Cash on delivery collection has been recorded for order <strong>#${escapeHtml(shortId)}</strong>. Thank you for shopping with Ropenix!`;
+  } else if (status === "completed") {
+    badgeColor = "emerald";
+    subject = `Order Completed: #${shortId} \u2014 Thank You!`;
+    heading = "Order Delivered & Completed";
+    message = `Your order <strong>#${escapeHtml(shortId)}</strong> has been successfully delivered and completed. We hope you love your purchase!`;
+  } else if (status === "cancelled") {
+    badgeColor = "rose";
+    subject = `Order #${shortId} has been Cancelled`;
+    heading = "Order Cancellation Notice";
+    message = `This email is to notify you that order <strong>#${escapeHtml(shortId)}</strong> has been cancelled.`;
+    if (extra.cancellationReason) {
+      message += `<br><br><strong>Reason:</strong> ${escapeHtml(extra.cancellationReason)}`;
+    }
+    if (extra.refundClaim) {
+      message += `<br><br><em>A refund claim of KES ${extra.refundClaim.amount.toLocaleString()} has been automatically registered (Status: ${extra.refundClaim.status}). Our finance desk will process your M-Pesa reversal shortly.</em>`;
+    }
+  }
+  const bodyHtml = `
+    <p style="margin: 0 0 16px 0; font-size: 15px; color: #1e293b;">
+      Dear <strong>${escapeHtml(customerName)}</strong>,
+    </p>
+    <p style="margin: 0 0 20px 0; line-height: 1.6; color: #334155;">
+      ${message}
+    </p>
+    <div style="text-align: center; margin: 24px 0;">
+      ${renderEmailButton("Track Live Order Status", trackUrl, badgeColor)}
+    </div>
+  `;
+  const html = renderBaseEmailLayout({
+    title: subject,
+    heading,
+    badgeText: status.replace(/_/g, " ").toUpperCase(),
+    badgeColor,
+    bodyHtml
+  });
+  await sendRawMail({
+    to: customerEmail,
+    subject,
+    html,
+    category: "transactional"
+  });
+}
+
+// server/routes/orders.ts
 init_db();
 init_events();
 
@@ -9581,7 +10200,6 @@ async function validateCart(cartItemsOrOptions, couponCodeParam, clientTotalPara
 }
 
 // server/routes/orders.ts
-init_orderStatusService();
 var router5 = (0, import_express5.Router)();
 var OrderItemSchema = import_zod4.z.object({
   id: import_zod4.z.string().or(import_zod4.z.number()).optional(),
@@ -9634,7 +10252,40 @@ router5.get("/track/:orderId", trackingRateLimiter, async (req, res) => {
     if (!order) {
       return res.status(404).json({ success: false, error: "Order not found" });
     }
+    const paymentMethod = normalizePaymentMethod(order.paymentMethod || order.payment_method);
+    const normalizedStatus = normalizeOrderStatus(order.status, paymentMethod);
     const trackingNumber = order.trackingNumber || `ROP-TRK-${String(order.id).slice(-6).toUpperCase()}`;
+    const refundClaim = await getMysqlRefundClaimByOrderId(order.id);
+    const history = await getMysqlOrderStatusHistory(order.id);
+    let checkpoints = [];
+    if (paymentMethod === "cod") {
+      const isReceived = true;
+      const isProcessing = ["processing", "shipped", "payment_received", "completed"].includes(normalizedStatus);
+      const isShipped = ["shipped", "payment_received", "completed"].includes(normalizedStatus);
+      const isPaid = ["payment_received", "completed"].includes(normalizedStatus) || Boolean(order.isPaid);
+      const isCompleted = normalizedStatus === "completed";
+      checkpoints = [
+        { status: "Order Received", code: "order_received", timestamp: order.createdAt || order.date || null, completed: isReceived },
+        { status: "Processing & Packaging", code: "processing", timestamp: null, completed: isProcessing },
+        { status: "Dispatched with Courier", code: "shipped", timestamp: null, completed: isShipped },
+        { status: "Cash Payment Received", code: "payment_received", timestamp: order.payment_collected_at || order.paidAt || null, completed: isPaid },
+        { status: "Delivered & Completed", code: "completed", timestamp: order.deliveredAt || null, completed: isCompleted }
+      ];
+    } else {
+      const isReceived = true;
+      const isConfirmed = ["payment_confirmed", "processing", "shipped", "completed"].includes(normalizedStatus) || Boolean(order.isPaid || order.paymentStatus === "paid");
+      const isProcessing = ["processing", "shipped", "completed"].includes(normalizedStatus);
+      const isShipped = ["shipped", "completed"].includes(normalizedStatus);
+      const isCompleted = normalizedStatus === "completed";
+      checkpoints = [
+        { status: "Order Received", code: "order_received", timestamp: order.createdAt || order.date || null, completed: isReceived },
+        { status: "M-Pesa Payment Confirmed", code: "payment_confirmed", timestamp: order.payment_confirmed_at || order.paidAt || null, completed: isConfirmed },
+        { status: "Processing & Packaging", code: "processing", timestamp: null, completed: isProcessing },
+        { status: "Dispatched with Courier", code: "shipped", timestamp: null, completed: isShipped },
+        { status: "Delivered & Completed", code: "completed", timestamp: order.deliveredAt || null, completed: isCompleted }
+      ];
+    }
+    const canCancel = (normalizedStatus === "order_received" || normalizedStatus === "processing" || normalizedStatus === "payment_confirmed") && normalizedStatus !== "completed" && normalizedStatus !== "cancelled";
     return res.json({
       success: true,
       id: order.id,
@@ -9642,8 +10293,11 @@ router5.get("/track/:orderId", trackingRateLimiter, async (req, res) => {
       customerName: order.customerName,
       customerEmail: order.customerEmail || "",
       phone: order.phone || order.mpesaPhone || "",
-      status: order.status,
+      status: normalizedStatus,
+      rawStatus: order.status,
+      paymentMethod,
       paymentStatus: order.paymentStatus,
+      isPaid: Boolean(order.isPaid || order.paymentStatus === "paid"),
       fulfillmentType: order.fulfillmentType || "delivery",
       shippingFee: Number(order.shippingFee || 0),
       quotedCourier: order.quotedCourier || "",
@@ -9654,6 +10308,12 @@ router5.get("/track/:orderId", trackingRateLimiter, async (req, res) => {
       shippingAddress: order.shippingAddress || "",
       total: Number(order.total || 0),
       subtotal: Number(order.subtotal || order.total || 0),
+      cancellationReason: order.cancellation_reason || order.cancellationReason || null,
+      cancelledBy: order.cancelled_by || order.cancelledBy || null,
+      cancelledAt: order.cancelled_at || order.cancelledAt || null,
+      canCancel,
+      refundClaim: refundClaim || null,
+      history: history.length > 0 ? history : void 0,
       items: Array.isArray(order.items) ? order.items : typeof order.items === "string" ? (() => {
         try {
           return JSON.parse(order.items);
@@ -9663,13 +10323,7 @@ router5.get("/track/:orderId", trackingRateLimiter, async (req, res) => {
       })() : [],
       date: order.date || order.createdAt || (/* @__PURE__ */ new Date()).toISOString(),
       isGuest: Boolean(order.isGuest),
-      checkpoints: [
-        { status: "Order Placed", timestamp: order.createdAt || order.date || (/* @__PURE__ */ new Date()).toISOString(), completed: true },
-        { status: "Payment Verified", timestamp: order.paymentConfirmedAt || null, completed: order.paymentStatus === "paid" },
-        { status: "Fulfillment & Packaging", timestamp: null, completed: ["processing", "shipped", "delivered"].includes(order.status) },
-        { status: "Dispatched with Courier", timestamp: null, completed: ["shipped", "delivered"].includes(order.status) },
-        { status: "Delivered", timestamp: null, completed: order.status === "delivered" }
-      ]
+      checkpoints
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Error retrieving tracking information";
@@ -9690,7 +10344,7 @@ router5.get("/", async (req, res) => {
       const allOrders = await getAllSqliteOrders();
       return res.json(allOrders);
     }
-    const userOrders = await getSqliteOrdersByUser(user.email, user.id);
+    const userOrders = await getSqliteOrdersByUser(user.email || user.id);
     return res.json(userOrders);
   } catch (err) {
     const message = err instanceof Error ? err.message : "Failed to retrieve orders";
@@ -9849,45 +10503,16 @@ router5.put(["/:id", "/:id/"], requireAdmin, async (req, res) => {
       return res.status(404).json({ success: false, error: `Order #${orderId} not found.` });
     }
     const adminUser = req.user?.email || req.user?.username || "Admin";
-    if (req.body.confirmPayment === true || req.body.paymentStatus === "paid" || req.body.payment_status === "paid" || req.body.isPaid === true) {
-      const payResult = await confirmOrderPaymentAndProcess(orderId, adminUser, {
-        paymentReference: req.body.paymentReference || req.body.payment_reference,
-        paymentAmount: req.body.paymentAmount || req.body.amount,
-        adminNotes: req.body.adminNotes || req.body.notes
-      });
-      if (!payResult.success) {
-        return res.status(400).json({ success: false, error: payResult.error });
-      }
-      return res.json({
-        success: true,
-        message: `Order #${orderId} payment confirmed. Status automatically updated to Processing and customer notified.`,
-        order: payResult.order
-      });
-    }
-    if (req.body.confirmDelivery === true || req.body.isDeliveryConfirmed === true) {
-      const delivResult = await confirmOrderDelivery(orderId, adminUser, {
-        deliveryPerson: req.body.deliveryPerson || req.body.courier_name,
-        deliveryNote: req.body.deliveryNote || req.body.notes,
-        deliveredAt: req.body.deliveredAt
-      });
-      if (!delivResult.success) {
-        return res.status(delivResult.statusCode || 400).json({ success: false, error: delivResult.error });
-      }
-      return res.json({
-        success: true,
-        message: `Delivery confirmed for order #${orderId}. Ready for completion.`,
-        order: delivResult.order
-      });
-    }
     if (req.body.status && req.body.status !== existing.status) {
-      const isDelivConf = Boolean(req.body.isDeliveryConfirmed || req.body.deliveryConfirmed || existing.deliveryConfirmed || req.body.status === "completed");
-      const transitionResult = await transitionOrderStatus(orderId, req.body.status, adminUser, {
+      const transitionResult = await executeOrderTransition(orderId, req.body.status, adminUser, {
+        note: req.body.notes || req.body.note,
+        transactionCode: req.body.transactionCode || req.body.transaction_code || req.body.paymentReference || req.body.payment_reference,
+        amount: req.body.amount || req.body.paymentAmount || req.body.payment_amount,
+        phone: req.body.phone || req.body.mpesaPhone || req.body.mpesa_phone,
+        collectedBy: req.body.collectedBy || req.body.collected_by || req.body.deliveryPerson || adminUser,
+        cancellationReason: req.body.cancellationReason || req.body.cancellation_reason || req.body.reason || req.body.notes,
         trackingNumber: req.body.trackingNumber || req.body.tracking_number,
-        courierName: req.body.courierName || req.body.courier_name,
-        deliveryPerson: req.body.deliveryPerson,
-        deliveryNote: req.body.deliveryNote,
-        isDeliveryConfirmed: isDelivConf,
-        note: req.body.notes || req.body.note
+        courierName: req.body.courierName || req.body.courier_name
       });
       if (!transitionResult.success) {
         return res.status(transitionResult.statusCode || 400).json({
@@ -9897,20 +10522,17 @@ router5.put(["/:id", "/:id/"], requireAdmin, async (req, res) => {
       }
       return res.json({
         success: true,
-        message: `Order #${orderId} status successfully updated to ${req.body.status}. Customer notification enqueued.`,
-        order: transitionResult.order
+        message: `Order #${orderId} status successfully transitioned to ${req.body.status}.`,
+        order: transitionResult.order,
+        refundClaim: transitionResult.refundClaim || null
       });
     }
-    let targetStatus = typeof req.body.status === "string" && req.body.status !== "[object Object]" ? req.body.status : existing.status;
-    if (typeof targetStatus !== "string" || targetStatus === "[object Object]" || !targetStatus) {
-      targetStatus = existing.deliveryConfirmed ? "delivered" : existing.trackingNumber ? "shipped" : existing.isPaid || existing.paymentStatus === "paid" ? "processing" : "pending";
-    }
-    const targetPaymentStatus = req.body.paymentStatus || req.body.payment_status || existing.paymentStatus;
     const targetTracking = req.body.trackingNumber || req.body.tracking_number || existing.trackingNumber;
+    const targetPaymentStatus = req.body.paymentStatus || req.body.payment_status || existing.paymentStatus;
     const updatedPayload = {
       ...existing,
       ...req.body,
-      status: targetStatus,
+      status: existing.status,
       paymentStatus: targetPaymentStatus,
       trackingNumber: targetTracking,
       updated_at: (/* @__PURE__ */ new Date()).toISOString()
@@ -9925,57 +10547,164 @@ router5.put(["/:id", "/:id/"], requireAdmin, async (req, res) => {
 router5.patch(["/:id", "/:id/"], requireAdmin, async (req, res) => {
   return router5.handle(Object.assign(req, { method: "PUT" }), res);
 });
-router5.post(["/:id/confirm-payment", "/:id/confirm-payment/"], requireAdmin, async (req, res) => {
+router5.post(["/:id/transition", "/:id/transition/"], requireAdmin, async (req, res) => {
   try {
     const orderId = req.params.id;
     const adminUser = req.user?.email || req.user?.username || "Admin";
-    const result = await confirmOrderPaymentAndProcess(orderId, adminUser, req.body);
-    if (!result.success) {
-      return res.status(400).json({ success: false, error: result.error });
+    const targetStatus = req.body.status;
+    if (!targetStatus) {
+      return res.status(400).json({ success: false, error: "Target status is required." });
     }
-    return res.json({
-      success: true,
-      message: `Payment confirmed for order #${orderId}. Order is now Processing. Customer notified.`,
-      order: result.order
+    const result = await executeOrderTransition(orderId, targetStatus, adminUser, {
+      note: req.body.note || req.body.notes,
+      transactionCode: req.body.transactionCode || req.body.transaction_code || req.body.paymentReference,
+      amount: req.body.amount || req.body.paymentAmount,
+      phone: req.body.phone || req.body.mpesaPhone,
+      collectedBy: req.body.collectedBy || req.body.collected_by || adminUser,
+      cancellationReason: req.body.cancellationReason || req.body.cancellation_reason || req.body.reason,
+      trackingNumber: req.body.trackingNumber || req.body.tracking_number,
+      courierName: req.body.courierName || req.body.courier_name
     });
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "Failed to confirm payment";
-    return res.status(500).json({ success: false, error: message });
-  }
-});
-router5.post(["/:id/confirm-delivery", "/:id/confirm-delivery/"], requireAdmin, async (req, res) => {
-  try {
-    const orderId = req.params.id;
-    const adminUser = req.user?.email || req.user?.username || "Admin";
-    const result = await confirmOrderDelivery(orderId, adminUser, req.body);
     if (!result.success) {
       return res.status(result.statusCode || 400).json({ success: false, error: result.error });
     }
     return res.json({
       success: true,
-      message: `Delivery confirmed for order #${orderId} by ${req.body.deliveryPerson || "Courier"}.`,
-      order: result.order
-    });
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "Failed to confirm delivery";
-    return res.status(500).json({ success: false, error: message });
-  }
-});
-router5.post(["/:id/transition-status", "/:id/transition-status/"], requireAdmin, async (req, res) => {
-  try {
-    const orderId = req.params.id;
-    const adminUser = req.user?.email || req.user?.username || "Admin";
-    const result = await transitionOrderStatus(orderId, req.body.status, adminUser, req.body);
-    if (!result.success) {
-      return res.status(result.statusCode || 400).json({ success: false, error: result.error });
-    }
-    return res.json({
-      success: true,
-      message: `Order #${orderId} moved to ${req.body.status}.`,
-      order: result.order
+      message: `Order #${orderId} moved to ${targetStatus}.`,
+      order: result.order,
+      refundClaim: result.refundClaim || null
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Failed to transition order status";
+    return res.status(500).json({ success: false, error: message });
+  }
+});
+router5.post(["/:id/cancel", "/:id/cancel/"], async (req, res) => {
+  try {
+    const orderId = req.params.id;
+    const reason = (req.body.cancellationReason || req.body.cancellation_reason || req.body.reason || req.body.notes || "").trim();
+    if (!reason) {
+      return res.status(400).json({ success: false, error: "A cancellation reason is required to cancel this order." });
+    }
+    const token = getAuthTokenFromRequest(req);
+    const user = token ? await extractUserFromToken(token) : null;
+    const isAdmin = Boolean(user && (user.is_staff || user.is_superuser || user.role === "admin"));
+    if (isAdmin) {
+      const adminUser = user?.email || user?.username || "Admin";
+      const result2 = await executeOrderTransition(orderId, "cancelled", adminUser, {
+        cancellationReason: reason,
+        note: `Cancelled by admin (${adminUser}): ${reason}`
+      });
+      if (!result2.success) {
+        return res.status(result2.statusCode || 400).json({ success: false, error: result2.error });
+      }
+      return res.json({
+        success: true,
+        message: `Order #${orderId} has been cancelled.`,
+        order: result2.order,
+        refundClaim: result2.refundClaim || null
+      });
+    }
+    const existing = await getSqliteOrderById(orderId);
+    if (!existing) {
+      return res.status(404).json({ success: false, error: "Order not found." });
+    }
+    const customerEmail = user?.email || req.body.customerEmail || existing.customerEmail;
+    const result = await customerCancelOrder(orderId, customerEmail, reason);
+    if (!result.success) {
+      return res.status(result.statusCode || 400).json({ success: false, error: result.error });
+    }
+    return res.json({
+      success: true,
+      message: `Your order #${orderId} has been cancelled.`,
+      order: result.order,
+      refundClaim: result.refundClaim || null
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Failed to cancel order";
+    return res.status(500).json({ success: false, error: message });
+  }
+});
+router5.get(["/:id/history", "/:id/history/"], async (req, res) => {
+  try {
+    const orderId = req.params.id;
+    const history = await getMysqlOrderStatusHistory(orderId);
+    if (history && history.length > 0) {
+      return res.json({ success: true, orderId, history });
+    }
+    const order = await getSqliteOrderById(orderId);
+    const fallbackHistory = Array.isArray(order?.statusHistory) ? order.statusHistory : [];
+    return res.json({ success: true, orderId, history: fallbackHistory });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Failed to fetch order history";
+    return res.status(500).json({ success: false, error: message });
+  }
+});
+router5.get(["/:id/valid-transitions", "/:id/valid-transitions/"], async (req, res) => {
+  try {
+    const orderId = req.params.id;
+    const order = await getSqliteOrderById(orderId);
+    if (!order) {
+      return res.status(404).json({ success: false, error: "Order not found." });
+    }
+    const paymentMethod = normalizePaymentMethod(order.paymentMethod);
+    const normalizedStatus = normalizeOrderStatus(order.status, paymentMethod);
+    const validNext = getValidNextStatuses(normalizedStatus, paymentMethod);
+    return res.json({
+      success: true,
+      orderId,
+      currentStatus: normalizedStatus,
+      rawStatus: order.status,
+      paymentMethod,
+      validNext
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Failed to retrieve valid transitions";
+    return res.status(500).json({ success: false, error: message });
+  }
+});
+router5.get(["/:id/refund-claim", "/:id/refund-claim/"], async (req, res) => {
+  try {
+    const orderId = req.params.id;
+    const claim = await getMysqlRefundClaimByOrderId(orderId);
+    return res.json({ success: true, orderId, refundClaim: claim || null });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Failed to retrieve refund claim";
+    return res.status(500).json({ success: false, error: message });
+  }
+});
+router5.get(["/refunds", "/admin/refunds"], requireAdmin, async (req, res) => {
+  try {
+    const statusFilter = req.query.status;
+    const claims = await getAllMysqlRefundClaims(statusFilter);
+    return res.json({ success: true, count: claims.length, refunds: claims });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Failed to list refund claims";
+    return res.status(500).json({ success: false, error: message });
+  }
+});
+router5.post(["/refunds/:id/action", "/admin/refunds/:id/action"], requireAdmin, async (req, res) => {
+  try {
+    const claimId = req.params.id;
+    const adminUser = req.user?.email || req.user?.username || "Admin";
+    const action = req.body.action;
+    if (!["approve", "reject", "pay"].includes(action)) {
+      return res.status(400).json({ success: false, error: "Invalid action. Supported actions: 'approve', 'reject', 'pay'." });
+    }
+    const result = await processRefundClaimAction(claimId, action, adminUser, {
+      refundPaymentReference: req.body.refundPaymentReference || req.body.mpesaReference || req.body.paymentReference,
+      rejectionReason: req.body.rejectionReason || req.body.reason
+    });
+    if (!result.success) {
+      return res.status(result.statusCode || 400).json({ success: false, error: result.error });
+    }
+    return res.json({
+      success: true,
+      message: `Refund claim #${claimId} action '${action}' completed successfully.`,
+      claim: result.claim
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Failed to process refund claim action";
     return res.status(500).json({ success: false, error: message });
   }
 });
@@ -13414,6 +14143,7 @@ app.use("/api/products", products_default);
 app.use("/api/categories", categories_default);
 app.use("/api/inventory", products_default);
 app.use("/api/orders", orders_default);
+app.use("/api/admin/refunds", orders_default);
 app.use("/api/suppliers", suppliers_default);
 app.use("/api/customers", customers_default);
 app.use("/api/deals", customers_default);
@@ -13622,6 +14352,15 @@ var server_default2 = server_default;
  * 
  * Compatibility Bridge: SQLite -> MySQL Migration
  * All SQLite operations are now transparently backed by the unified MySQL database.
+ */
+/**
+ * @license
+ * SPDX-License-Identifier: Apache-2.0
+ * 
+ * Order Status Workflow Engine for MySQL
+ * Strict Payment Lifecycles: M-Pesa (Prepaid) vs Cash on Delivery (COD)
+ * Handles Transitions, Validation, MySQL Transactions, Audit History,
+ * Conditional Refund Claims, and Inventory Restocking.
  */
 /**
  * @license

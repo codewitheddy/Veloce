@@ -50,7 +50,10 @@ import {
   SlidersHorizontal,
   ExternalLink,
   Sparkles,
-  CheckCircle2
+  CheckCircle2,
+  RotateCcw,
+  AlertOctagon,
+  Loader2
 } from 'lucide-react';
 import { Order, Product, OrderStatusHistoryEntry, CartItem, ReturnRequest } from '../types';
 import { CurrencyType, formatPrice } from '../lib/currency';
@@ -62,6 +65,7 @@ import EditProfileModal from './EditProfileModal';
 import { exportSingleReceiptPDF, exportOrderHistoryPDF } from '../lib/pdfGenerator';
 import api, { authService, setAuthTokens } from '../services/api';
 import { usersApi } from '../api/users';
+import { ordersApi } from '../api/orders';
 import { useAuth } from '../context/AuthContext';
 import { useLanguage } from '../context/LanguageContext';
 
@@ -120,7 +124,7 @@ export default function UserAccount({
   onCreateReturnRequest = () => {},
   onUpdateReturnRequestStatus = () => {},
 }: UserAccountProps) {
-  const { t } = useLanguage();
+  const { t, language, setLanguage, supportedLanguages } = useLanguage();
   const { user, isAuthenticated, login: authLogin, logout: authLogout, updateProfile: authUpdateProfile } = useAuth();
 
   // Auth & Profile state
@@ -169,6 +173,10 @@ export default function UserAccount({
   const [selectedInvoiceOrder, setSelectedInvoiceOrder] = useState<Order | null>(null);
   const [autoPrintOnce, setAutoPrintOnce] = useState(false);
   const [returnOrder, setReturnOrder] = useState<Order | null>(null);
+  const [cancellingOrder, setCancellingOrder] = useState<Order | null>(null);
+  const [cancellationReason, setCancellationReason] = useState('');
+  const [isCancellingOrder, setIsCancellingOrder] = useState(false);
+  const [cancelOrderError, setCancelOrderError] = useState('');
 
   // Wishlist state
   const [wishlistViewMode, setWishlistViewMode] = useState<'grid' | 'list'>('grid');
@@ -326,6 +334,36 @@ export default function UserAccount({
         window.dispatchEvent(new CustomEvent('veloce_open_tracking', { detail: orderId }));
       }
       setCurrentTab('track');
+    }
+  };
+
+  const handleConfirmCancelOrder = async () => {
+    if (!cancellingOrder?.id) return;
+    if (!cancellationReason.trim()) {
+      setCancelOrderError('Please enter a cancellation reason.');
+      return;
+    }
+    setIsCancellingOrder(true);
+    setCancelOrderError('');
+    try {
+      const res = await ordersApi.cancelOrder(cancellingOrder.id, cancellationReason.trim());
+      if (cancellingOrder) {
+        cancellingOrder.status = 'cancelled';
+        cancellingOrder.cancellationReason = cancellationReason.trim();
+        cancellingOrder.cancelledBy = 'Customer';
+        if (res.refundClaim) {
+          cancellingOrder.refundClaim = res.refundClaim;
+        }
+      }
+      if (onUpdateOrderStatus) {
+        onUpdateOrderStatus(cancellingOrder.id, 'cancelled');
+      }
+      setCancellingOrder(null);
+      setCancellationReason('');
+    } catch (err: any) {
+      setCancelOrderError(err?.response?.data?.error || err?.message || 'Failed to cancel order.');
+    } finally {
+      setIsCancellingOrder(false);
     }
   };
 
@@ -1506,6 +1544,9 @@ export default function UserAccount({
                 const totalItemCount = order.items.reduce((sum, it) => sum + it.quantity, 0);
 
                 const statusStyles: Record<string, string> = {
+                  order_received: 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700',
+                  payment_confirmed: 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-400 border-emerald-200/60 dark:border-emerald-900/40',
+                  payment_received: 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-400 border-emerald-200/60 dark:border-emerald-900/40',
                   completed: 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-400 border-emerald-200/60 dark:border-emerald-900/40',
                   delivered: 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-400 border-emerald-200/60 dark:border-emerald-900/40',
                   processing: 'bg-purple-50 dark:bg-purple-950/40 text-purple-700 dark:text-purple-400 border-purple-200/60 dark:border-purple-900/40',
@@ -1514,7 +1555,7 @@ export default function UserAccount({
                   awaiting_delivery_quote: 'bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400 border-amber-200/60 dark:border-amber-900/40',
                   delivery_quoted: 'bg-sky-50 dark:bg-sky-950/40 text-sky-700 dark:text-sky-400 border-sky-200/60 dark:border-sky-900/40',
                   'pending-cancellation': 'bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-400 border-rose-200/60 dark:border-rose-900/40',
-                  cancelled: 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-700'
+                  cancelled: 'bg-rose-100 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 border-rose-300 dark:border-rose-800'
                 };
 
                 const visibleThumbnails = order.items.slice(0, 3);
@@ -1596,10 +1637,10 @@ export default function UserAccount({
                       {/* Right: Status Badges, Total Price & Actions */}
                       <div className="flex flex-wrap items-center justify-between sm:justify-end gap-3 sm:gap-4 shrink-0 pt-2.5 xl:pt-0 border-t xl:border-t-0 border-slate-100 dark:border-slate-800/80">
                         {/* Status & Payment Badges */}
-                        <div className="flex items-center gap-1.5 shrink-0">
+                        <div className="flex flex-wrap items-center gap-1.5 shrink-0">
                           <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[10px] font-semibold capitalize border ${statusStyles[order.status] || statusStyles.pending}`}>
                             <span className="h-1.5 w-1.5 rounded-full bg-current" />
-                            {order.status}
+                            {order.status.replace('_', ' ')}
                           </span>
 
                           <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium border ${
@@ -1611,6 +1652,12 @@ export default function UserAccount({
                           }`}>
                             {order.paymentStatus === 'paid' ? 'Paid' : order.paymentStatus === 'pending_verification' ? 'In Review' : 'Unpaid'}
                           </span>
+
+                          {order.refundClaim && (
+                            <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold bg-purple-50 dark:bg-purple-950/50 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800">
+                              Refund {order.refundClaim.status.replace('refund_', '')}
+                            </span>
+                          )}
                         </div>
 
                         {/* Total Price */}
@@ -1727,6 +1774,42 @@ export default function UserAccount({
                           </div>
                         </div>
 
+                        {/* Cancellation & Refund Notice */}
+                        {order.status === 'cancelled' && (
+                          <div className="p-3.5 rounded-xl bg-rose-50/80 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/60 text-xs">
+                            <div className="flex items-center gap-2 text-rose-800 dark:text-rose-200 font-bold">
+                              <AlertOctagon className="h-4 w-4 text-rose-600" />
+                              <span>Order Cancelled</span>
+                            </div>
+                            <p className="text-rose-700 dark:text-rose-300 mt-1">
+                              {order.cancellationReason ? `Reason: "${order.cancellationReason}"` : 'No cancellation reason logged.'}
+                              {order.cancelledBy && ` • By ${order.cancelledBy}`}
+                              {order.cancelledAt && ` • ${new Date(order.cancelledAt).toLocaleDateString()}`}
+                            </p>
+                            <p className="text-[11px] text-rose-600 dark:text-rose-400 mt-1">
+                              ✓ Reserved inventory items have been automatically returned to store stock.
+                            </p>
+                          </div>
+                        )}
+
+                        {order.refundClaim && (
+                          <div className="p-3.5 rounded-xl bg-purple-50/80 dark:bg-purple-950/40 border border-purple-200 dark:border-purple-800 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                            <div>
+                              <span className="font-bold text-purple-900 dark:text-purple-200">
+                                Refund Claim #{order.refundClaim.id} ({order.refundClaim.status.replace('_', ' ').toUpperCase()})
+                              </span>
+                              <p className="text-purple-700 dark:text-purple-300 text-[11px] mt-0.5">
+                                Claim Amount: {formatPrice(order.refundClaim.amount, currency)}
+                                {order.refundClaim.paymentReference && ` • Original Ref: ${order.refundClaim.paymentReference}`}
+                                {order.refundClaim.payoutReference && ` • M-Pesa Disbursed Ref: ${order.refundClaim.payoutReference}`}
+                              </p>
+                            </div>
+                            <span className="text-[11px] font-semibold text-purple-700 dark:text-purple-300">
+                              {order.refundClaim.status === 'refund_paid' ? 'Disbursed via M-Pesa' : order.refundClaim.status === 'refund_approved' ? 'Approved, payout pending' : 'Claim under review'}
+                            </span>
+                          </div>
+                        )}
+
                         {/* Itemized Table Breakdown */}
                         <div className="border border-slate-200/70 dark:border-slate-800 rounded-xl overflow-hidden bg-white dark:bg-slate-900 shadow-2xs">
                           <div className="px-4 py-2.5 bg-slate-50 dark:bg-slate-800/60 border-b border-slate-100 dark:border-slate-800 text-[11px] font-semibold text-slate-500 uppercase tracking-wider flex items-center justify-between">
@@ -1801,6 +1884,22 @@ export default function UserAccount({
                               <span>Reorder</span>
                             </button>
 
+                            {/* Cancel Order Button (Available for order_received, pending, processing) */}
+                            {Boolean(!['completed', 'cancelled', 'shipped', 'delivered', 'payment_received'].includes((order.status || '').toLowerCase())) && (
+                              <button
+                                onClick={() => {
+                                  setCancelOrderError('');
+                                  setCancellationReason('');
+                                  setCancellingOrder(order);
+                                }}
+                                className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-rose-200 dark:border-rose-900/60 bg-rose-50/70 hover:bg-rose-100 dark:bg-rose-950/40 dark:hover:bg-rose-900/40 px-2.5 text-xs font-semibold text-rose-700 dark:text-rose-300 transition-colors cursor-pointer"
+                                title="Cancel order"
+                              >
+                                <RotateCcw className="h-3.5 w-3.5 text-rose-500" />
+                                <span>Cancel Order</span>
+                              </button>
+                            )}
+
                             {order.status === 'completed' && (
                               <button
                                 onClick={() => setReturnOrder(order)}
@@ -1827,12 +1926,16 @@ export default function UserAccount({
                 const isExpanded = expandedOrderId === order.id;
                 const orderTotal = order.total || order.items.reduce((s, it) => s + it.price * it.quantity, 0);
 
-                const statusStyles = {
+                const statusStyles: Record<string, string> = {
+                  order_received: 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700',
+                  payment_confirmed: 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-400 border-emerald-200/60 dark:border-emerald-900/40',
+                  payment_received: 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-400 border-emerald-200/60 dark:border-emerald-900/40',
                   completed: 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-400 border-emerald-200/60 dark:border-emerald-900/40',
                   shipped: 'bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-400 border-blue-200/60 dark:border-blue-900/40',
+                  processing: 'bg-purple-50 dark:bg-purple-950/40 text-purple-700 dark:text-purple-400 border-purple-200/60 dark:border-purple-900/40',
                   pending: 'bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400 border-amber-200/60 dark:border-amber-900/40',
                   'pending-cancellation': 'bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-400 border-rose-200/60 dark:border-rose-900/40',
-                  cancelled: 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-700'
+                  cancelled: 'bg-rose-100 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 border-rose-300 dark:border-rose-800'
                 };
 
                 return (
@@ -1859,7 +1962,7 @@ export default function UserAccount({
 
                           <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] font-semibold capitalize border ${statusStyles[order.status] || statusStyles.pending}`}>
                             <span className="h-1.5 w-1.5 rounded-full bg-current" />
-                            {order.status}
+                            {order.status.replace('_', ' ')}
                           </span>
 
                           <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] font-medium border ${
@@ -1871,6 +1974,12 @@ export default function UserAccount({
                           }`}>
                             {order.paymentStatus === 'paid' ? 'Paid' : order.paymentStatus === 'pending_verification' ? 'Payment in review' : 'Unpaid'}
                           </span>
+
+                          {order.refundClaim && (
+                            <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold bg-purple-50 dark:bg-purple-950/50 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800">
+                              Refund {order.refundClaim.status.replace('refund_', '')}
+                            </span>
+                          )}
                         </div>
 
                         <div className="flex items-center justify-between sm:justify-end gap-3">
@@ -1959,6 +2068,22 @@ export default function UserAccount({
                             <ShoppingCart className="h-3.5 w-3.5 text-slate-400" />
                             <span>Reorder</span>
                           </button>
+
+                          {/* Cancel Order Button */}
+                          {Boolean(!['completed', 'cancelled', 'shipped', 'delivered', 'payment_received'].includes((order.status || '').toLowerCase())) && (
+                            <button
+                              onClick={() => {
+                                setCancelOrderError('');
+                                setCancellationReason('');
+                                setCancellingOrder(order);
+                              }}
+                              className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-rose-200 dark:border-rose-900/60 bg-rose-50/70 hover:bg-rose-100 dark:bg-rose-950/40 dark:hover:bg-rose-900/40 px-2.5 text-xs font-semibold text-rose-700 dark:text-rose-300 transition-colors cursor-pointer"
+                              title="Cancel order"
+                            >
+                              <RotateCcw className="h-3.5 w-3.5 text-rose-500" />
+                              <span>Cancel Order</span>
+                            </button>
+                          )}
 
                           {order.status === 'completed' && (
                             <button
@@ -2688,6 +2813,26 @@ export default function UserAccount({
                   </button>
                 </div>
 
+                <div className="py-3 flex items-center justify-between notranslate" translate="no">
+                  <div>
+                    <span className="font-semibold text-slate-900 dark:text-white block">{t('language') || 'Language'}</span>
+                    <span className="text-slate-500 text-[11px]">Select your preferred portal language</span>
+                  </div>
+                  <select
+                    value={language}
+                    onChange={(e) => setLanguage(e.target.value as any)}
+                    aria-label="Account Language Selector"
+                    className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 cursor-pointer notranslate"
+                    translate="no"
+                  >
+                    {supportedLanguages.map((lang) => (
+                      <option key={lang.code} value={lang.code} className="bg-white dark:bg-slate-900 text-slate-900 dark:text-white">
+                        {lang.flag} {lang.name} ({lang.code.toUpperCase()})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
                 <div className="py-3 flex items-center justify-between">
                   <div>
                     <span className="font-semibold text-slate-900 dark:text-white block">Wishlist Price Drop Alerts</span>
@@ -2750,6 +2895,90 @@ export default function UserAccount({
             setActiveDashboardTab('returns');
           }}
         />
+      )}
+
+      {/* Customer Cancel Order Modal */}
+      {cancellingOrder && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm animate-in fade-in">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl max-w-md w-full p-6 shadow-2xl space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="w-10 h-10 rounded-xl bg-rose-100 dark:bg-rose-950/60 text-rose-600 flex items-center justify-center">
+                  <AlertOctagon className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-slate-900 dark:text-white">
+                    Cancel Order #{cancellingOrder.id.slice(0, 10).toUpperCase()}
+                  </h3>
+                  <p className="text-xs text-slate-500">
+                    {cancellingOrder.paymentStatus === 'paid' ? 'Paid Order Cancellation' : 'Unpaid Order Cancellation'}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setCancellingOrder(null)}
+                className="p-1 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="text-xs text-slate-600 dark:text-slate-300 bg-slate-50 dark:bg-slate-800/60 p-3.5 rounded-xl space-y-1.5 border border-slate-200/60 dark:border-slate-700/60">
+              <p>
+                • <strong>Restocking:</strong> Reserved products will be returned to store stock automatically.
+              </p>
+              {cancellingOrder.paymentStatus === 'paid' ? (
+                <p className="text-indigo-600 dark:text-indigo-400 font-medium">
+                  • <strong>Refund Claim:</strong> A refund claim for {formatPrice(cancellingOrder.total || 0, currency)} will be created and forwarded to our finance team for verification and M-Pesa disbursement.
+                </p>
+              ) : (
+                <p className="text-slate-500">
+                  • <strong>No Payment Collected:</strong> As this order has not been paid, no refund claim is necessary.
+                </p>
+              )}
+            </div>
+
+            {cancelOrderError && (
+              <div className="p-3 rounded-xl bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-800 text-xs text-rose-700 dark:text-rose-300">
+                {cancelOrderError}
+              </div>
+            )}
+
+            <div>
+              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+                Reason for Cancellation <span className="text-rose-500">*</span>
+              </label>
+              <textarea
+                rows={3}
+                value={cancellationReason}
+                onChange={(e) => setCancellationReason(e.target.value)}
+                placeholder="e.g., Placed by mistake, duplicate order, want to modify items..."
+                className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              />
+            </div>
+
+            <div className="flex items-center justify-end gap-2.5 pt-2">
+              <button
+                type="button"
+                onClick={() => setCancellingOrder(null)}
+                disabled={isCancellingOrder}
+                className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
+              >
+                Keep Order
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmCancelOrder}
+                disabled={isCancellingOrder || !cancellationReason.trim()}
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 transition disabled:opacity-50 cursor-pointer"
+              >
+                {isCancellingOrder ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RotateCcw className="w-3.5 h-3.5" />}
+                Confirm Cancellation
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

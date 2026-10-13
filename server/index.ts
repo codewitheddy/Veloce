@@ -170,6 +170,7 @@ app.use('/api/products', productsRouter);
 app.use('/api/categories', categoriesRouter);
 app.use('/api/inventory', productsRouter);
 app.use('/api/orders', ordersRouter);
+app.use('/api/admin/refunds', ordersRouter);
 app.use('/api/suppliers', suppliersRouter);
 app.use('/api/customers', customersRouter);
 app.use('/api/deals', customersRouter);

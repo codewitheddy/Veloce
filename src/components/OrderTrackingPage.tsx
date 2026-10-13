@@ -24,13 +24,19 @@ import {
   ExternalLink,
   Phone,
   ChevronDown,
-  ChevronUp
+  ChevronUp,
+  AlertOctagon,
+  RotateCcw,
+  DollarSign,
+  X,
+  Loader2,
 } from 'lucide-react';
-import { Order, Product } from '../types';
+import { Order, Product, RefundClaim } from '../types';
 import { CurrencyType, formatPrice } from '../lib/currency';
 import { useAuth } from '../context/AuthContext';
 import { useSiteSettings } from '../context/SiteSettingsContext';
 import { generateColorRamp } from '../services/siteSettingsApi';
+import { ordersApi } from '../api/orders';
 
 interface OrderTrackingPageProps {
   initialOrderId?: string | null;
@@ -81,6 +87,11 @@ export default function OrderTrackingPage({
   const [showItemsBreakdown, setShowItemsBreakdown] = useState(true);
   const [isInputFocused, setIsInputFocused] = useState(false);
 
+  const [showCancelModal, setShowCancelModal] = useState(false);
+  const [cancellationReasonInput, setCancellationReasonInput] = useState('');
+  const [isCancelling, setIsCancelling] = useState(false);
+  const [cancelError, setCancelError] = useState('');
+
   const fetchServerTracking = async (orderId: string) => {
     try {
       const res = await fetch(`/api/orders/track/${encodeURIComponent(orderId)}`);
@@ -117,6 +128,7 @@ export default function OrderTrackingPage({
       );
 
       if (serverData && serverData.success) {
+        const isPaidOrder = serverData.paymentStatus === 'paid' || serverData.status === 'completed' || serverData.status === 'payment_confirmed' || serverData.status === 'payment_received' || Boolean(serverData.isPaid);
         const normalized: Order = {
           id: serverData.id || serverData.orderId || trimmedId,
           customerName: serverData.customerName || localMatch?.customerName || 'Valued Customer',
@@ -127,8 +139,11 @@ export default function OrderTrackingPage({
             : localMatch?.items || [],
           total: Number(serverData.total !== undefined ? serverData.total : localMatch?.total || 0),
           subtotal: Number(serverData.subtotal !== undefined ? serverData.subtotal : localMatch?.subtotal || serverData.total || 0),
-          status: serverData.status || localMatch?.status || 'pending',
-          paymentStatus: serverData.paymentStatus || localMatch?.paymentStatus || 'unpaid',
+          status: serverData.status || localMatch?.status || 'order_received',
+          paymentStatus: isPaidOrder ? 'paid' : (serverData.paymentStatus || localMatch?.paymentStatus || 'unpaid'),
+          isPaid: isPaidOrder,
+          paymentMethod: serverData.paymentMethod || localMatch?.paymentMethod || 'mpesa',
+          paymentReference: serverData.paymentReference || localMatch?.paymentReference,
           shippingFee: Number(serverData.shippingFee || localMatch?.shippingFee || 0),
           fulfillmentType: serverData.fulfillmentType || localMatch?.fulfillmentType || 'delivery',
           areaEstate: serverData.areaEstate || localMatch?.areaEstate || '',
@@ -138,6 +153,12 @@ export default function OrderTrackingPage({
           shippingAddress: serverData.shippingAddress || localMatch?.shippingAddress || '',
           date: serverData.date || localMatch?.date || new Date().toISOString(),
           isGuest: Boolean(serverData.isGuest ?? localMatch?.isGuest),
+          cancellationReason: serverData.cancellationReason || localMatch?.cancellationReason,
+          cancelledBy: serverData.cancelledBy || localMatch?.cancelledBy,
+          cancelledAt: serverData.cancelledAt || localMatch?.cancelledAt,
+          canCancel: serverData.canCancel ?? Boolean(!['completed', 'cancelled', 'shipped', 'delivered', 'payment_received'].includes((serverData.status || '').toLowerCase())),
+          refundClaim: serverData.refundClaim || localMatch?.refundClaim,
+          statusHistory: serverData.history || localMatch?.statusHistory || [],
         };
         setTrackedOrder(normalized);
         setErrorMsg('');
@@ -163,14 +184,55 @@ export default function OrderTrackingPage({
     }
   }, [initialOrderId, handleTrackOrder]);
 
-  // Determine stage progress (0: Placed, 1: Confirmed, 2: Processing, 3: Out for Delivery, 4: Delivered)
+  const handleCustomerCancelOrder = async () => {
+    if (!trackedOrder?.id) return;
+    if (!cancellationReasonInput.trim()) {
+      setCancelError('Please provide a reason for cancelling your order.');
+      return;
+    }
+    setIsCancelling(true);
+    setCancelError('');
+    try {
+      const res = await ordersApi.cancelOrder(trackedOrder.id, cancellationReasonInput.trim());
+      setTrackedOrder(prev => prev ? ({
+        ...prev,
+        ...res.order,
+        status: 'cancelled',
+        cancellationReason: cancellationReasonInput.trim(),
+        cancelledBy: 'Customer',
+        refundClaim: res.refundClaim || prev.refundClaim,
+        canCancel: false,
+      }) : null);
+      setShowCancelModal(false);
+      setCancellationReasonInput('');
+    } catch (err: any) {
+      const msg = err?.response?.data?.error || err?.message || 'Failed to cancel order.';
+      setCancelError(msg);
+    } finally {
+      setIsCancelling(false);
+    }
+  };
+
+  const isCod = (trackedOrder?.paymentMethod || '').toLowerCase().includes('cod') || (trackedOrder?.paymentMethod || '').toLowerCase().includes('cash');
+
+  // M-Pesa: 1: order_received, 2: payment_confirmed, 3: processing, 4: shipped, 5: completed
+  // COD: 1: order_received, 2: processing, 3: shipped, 4: payment_received, 5: completed
   const getStageIndex = (status?: string): number => {
     const s = (status || '').toLowerCase();
-    if (s === 'delivered' || s === 'completed') return 4;
-    if (s === 'out_for_delivery' || s === 'in_transit' || s === 'shipped') return 3;
-    if (s === 'processing' || s === 'packaged' || s === 'ready_for_pickup') return 2;
-    if (s === 'confirmed' || s === 'paid' || s === 'pending') return 1;
-    return 1;
+    if (s === 'cancelled') return -1;
+    if (isCod) {
+      if (s === 'completed') return 5;
+      if (s === 'payment_received' || s === 'delivered') return 4;
+      if (s === 'shipped' || s === 'out_for_delivery' || s === 'in_transit') return 3;
+      if (s === 'processing' || s === 'packaged') return 2;
+      return 1;
+    } else {
+      if (s === 'completed') return 5;
+      if (s === 'shipped' || s === 'delivered' || s === 'out_for_delivery' || s === 'in_transit') return 4;
+      if (s === 'processing' || s === 'packaged') return 3;
+      if (s === 'payment_confirmed' || (s === 'pending' && (trackedOrder?.paymentStatus === 'paid' || trackedOrder?.isPaid))) return 2;
+      return 1;
+    }
   };
 
   const currentStage = getStageIndex(trackedOrder?.status);
@@ -206,44 +268,95 @@ export default function OrderTrackingPage({
     if (!trackedOrder) return [];
     const baseDate = trackedOrder.date || new Date().toISOString();
 
-    const allCheckpoints: TrackingCheckpoint[] = [
+    if (isCod) {
+      return [
+        {
+          id: 'cp-completed',
+          title: 'Order Completed',
+          description: 'Package delivered and cash payment confirmed.',
+          timestamp: `${getFormattedDate(baseDate, 36)}, ${getFormattedTime(baseDate, 36)}`,
+          status: currentStage >= 5 ? 'completed' : 'pending',
+          icon: 'delivered',
+        },
+        {
+          id: 'cp-payment-received',
+          title: 'Cash Payment Received',
+          description: 'Cash payment collected upon delivery by courier rider.',
+          timestamp: `${getFormattedDate(baseDate, 30)}, ${getFormattedTime(baseDate, 30)}`,
+          status: currentStage >= 4 ? (currentStage === 4 ? 'current' : 'completed') : 'pending',
+          icon: 'delivered',
+        },
+        {
+          id: 'cp-delivery',
+          title: 'Out for Delivery / Shipped',
+          description: trackedOrder.fulfillmentType === 'pickup'
+            ? 'Package is ready for collection at the logistics hub.'
+            : `Package dispatched with ${trackedOrder.quotedCourier || 'courier'} to ${trackedOrder.shippingAddress || 'your address'}.`,
+          timestamp: `${getFormattedDate(baseDate, 24)}, ${getFormattedTime(baseDate, 24)}`,
+          status: currentStage >= 3 ? (currentStage === 3 ? 'current' : 'completed') : 'pending',
+          icon: 'delivery',
+        },
+        {
+          id: 'cp-processing',
+          title: 'Processing Order',
+          description: "We're packing and quality-inspecting your items.",
+          timestamp: `${getFormattedDate(baseDate, 4)}, ${getFormattedTime(baseDate, 4)}`,
+          status: currentStage >= 2 ? (currentStage === 2 ? 'current' : 'completed') : 'pending',
+          icon: 'processing',
+        },
+        {
+          id: 'cp-placed',
+          title: 'Order Received (Cash on Delivery)',
+          description: 'Order placed successfully. Payment will be collected upon delivery.',
+          timestamp: `${getFormattedDate(baseDate, 0)}, ${getFormattedTime(baseDate, 0)}`,
+          status: 'completed',
+          icon: 'placed',
+        },
+      ];
+    }
+
+    return [
+      {
+        id: 'cp-completed',
+        title: 'Order Completed',
+        description: 'Thank you for shopping with us! Order has been fulfilled.',
+        timestamp: `${getFormattedDate(baseDate, 36)}, ${getFormattedTime(baseDate, 36)}`,
+        status: currentStage >= 5 ? 'completed' : 'pending',
+        icon: 'delivered',
+      },
       {
         id: 'cp-delivery',
-        title: 'Out for Delivery',
-        description: trackedOrder.fulfillmentType === 'pickup'
-          ? 'Your package is ready for collection at the logistics center.'
-          : `Your package is on the way to your address${trackedOrder.shippingAddress ? ` (${trackedOrder.shippingAddress})` : ''}.`,
+        title: 'Shipped / In Transit',
+        description: `Package dispatched with ${trackedOrder.quotedCourier || 'courier'} with tracking code ${trackedOrder.trackingNumber || 'assigned'}.`,
         timestamp: `${getFormattedDate(baseDate, 24)}, ${getFormattedTime(baseDate, 24)}`,
-        status: currentStage >= 3 ? (currentStage === 3 ? 'current' : 'completed') : 'pending',
+        status: currentStage >= 4 ? (currentStage === 4 ? 'current' : 'completed') : 'pending',
         icon: 'delivery',
       },
       {
         id: 'cp-processing',
-        title: 'Processing',
-        description: "We're preparing and quality-inspecting your items for shipment.",
-        timestamp: `${getFormattedDate(baseDate, 4)}, ${getFormattedTime(baseDate, 4)}`,
-        status: currentStage >= 2 ? (currentStage === 2 ? 'current' : 'completed') : 'pending',
+        title: 'Processing Order',
+        description: "Payment confirmed. We're packing and preparing your items.",
+        timestamp: `${getFormattedDate(baseDate, 6)}, ${getFormattedTime(baseDate, 6)}`,
+        status: currentStage >= 3 ? (currentStage === 3 ? 'current' : 'completed') : 'pending',
         icon: 'processing',
       },
       {
         id: 'cp-confirmed',
-        title: 'Order Confirmed',
-        description: 'Your order has been verified and assigned to the fulfillment hub.',
-        timestamp: `${getFormattedDate(baseDate, 0)}, ${getFormattedTime(baseDate, 0)}`,
-        status: currentStage >= 1 ? (currentStage === 1 ? 'current' : 'completed') : 'pending',
+        title: 'Payment Confirmed',
+        description: 'M-Pesa payment verified. Order sent to warehouse fulfillment.',
+        timestamp: `${getFormattedDate(baseDate, 2)}, ${getFormattedTime(baseDate, 2)}`,
+        status: currentStage >= 2 ? (currentStage === 2 ? 'current' : 'completed') : 'pending',
         icon: 'confirmed',
       },
       {
         id: 'cp-placed',
-        title: 'Order Placed',
-        description: 'Thank you! Your order has been placed.',
+        title: 'Order Received',
+        description: 'Order received. Awaiting M-Pesa payment confirmation.',
         timestamp: `${getFormattedDate(baseDate, 0)}, ${getFormattedTime(baseDate, 0)}`,
         status: 'completed',
         icon: 'placed',
       },
     ];
-
-    return allCheckpoints;
   };
 
   const handleCopyOrderNumber = () => {
@@ -436,129 +549,307 @@ export default function OrderTrackingPage({
                 </p>
               </div>
 
-              {/* Payment Status Pill */}
-              <div className="flex items-center gap-3">
-                {trackedOrder.paymentStatus === 'paid' || trackedOrder.status === 'completed' ? (
-                  <span className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-800 text-xs font-bold text-emerald-700 dark:text-emerald-400">
-                    <CheckCircle2 className="w-3.5 h-3.5" />
-                    <span>Paid &amp; Confirmed</span>
+              {/* Status & Actions */}
+              <div className="flex flex-wrap items-center gap-2.5">
+                {/* Cancellation Button (Customer allowed if order_received or processing) */}
+                {trackedOrder.canCancel && trackedOrder.status !== 'cancelled' && trackedOrder.status !== 'completed' && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCancelError('');
+                      setShowCancelModal(true);
+                    }}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-rose-200 dark:border-rose-900/60 bg-rose-50/70 hover:bg-rose-100 dark:bg-rose-950/40 dark:hover:bg-rose-900/40 text-rose-700 dark:text-rose-300 text-xs font-semibold transition cursor-pointer"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5" />
+                    <span>Cancel Order</span>
+                  </button>
+                )}
+
+                {/* Status Pill */}
+                {trackedOrder.status === 'cancelled' ? (
+                  <span className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-800 text-xs font-bold text-rose-700 dark:text-rose-400">
+                    <AlertOctagon className="w-3.5 h-3.5" />
+                    <span>Cancelled</span>
                   </span>
-                ) : (
-                  <span className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-amber-50 dark:bg-amber-950/50 border border-amber-200 dark:border-amber-800 text-xs font-bold text-amber-700 dark:text-amber-400">
-                    <Clock className="w-3.5 h-3.5" />
-                    <span>
-                      {trackedOrder.paymentReference
-                        ? `Payment Pending Verification (${trackedOrder.paymentReference})`
-                        : 'Payment Pending Admin Verification'}
+                ) : isCod ? (
+                  trackedOrder.status === 'payment_received' || trackedOrder.status === 'completed' || trackedOrder.paymentStatus === 'paid' ? (
+                    <span className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-800 text-xs font-bold text-emerald-700 dark:text-emerald-400">
+                      <CheckCircle2 className="w-3.5 h-3.5" />
+                      <span>Cash Paid on Delivery</span>
                     </span>
-                  </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-amber-50 dark:bg-amber-950/50 border border-amber-200 dark:border-amber-800 text-xs font-bold text-amber-700 dark:text-amber-400">
+                      <Clock className="w-3.5 h-3.5" />
+                      <span>Cash on Delivery (Unpaid)</span>
+                    </span>
+                  )
+                ) : (
+                  trackedOrder.paymentStatus === 'paid' || trackedOrder.status === 'completed' || trackedOrder.status === 'payment_confirmed' || trackedOrder.isPaid ? (
+                    <span className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-800 text-xs font-bold text-emerald-700 dark:text-emerald-400">
+                      <CheckCircle2 className="w-3.5 h-3.5" />
+                      <span>Paid &amp; Confirmed {trackedOrder.paymentReference ? `(${trackedOrder.paymentReference})` : ''}</span>
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-amber-50 dark:bg-amber-950/50 border border-amber-200 dark:border-amber-800 text-xs font-bold text-amber-700 dark:text-amber-400">
+                      <Clock className="w-3.5 h-3.5" />
+                      <span>
+                        {trackedOrder.paymentReference
+                          ? `Payment Pending Verification (${trackedOrder.paymentReference})`
+                          : 'Payment Pending'}
+                      </span>
+                    </span>
+                  )
                 )}
               </div>
             </div>
 
-            {/* Horizontal Milestone Stepper */}
-            <div className="px-6 sm:px-12 pt-8 pb-10 sm:pb-12 border-b border-slate-100 dark:border-slate-800">
+            {/* Cancellation Notice Banner */}
+            {trackedOrder.status === 'cancelled' && (
+              <div className="mx-6 sm:mx-8 mt-6 p-4 sm:p-5 rounded-2xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/60 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                <div className="flex items-start gap-3.5">
+                  <div className="w-10 h-10 rounded-xl bg-rose-100 dark:bg-rose-900/60 text-rose-700 dark:text-rose-300 flex items-center justify-center shrink-0">
+                    <AlertOctagon className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-bold text-rose-900 dark:text-rose-200">
+                      This order was cancelled {trackedOrder.cancelledBy ? `by ${trackedOrder.cancelledBy}` : ''}
+                    </h4>
+                    <p className="text-xs text-rose-700 dark:text-rose-300 mt-0.5">
+                      {trackedOrder.cancellationReason ? `Reason: "${trackedOrder.cancellationReason}"` : 'No cancellation reason provided.'}
+                      {trackedOrder.cancelledAt && ` • ${new Date(trackedOrder.cancelledAt).toLocaleString()}`}
+                    </p>
+                    <p className="text-[11px] text-rose-600 dark:text-rose-400 mt-1">
+                      ✓ Reserved product items have been automatically returned to inventory.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Linked Refund Claim Banner */}
+            {trackedOrder.refundClaim && (
+              <div className="mx-6 sm:mx-8 mt-4 p-4 sm:p-5 rounded-2xl bg-gradient-to-r from-purple-50 to-indigo-50 dark:from-purple-950/30 dark:to-indigo-950/30 border border-purple-200 dark:border-purple-800/60">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-purple-100 dark:bg-purple-900/50 text-purple-700 dark:text-purple-300 flex items-center justify-center shrink-0">
+                      <DollarSign className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h4 className="text-sm font-bold text-slate-900 dark:text-white">
+                          Refund Claim #{trackedOrder.refundClaim.id}
+                        </h4>
+                        <span className={`px-2 py-0.5 rounded-full text-[11px] font-bold ${
+                          trackedOrder.refundClaim.status === 'refund_paid'
+                            ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300'
+                            : trackedOrder.refundClaim.status === 'refund_approved'
+                            ? 'bg-blue-100 text-blue-800 dark:bg-blue-950/60 dark:text-blue-300'
+                            : trackedOrder.refundClaim.status === 'refund_rejected'
+                            ? 'bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300'
+                            : 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300'
+                        }`}>
+                          {trackedOrder.refundClaim.status.replace('_', ' ').toUpperCase()}
+                        </span>
+                      </div>
+                      <p className="text-xs text-slate-600 dark:text-slate-300 mt-0.5">
+                        Claim Amount: <strong className="font-mono">{formatPrice(trackedOrder.refundClaim.amount, currency)}</strong>
+                        {trackedOrder.refundClaim.paymentReference && ` • Original Ref: ${trackedOrder.refundClaim.paymentReference}`}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="text-xs text-slate-500 dark:text-slate-400">
+                    {trackedOrder.refundClaim.status === 'refund_paid' ? (
+                      <span className="text-emerald-600 dark:text-emerald-400 font-semibold">
+                        ✓ Disbursed via M-Pesa{trackedOrder.refundClaim.payoutReference ? ` (${trackedOrder.refundClaim.payoutReference})` : ''}
+                      </span>
+                    ) : trackedOrder.refundClaim.status === 'refund_approved' ? (
+                      <span className="text-blue-600 dark:text-blue-400 font-semibold">
+                        Approved by finance • Payout in progress
+                      </span>
+                    ) : trackedOrder.refundClaim.status === 'refund_rejected' ? (
+                      <span className="text-rose-600 dark:text-rose-400 font-semibold">
+                        Claim Rejected: {trackedOrder.refundClaim.adminNotes || 'Contact support'}
+                      </span>
+                    ) : (
+                      <span className="text-amber-600 dark:text-amber-400 font-semibold">
+                        Under review by finance team
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Horizontal Milestone Stepper (5 Dynamic Stages) */}
+            <div className="px-4 sm:px-10 pt-8 pb-10 sm:pb-12 border-b border-slate-100 dark:border-slate-800">
               <div className="relative">
                 {/* Connecting Progress Line */}
                 <div className="absolute top-5 sm:top-6 left-6 sm:left-12 right-6 sm:right-12 h-1 bg-slate-200 dark:bg-slate-800 -z-0">
                   <div
                     className="h-full transition-all duration-700 ease-out rounded-full"
                     style={{
-                      backgroundColor: primaryColor,
-                      width: currentStage >= 4 ? '100%' : currentStage === 3 ? '66%' : currentStage === 2 ? '33%' : '0%',
+                      backgroundColor: trackedOrder.status === 'cancelled' ? '#f43f5e' : primaryColor,
+                      width: trackedOrder.status === 'cancelled'
+                        ? '0%'
+                        : currentStage >= 5
+                        ? '100%'
+                        : currentStage === 4
+                        ? '75%'
+                        : currentStage === 3
+                        ? '50%'
+                        : currentStage === 2
+                        ? '25%'
+                        : '0%',
                     }}
                   />
                 </div>
 
-                {/* 4 Stepper Milestones */}
-                <div className="grid grid-cols-4 relative z-10 gap-1 sm:gap-2">
-                  {/* Step 1: Order Confirmed */}
+                {/* 5 Stepper Milestones */}
+                <div className="grid grid-cols-5 relative z-10 gap-1 sm:gap-2">
+                  {/* Step 1: Order Received (Both Flows) */}
                   <div className="flex flex-col items-center text-center">
                     <div
                       className={`w-8 h-8 sm:w-12 sm:h-12 rounded-full flex items-center justify-center transition-all ${
-                        currentStage >= 1
+                        currentStage >= 1 && trackedOrder.status !== 'cancelled'
                           ? 'text-white'
                           : 'bg-slate-100 dark:bg-slate-800 text-slate-400'
                       }`}
-                      style={currentStage >= 1 ? {
+                      style={currentStage >= 1 && trackedOrder.status !== 'cancelled' ? {
                         backgroundColor: primaryColor,
                         boxShadow: `0 4px 14px ${primaryColor}40`,
                       } : undefined}
                     >
                       <Check className="w-4 h-4 sm:w-5 sm:h-5 stroke-[2.5]" />
                     </div>
-                    <span className="mt-2 sm:mt-3 text-[10px] sm:text-sm font-bold text-slate-900 dark:text-white leading-tight">
-                      Confirmed
+                    <span className="mt-2 sm:mt-3 text-[10px] sm:text-xs font-bold text-slate-900 dark:text-white leading-tight">
+                      Received
                     </span>
                     <span className="hidden sm:block text-[11px] text-slate-500 dark:text-slate-400 font-medium mt-0.5">
-                      {getFormattedDate(trackedOrder.date, 0)}, {getFormattedTime(trackedOrder.date, 0)}
+                      {getFormattedDate(trackedOrder.date, 0)}
                     </span>
                   </div>
 
-                  {/* Step 2: Processing */}
+                  {/* Step 2: Payment Confirmed (M-Pesa) OR Processing (COD) */}
                   <div className="flex flex-col items-center text-center">
                     <div
                       className={`w-8 h-8 sm:w-12 sm:h-12 rounded-full flex items-center justify-center transition-all ${
-                        currentStage >= 2
+                        currentStage >= 2 && trackedOrder.status !== 'cancelled'
                           ? 'text-white'
                           : 'bg-slate-100 dark:bg-slate-800 text-slate-400'
                       }`}
-                      style={currentStage >= 2 ? {
+                      style={currentStage >= 2 && trackedOrder.status !== 'cancelled' ? {
                         backgroundColor: primaryColor,
                         boxShadow: `0 4px 14px ${primaryColor}40`,
                       } : undefined}
                     >
-                      <Check className="w-4 h-4 sm:w-5 sm:h-5 stroke-[2.5]" />
+                      {isCod ? (
+                        <Package className="w-4 h-4 sm:w-5 sm:h-5 stroke-[2.5]" />
+                      ) : (
+                        <ShieldCheck className="w-4 h-4 sm:w-5 sm:h-5 stroke-[2.5]" />
+                      )}
                     </div>
                     <span
-                      className={`mt-2 sm:mt-3 text-[10px] sm:text-sm font-bold leading-tight ${
-                        currentStage >= 2 ? 'text-slate-900 dark:text-white' : 'text-slate-400 dark:text-slate-500'
+                      className={`mt-2 sm:mt-3 text-[10px] sm:text-xs font-bold leading-tight ${
+                        currentStage >= 2 && trackedOrder.status !== 'cancelled'
+                          ? 'text-slate-900 dark:text-white'
+                          : 'text-slate-400 dark:text-slate-500'
                       }`}
                     >
-                      Processing
+                      {isCod ? 'Processing' : 'Paid Confirmed'}
                     </span>
                     <span className="hidden sm:block text-[11px] text-slate-500 dark:text-slate-400 font-medium mt-0.5">
-                      {currentStage >= 2
-                        ? `${getFormattedDate(trackedOrder.date, 4)}, ${getFormattedTime(trackedOrder.date, 4)}`
-                        : 'In preparation'}
+                      {currentStage >= 2 && trackedOrder.status !== 'cancelled'
+                        ? isCod
+                          ? 'In preparation'
+                          : 'M-Pesa verified'
+                        : isCod
+                        ? 'Pending'
+                        : 'Awaiting M-Pesa'}
                     </span>
                   </div>
 
-                  {/* Step 3: Out for Delivery */}
+                  {/* Step 3: Processing (M-Pesa) OR Shipped (COD) */}
                   <div className="flex flex-col items-center text-center">
                     <div
                       className={`w-8 h-8 sm:w-12 sm:h-12 rounded-full flex items-center justify-center transition-all ${
-                        currentStage >= 3
+                        currentStage >= 3 && trackedOrder.status !== 'cancelled'
                           ? 'text-white'
                           : 'bg-slate-100 dark:bg-slate-800 text-slate-400'
                       }`}
-                      style={currentStage >= 3 ? {
+                      style={currentStage >= 3 && trackedOrder.status !== 'cancelled' ? {
                         backgroundColor: primaryColor,
                         boxShadow: `0 4px 14px ${primaryColor}40`,
-                        outline: `4px solid ${primarySoft}`
                       } : undefined}
                     >
-                      <Truck className="w-4 h-4 sm:w-5 sm:h-5 stroke-[2.5]" />
+                      {isCod ? (
+                        <Truck className="w-4 h-4 sm:w-5 sm:h-5 stroke-[2.5]" />
+                      ) : (
+                        <Package className="w-4 h-4 sm:w-5 sm:h-5 stroke-[2.5]" />
+                      )}
                     </div>
                     <span
-                      className={`mt-2 sm:mt-3 text-[10px] sm:text-sm font-bold leading-tight ${
-                        currentStage >= 3 ? 'text-slate-900 dark:text-white' : 'text-slate-400 dark:text-slate-500'
+                      className={`mt-2 sm:mt-3 text-[10px] sm:text-xs font-bold leading-tight ${
+                        currentStage >= 3 && trackedOrder.status !== 'cancelled'
+                          ? 'text-slate-900 dark:text-white'
+                          : 'text-slate-400 dark:text-slate-500'
                       }`}
                     >
-                      In Transit
+                      {isCod ? 'Shipped' : 'Processing'}
                     </span>
                     <span className="hidden sm:block text-[11px] text-slate-500 dark:text-slate-400 font-medium mt-0.5">
-                      {currentStage >= 3
-                        ? `${getFormattedDate(trackedOrder.date, 24)}, ${getFormattedTime(trackedOrder.date, 24)}`
-                        : 'Estimated arrival'}
+                      {currentStage >= 3 && trackedOrder.status !== 'cancelled'
+                        ? isCod
+                          ? 'With courier'
+                          : 'Packing goods'
+                        : 'Upcoming'}
                     </span>
                   </div>
 
-                  {/* Step 4: Delivered */}
+                  {/* Step 4: Shipped (M-Pesa) OR Payment Received (COD) */}
                   <div className="flex flex-col items-center text-center">
                     <div
                       className={`w-8 h-8 sm:w-12 sm:h-12 rounded-full flex items-center justify-center transition-all ${
-                        currentStage >= 4
+                        currentStage >= 4 && trackedOrder.status !== 'cancelled'
+                          ? 'text-white'
+                          : 'bg-slate-100 dark:bg-slate-800 text-slate-400'
+                      }`}
+                      style={currentStage >= 4 && trackedOrder.status !== 'cancelled' ? {
+                        backgroundColor: primaryColor,
+                        boxShadow: `0 4px 14px ${primaryColor}40`,
+                      } : undefined}
+                    >
+                      {isCod ? (
+                        <DollarSign className="w-4 h-4 sm:w-5 sm:h-5 stroke-[2.5]" />
+                      ) : (
+                        <Truck className="w-4 h-4 sm:w-5 sm:h-5 stroke-[2.5]" />
+                      )}
+                    </div>
+                    <span
+                      className={`mt-2 sm:mt-3 text-[10px] sm:text-xs font-bold leading-tight ${
+                        currentStage >= 4 && trackedOrder.status !== 'cancelled'
+                          ? 'text-slate-900 dark:text-white'
+                          : 'text-slate-400 dark:text-slate-500'
+                      }`}
+                    >
+                      {isCod ? 'Cash Collected' : 'Shipped'}
+                    </span>
+                    <span className="hidden sm:block text-[11px] text-slate-500 dark:text-slate-400 font-medium mt-0.5">
+                      {currentStage >= 4 && trackedOrder.status !== 'cancelled'
+                        ? isCod
+                          ? 'Paid to rider'
+                          : 'On the way'
+                        : isCod
+                        ? 'Upon delivery'
+                        : 'Dispatched'}
+                    </span>
+                  </div>
+
+                  {/* Step 5: Completed (Both Flows) */}
+                  <div className="flex flex-col items-center text-center">
+                    <div
+                      className={`w-8 h-8 sm:w-12 sm:h-12 rounded-full flex items-center justify-center transition-all ${
+                        currentStage >= 5 && trackedOrder.status !== 'cancelled'
                           ? 'bg-emerald-600 text-white shadow-md shadow-emerald-500/30'
                           : 'bg-slate-100 dark:bg-slate-800 text-slate-400'
                       }`}
@@ -566,16 +857,18 @@ export default function OrderTrackingPage({
                       <Home className="w-4 h-4 sm:w-5 sm:h-5 stroke-[2.5]" />
                     </div>
                     <span
-                      className={`mt-2 sm:mt-3 text-[10px] sm:text-sm font-bold leading-tight ${
-                        currentStage >= 4 ? 'text-slate-900 dark:text-white' : 'text-slate-400 dark:text-slate-500'
+                      className={`mt-2 sm:mt-3 text-[10px] sm:text-xs font-bold leading-tight ${
+                        currentStage >= 5 && trackedOrder.status !== 'cancelled'
+                          ? 'text-slate-900 dark:text-white'
+                          : 'text-slate-400 dark:text-slate-500'
                       }`}
                     >
-                      Delivered
+                      Completed
                     </span>
                     <span className="hidden sm:block text-[11px] text-slate-500 dark:text-slate-400 font-medium mt-0.5">
-                      {currentStage >= 4
-                        ? `${getFormattedDate(trackedOrder.date, 30)}, ${getFormattedTime(trackedOrder.date, 30)}`
-                        : 'Arriving soon'}
+                      {currentStage >= 5 && trackedOrder.status !== 'cancelled'
+                        ? 'Fulfilled'
+                        : 'Final stage'}
                     </span>
                   </div>
                 </div>
@@ -689,6 +982,90 @@ export default function OrderTrackingPage({
                   </div>
                 )}
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Customer Cancel Order Modal */}
+      {showCancelModal && trackedOrder && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm animate-in fade-in">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl max-w-md w-full p-6 shadow-2xl space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="w-10 h-10 rounded-xl bg-rose-100 dark:bg-rose-950/60 text-rose-600 flex items-center justify-center">
+                  <AlertOctagon className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-slate-900 dark:text-white">
+                    Cancel Order #{trackedOrder.id.replace(/^#/, '')}
+                  </h3>
+                  <p className="text-xs text-slate-500">
+                    {trackedOrder.isPaid || trackedOrder.paymentStatus === 'paid' ? 'Paid Order Cancellation' : 'Unpaid Order Cancellation'}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowCancelModal(false)}
+                className="p-1 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="text-xs text-slate-600 dark:text-slate-300 bg-slate-50 dark:bg-slate-800/60 p-3.5 rounded-xl space-y-1.5 border border-slate-200/60 dark:border-slate-700/60">
+              <p>
+                • <strong>Restocking:</strong> Items in this order will be automatically returned to store inventory.
+              </p>
+              {trackedOrder.isPaid || trackedOrder.paymentStatus === 'paid' ? (
+                <p className="text-indigo-600 dark:text-indigo-400 font-medium">
+                  • <strong>Refund Claim:</strong> A refund claim for {formatPrice(totalAmount, currency)} will be created automatically and sent to finance for review and M-Pesa disbursement.
+                </p>
+              ) : (
+                <p className="text-slate-500">
+                  • <strong>No Payment Collected:</strong> Since this order is unpaid, no refund claim is needed.
+                </p>
+              )}
+            </div>
+
+            {cancelError && (
+              <div className="p-3 rounded-xl bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-800 text-xs text-rose-700 dark:text-rose-300">
+                {cancelError}
+              </div>
+            )}
+
+            <div>
+              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+                Reason for Cancellation <span className="text-rose-500">*</span>
+              </label>
+              <textarea
+                rows={3}
+                value={cancellationReasonInput}
+                onChange={(e) => setCancellationReasonInput(e.target.value)}
+                placeholder="e.g., Placed by mistake, changed mind, want to change address or payment method..."
+                className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              />
+            </div>
+
+            <div className="flex items-center justify-end gap-2.5 pt-2">
+              <button
+                type="button"
+                onClick={() => setShowCancelModal(false)}
+                disabled={isCancelling}
+                className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
+              >
+                Keep Order
+              </button>
+              <button
+                type="button"
+                onClick={handleCustomerCancelOrder}
+                disabled={isCancelling || !cancellationReasonInput.trim()}
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 transition disabled:opacity-50 cursor-pointer"
+              >
+                {isCancelling ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RotateCcw className="w-3.5 h-3.5" />}
+                Confirm Cancellation
+              </button>
             </div>
           </div>
         </div>

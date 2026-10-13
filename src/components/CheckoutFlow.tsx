@@ -78,6 +78,12 @@ import { useAuth } from '../context/AuthContext';
 import { useCartSync, CartChangeNotice } from '../hooks/useCartSync';
 import { CartChangeNoticeBanner } from './CartChangeNotice';
 import RecentlyViewedSlider from './RecentlyViewedSlider';
+import {
+  trackViewCart,
+  trackBeginCheckout,
+  trackAddPaymentInfo,
+  trackPurchase,
+} from '../lib/analytics';
 
 export interface WarehouseHub {
   id: string;
@@ -850,6 +856,37 @@ export default function CheckoutFlow({
 
   const total = mixedTaxSummary.cartTotal;
 
+  // GA4 Ecommerce Event: view_cart (when user is reviewing cart on step 1)
+  const hasTrackedViewCartRef = React.useRef<boolean>(false);
+  useEffect(() => {
+    if (cart.length > 0 && activeStep === 1 && !hasTrackedViewCartRef.current) {
+      hasTrackedViewCartRef.current = true;
+      trackViewCart(cart, total);
+    }
+  }, [cart, activeStep, total]);
+
+  // GA4 Ecommerce Event: begin_checkout (when user advances to shipping / checkout steps)
+  const hasTrackedBeginCheckoutRef = React.useRef<boolean>(false);
+  useEffect(() => {
+    if (cart.length > 0 && activeStep >= 2 && !hasTrackedBeginCheckoutRef.current) {
+      hasTrackedBeginCheckoutRef.current = true;
+      trackBeginCheckout(cart, total);
+    }
+  }, [cart, activeStep, total]);
+
+  // GA4 Ecommerce Event: purchase (fire once per order on order confirmation step, guarded against reload)
+  useEffect(() => {
+    if (checkedOutOrder) {
+      trackPurchase(checkedOutOrder);
+    }
+  }, [checkedOutOrder]);
+
+  // Helper to select payment method and dispatch add_payment_info
+  const handleSelectPaymentMethod = (method: 'mpesa' | 'cod') => {
+    setPaymentMethod(method);
+    trackAddPaymentInfo(cart, total, method === 'mpesa' ? 'M-Pesa' : 'Cash on Delivery');
+  };
+
   // Coupon Handlers
   const handleApplyCoupon = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -1070,6 +1107,8 @@ export default function CheckoutFlow({
       }
     }
     setStepError('');
+    // GA4 Ecommerce Event: add_payment_info
+    trackAddPaymentInfo(cart, total, paymentMethod === 'mpesa' ? 'M-Pesa' : 'Cash on Delivery');
     setActiveStep(4);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
@@ -2340,7 +2379,7 @@ _Hello Ropenix Team, I would like to place and confirm this order!_`;
 
                   {/* M-PESA Option */}
                   <div
-                    onClick={() => !hasCod && setPaymentMethod('mpesa')}
+                    onClick={() => !hasCod && handleSelectPaymentMethod('mpesa')}
                     className={`p-4 rounded-2xl border transition-all ${
                       hasCod ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'
                     } ${
@@ -2356,7 +2395,7 @@ _Hello Ropenix Team, I would like to place and confirm this order!_`;
                           name="paymentMethod"
                           checked={paymentMethod === 'mpesa'}
                           disabled={hasCod}
-                          onChange={() => setPaymentMethod('mpesa')}
+                          onChange={() => handleSelectPaymentMethod('mpesa')}
                           className="h-4 w-4 text-black accent-black"
                         />
                         <div className="flex items-center gap-2">
@@ -2446,7 +2485,7 @@ _Hello Ropenix Team, I would like to place and confirm this order!_`;
 
                   {/* Cash on Delivery Option */}
                   <div
-                    onClick={() => !hasPrepaid && setPaymentMethod('cod')}
+                    onClick={() => !hasPrepaid && handleSelectPaymentMethod('cod')}
                     className={`p-4 rounded-2xl border transition-all ${
                       hasPrepaid ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'
                     } ${
@@ -2462,7 +2501,7 @@ _Hello Ropenix Team, I would like to place and confirm this order!_`;
                           name="paymentMethod"
                           checked={paymentMethod === 'cod'}
                           disabled={hasPrepaid}
-                          onChange={() => setPaymentMethod('cod')}
+                          onChange={() => handleSelectPaymentMethod('cod')}
                           className="h-4 w-4 text-black accent-black"
                         />
                         <div className="flex items-center gap-2">

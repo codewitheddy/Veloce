@@ -521,12 +521,67 @@ interface LanguageContextProps {
 
 const LanguageContext = createContext<LanguageContextProps | undefined>(undefined);
 
+/**
+ * Thoroughly purges all googtrans cookies across all domains, subdomains, and paths.
+ * Never sets googtrans=/en/en because Google Translate will not revert to original language.
+ */
+export function purgeGoogleTranslateCookies(): void {
+  if (typeof window === 'undefined' || typeof document === 'undefined') return;
+  try {
+    const host = window.location.hostname;
+    const parts = host ? host.split('.') : [];
+    const domains: string[] = ['', host, `.${host}`];
+    for (let i = 1; i < parts.length; i++) {
+      const parent = parts.slice(i).join('.');
+      if (parent) {
+        domains.push(parent);
+        domains.push(`.${parent}`);
+      }
+    }
+    const paths = ['/', '', window.location.pathname];
+    domains.forEach((dom) => {
+      paths.forEach((pth) => {
+        const base = `googtrans=; expires=Thu, 01 Jan 1970 00:00:00 UTC; Max-Age=0; path=${pth}`;
+        if (dom) {
+          document.cookie = `${base}; domain=${dom};`;
+        } else {
+          document.cookie = `${base};`;
+        }
+      });
+    });
+  } catch (err) {
+    console.warn('[Language Engine] Failed to purge translation cookies:', err);
+  }
+}
+
+/**
+ * Extracts target language code from current googtrans cookie if present (e.g. /en/zh-CN -> zh).
+ */
+export function getStoredTranslationTarget(): LanguageType | null {
+  if (typeof document === 'undefined') return null;
+  try {
+    const match = document.cookie.match(/(?:^|;\s*)googtrans=\/en\/([a-zA-Z\-]+)/);
+    if (match && match[1]) {
+      const target = match[1];
+      if (target === 'zh-CN' || target === 'zh') return 'zh';
+      if (['sw', 'fr', 'ko', 'de'].includes(target)) return target as LanguageType;
+    }
+  } catch (_) {}
+  return null;
+}
+
 export function LanguageProvider({ children }: { children: React.ReactNode }) {
   const [language, setLanguageState] = useState<LanguageType>(() => {
     try {
       const saved = localStorage.getItem('veloce_language');
       if (saved && ['en', 'sw', 'fr', 'ko', 'zh', 'de'].includes(saved)) {
         return saved as LanguageType;
+      }
+      // If no valid veloce_language is in localStorage, check if googtrans cookie has a valid language
+      const fromCookie = getStoredTranslationTarget();
+      if (fromCookie) {
+        localStorage.setItem('veloce_language', fromCookie);
+        return fromCookie;
       }
       return 'en';
     } catch {
@@ -536,19 +591,17 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
 
   const syncGoogleTranslate = (lang: LanguageType) => {
     try {
+      if (lang === 'en') {
+        purgeGoogleTranslateCookies();
+        return;
+      }
+
       const gtLang = lang === 'zh' ? 'zh-CN' : lang;
 
-      // 1. Maintain cross-domain & local cookies so page reloads also stay in selected language
-      const domains = ['', `domain=${window.location.hostname};`, `domain=.${window.location.hostname};`];
-      if (lang === 'en') {
-        domains.forEach((dom) => {
-          document.cookie = `googtrans=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/; ${dom}`.trim();
-          document.cookie = `googtrans=/en/en; path=/; ${dom}`.trim();
-        });
-      } else {
-        domains.forEach((dom) => {
-          document.cookie = `googtrans=/en/${gtLang}; path=/; ${dom}`.trim();
-        });
+      // 1. Maintain cross-domain & local cookies so page reloads stay in selected language
+      document.cookie = `googtrans=/en/${gtLang}; path=/;`;
+      if (window.location.hostname && window.location.hostname !== 'localhost') {
+        document.cookie = `googtrans=/en/${gtLang}; domain=.${window.location.hostname}; path=/;`;
       }
 
       // 2. Direct DOM dispatch on Google Translate's select combo
@@ -559,39 +612,15 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
         ) as HTMLSelectElement | null;
 
         if (combo) {
-          const targetVal = lang === 'en' ? '' : gtLang;
-          combo.value = targetVal;
-
-          // Dispatch native change event with bubbles
-          combo.dispatchEvent(new Event('change', { bubbles: true, cancelable: true }));
-          combo.dispatchEvent(new Event('input', { bubbles: true }));
-          if (typeof (combo as any).onchange === 'function') {
-            try {
-              (combo as any).onchange();
-            } catch (_) {}
-          }
-
-          // If reverting back to English, also trigger Google's restore button if active
-          if (lang === 'en') {
-            try {
-              const frames = document.querySelectorAll(
-                'iframe.goog-te-banner-frame, iframe[id^=":"]'
-              ) as NodeListOf<HTMLIFrameElement>;
-              frames.forEach((frame) => {
-                try {
-                  const inner = frame.contentDocument || frame.contentWindow?.document;
-                  if (inner) {
-                    const buttons = inner.getElementsByTagName('button');
-                    for (let i = 0; i < buttons.length; i++) {
-                      if (buttons[i].id?.includes('restore') || buttons[i].className?.includes('restore')) {
-                        buttons[i].click();
-                        break;
-                      }
-                    }
-                  }
-                } catch (_) {}
-              });
-            } catch (_) {}
+          if (combo.value !== gtLang) {
+            combo.value = gtLang;
+            combo.dispatchEvent(new Event('change', { bubbles: true, cancelable: true }));
+            combo.dispatchEvent(new Event('input', { bubbles: true }));
+            if (typeof (combo as any).onchange === 'function') {
+              try {
+                (combo as any).onchange();
+              } catch (_) {}
+            }
           }
           return true;
         }
@@ -617,12 +646,35 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const setLanguage = (lang: LanguageType) => {
-    setLanguageState(lang);
+  const setLanguage = (newLang: LanguageType) => {
     try {
-      localStorage.setItem('veloce_language', lang);
-      document.documentElement.lang = lang;
-      syncGoogleTranslate(lang);
+      localStorage.setItem('veloce_language', newLang);
+      document.documentElement.lang = newLang;
+
+      if (newLang === 'en') {
+        // Reverting to English (original page language):
+        purgeGoogleTranslateCookies();
+        setLanguageState('en');
+
+        // Check if the page is currently translated into another language
+        const isTranslated =
+          document.documentElement.classList.contains('translated-ltr') ||
+          document.documentElement.classList.contains('translated-rtl') ||
+          Boolean(getStoredTranslationTarget());
+
+        if (isTranslated) {
+          // Google Translate CANNOT restore original English in-place via .goog-te-combo
+          // because English is the original pageLanguage and not an option in the select.
+          // Reloading is the only clean and proven way to restore original DOM without
+          // React reconciliation errors or stuck font tags.
+          window.location.reload();
+          return;
+        }
+        return;
+      }
+
+      setLanguageState(newLang);
+      syncGoogleTranslate(newLang);
     } catch (e) {
       console.error(e);
     }
@@ -631,7 +683,30 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     try {
       document.documentElement.lang = language;
-      syncGoogleTranslate(language);
+      if (language === 'en') {
+        purgeGoogleTranslateCookies();
+
+        // Check if there is a mismatch: English is selected in React,
+        // but Google Translate has translated the DOM to Chinese/other language!
+        const isDomTranslated =
+          document.documentElement.classList.contains('translated-ltr') ||
+          document.documentElement.classList.contains('translated-rtl');
+        const cookieLang = getStoredTranslationTarget();
+
+        if (cookieLang || isDomTranslated) {
+          purgeGoogleTranslateCookies();
+          const reloadKey = 'veloce_lang_purge_reload';
+          const hasPurgeReloaded = sessionStorage.getItem(reloadKey);
+          if (!hasPurgeReloaded) {
+            sessionStorage.setItem(reloadKey, 'true');
+            window.location.reload();
+          }
+        } else {
+          sessionStorage.removeItem('veloce_lang_purge_reload');
+        }
+      } else {
+        syncGoogleTranslate(language);
+      }
     } catch (_) {}
   }, [language]);
 

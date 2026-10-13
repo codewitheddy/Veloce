@@ -45,7 +45,7 @@ export const ALLOWED_STATUS_TRANSITIONS: Record<string, string[]> = {
 export function validateStatusTransition(
   order: any,
   nextStatus: string,
-  options?: { isDeliveryConfirmed?: boolean }
+  options?: { isDeliveryConfirmed?: boolean; confirmPayment?: boolean }
 ): { valid: boolean; error?: string } {
   if (!order) {
     return { valid: false, error: 'Order not found.' };
@@ -96,8 +96,14 @@ export function validateStatusTransition(
     };
   }
 
-  // Check payment rule: Unpaid orders cannot be marked as completed
-  const isPaid = Boolean(order.isPaid || order.paymentStatus === 'paid');
+  // Check payment rule: Unpaid orders cannot be marked as completed unless COD or explicitly confirmed
+  const isPaid = Boolean(
+    order.isPaid ||
+    order.paymentStatus === 'paid' ||
+    options?.confirmPayment ||
+    order.paymentMethod === 'cod' ||
+    (typeof order.paymentMethod === 'string' && order.paymentMethod.toLowerCase().includes('cod'))
+  );
   if (targetStatus === 'completed' && !isPaid) {
     return {
       valid: false,
@@ -534,6 +540,7 @@ export async function transitionOrderStatus(
     deliveryPerson?: string;
     deliveryNote?: string;
     isDeliveryConfirmed?: boolean;
+    confirmPayment?: boolean;
   }
 ): Promise<{ success: boolean; order?: any; error?: string; statusCode?: number }> {
   const order = await getSqliteOrderById(orderId);
@@ -545,7 +552,8 @@ export async function transitionOrderStatus(
 
   // Validate transition rules
   const validation = validateStatusTransition(order, cleanTarget, {
-    isDeliveryConfirmed: options?.isDeliveryConfirmed
+    isDeliveryConfirmed: options?.isDeliveryConfirmed,
+    confirmPayment: options?.confirmPayment,
   });
 
   if (!validation.valid) {
@@ -585,11 +593,22 @@ export async function transitionOrderStatus(
     updatedPayload.deliveryNote = options.deliveryNote;
   }
 
-  // If marking delivered or completed with delivery note
-  if (options?.isDeliveryConfirmed || cleanTarget === 'completed') {
+  // If marking delivered or completed
+  if (options?.isDeliveryConfirmed || cleanTarget === 'completed' || cleanTarget === 'delivered') {
     updatedPayload.deliveryConfirmed = true;
     if (!updatedPayload.deliveredAt) {
       updatedPayload.deliveredAt = nowIso;
+    }
+  }
+
+  // Completing the order finalizes payment collection (e.g., Cash on Delivery handover)
+  if (cleanTarget === 'completed') {
+    if (!updatedPayload.isPaid || updatedPayload.paymentStatus !== 'paid') {
+      updatedPayload.isPaid = true;
+      updatedPayload.paymentStatus = 'paid';
+      if (!updatedPayload.paidAt) {
+        updatedPayload.paidAt = nowIso;
+      }
     }
   }
 
@@ -659,6 +678,7 @@ export async function confirmOrderDelivery(
 
   const updatedPayload = {
     ...order,
+    status: 'delivered',
     deliveryConfirmed: true,
     deliveredAt: nowIso,
     deliveryPerson,

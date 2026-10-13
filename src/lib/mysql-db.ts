@@ -741,7 +741,51 @@ export async function initializeDatabaseSchema(): Promise<void> {
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
     `);
 
-    // 33. Automatic Column Migrations for Existing MySQL Tables
+    // 33. Order Status History Table (Audit log for every status transition)
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS order_status_history (
+        id VARCHAR(255) PRIMARY KEY,
+        order_id VARCHAR(255) NOT NULL,
+        from_status VARCHAR(50) NOT NULL,
+        to_status VARCHAR(50) NOT NULL,
+        changed_by VARCHAR(255) NOT NULL,
+        note TEXT NULL,
+        metadata LONGTEXT NULL,
+        created_at VARCHAR(100) NOT NULL,
+        timestamp VARCHAR(100) NOT NULL,
+        INDEX idx_osh_order (order_id),
+        INDEX idx_osh_timestamp (timestamp)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    `);
+
+    // 34. Refund Claims Table (Automated upon paid order cancellation)
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS refund_claims (
+        id VARCHAR(255) PRIMARY KEY,
+        order_id VARCHAR(255) NOT NULL,
+        amount DECIMAL(15, 2) NOT NULL,
+        reason TEXT NOT NULL,
+        payment_reference VARCHAR(255) NULL,
+        status VARCHAR(50) DEFAULT 'refund_requested',
+        customer_name VARCHAR(255) NULL,
+        customer_email VARCHAR(255) NULL,
+        customer_phone VARCHAR(100) NULL,
+        refund_payment_reference VARCHAR(255) NULL,
+        approved_by VARCHAR(255) NULL,
+        approved_at VARCHAR(100) NULL,
+        refunded_by VARCHAR(255) NULL,
+        refunded_at VARCHAR(100) NULL,
+        rejected_by VARCHAR(255) NULL,
+        rejected_at VARCHAR(100) NULL,
+        rejection_reason TEXT NULL,
+        created_at VARCHAR(100) NOT NULL,
+        updated_at VARCHAR(100) NOT NULL,
+        INDEX idx_rc_order (order_id),
+        INDEX idx_rc_status (status)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    `);
+
+    // 35. Automatic Column Migrations for Existing MySQL Tables
     const safeAddCol = async (table: string, col: string, def: string) => {
       try {
         await pool.query(`ALTER TABLE \`${table}\` ADD COLUMN \`${col}\` ${def};`);
@@ -754,6 +798,14 @@ export async function initializeDatabaseSchema(): Promise<void> {
 
     await safeAddCol('orders', 'paymentReference', 'VARCHAR(255) NULL');
     await safeAddCol('orders', 'mpesaPhone', 'VARCHAR(100) NULL');
+    await safeAddCol('orders', 'cancellation_reason', 'TEXT NULL');
+    await safeAddCol('orders', 'cancelled_by', 'VARCHAR(255) NULL');
+    await safeAddCol('orders', 'cancelled_at', 'VARCHAR(100) NULL');
+    await safeAddCol('orders', 'payment_collected_by', 'VARCHAR(255) NULL');
+    await safeAddCol('orders', 'payment_collected_at', 'VARCHAR(100) NULL');
+    await safeAddCol('orders', 'payment_confirmed_by', 'VARCHAR(255) NULL');
+    await safeAddCol('orders', 'payment_confirmed_at', 'VARCHAR(100) NULL');
+    await safeAddCol('orders', 'payment_amount', 'DECIMAL(15, 2) NULL');
     await safeAddCol('customer_orders', 'payment_reference', 'VARCHAR(255) NULL');
     await safeAddCol('customer_orders', 'payment_status', "VARCHAR(50) DEFAULT 'unpaid'");
     await safeAddCol('customer_orders', 'payment_amount', 'DECIMAL(15, 2) NULL');
@@ -3575,3 +3627,180 @@ export async function clearSqliteCart(userIdOrSession: string): Promise<void> {
 export const purgeAllSqliteData = purgeAllMysqlData;
 export const pullSyncDataSqlite = pullSyncData;
 export const pushSyncDataSqlite = pushSyncData;
+
+// ============================================================================
+// ORDER STATUS WORKFLOW & REFUND CLAIMS
+// ============================================================================
+
+export interface OrderStatusHistoryRecord {
+  id: string;
+  order_id: string;
+  from_status: string;
+  to_status: string;
+  changed_by: string;
+  note?: string;
+  metadata?: any;
+  created_at: string;
+  timestamp: string;
+}
+
+export interface RefundClaimRecord {
+  id: string;
+  order_id: string;
+  amount: number;
+  reason: string;
+  payment_reference?: string;
+  status: 'refund_requested' | 'refund_approved' | 'refund_paid' | 'refund_rejected';
+  customer_name?: string;
+  customer_email?: string;
+  customer_phone?: string;
+  refund_payment_reference?: string;
+  approved_by?: string;
+  approved_at?: string;
+  refunded_by?: string;
+  refunded_at?: string;
+  rejected_by?: string;
+  rejected_at?: string;
+  rejection_reason?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export async function getMysqlOrderStatusHistory(orderId: string): Promise<OrderStatusHistoryRecord[]> {
+  const pool = await getDbPool();
+  const [rows]: any = await pool.query(
+    'SELECT * FROM order_status_history WHERE order_id = ? ORDER BY timestamp ASC, created_at ASC',
+    [orderId]
+  );
+  return (rows || []).map((r: any) => ({
+    ...r,
+    metadata: typeof r.metadata === 'string' ? safeJsonParse(r.metadata, null) : r.metadata,
+  }));
+}
+
+export async function addMysqlOrderStatusHistory(entry: Partial<OrderStatusHistoryRecord>): Promise<OrderStatusHistoryRecord> {
+  const pool = await getDbPool();
+  const id = entry.id || `osh-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+  const now = new Date().toISOString();
+  const timestamp = entry.timestamp || now;
+
+  await pool.query(
+    `INSERT INTO order_status_history (id, order_id, from_status, to_status, changed_by, note, metadata, created_at, timestamp)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      id,
+      entry.order_id,
+      entry.from_status || 'order_received',
+      entry.to_status,
+      entry.changed_by || 'System',
+      entry.note || null,
+      entry.metadata ? JSON.stringify(entry.metadata) : null,
+      entry.created_at || now,
+      timestamp,
+    ]
+  );
+
+  return {
+    id,
+    order_id: entry.order_id!,
+    from_status: entry.from_status || 'order_received',
+    to_status: entry.to_status!,
+    changed_by: entry.changed_by || 'System',
+    note: entry.note,
+    metadata: entry.metadata,
+    created_at: now,
+    timestamp,
+  };
+}
+
+export async function getMysqlRefundClaimByOrderId(orderId: string): Promise<RefundClaimRecord | null> {
+  const pool = await getDbPool();
+  const [rows]: any = await pool.query('SELECT * FROM refund_claims WHERE order_id = ? LIMIT 1', [orderId]);
+  if (!rows || rows.length === 0) return null;
+  const r = rows[0];
+  return {
+    ...r,
+    amount: Number(r.amount),
+  };
+}
+
+export async function getAllMysqlRefundClaims(statusFilter?: string): Promise<RefundClaimRecord[]> {
+  const pool = await getDbPool();
+  let query = 'SELECT * FROM refund_claims ORDER BY created_at DESC';
+  const params: any[] = [];
+  if (statusFilter && statusFilter !== 'all') {
+    query = 'SELECT * FROM refund_claims WHERE status = ? ORDER BY created_at DESC';
+    params.push(statusFilter);
+  }
+  const [rows]: any = await pool.query(query, params);
+  return (rows || []).map((r: any) => ({
+    ...r,
+    amount: Number(r.amount),
+  }));
+}
+
+export async function getMysqlRefundClaimById(claimId: string): Promise<RefundClaimRecord | null> {
+  const pool = await getDbPool();
+  const [rows]: any = await pool.query('SELECT * FROM refund_claims WHERE id = ? LIMIT 1', [claimId]);
+  if (!rows || rows.length === 0) return null;
+  const r = rows[0];
+  return {
+    ...r,
+    amount: Number(r.amount),
+  };
+}
+
+export async function updateMysqlRefundClaim(claimId: string, updates: Partial<RefundClaimRecord>): Promise<RefundClaimRecord | null> {
+  const pool = await getDbPool();
+  const sets: string[] = ['updated_at = ?'];
+  const values: any[] = [new Date().toISOString()];
+
+  if (updates.status !== undefined) {
+    sets.push('status = ?');
+    values.push(updates.status);
+  }
+  if (updates.refund_payment_reference !== undefined) {
+    sets.push('refund_payment_reference = ?');
+    values.push(updates.refund_payment_reference);
+  }
+  if (updates.approved_by !== undefined) {
+    sets.push('approved_by = ?');
+    values.push(updates.approved_by);
+  }
+  if (updates.approved_at !== undefined) {
+    sets.push('approved_at = ?');
+    values.push(updates.approved_at);
+  }
+  if (updates.refunded_by !== undefined) {
+    sets.push('refunded_by = ?');
+    values.push(updates.refunded_by);
+  }
+  if (updates.refunded_at !== undefined) {
+    sets.push('refunded_at = ?');
+    values.push(updates.refunded_at);
+  }
+  if (updates.rejected_by !== undefined) {
+    sets.push('rejected_by = ?');
+    values.push(updates.rejected_by);
+  }
+  if (updates.rejected_at !== undefined) {
+    sets.push('rejected_at = ?');
+    values.push(updates.rejected_at);
+  }
+  if (updates.rejection_reason !== undefined) {
+    sets.push('rejection_reason = ?');
+    values.push(updates.rejection_reason);
+  }
+
+  values.push(claimId);
+  await pool.query(`UPDATE refund_claims SET ${sets.join(', ')} WHERE id = ?`, values);
+  return getMysqlRefundClaimById(claimId);
+}
+
+export const getSqliteOrderStatusHistory = getMysqlOrderStatusHistory;
+export const addSqliteOrderStatusHistory = addMysqlOrderStatusHistory;
+export const getSqliteRefundClaimByOrderId = getMysqlRefundClaimByOrderId;
+export const getAllSqliteRefundClaims = getAllMysqlRefundClaims;
+export const getSqliteRefundClaimById = getMysqlRefundClaimById;
+export const updateSqliteRefundClaim = updateMysqlRefundClaim;
+

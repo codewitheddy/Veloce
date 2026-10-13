@@ -2,6 +2,15 @@
 <html lang="en" dir="ltr">
 
 <head>
+  <!-- Google tag (gtag.js) -->
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-XY15BE6DS1"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+    gtag('config', 'G-XY15BE6DS1', { send_page_view: false });
+  </script>
+
   <!-- Primary Meta Tags -->
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0" />
@@ -167,23 +176,55 @@
     }
   }
   </script>
-  <script type="module" crossorigin src="/assets/index-74HLs3ax.js"></script>
-  <link rel="stylesheet" crossorigin href="/assets/index-BPHI1E4b.css">
+  <script type="module" crossorigin src="/assets/index-Ddh5McbZ.js"></script>
+  <link rel="stylesheet" crossorigin href="/assets/index-DU0OznXm.css">
 </head>
 
 <body class="bg-gray-950 text-slate-100">
   <div id="root"></div>
   
   <!-- Google Translate Element & Global Website Auto-Translation Bridge -->
-  <div id="google_translate_element" style="position:fixed;top:-9999px;left:-9999px;width:1px;height:1px;opacity:0;overflow:hidden;pointer-events:none;z-index:-9999;"></div>
+  <div id="google_translate_element" class="notranslate" translate="no" style="position:fixed;top:-9999px;left:-9999px;width:1px;height:1px;opacity:0;overflow:hidden;pointer-events:none;z-index:-9999;"></div>
   <script type="text/javascript">
+    function purgeGoogleTranslateCookies() {
+      try {
+        var host = window.location.hostname;
+        var parts = host ? host.split('.') : [];
+        var domains = ['', host, '.' + host];
+        for (var i = 1; i < parts.length; i++) {
+          var parent = parts.slice(i).join('.');
+          if (parent) {
+            domains.push(parent);
+            domains.push('.' + parent);
+          }
+        }
+        var paths = ['/', '', window.location.pathname];
+        domains.forEach(function(dom) {
+          paths.forEach(function(pth) {
+            var base = 'googtrans=; expires=Thu, 01 Jan 1970 00:00:00 UTC; Max-Age=0; path=' + pth;
+            if (dom) {
+              document.cookie = base + '; domain=' + dom + ';';
+            } else {
+              document.cookie = base + ';';
+            }
+          });
+        });
+      } catch (e) {}
+    }
+
     (function() {
-      // Sync initial saved language with Google Translate cookie
+      // Sync initial saved language with Google Translate cookie BEFORE element.js loads
       try {
         var savedLang = localStorage.getItem('veloce_language');
-        if (savedLang && savedLang !== 'en') {
+        if (!savedLang || savedLang === 'en') {
+          // If preference is English or unset, guarantee googtrans is completely purged before Google Translate loads
+          purgeGoogleTranslateCookies();
+        } else {
           var gtLang = savedLang === 'zh' ? 'zh-CN' : savedLang;
           document.cookie = "googtrans=/en/" + gtLang + "; path=/;";
+          if (window.location.hostname && window.location.hostname !== 'localhost') {
+            document.cookie = "googtrans=/en/" + gtLang + "; domain=." + window.location.hostname + "; path=/;";
+          }
         }
       } catch (e) {}
     })();
