@@ -44,6 +44,7 @@ const AdminLayout = lazyWithRetry(() => import('./layouts/AdminLayout'), 'AdminL
 const OrderTrackingPage = lazyWithRetry(() => import('./components/OrderTrackingPage'), 'OrderTrackingPage');
 const ResetPasswordView = lazyWithRetry(() => import('./components/ResetPasswordView'), 'ResetPasswordView');
 import AdminPreloader from './components/AdminPreloader';
+import AdminOrderNotificationBanner from './components/AdminOrderNotificationBanner';
 
 import {
   Product,
@@ -191,9 +192,13 @@ export default function App() {
     return 'home';
   };
 
-  const getPathForTab = (tab: string, queryString: string = ''): string => {
+  const getPathForTab = (tab: string, queryString: string = '', editingProductOverride?: Product | null): string => {
     let base = '/';
     if (tab === 'admin') {
+      const activeEditProduct = editingProductOverride !== undefined ? editingProductOverride : adminEditingProduct;
+      if (activeEditProduct) {
+        return `/admin?subtab=edit-product&productId=${encodeURIComponent(activeEditProduct.id)}`;
+      }
       const savedSubtab = localStorage.getItem('veloce_admin_subtab');
       return savedSubtab ? `/admin?subtab=${encodeURIComponent(savedSubtab)}` : '/admin';
     }
@@ -218,7 +223,7 @@ export default function App() {
   const [currentTab, setCurrentTab] = useState<string>(() => getInitialTab());
 
   // Helper to switch tabs and synchronize browser URL for all pages
-  const handleTabChange = (tab: string) => {
+  const handleTabChange = (tab: string, editingProductOverride?: Product | null) => {
     if (tab === 'store') {
       if (currentTab !== 'store') {
         setSelectedProduct(null);
@@ -226,6 +231,10 @@ export default function App() {
       }
     } else {
       setSelectedProduct(null);
+      if (typeof window !== 'undefined') {
+        sessionStorage.removeItem('veloce_selected_product_id');
+        localStorage.removeItem('veloce_selected_product_id');
+      }
     }
     setCurrentTab(tab);
     if (typeof window !== 'undefined') {
@@ -247,7 +256,7 @@ export default function App() {
           searchParams.delete('filter');
           searchParams.delete('type');
         }
-        const targetPath = getPathForTab(tab, searchParams.toString());
+        const targetPath = getPathForTab(tab, searchParams.toString(), editingProductOverride);
         const currentFull = window.location.pathname + (window.location.search ? window.location.search : '');
         if (currentFull !== targetPath) {
           window.history.pushState({ tab }, '', targetPath);
@@ -390,13 +399,27 @@ export default function App() {
 
   const handleEditProduct = (product: Product) => {
     setUserRole('admin');
+    setSelectedProduct(null);
+    if (typeof window !== 'undefined') {
+      sessionStorage.removeItem('veloce_selected_product_id');
+      localStorage.removeItem('veloce_selected_product_id');
+      sessionStorage.setItem('veloce_active_tab', 'admin');
+      localStorage.setItem('veloce_active_tab', 'admin');
+      localStorage.setItem('veloce_admin_subtab', 'edit-product');
+      localStorage.setItem('veloce_admin_editing_product_id', String(product.id));
+    }
     setAdminEditingProduct(product);
-    handleTabChange('admin');
+    handleTabChange('admin', product);
   };
 
   useEffect(() => {
     const handleClearEditing = () => {
       setAdminEditingProduct(null);
+      if (typeof window !== 'undefined') {
+        sessionStorage.removeItem('veloce_selected_product_id');
+        localStorage.removeItem('veloce_selected_product_id');
+        localStorage.removeItem('veloce_admin_editing_product_id');
+      }
     };
     window.addEventListener('veloce_clear_admin_editing_product', handleClearEditing);
     return () => window.removeEventListener('veloce_clear_admin_editing_product', handleClearEditing);
@@ -533,12 +556,26 @@ export default function App() {
   useEffect(() => {
     const handleLocationRouting = () => {
       if (typeof window !== 'undefined') {
+        // Never hijack tab if admin is currently editing a product or on admin route
+        if (
+          currentTab === 'admin' ||
+          currentTab === 'edit-product' ||
+          adminEditingProduct ||
+          window.location.pathname.startsWith('/admin')
+        ) {
+          return;
+        }
+
         const tab = getInitialTab();
+        if (currentTab === 'admin' && tab !== 'admin') {
+          return;
+        }
+
         setCurrentTab(tab);
 
         const params = new URLSearchParams(window.location.search);
         const targetProdId = params.get('product') || params.get('productId');
-        if (targetProdId && products.length > 0) {
+        if (tab === 'store' && targetProdId && products.length > 0) {
           const matched = products.find(
             (p) =>
               String(p.id).toLowerCase() === targetProdId.toLowerCase() ||
@@ -580,7 +617,7 @@ export default function App() {
     handleLocationRouting();
     window.addEventListener('popstate', handleLocationRouting);
     return () => window.removeEventListener('popstate', handleLocationRouting);
-  }, [products]);
+  }, []);
 
   // Fetch products, orders & inventory state directly from Django backend API as primary source of truth
   useEffect(() => {
@@ -753,18 +790,34 @@ export default function App() {
   // Rehydrate selected product if present in URL/storage when products load asynchronously
   useEffect(() => {
     if (typeof window === 'undefined' || products.length === 0) return;
+
+    // Strict guard: Never hijack navigation to storefront if user is in admin suite or editing a product!
+    if (
+      currentTab === 'admin' ||
+      currentTab === 'edit-product' ||
+      adminEditingProduct ||
+      window.location.pathname.startsWith('/admin')
+    ) {
+      return;
+    }
+
     const params = new URLSearchParams(window.location.search);
-    const prodId = params.get('product') || params.get('productId') || sessionStorage.getItem('veloce_selected_product_id');
+    const prodIdFromUrl = params.get('product') || params.get('productId');
+    // Only use sessionStorage fallback if the user is explicitly already on the store tab
+    const prodId = prodIdFromUrl || (currentTab === 'store' ? sessionStorage.getItem('veloce_selected_product_id') : null);
+
     if (prodId && (!selectedProduct || String(selectedProduct.id).toLowerCase() !== prodId.toLowerCase())) {
       const matched = products.find(
         (p) => String(p.id).toLowerCase() === prodId.toLowerCase() || (p.slug && p.slug.toLowerCase() === prodId.toLowerCase())
       );
       if (matched) {
         setSelectedProduct(matched);
-        setCurrentTab('store');
+        if (currentTab !== 'store') {
+          setCurrentTab('store');
+        }
       }
     }
-  }, [products]);
+  }, [products, currentTab, adminEditingProduct]);
 
   // Synchronize browser URL query param and storage when selectedProduct changes
   useEffect(() => {
@@ -2670,6 +2723,20 @@ export default function App() {
       >
         {renderStorefrontContent()}
       </StorefrontLayout>
+      {userRole === 'admin' && (
+        <AdminOrderNotificationBanner
+          userRole="admin"
+          currentTab={currentTab}
+          onNavigateToAdminOrders={(orderId) => {
+            handleTabChange('admin');
+            if (orderId) {
+              setTimeout(() => {
+                window.dispatchEvent(new CustomEvent('veloce_select_admin_order', { detail: { orderId } }));
+              }, 250);
+            }
+          }}
+        />
+      )}
       <EmailToaster toasts={emailToasts} onDismiss={handleDismissEmailToast} isAdminView={false} />
     </>
   );

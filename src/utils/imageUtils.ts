@@ -19,10 +19,10 @@ export interface ImageOptimizationOptions {
  * Works seamlessly with Cloudinary, Unsplash, and local static assets.
  */
 export function getOptimizedImageUrl(
-  url: string,
+  url: string | null | undefined,
   options: ImageOptimizationOptions = {}
 ): string {
-  if (!url || typeof url !== 'string') return '/placeholder-product.png';
+  if (!url || typeof url !== 'string' || !url.trim()) return '';
 
   const { width = 600, height, quality = 80, format = 'auto', crop = 'limit' } = options;
 
@@ -70,13 +70,17 @@ export function getOptimizedImageUrl(
  * Generates standard responsive srcset string for phone, tablet, and desktop display.
  */
 export function generateSrcSet(
-  url: string,
+  url: string | null | undefined,
   widths: number[] = [280, 420, 600, 800, 1080]
 ): string {
-  if (!url || typeof url !== 'string' || url.startsWith('data:')) return '';
+  if (!url || typeof url !== 'string' || !url.trim() || url.startsWith('data:')) return '';
 
   return widths
-    .map((w) => `${getOptimizedImageUrl(url, { width: w })} ${w}w`)
+    .map((w) => {
+      const optimized = getOptimizedImageUrl(url, { width: w });
+      return optimized ? `${optimized} ${w}w` : '';
+    })
+    .filter(Boolean)
     .join(', ');
 }
 

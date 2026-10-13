@@ -26,6 +26,9 @@ export function playNewOrderSound() {
     if (!AudioContextClass) return;
 
     const ctx = new AudioContextClass();
+    if (ctx.state === 'suspended') {
+      ctx.resume().catch(() => {});
+    }
     
     // First tone (E5 ~ 659Hz)
     const osc1 = ctx.createOscillator();
@@ -199,7 +202,42 @@ export function broadcastNewOrderEvent(order: Order) {
 }
 
 /**
- * Subscribe to new order broadcasts from any tab or window
+ * Normalizes incoming raw order object from backend SSE / polling stream to standard Order
+ */
+function normalizeNotificationOrder(raw: any): Order {
+  if (!raw) return {} as Order;
+  const items = Array.isArray(raw.items)
+    ? raw.items.map((it: any) => ({
+        productId: String(it.productId || it.product || it.id || ''),
+        name: it.product_name || it.name || 'Store Item',
+        price: typeof it.unit_price === 'number' ? it.unit_price : (typeof it.price === 'number' ? it.price : parseFloat(it.unit_price || it.price || '0')),
+        quantity: Number(it.quantity || 1),
+        selectedVariations: it.selected_variations || it.selectedVariations || {},
+        type: 'physical' as const,
+      }))
+    : [];
+
+  const rawMethod = String(raw.paymentMethod || raw.payment_method || 'mpesa').toLowerCase();
+  const paymentMethod = (rawMethod.includes('cod') || rawMethod.includes('cash') || rawMethod.includes('delivery')) ? 'cod' : 'mpesa';
+
+  return {
+    id: String(raw.id || ''),
+    customerName: raw.customerName || raw.customer_name || 'Customer',
+    customerEmail: raw.customerEmail || raw.customer_email || raw.email || '',
+    phone: raw.phone || raw.customerPhone || raw.customer_phone || '',
+    total: typeof raw.total === 'number' ? raw.total : parseFloat(raw.total || '0'),
+    subtotal: raw.subtotal ? parseFloat(raw.subtotal) : undefined,
+    shippingFee: raw.shipping_fee ? parseFloat(raw.shipping_fee) : (raw.shippingFee ? parseFloat(raw.shippingFee) : undefined),
+    discount: raw.discount ? parseFloat(raw.discount) : undefined,
+    status: raw.status || 'pending',
+    date: raw.created_at ? String(raw.created_at).split('T')[0] : (raw.date ? String(raw.date).split('T')[0] : new Date().toISOString().split('T')[0]),
+    paymentMethod,
+    items,
+  };
+}
+
+/**
+ * Subscribe to new order broadcasts from any tab, window, or remote customer device via SSE & Polling
  */
 export function subscribeToOrderNotifications(
   onOrderReceived: (order: Order, isCrossTab: boolean) => void
@@ -207,6 +245,8 @@ export function subscribeToOrderNotifications(
   if (typeof window === 'undefined') return () => {};
 
   let broadcastChannel: BroadcastChannel | null = null;
+  let eventSource: EventSource | null = null;
+  let pollingInterval: any = null;
 
   // Handler for incoming order payloads with multi-channel de-duplication
   const handleIncomingPayload = (payload: any, isCrossTab: boolean) => {
@@ -214,11 +254,11 @@ export function subscribeToOrderNotifications(
       return;
     }
 
-    const orderId = payload.order.id;
+    const orderId = String(payload.order.id);
     const now = Date.now();
     const lastSeen = recentlyReceivedPayloads.get(orderId);
 
-    // Suppress duplicate events arriving from redundant channels (BroadcastChannel + storage event) within 5 seconds
+    // Suppress duplicate events arriving from redundant channels within 5 seconds
     if (lastSeen && now - lastSeen < 5000) {
       return;
     }
@@ -233,10 +273,95 @@ export function subscribeToOrderNotifications(
       }
     }
 
-    onOrderReceived(payload.order, isCrossTab);
+    const normalizedOrder = normalizeNotificationOrder(payload.order);
+    onOrderReceived(normalizedOrder, isCrossTab);
+
+    // Dispatch global event so other components / caches can re-fetch orders
+    try {
+      window.dispatchEvent(new CustomEvent('veloce_new_order_received', { detail: { order: normalizedOrder } }));
+      window.dispatchEvent(new CustomEvent('veloce_orders_updated'));
+    } catch (_) {}
   };
 
-  // 1. Listen to BroadcastChannel
+  // 1. Primary Real-Time Channel: Server-Sent Events (SSE) from Express backend
+  try {
+    eventSource = new EventSource('/api/orders/live-stream');
+    eventSource.addEventListener('new_order', (e: MessageEvent) => {
+      try {
+        const data = JSON.parse(e.data);
+        if (data?.order) {
+          handleIncomingPayload(data, true);
+        }
+      } catch (err) {
+        console.warn('[OrderNotification] Failed to parse SSE event data:', err);
+      }
+    });
+
+    eventSource.onmessage = (e: MessageEvent) => {
+      try {
+        const data = JSON.parse(e.data);
+        if (data?.type === 'NEW_ORDER_PLACED' && data?.order) {
+          handleIncomingPayload(data, true);
+        }
+      } catch (_) {}
+    };
+
+    eventSource.onerror = (err) => {
+      // EventSource automatically handles exponential backoff reconnection
+      console.debug('[OrderNotification] SSE reconnecting...', err);
+    };
+  } catch (err) {
+    console.warn('[OrderNotification] SSE initialization error:', err);
+  }
+
+  // 2. High-Reliability Polling Fallback (ensures delivery across proxy/CDN drops)
+  const initialKnownIds = new Set<string>();
+  let isFirstPoll = true;
+
+  const pollLatestOrders = async () => {
+    try {
+      const res = await fetch('/api/orders/latest?limit=10', {
+        headers: { Accept: 'application/json' },
+        cache: 'no-store',
+      });
+      if (!res.ok) return;
+      const json = await res.json();
+      const orders: any[] = json.orders || [];
+
+      if (isFirstPoll) {
+        orders.forEach((o) => {
+          if (o?.id) initialKnownIds.add(String(o.id));
+        });
+        isFirstPoll = false;
+        return;
+      }
+
+      for (const ord of orders) {
+        if (!ord?.id) continue;
+        const idStr = String(ord.id);
+        if (!initialKnownIds.has(idStr)) {
+          initialKnownIds.add(idStr);
+          // Only notify if order was created within the last 15 minutes
+          const orderTime = new Date(ord.created_at || ord.createdAt || ord.date || Date.now()).getTime();
+          if (Date.now() - orderTime < 15 * 60 * 1000) {
+            handleIncomingPayload(
+              {
+                type: 'NEW_ORDER_PLACED',
+                order: ord,
+                timestamp: Date.now(),
+              },
+              true
+            );
+          }
+        }
+      }
+    } catch (_) {}
+  };
+
+  pollLatestOrders();
+  pollingInterval = setInterval(pollLatestOrders, 12000);
+
+  // 3. Listen to BroadcastChannel (instant same-machine cross-tab sync)
   if ('BroadcastChannel' in window) {
     try {
       broadcastChannel = new BroadcastChannel(BROADCAST_CHANNEL_NAME);
@@ -248,7 +373,7 @@ export function subscribeToOrderNotifications(
     }
   }
 
-  // 2. Listen to storage event (Fallback for cross-tab sync)
+  // 4. Listen to storage event (Fallback for cross-tab sync)
   const handleStorageEvent = (e: StorageEvent) => {
     if ((e.key === 'ropenix_latest_new_order' || e.key === 'veloce_latest_new_order') && e.newValue) {
       try {
@@ -260,7 +385,7 @@ export function subscribeToOrderNotifications(
     }
   };
 
-  // 3. Listen to local same-tab window event
+  // 5. Listen to local same-tab window event
   const handleLocalEvent = (e: any) => {
     if (e.detail) {
       handleIncomingPayload(e.detail, false);
@@ -272,6 +397,12 @@ export function subscribeToOrderNotifications(
   window.addEventListener('veloce_order_placed_local', handleLocalEvent);
 
   return () => {
+    if (eventSource) {
+      eventSource.close();
+    }
+    if (pollingInterval) {
+      clearInterval(pollingInterval);
+    }
     if (broadcastChannel) {
       broadcastChannel.close();
     }

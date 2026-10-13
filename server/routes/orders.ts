@@ -137,7 +137,7 @@ router.get('/track/:orderId', trackingRateLimiter, async (req: Request, res: Res
       ];
     }
 
-    const canCancel = (normalizedStatus === 'order_received' || normalizedStatus === 'processing' || normalizedStatus === 'payment_confirmed') && normalizedStatus !== 'completed' && normalizedStatus !== 'cancelled';
+    const canCancel = normalizedStatus === 'order_received' || normalizedStatus === 'processing' || normalizedStatus === 'payment_confirmed';
 
     return res.json({
       success: true,
@@ -206,6 +206,67 @@ router.get('/', async (req: Request, res: Response) => {
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Failed to retrieve orders';
     return res.status(500).json({ success: false, error: message });
+  }
+});
+
+// Live SSE client pool for real-time admin order alerts
+const adminSseClients = new Set<Response>();
+
+export function broadcastOrderToAdmin(order: any): void {
+  const payload = JSON.stringify({
+    type: 'NEW_ORDER_PLACED',
+    order,
+    timestamp: Date.now(),
+  });
+
+  for (const client of adminSseClients) {
+    try {
+      client.write(`event: new_order\ndata: ${payload}\n\n`);
+    } catch (_) {
+      adminSseClients.delete(client);
+    }
+  }
+}
+
+// 2a. Real-time Order Stream (Server-Sent Events) for Admin Dashboard
+router.get('/live-stream', (req: Request, res: Response) => {
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache, no-transform');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no');
+  res.flushHeaders();
+
+  res.write(`event: connected\ndata: {"status":"connected","timestamp":${Date.now()}}\n\n`);
+  adminSseClients.add(res);
+
+  const heartbeat = setInterval(() => {
+    try {
+      res.write(`: heartbeat\n\n`);
+    } catch (_) {
+      clearInterval(heartbeat);
+      adminSseClients.delete(res);
+    }
+  }, 25000);
+
+  req.on('close', () => {
+    clearInterval(heartbeat);
+    adminSseClients.delete(res);
+  });
+});
+
+// 2b. Recent Orders Polling Fallback
+router.get('/latest', async (req: Request, res: Response) => {
+  try {
+    const limit = Math.min(Number(req.query.limit) || 10, 50);
+    const allOrders = await getAllSqliteOrders();
+    const sorted = (allOrders || []).sort((a: any, b: any) => {
+      const timeA = new Date(a.created_at || a.date || 0).getTime();
+      const timeB = new Date(b.created_at || b.date || 0).getTime();
+      return timeB - timeA;
+    });
+    return res.json({ success: true, orders: sorted.slice(0, limit) });
+  } catch (err: unknown) {
+    return res.status(500).json({ success: false, error: 'Failed to retrieve latest orders' });
   }
 });
 
@@ -351,6 +412,13 @@ router.post('/', validateBody(CreateOrderSchema), async (req: Request, res: Resp
     };
 
     const savedOrder = await saveSqliteOrder(newOrderPayload);
+
+    // Broadcast in real-time to active admin browser dashboards (desktop window alert + audio chime)
+    try {
+      broadcastOrderToAdmin(savedOrder);
+    } catch (sseErr) {
+      console.warn('[Orders API] Real-time admin SSE broadcast warning:', sseErr);
+    }
 
     // Trigger Decoupled Domain Transactional Email Pipeline
     try {

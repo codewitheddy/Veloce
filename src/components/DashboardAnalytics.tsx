@@ -213,6 +213,9 @@ export default function DashboardAnalytics({
 
   // Tabs within Admin Panel with persistence
   const [adminSubTab, setAdminSubTab] = useState<AdminSubTabId>(() => {
+    if (initialEditingProduct) {
+      return 'edit-product';
+    }
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
       const urlTab = (params.get('subtab') || params.get('tab') || params.get('section')) as AdminSubTabId | null;
@@ -226,9 +229,6 @@ export default function DashboardAnalytics({
     }
     if (initialAdminSubTab && VALID_ADMIN_SUB_TABS.includes(initialAdminSubTab as AdminSubTabId)) {
       return initialAdminSubTab as AdminSubTabId;
-    }
-    if (initialEditingProduct) {
-      return 'edit-product';
     }
     return 'analytics';
   });

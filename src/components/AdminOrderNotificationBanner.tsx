@@ -19,6 +19,8 @@ import {
   PackageCheck
 } from 'lucide-react';
 import { Order } from '../types';
+import { useQueryClient } from '@tanstack/react-query';
+import { queryKeys } from '../queries/keys';
 import { 
   subscribeToOrderNotifications, 
   playNewOrderSound, 
@@ -37,6 +39,7 @@ export default function AdminOrderNotificationBanner({
   currentTab = 'admin',
   onNavigateToAdminOrders,
 }: AdminOrderNotificationBannerProps) {
+  const queryClient = useQueryClient();
   const [activeAlertOrder, setActiveAlertOrder] = useState<Order | null>(null);
   const [notificationHistory, setNotificationHistory] = useState<Order[]>([]);
   const [permissionStatus, setPermissionStatus] = useState<NotificationPermission>(() => {
@@ -62,6 +65,11 @@ export default function AdminOrderNotificationBanner({
 
       // Trigger native browser desktop window notification with automatic 5-second timeout
       showDesktopNotification(newOrder, { timeoutMs: 5000 });
+
+      // Automatically refresh React Query cache for orders
+      try {
+        queryClient.invalidateQueries({ queryKey: queryKeys.orders.all });
+      } catch (_) {}
 
       // Set active alert banner with auto-dismiss after 10 seconds
       setActiveAlertOrder(newOrder);
@@ -146,8 +154,8 @@ export default function AdminOrderNotificationBanner({
     }, 10000);
   };
 
-  // The alert button and real-time notification banner are strictly visible in the admin page
-  if (userRole !== 'admin' || currentTab !== 'admin') {
+  // The alert button and real-time notification banner are strictly visible for admin accounts
+  if (userRole !== 'admin') {
     return null;
   }
 

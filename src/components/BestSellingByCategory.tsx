@@ -196,7 +196,7 @@ export default function BestSellingByCategory({
                         {/* Image Container with Rank Badge */}
                         <div className="relative h-32 sm:h-44 w-full overflow-hidden rounded-lg bg-gray-50 dark:bg-slate-900 border border-slate-100 dark:border-slate-800 flex items-center justify-center p-2">
                           <LazyImage
-                            src={product.imageUrl}
+                            src={product.imageUrl || (Array.isArray(product.images) ? product.images[0] : (product as any).image) || ''}
                             alt={product.name}
                             width={240}
                             height={176}

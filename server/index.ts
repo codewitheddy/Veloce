@@ -55,7 +55,7 @@ import emailPreferencesRouter from './routes/emailPreferences';
 import emailDiagnosticsRouter from './routes/emailDiagnostics';
 import systemRouter from './routes/system';
 import compression from 'compression';
-import seoRouter from './routes/seo';
+import seoRouter, { renderHtmlWithSeo } from './routes/seo';
 
 dotenv.config();
 
@@ -269,11 +269,17 @@ async function startServer() {
         },
       })
     );
-    app.get('*', (_req, res) => {
+    app.get('*', async (req, res) => {
       res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
       const indexPath = path.join(distPath, 'index.html');
       if (fs.existsSync(indexPath)) {
-        res.sendFile(indexPath);
+        try {
+          const rawHtml = await fs.promises.readFile(indexPath, 'utf-8');
+          const { html, status } = await renderHtmlWithSeo(rawHtml, req);
+          res.status(status).setHeader('Content-Type', 'text/html; charset=utf-8').send(html);
+        } catch (_) {
+          res.sendFile(indexPath);
+        }
       } else {
         res.status(404).send(`
           <!DOCTYPE html>
@@ -293,16 +299,42 @@ async function startServer() {
     process.env.NODE_ENV === 'production' ||
     (Boolean(process.argv[1]) && (process.argv[1].endsWith('.cjs') || process.argv[1].includes('dist')));
 
+  let viteInstance: any = null;
   if (isProduction) {
     serveStaticProductionAssets();
   } else {
     try {
       const { createServer: createViteServer } = await import('vite');
-      const vite = await createViteServer({
+      viteInstance = await createViteServer({
         server: { middlewareMode: true },
-        appType: 'spa',
+        appType: 'custom',
       });
-      app.use(vite.middlewares);
+
+      // Dynamic SEO pre-rendering for development & automated audits
+      app.use(async (req, res, next) => {
+        if (
+          req.method === 'GET' &&
+          !req.path.startsWith('/api') &&
+          !req.path.startsWith('/@') &&
+          !req.path.includes('.') &&
+          (req.headers.accept?.includes('text/html') || req.headers.accept === '*/*')
+        ) {
+          try {
+            const templatePath = path.resolve(process.cwd(), 'index.html');
+            if (fs.existsSync(templatePath)) {
+              let template = await fs.promises.readFile(templatePath, 'utf-8');
+              template = await viteInstance.transformIndexHtml(req.originalUrl || req.url, template);
+              const { html, status } = await renderHtmlWithSeo(template, req);
+              return res.status(status).setHeader('Content-Type', 'text/html; charset=utf-8').send(html);
+            }
+          } catch (e) {
+            // fallback to Vite middlewares
+          }
+        }
+        next();
+      });
+
+      app.use(viteInstance.middlewares);
     } catch (viteErr) {
       console.warn('[Vite Middleware Notice]:', viteErr instanceof Error ? viteErr.message : viteErr);
       serveStaticProductionAssets();
@@ -326,27 +358,55 @@ async function startServer() {
     console.log(`[Ropenix Products API] Route registered at /api/products`);
     console.log(`[Ropenix Orders API] Route registered at /api/orders`);
     console.log(`[Ropenix Suppliers API] Route registered at /api/suppliers`);
+
+    registerEmailEventListeners();
+    try {
+      validateEmailConfigOnStartup();
+    } catch (_) {}
+    startEmailQueueWorker();
+    startEmailScheduler();
   });
 
-  registerEmailEventListeners();
-  try {
-    validateEmailConfigOnStartup();
-  } catch (_) {}
-  startEmailQueueWorker();
-  startEmailScheduler();
+  server.on('error', (err: NodeJS.ErrnoException) => {
+    if (err.code === 'EADDRINUSE') {
+      console.error(`\n❌ [Ropenix Server] Port ${listenPort} is already in use.`);
+      console.error(`👉 Run the following in your terminal to free port ${listenPort}:`);
+      console.error(`   Windows PowerShell: Get-NetTCPConnection -LocalPort ${listenPort} | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force }`);
+      console.error(`   Or Windows Command Prompt: netstat -ano | findstr :${listenPort}\n`);
+    } else {
+      console.error('[Ropenix Server] Server listen error:', err);
+    }
+    stopEmailQueueWorker();
+    stopEmailScheduler();
+    process.exit(1);
+  });
 
-  const handleShutdown = (signal: string) => {
+  const handleShutdown = async (signal: string) => {
     console.log(`[Ropenix Server] Received ${signal}. Gracefully stopping workers and closing server...`);
     stopEmailQueueWorker();
     stopEmailScheduler();
+
+    if (typeof (server as any).closeAllConnections === 'function') {
+      (server as any).closeAllConnections();
+    }
+    if (viteInstance && typeof viteInstance.close === 'function') {
+      try {
+        await viteInstance.close();
+      } catch (_) {}
+    }
+
     server.close(() => {
       console.log('[Ropenix Server] Server closed gracefully.');
       process.exit(0);
     });
+
+    setTimeout(() => {
+      process.exit(0);
+    }, 2000).unref();
   };
 
-  process.on('SIGTERM', () => handleShutdown('SIGTERM'));
-  process.on('SIGINT', () => handleShutdown('SIGINT'));
+  process.on('SIGTERM', () => { void handleShutdown('SIGTERM'); });
+  process.on('SIGINT', () => { void handleShutdown('SIGINT'); });
 
   return server;
 }

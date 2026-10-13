@@ -67,6 +67,11 @@ import {
   getOptimizedCloudinaryUrl,
   isCloudinaryUrl
 } from '../lib/cloudinary';
+import {
+  playNewOrderSound,
+  showDesktopNotification,
+  requestNotificationPermission,
+} from '../lib/orderNotifications';
 
 type SettingsTab =
   | 'general'
@@ -153,6 +158,12 @@ export function SiteSettingsPanel() {
   const [showEtimsSecret, setShowEtimsSecret] = useState(false);
   const [showMpesaSecret, setShowMpesaSecret] = useState(false);
   const [showMpesaPasskey, setShowMpesaPasskey] = useState(false);
+  const [notificationPermission, setNotificationPermission] = useState<string>(() => {
+    if (typeof window !== 'undefined' && 'Notification' in window) {
+      return Notification.permission;
+    }
+    return 'unsupported';
+  });
 
   // Refresh Cloudinary status
   const refreshCloudinaryStatus = async () => {
@@ -2552,6 +2563,92 @@ export function SiteSettingsPanel() {
                     />
                   </label>
                 ))}
+              </div>
+            </div>
+
+            {/* Administrator Real-Time Order Alerts & Live Diagnostics */}
+            <div className="p-4 rounded-xl border border-indigo-200 dark:border-indigo-800 bg-indigo-50/40 dark:bg-indigo-950/20 space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <Bell className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />
+                  <h4 className="text-xs font-bold text-gray-900 dark:text-white uppercase tracking-wider font-mono">
+                    Admin Real-Time Window Alerts &amp; Sound
+                  </h4>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold font-mono ${
+                    notificationPermission === 'granted'
+                      ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
+                      : notificationPermission === 'denied'
+                      ? 'bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300'
+                      : 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300'
+                  }`}>
+                    {notificationPermission === 'granted'
+                      ? '✅ WINDOW POPUPS ACTIVE'
+                      : notificationPermission === 'denied'
+                      ? '🚫 BLOCKED IN BROWSER'
+                      : '⚠️ PERMISSION NOT GRANTED'}
+                  </span>
+                </div>
+              </div>
+
+              <p className="text-xs text-gray-600 dark:text-gray-300">
+                When active, all incoming customer orders from any device stream live to this dashboard via Server-Sent Events (SSE), sound the audio chime, and trigger native OS/browser window popups.
+              </p>
+
+              <div className="flex flex-wrap items-center gap-2 pt-1">
+                {notificationPermission !== 'granted' && (
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      const res = await requestNotificationPermission();
+                      setNotificationPermission(res);
+                      if (res === 'granted') {
+                        playNewOrderSound();
+                        showDesktopNotification({
+                          id: 'ROP-TEST-' + Math.floor(1000 + Math.random() * 9000),
+                          customerName: 'Admin Alert Test',
+                          customerEmail: 'admin@ropenix.co.ke',
+                          total: 12500,
+                          status: 'pending',
+                          date: new Date().toISOString().split('T')[0],
+                          paymentMethod: 'mpesa',
+                          items: [{ productId: 'test', name: 'Executive Velvet Blazer', price: 12500, quantity: 1, selectedVariations: {}, type: 'physical' }]
+                        }, { timeoutMs: 5000 });
+                      }
+                    }}
+                    className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl transition-all cursor-pointer shadow-xs active:scale-95 flex items-center gap-1.5"
+                  >
+                    <Sparkles className="h-3.5 w-3.5" />
+                    <span>Enable Window Notifications Now</span>
+                  </button>
+                )}
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    playNewOrderSound();
+                    showDesktopNotification({
+                      id: 'ROP-TEST-' + Math.floor(1000 + Math.random() * 9000),
+                      customerName: 'Live Sound & Popup Test',
+                      customerEmail: 'admin@ropenix.co.ke',
+                      total: 25000,
+                      status: 'pending',
+                      date: new Date().toISOString().split('T')[0],
+                      paymentMethod: 'mpesa',
+                      items: [{ productId: 'test', name: 'Handcrafted Silk Tie & Blazer', price: 25000, quantity: 1, selectedVariations: {}, type: 'physical' }]
+                    }, { timeoutMs: 5000 });
+                  }}
+                  className="px-3 py-1.5 bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-200 border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700 font-bold text-xs rounded-xl transition-all cursor-pointer shadow-xs active:scale-95 flex items-center gap-1.5"
+                >
+                  <Bell className="h-3.5 w-3.5 text-indigo-600" />
+                  <span>Send Test Alert &amp; Play Chime</span>
+                </button>
+              </div>
+
+              <div className="text-[11px] text-gray-500 dark:text-gray-400 font-mono bg-white dark:bg-gray-900 p-2.5 rounded-lg border border-gray-200 dark:border-gray-800 space-y-1">
+                <div>✉️ <strong>Admin Email Alerts:</strong> Dispatched automatically to <code>admin@ropenix.co.ke</code> and <code>ropenixkenya@gmail.com</code> upon every new order.</div>
+                <div>⚡ <strong>Real-Time Pipeline:</strong> SSE stream (<code>/api/orders/live-stream</code>) + 12s fast polling fallback.</div>
               </div>
             </div>
           </div>

@@ -80,24 +80,30 @@ export interface GA4Item {
  * Formats product details to standard GA4 item object without PII
  */
 export function formatProductToGA4Item(
-  product: { id: string | number; name: string; price?: number | string; category?: string },
+  product?: { id?: string | number; productId?: string | number; name?: string; title?: string; price?: number | string; category?: string } | null,
   quantity = 1,
   selectedVars?: Record<string, string>,
   index?: number
 ): GA4Item {
+  const prod = product || {};
+  const id = prod.id ?? prod.productId ?? 'item';
+  const name = prod.name ?? prod.title ?? 'Product';
+  const price = Number(prod.price) || 0;
+  const qty = quantity > 0 ? quantity : 1;
+
   const item: GA4Item = {
-    item_id: String(product.id),
-    item_name: product.name,
-    price: Number(product.price) || 0,
-    quantity: quantity > 0 ? quantity : 1,
+    item_id: String(id),
+    item_name: String(name),
+    price,
+    quantity: qty,
     currency: GA_CURRENCY,
   };
 
-  if (product.category) {
-    item.item_category = product.category;
+  if (prod.category) {
+    item.item_category = prod.category;
   }
 
-  if (selectedVars && Object.keys(selectedVars).length > 0) {
+  if (selectedVars && typeof selectedVars === 'object' && Object.keys(selectedVars).length > 0) {
     item.item_variant = Object.entries(selectedVars)
       .map(([k, v]) => `${k}:${v}`)
       .join(', ');
@@ -114,7 +120,7 @@ export function formatProductToGA4Item(
  * 1. view_item_list (Product listing pages / collections)
  */
 export function trackViewItemList(
-  products: Array<{ id: string | number; name: string; price?: number | string; category?: string }>,
+  products: Array<{ id?: string | number; productId?: string | number; name?: string; title?: string; price?: number | string; category?: string }>,
   listName = 'Catalog',
   listId = 'store_catalog'
 ): void {
@@ -131,7 +137,7 @@ export function trackViewItemList(
  * 2. view_item (Product detail pages)
  */
 export function trackViewItem(
-  product: { id: string | number; name: string; price?: number | string; category?: string },
+  product: { id?: string | number; productId?: string | number; name?: string; title?: string; price?: number | string; category?: string },
   selectedVars?: Record<string, string>
 ): void {
   if (!product) return;
@@ -148,7 +154,7 @@ export function trackViewItem(
  * 3. add_to_cart
  */
 export function trackAddToCart(
-  product: { id: string | number; name: string; price?: number | string; category?: string },
+  product: { id?: string | number; productId?: string | number; name?: string; title?: string; price?: number | string; category?: string },
   quantity = 1,
   selectedVars?: Record<string, string>
 ): void {
@@ -167,7 +173,7 @@ export function trackAddToCart(
  * 4. remove_from_cart
  */
 export function trackRemoveFromCart(
-  product: { id: string | number; name: string; price?: number | string; category?: string },
+  product: { id?: string | number; productId?: string | number; name?: string; title?: string; price?: number | string; category?: string },
   quantity = 1,
   selectedVars?: Record<string, string>
 ): void {
@@ -186,17 +192,22 @@ export function trackRemoveFromCart(
  * 5. view_cart
  */
 export function trackViewCart(
-  cartItems: Array<{
-    product: { id: string | number; name: string; price?: number | string; category?: string };
-    quantity: number;
-    selectedVariations?: Record<string, string>;
-  }>,
+  cartItems: Array<any>,
   totalValue?: number
 ): void {
   if (!cartItems || cartItems.length === 0) return;
 
-  const items = cartItems.map((ci) => formatProductToGA4Item(ci.product, ci.quantity, ci.selectedVariations));
-  const calculatedTotal = cartItems.reduce((acc, ci) => acc + (Number(ci.product.price) || 0) * ci.quantity, 0);
+  const items = cartItems
+    .filter(Boolean)
+    .map((ci) => {
+      const prod = ci.product || ci;
+      return formatProductToGA4Item(prod, ci.quantity, ci.selectedVariations);
+    });
+
+  const calculatedTotal = cartItems.reduce((acc, ci) => {
+    const prod = ci.product || ci;
+    return acc + (Number(prod?.price) || 0) * (Number(ci.quantity) || 1);
+  }, 0);
 
   trackEvent('view_cart', {
     currency: GA_CURRENCY,
@@ -209,17 +220,22 @@ export function trackViewCart(
  * 6. begin_checkout
  */
 export function trackBeginCheckout(
-  cartItems: Array<{
-    product: { id: string | number; name: string; price?: number | string; category?: string };
-    quantity: number;
-    selectedVariations?: Record<string, string>;
-  }>,
+  cartItems: Array<any>,
   totalValue?: number
 ): void {
   if (!cartItems || cartItems.length === 0) return;
 
-  const items = cartItems.map((ci) => formatProductToGA4Item(ci.product, ci.quantity, ci.selectedVariations));
-  const calculatedTotal = cartItems.reduce((acc, ci) => acc + (Number(ci.product.price) || 0) * ci.quantity, 0);
+  const items = cartItems
+    .filter(Boolean)
+    .map((ci) => {
+      const prod = ci.product || ci;
+      return formatProductToGA4Item(prod, ci.quantity, ci.selectedVariations);
+    });
+
+  const calculatedTotal = cartItems.reduce((acc, ci) => {
+    const prod = ci.product || ci;
+    return acc + (Number(prod?.price) || 0) * (Number(ci.quantity) || 1);
+  }, 0);
 
   trackEvent('begin_checkout', {
     currency: GA_CURRENCY,
@@ -233,15 +249,16 @@ export function trackBeginCheckout(
  * Fired when the payment method is selected (e.g. M-Pesa or Cash on Delivery)
  */
 export function trackAddPaymentInfo(
-  cartItems: Array<{
-    product: { id: string | number; name: string; price?: number | string; category?: string };
-    quantity: number;
-    selectedVariations?: Record<string, string>;
-  }>,
+  cartItems: Array<any>,
   totalValue: number,
   paymentType: 'M-Pesa' | 'Cash on Delivery' | string
 ): void {
-  const items = (cartItems || []).map((ci) => formatProductToGA4Item(ci.product, ci.quantity, ci.selectedVariations));
+  const items = (cartItems || [])
+    .filter(Boolean)
+    .map((ci) => {
+      const prod = ci.product || ci;
+      return formatProductToGA4Item(prod, ci.quantity, ci.selectedVariations);
+    });
 
   trackEvent('add_payment_info', {
     currency: GA_CURRENCY,
@@ -284,18 +301,7 @@ export function isPurchaseTracked(orderId: string | number): boolean {
   return getTrackedPurchases().includes(String(orderId));
 }
 
-export function trackPurchase(order: {
-  id: string | number;
-  total: number;
-  tax?: number;
-  deliveryFee?: number;
-  couponCode?: string;
-  items: Array<{
-    product: { id: string | number; name: string; price?: number | string; category?: string };
-    quantity: number;
-    selectedVariations?: Record<string, string>;
-  }>;
-}): boolean {
+export function trackPurchase(order: any): boolean {
   if (!order || !order.id) return false;
   const orderIdStr = String(order.id);
 
@@ -304,21 +310,53 @@ export function trackPurchase(order: {
     return false;
   }
 
-  const items = (order.items || []).map((ci) => ({
-    item_id: String(ci.product.id),
-    item_name: ci.product.name,
-    price: Number(ci.product.price) || 0,
-    quantity: ci.quantity,
-    item_category: ci.product.category || undefined,
-  }));
+  const rawItems: any[] = Array.isArray(order.items) ? order.items : [];
+  const items: GA4Item[] = rawItems
+    .filter(Boolean)
+    .map((ci: any) => {
+      // Handles both OrderItem structure ({ productId, name, price, quantity })
+      // and CartItem structure ({ product: { id, name, price }, quantity })
+      const prod = ci.product || ci;
+      const itemId = String(prod.id ?? ci.productId ?? ci.id ?? 'item');
+      const itemName = String(prod.name ?? prod.title ?? ci.name ?? 'Item');
+      const price = Number(prod.price ?? ci.price) || 0;
+      const quantity = Number(ci.quantity) || 1;
+      const category = prod.category ?? ci.category ?? undefined;
+
+      const item: GA4Item = {
+        item_id: itemId,
+        item_name: itemName,
+        price,
+        quantity,
+        currency: GA_CURRENCY,
+      };
+
+      if (category) {
+        item.item_category = category;
+      }
+
+      const vars = ci.selectedVariations || prod.selectedVariations;
+      if (vars && typeof vars === 'object' && Object.keys(vars).length > 0) {
+        item.item_variant = Object.entries(vars)
+          .map(([k, v]) => `${k}:${v}`)
+          .join(', ');
+      }
+
+      return item;
+    });
+
+  const orderTotal = Number(order.total) || 0;
+  const tax = order.tax !== undefined ? Number(order.tax) : (order.taxTotal !== undefined ? Number(order.taxTotal) : undefined);
+  const shipping = order.deliveryFee !== undefined ? Number(order.deliveryFee) : (order.shippingFee !== undefined ? Number(order.shippingFee) : undefined);
+  const coupon = order.couponCode || undefined;
 
   trackEvent('purchase', {
     transaction_id: orderIdStr,
-    value: Number(order.total) || 0,
+    value: orderTotal,
     currency: GA_CURRENCY,
-    tax: order.tax !== undefined ? Number(order.tax) : undefined,
-    shipping: order.deliveryFee !== undefined ? Number(order.deliveryFee) : undefined,
-    coupon: order.couponCode || undefined,
+    tax,
+    shipping,
+    coupon,
     items,
   });
 

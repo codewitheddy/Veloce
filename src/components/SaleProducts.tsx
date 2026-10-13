@@ -219,7 +219,7 @@ export default function SaleProducts({
                     {/* High Quality Render Block */}
                     <div className="relative h-56 w-full overflow-hidden rounded-xl bg-gray-50 dark:bg-slate-950 border border-rose-50/20 dark:border-slate-800 flex items-center justify-center p-2">
                       <LazyImage
-                        src={product.imageUrl}
+                        src={product.imageUrl || (Array.isArray(product.images) ? product.images[0] : (product as any).image) || ''}
                         alt={product.name}
                         width={320}
                         height={224}

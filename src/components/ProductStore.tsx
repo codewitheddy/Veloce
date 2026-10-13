@@ -214,6 +214,14 @@ export default function ProductStore({
   const [activeImageIndex, setActiveImageIndex] = useState(0);
   const [detailActiveTab, setDetailActiveTab] = useState<'description' | 'specifications' | 'features' | 'whatsInTheBox' | 'categoryInfo'>('description');
 
+  // Selected variation state for detailed overlay
+  const [selectedVars, setSelectedVars] = useState<Record<string, string>>({});
+  const [quantity, setQuantity] = useState(1);
+  const [addedToCartToast, setAddedToCartToast] = useState(false);
+  const [bulkAddedToast, setBulkAddedToast] = useState(false);
+  const [detailAddedIds, setDetailAddedIds] = useState<Set<string>>(new Set());
+  const lastTrackedItemIdRef = React.useRef<string>('');
+
   const handleQuickIncrement = (e: React.MouseEvent, product: Product) => {
     e.stopPropagation();
     const existingItems = cart.filter(item => item.product.id === product.id);
@@ -323,20 +331,12 @@ export default function ProductStore({
   }, [selectedProduct, prefilledReviewerName]);
 
   // GA4 Ecommerce Event: view_item (detail view)
-  const lastTrackedItemIdRef = React.useRef<string>('');
   React.useEffect(() => {
     if (selectedProduct && String(selectedProduct.id) !== lastTrackedItemIdRef.current) {
       lastTrackedItemIdRef.current = String(selectedProduct.id);
       trackViewItem(selectedProduct, selectedVars);
     }
   }, [selectedProduct, selectedVars]);
-
-  // Selected variation state for detailed overlay
-  const [selectedVars, setSelectedVars] = useState<Record<string, string>>({});
-  const [quantity, setQuantity] = useState(1);
-  const [addedToCartToast, setAddedToCartToast] = useState(false);
-  const [bulkAddedToast, setBulkAddedToast] = useState(false);
-  const [detailAddedIds, setDetailAddedIds] = useState<Set<string>>(new Set());
 
   // Automatically update browser URL search params to reflect active variant selections for seamless sharing
   React.useEffect(() => {

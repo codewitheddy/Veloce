@@ -316,7 +316,7 @@ export default function BestSellersNewArrivalsCarousel({
                   {/* Top Image Box */}
                   <div className="relative aspect-4/3 w-full overflow-hidden rounded-lg bg-gray-50 dark:bg-gray-950 flex items-center justify-center p-2">
                     <LazyImage
-                      src={p.imageUrl}
+                      src={p.imageUrl || (Array.isArray(p.images) ? p.images[0] : (p as any).image) || ''}
                       alt={p.name}
                       width={280}
                       height={210}

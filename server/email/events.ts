@@ -17,12 +17,36 @@ export const emailEvents = new EmailEventEmitter();
 emailEvents.setMaxListeners(50);
 
 /**
+ * Resolves all authoritative administrator email recipients dynamically
+ */
+export function getAdminRecipients(): string[] {
+  const config = getEmailConfig();
+  const recipients = new Set<string>();
+  if (config.admin.email && config.admin.email.includes('@')) {
+    recipients.add(config.admin.email.trim().toLowerCase());
+  }
+  if (config.smtp.user && config.smtp.user.includes('@')) {
+    recipients.add(config.smtp.user.trim().toLowerCase());
+  }
+  if (config.smtp.replyTo && config.smtp.replyTo.includes('@')) {
+    recipients.add(config.smtp.replyTo.trim().toLowerCase());
+  }
+  if (process.env.ADMIN_EMAIL && process.env.ADMIN_EMAIL.includes('@')) {
+    recipients.add(process.env.ADMIN_EMAIL.trim().toLowerCase());
+  }
+  if (process.env.ADMIN_DIGEST_RECIPIENTS) {
+    process.env.ADMIN_DIGEST_RECIPIENTS.split(',').forEach((r) => {
+      const trimmed = r.trim().toLowerCase();
+      if (trimmed.includes('@')) recipients.add(trimmed);
+    });
+  }
+  return Array.from(recipients);
+}
+
+/**
  * Register all domain event listeners
  */
 export function registerEmailEventListeners(): void {
-  const config = getEmailConfig();
-  const adminEmail = config.admin.email;
-
   // 1. Order Placed / Created
   emailEvents.on('order:created', async (order: OrderEmailData) => {
     try {
@@ -45,15 +69,16 @@ export function registerEmailEventListeners(): void {
         console.warn(`[Email Events] ⚠️ Order ${order.id} has no valid customerEmail ("${customerEmail}"). Customer confirmation email skipped.`);
       }
 
-      // Admin alert
-      if (adminEmail) {
+      // Admin alerts sent to all active admin mailboxes
+      const adminRecipients = getAdminRecipients();
+      for (const adminEmail of adminRecipients) {
         console.log(`[Email Events] 🔔 Enqueueing admin alert for order ${shortId} -> ${adminEmail}`);
         await enqueueEmail({
           emailType: 'admin_new_order',
           recipient: adminEmail,
           subject: `🔔 [NEW ORDER] ${shortId} by ${customerName} (${totalFormatted})`,
           payload: { ...order, customerEmail, customerName },
-          dedupeKey: `admin_new_order:${order.id}`,
+          dedupeKey: `admin_new_order:${order.id}:${adminEmail}`,
         });
       }
     } catch (err) {
@@ -87,14 +112,15 @@ export function registerEmailEventListeners(): void {
         });
       }
 
-      // Admin alert to verify
-      if (adminEmail) {
+      // Admin alert to all designated administrators to verify
+      const adminRecipients = getAdminRecipients();
+      for (const adminEmail of adminRecipients) {
         await enqueueEmail({
           emailType: 'admin_payment_submitted',
           recipient: adminEmail,
           subject: `💰 [VERIFY PAYMENT] M-Pesa ${data.mpesaCode.toUpperCase()} for Order ${shortId}`,
           payload: { ...data, customerEmail },
-          dedupeKey: `payment_submitted_admin:${data.orderId}:${data.mpesaCode}`,
+          dedupeKey: `payment_submitted_admin:${data.orderId}:${data.mpesaCode}:${adminEmail}`,
         });
       }
     } catch (err) {
