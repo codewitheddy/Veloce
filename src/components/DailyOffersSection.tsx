@@ -111,7 +111,7 @@ export default function DailyOffersSection({
                 >
                   {/* Top Image & Badge Box */}
                   <div>
-                    <div className="relative w-full h-[180px] sm:h-[200px] bg-slate-50 dark:bg-slate-800/60 rounded-lg p-3 flex items-center justify-center overflow-hidden border border-slate-100 dark:border-slate-800">
+                    <div className="relative w-full h-[180px] sm:h-[200px] bg-slate-50 dark:bg-slate-800/60 rounded-lg overflow-hidden border border-slate-100 dark:border-slate-800">
                       {/* Discount & On Sale Badges */}
                       <div className="absolute top-2 left-2 z-10 flex flex-col gap-1">
                         <span className="bg-amber-500 text-white text-[9px] font-mono font-bold px-2 py-0.5 rounded shadow-3xs flex items-center gap-1 uppercase tracking-wider">
@@ -132,7 +132,7 @@ export default function DailyOffersSection({
                         height={200}
                         aspectRatio="280/200"
                         responsiveType="carousel"
-                        className="w-full h-full object-contain group-hover/card:scale-105 transition-transform duration-300"
+                        className="w-full h-full object-cover group-hover/card:scale-105 transition-transform duration-300"
                       />
                     </div>
 

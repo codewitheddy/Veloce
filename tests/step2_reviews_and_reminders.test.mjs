@@ -236,6 +236,7 @@ describe('Step 2: Reviews Domain API, Rating Sync & Automated Reminders', () => 
       await rootPool.query(`DROP DATABASE IF EXISTS \`${TEST_DB}\``);
       await rootPool.end();
     }
+    setTimeout(() => process.exit(0), 100);
   });
 
   // ==========================================================================

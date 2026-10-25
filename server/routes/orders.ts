@@ -17,6 +17,7 @@ import {
   getMysqlRefundClaimByOrderId,
   getAllMysqlRefundClaims,
   getMysqlRefundClaimById,
+  enrichOrdersWithReviewEligibility,
 } from '../../src/lib/sqlite-db';
 import {
   executeOrderTransition,
@@ -196,13 +197,37 @@ router.get('/', async (req: Request, res: Response) => {
       return res.json([]);
     }
 
+    let orders: any[] = [];
     if (user.is_staff || user.is_superuser || user.role === 'admin') {
-      const allOrders = await getAllSqliteOrders();
-      return res.json(allOrders);
+      orders = await getAllSqliteOrders();
+    } else {
+      orders = await getSqliteOrdersByUser(user.email || user.id);
     }
 
-    const userOrders = await getSqliteOrdersByUser(user.email || user.id);
-    return res.json(userOrders);
+    // Enrich all orders with review state using single batch query (LEFT JOIN reviews)
+    orders = await enrichOrdersWithReviewEligibility(orders);
+
+    // Support ?needsReview=true filter (preserving pagination)
+    if (req.query.needsReview === 'true' || req.query.needsReview === '1') {
+      orders = orders.filter((o: any) => (o.unreviewedCount || 0) > 0);
+    }
+
+    if (req.query.page && req.query.limit) {
+      const page = Math.max(1, Number(req.query.page) || 1);
+      const limit = Math.max(1, Math.min(100, Number(req.query.limit) || 10));
+      const total = orders.length;
+      const offset = (page - 1) * limit;
+      const paginatedOrders = orders.slice(offset, offset + limit);
+
+      return res.json({
+        count: total,
+        next: page * limit < total ? `/api/orders/?page=${page + 1}&limit=${limit}${req.query.needsReview ? '&needsReview=true' : ''}` : null,
+        previous: page > 1 ? `/api/orders/?page=${page - 1}&limit=${limit}${req.query.needsReview ? '&needsReview=true' : ''}` : null,
+        results: paginatedOrders,
+      });
+    }
+
+    return res.json(orders);
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Failed to retrieve orders';
     return res.status(500).json({ success: false, error: message });
@@ -293,7 +318,8 @@ router.get('/:id', async (req: Request, res: Response) => {
       }
     }
 
-    return res.json(order);
+    const [enrichedOrder] = await enrichOrdersWithReviewEligibility([order]);
+    return res.json(enrichedOrder || order);
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Failed to retrieve order';
     return res.status(500).json({ success: false, error: message });

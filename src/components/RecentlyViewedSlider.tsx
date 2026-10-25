@@ -297,12 +297,12 @@ export const RecentlyViewedSlider: React.FC<RecentlyViewedSliderProps> = ({
               className="group shrink-0 w-[260px] sm:w-[280px] bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/85 dark:border-slate-800/90 p-3.5 sm:p-4 hover:border-indigo-400 dark:hover:border-indigo-600 hover:shadow-lg hover:-translate-y-0.5 transition-all duration-300 cursor-pointer snap-start flex flex-col justify-between"
             >
               <div>
-                {/* Product Image Box (Centered & Fitted Square) */}
-                <div className="relative aspect-square w-full rounded-xl overflow-hidden bg-slate-50 dark:bg-slate-950/80 border border-slate-100 dark:border-slate-800/80 mb-3 flex items-center justify-center p-3">
+                {/* Product Image Box (Edge-to-Edge Square) */}
+                <div className="relative aspect-square w-full rounded-xl overflow-hidden bg-slate-50 dark:bg-slate-950/80 border border-slate-100 dark:border-slate-800/80 mb-3">
                   <LazyImage
                     src={product.imageUrl || product.images?.[0] || ''}
                     alt={product.name}
-                    className="w-full h-full object-contain object-center group-hover:scale-105 transition-transform duration-500"
+                    className="w-full h-full object-cover object-center group-hover:scale-105 transition-transform duration-500"
                   />
 
                   {/* Badges Overlay */}

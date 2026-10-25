@@ -169,7 +169,7 @@ export interface Product {
   specifications?: { key: string; value: string }[];
   specs?: { label: string; value: string }[];
   whatsInTheBox?: string;
-  
+
   // Category-Specific Fields: Clothes & Wearables
   sizeGuide?: string;
   availableSizes?: string[];
@@ -255,6 +255,7 @@ export interface Order {
   customerName: string;
   customerEmail: string;
   items: {
+    id?: string;
     productId: string;
     name: string;
     price: number;
@@ -266,7 +267,25 @@ export interface Order {
     taxClass?: string;
     lineSubtotal?: number;
     lineTax?: number;
+    canReview?: boolean;
+    hasReviewed?: boolean;
+    hasReview?: boolean;
+    reviewId?: string | null;
+    rating?: number | null;
+    review?: {
+      id: string;
+      productId?: string;
+      orderItemId?: string;
+      rating: number;
+      title?: string;
+      body?: string;
+      status?: string;
+      createdAt?: string;
+    } | null;
+    image?: string;
+    imageUrl?: string;
   }[];
+  unreviewedCount?: number;
   total: number;
   subtotal?: number;
   taxTotal?: number;
@@ -420,32 +439,32 @@ export interface InventoryAuditLog {
   details?: string; // e.g., "Order #1002" or "Manual restock"
 }
 
-export type ReturnStatus = 
-  | 'pending_review' 
-  | 'approved' 
-  | 'rejected' 
-  | 'request_info' 
-  | 'awaiting_shipment' 
-  | 'in_transit' 
-  | 'received' 
-  | 'inspecting' 
-  | 'refund_processing' 
-  | 'completed' 
-  | 'cancelled' 
-  | 'pending' 
+export type ReturnStatus =
+  | 'pending_review'
+  | 'approved'
+  | 'rejected'
+  | 'request_info'
+  | 'awaiting_shipment'
+  | 'in_transit'
+  | 'received'
+  | 'inspecting'
+  | 'refund_processing'
+  | 'completed'
+  | 'cancelled'
+  | 'pending'
   | 'resolved';
 
 export type ResolutionType = 'refund' | 'replacement' | 'store_credit' | 'none';
 export type RefundMethod = 'original_payment' | 'mpesa' | 'store_credit' | 'bank_transfer';
-export type ReturnReason = 
-  | 'damaged_defective' 
-  | 'wrong_item' 
-  | 'not_as_described' 
-  | 'size_fit_issue' 
-  | 'changed_mind' 
-  | 'better_price' 
-  | 'defective' 
-  | 'bad_fit' 
+export type ReturnReason =
+  | 'damaged_defective'
+  | 'wrong_item'
+  | 'not_as_described'
+  | 'size_fit_issue'
+  | 'changed_mind'
+  | 'better_price'
+  | 'defective'
+  | 'bad_fit'
   | 'other';
 
 export type ConditionReported = 'unopened' | 'opened_unused' | 'used' | 'damaged';
@@ -530,13 +549,13 @@ export interface ReturnRequest {
   fraudFlagReason?: string;
 }
 
-export type HeroSlideTemplate = 
+export type HeroSlideTemplate =
   | 'two_column'
-  | 'bold_editorial' 
-  | 'minimal_gradient' 
-  | 'card_split' 
-  | 'glass_overlay' 
-  | 'flash_deal' 
+  | 'bold_editorial'
+  | 'minimal_gradient'
+  | 'card_split'
+  | 'glass_overlay'
+  | 'flash_deal'
   | 'dark_luxury';
 
 export interface HeroBanner {

@@ -115,7 +115,9 @@ export const LazyImage: React.FC<LazyImageProps> = ({
           fetchpriority={effectiveFetchPriority}
           onLoad={handleLoad}
           onError={handleError}
-          className={`transition-all duration-300 ease-out object-contain object-center ${
+          className={`transition-all duration-300 ease-out ${
+            className.includes('object-') ? '' : 'object-cover'
+          } object-center ${
             isLoaded
               ? 'blur-0 scale-100 opacity-100'
               : 'blur-xs scale-[1.02] opacity-0'

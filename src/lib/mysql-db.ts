@@ -3988,9 +3988,53 @@ export async function syncProductRatingInTx(conn: any, productId: string): Promi
 }
 
 /**
- * Retrieves public published reviews for a product with rating breakdown
+ * Single aggregate query returning reviews summary for a product (average, total, count per star)
  */
-export async function getMysqlReviewsByProduct(productId: string, options: { rating?: number; sort?: string } = {}) {
+export async function getMysqlProductReviewsSummary(productId: string) {
+  const pool = await getDbPool();
+  const cleanPid = String(productId).trim();
+
+  const [rows]: any = await pool.query(
+    `SELECT 
+       COUNT(*) as total,
+       ROUND(COALESCE(AVG(rating), 0), 1) as average,
+       COUNT(CASE WHEN rating = 5 THEN 1 END) as star_5,
+       COUNT(CASE WHEN rating = 4 THEN 1 END) as star_4,
+       COUNT(CASE WHEN rating = 3 THEN 1 END) as star_3,
+       COUNT(CASE WHEN rating = 2 THEN 1 END) as star_2,
+       COUNT(CASE WHEN rating = 1 THEN 1 END) as star_1
+     FROM reviews
+     WHERE product_id = ? AND status = 'published'`,
+    [cleanPid]
+  );
+
+  const row = rows[0] || {};
+  const total = Number(row.total || 0);
+  const average = Number(row.average || 0);
+  const countPerStar: Record<number, number> = {
+    5: Number(row.star_5 || 0),
+    4: Number(row.star_4 || 0),
+    3: Number(row.star_3 || 0),
+    2: Number(row.star_2 || 0),
+    1: Number(row.star_1 || 0),
+  };
+
+  return {
+    productId: cleanPid,
+    average,
+    total,
+    countPerStar,
+    distribution: countPerStar,
+  };
+}
+
+/**
+ * Retrieves public published reviews for a product with rating breakdown and optional pagination
+ */
+export async function getMysqlReviewsByProduct(
+  productId: string,
+  options: { rating?: number; sort?: string; page?: number; limit?: number } = {}
+) {
   const pool = await getDbPool();
   const cleanPid = String(productId).trim();
 
@@ -4016,6 +4060,26 @@ export async function getMysqlReviewsByProduct(productId: string, options: { rat
     query += ` ORDER BY r.created_at DESC`;
   }
 
+  // Get total matching reviews for pagination metadata
+  let totalMatching = 0;
+  if (options.page && options.limit) {
+    let countQuery = `SELECT COUNT(*) as total FROM reviews WHERE product_id = ? AND status = 'published'`;
+    const countParams: any[] = [cleanPid];
+    if (options.rating && options.rating >= 1 && options.rating <= 5) {
+      countQuery += ` AND rating = ?`;
+      countParams.push(Math.round(options.rating));
+    }
+    const [countRows]: any = await pool.query(countQuery, countParams);
+    totalMatching = Number(countRows[0]?.total || 0);
+
+    const page = Math.max(1, Number(options.page) || 1);
+    const limit = Math.max(1, Math.min(100, Number(options.limit) || 10));
+    const offset = (page - 1) * limit;
+
+    query += ` LIMIT ? OFFSET ?`;
+    params.push(limit, offset);
+  }
+
   const [rows]: any = await pool.query(query, params);
 
   const reviews = (rows || []).map((r: any) => {
@@ -4033,29 +4097,24 @@ export async function getMysqlReviewsByProduct(productId: string, options: { rat
       status: r.status,
       reviewerDisplayName: displayName,
       userName: displayName,
+      verifiedPurchase: true,
       createdAt: r.created_at,
       updatedAt: r.updated_at,
     };
   });
 
-  // Calculate rating stats
-  const total = reviews.length;
-  const ratingDistribution: Record<number, number> = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
-  let sum = 0;
-
-  for (const rev of reviews) {
-    const star = Math.min(5, Math.max(1, Math.round(rev.rating)));
-    ratingDistribution[star] = (ratingDistribution[star] || 0) + 1;
-    sum += rev.rating;
-  }
-
-  const averageRating = total > 0 ? Math.round((sum / total) * 10) / 10 : 0;
+  // Calculate rating stats across all published reviews
+  const summary = await getMysqlProductReviewsSummary(cleanPid);
 
   return {
     productId: cleanPid,
-    total,
-    averageRating,
-    ratingDistribution,
+    total: summary.total,
+    matchingTotal: options.page && options.limit ? totalMatching : reviews.length,
+    page: options.page ? Number(options.page) : 1,
+    limit: options.limit ? Number(options.limit) : reviews.length,
+    totalPages: options.limit ? Math.ceil((totalMatching || reviews.length) / Number(options.limit)) : 1,
+    averageRating: summary.average,
+    ratingDistribution: summary.countPerStar,
     reviews,
   };
 }
@@ -4490,7 +4549,7 @@ export async function getMysqlOrderItemsWithReviews(orderIds: string[]): Promise
 
   // Query 2: Get reviews for these item IDs
   const [reviews]: any = await pool.query(
-    `SELECT id, product_id, order_item_id, rating, title, status, created_at 
+    `SELECT id, product_id, order_item_id, rating, title, body, status, created_at 
      FROM reviews 
      WHERE order_item_id IN (?)`,
     [itemIds]
@@ -4506,15 +4565,94 @@ export async function getMysqlOrderItemsWithReviews(orderIds: string[]): Promise
     const oid = String(it.order_id);
     const existing = map.get(oid) || [];
     const rev = reviewsByItemId.get(String(it.id));
+    const hasReviewed = Boolean(rev);
     existing.push({
       ...it,
-      hasReview: Boolean(rev),
-      review: rev || null,
+      hasReview: hasReviewed,
+      hasReviewed,
+      reviewId: rev ? String(rev.id) : null,
+      rating: rev ? Number(rev.rating) : null,
+      review: rev ? {
+        id: String(rev.id),
+        productId: rev.product_id,
+        orderItemId: rev.order_item_id,
+        rating: Number(rev.rating),
+        title: rev.title,
+        body: rev.body,
+        status: rev.status,
+        createdAt: rev.created_at,
+      } : null,
     });
     map.set(oid, existing);
   }
 
   return map;
+}
+
+/**
+ * Enriches a list of orders with per-item review state and order-level unreviewedCount
+ * Uses a single batch query on order_items + reviews, never one query per order.
+ */
+export async function enrichOrdersWithReviewEligibility(orders: any[]): Promise<any[]> {
+  if (!orders || !Array.isArray(orders) || orders.length === 0) return [];
+  const orderIds = orders.map((o: any) => String(o.id)).filter(Boolean);
+  if (orderIds.length === 0) return orders;
+
+  const itemsMap = await getMysqlOrderItemsWithReviews(orderIds);
+
+  return orders.map((order: any) => {
+    const oid = String(order.id);
+    const dbItems = itemsMap.get(oid);
+
+    const isDelivered = (
+      order.status === 'delivered' ||
+      order.status === 'completed' ||
+      order.deliveryConfirmed === true ||
+      order.deliveryConfirmed === 1 ||
+      order.delivery_confirmed === true ||
+      order.delivery_confirmed === 1
+    ) && order.status !== 'cancelled' && order.status !== 'refunded';
+
+    let enrichedItems: any[] = [];
+    if (dbItems && dbItems.length > 0) {
+      enrichedItems = dbItems.map((item: any) => {
+        const canReview = Boolean(isDelivered && !item.hasReviewed && (item.product_id || item.productId));
+        return {
+          ...item,
+          productId: item.product_id || item.productId,
+          name: item.product_name || item.name,
+          canReview,
+        };
+      });
+    } else {
+      // Fallback to legacy JSON items array if no order_items rows exist
+      const rawItems = Array.isArray(order.items)
+        ? order.items
+        : typeof order.items === 'string'
+        ? (() => { try { return JSON.parse(order.items); } catch { return []; } })()
+        : [];
+      enrichedItems = rawItems.map((item: any) => ({
+        ...item,
+        productId: item.productId || item.product_id || item.id,
+        name: item.name || item.product_name,
+        canReview: false,
+        hasReviewed: false,
+        reviewId: null,
+        rating: null,
+        review: null,
+      }));
+    }
+
+    const unreviewedCount = isDelivered
+      ? enrichedItems.filter((it: any) => it.canReview).length
+      : 0;
+
+    return {
+      ...order,
+      items: enrichedItems,
+      unreviewedCount,
+    };
+  });
 }
 
 /**

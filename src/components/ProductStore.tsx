@@ -2962,7 +2962,7 @@ export default function ProductStore({
                       className="group flex flex-col justify-between rounded-xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 p-2.5 sm:p-4 cursor-pointer transition-all hover:border-indigo-300 dark:hover:border-indigo-700 hover:shadow-md"
                     >
                       <div>
-                        <div className="relative aspect-square w-full overflow-hidden rounded-lg bg-slate-100 dark:bg-slate-800/60 flex items-center justify-center p-2">
+                        <div className="relative aspect-square w-full overflow-hidden rounded-lg bg-slate-100 dark:bg-slate-800/60">
                           <LazyImage
                             src={product.imageUrl}
                             alt={product.name}
@@ -2970,7 +2970,7 @@ export default function ProductStore({
                             height={280}
                             aspectRatio="1/1"
                             responsiveType="grid_card"
-                            className="h-full w-full object-contain object-center transition-transform duration-500 group-hover:scale-102"
+                            className="h-full w-full object-cover object-center transition-transform duration-500 group-hover:scale-105"
                           />
                           {/* Heart Toggle Button */}
                           <motion.button
@@ -3115,7 +3115,7 @@ export default function ProductStore({
                       className="group flex flex-col md:flex-row gap-5 rounded-xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 sm:p-5 cursor-pointer transition-all hover:border-indigo-300 dark:hover:border-indigo-700 hover:shadow-md"
                     >
                       {/* Left Image column */}
-                      <div className="relative aspect-video md:aspect-square w-full md:w-44 h-auto md:h-44 overflow-hidden rounded-lg bg-slate-100 dark:bg-slate-800/60 shrink-0 flex items-center justify-center p-2">
+                      <div className="relative aspect-video md:aspect-square w-full md:w-44 h-auto md:h-44 overflow-hidden rounded-lg bg-slate-100 dark:bg-slate-800/60 shrink-0">
                         <LazyImage
                           src={product.imageUrl}
                           alt={product.name}
@@ -3123,7 +3123,7 @@ export default function ProductStore({
                           height={176}
                           aspectRatio="1/1"
                           responsiveType="thumbnail"
-                          className="h-full w-full object-contain object-center transition-transform duration-500 group-hover:scale-102"
+                          className="h-full w-full object-cover object-center transition-transform duration-500 group-hover:scale-105"
                         />
                         {/* Bookmark Button */}
                         <motion.button

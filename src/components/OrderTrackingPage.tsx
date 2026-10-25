@@ -30,6 +30,7 @@ import {
   DollarSign,
   X,
   Loader2,
+  Star,
 } from 'lucide-react';
 import { Order, Product, RefundClaim } from '../types';
 import { CurrencyType, formatPrice } from '../lib/currency';
@@ -46,6 +47,7 @@ interface OrderTrackingPageProps {
   onBackToAccount?: () => void;
   onBackToStore?: () => void;
   onSelectProduct?: (product: Product) => void;
+  onWriteReview?: (orderId: string, orderItemId: string) => void;
 }
 
 interface TrackingCheckpoint {
@@ -64,6 +66,7 @@ export default function OrderTrackingPage({
   currency = 'KSh',
   onBackToAccount,
   onBackToStore,
+  onWriteReview,
 }: OrderTrackingPageProps) {
   const { user, isAuthenticated } = useAuth();
   const { settings } = useSiteSettings();
@@ -926,8 +929,35 @@ export default function OrderTrackingPage({
                 ))}
               </div>
 
+              {/* "How was your order?" banner for delivered orders */}
+              {(() => {
+                const isDelivered = (
+                  trackedOrder.status === 'completed' ||
+                  trackedOrder.status === 'delivered' ||
+                  Boolean(trackedOrder.deliveryConfirmed)
+                ) && trackedOrder.status !== 'cancelled' && trackedOrder.status !== 'refunded';
+
+                if (!isDelivered) return null;
+
+                return (
+                  <div className="mt-8 p-4 sm:p-5 rounded-2xl bg-gradient-to-r from-amber-50 to-orange-50 dark:from-amber-950/40 dark:to-orange-950/30 border border-amber-200/80 dark:border-amber-900/50 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs animate-in fade-in">
+                    <div className="flex items-center gap-3.5">
+                      <div className="h-10 w-10 rounded-xl bg-amber-500 text-white flex items-center justify-center shrink-0 shadow-xs">
+                        <Star className="h-5 w-5 fill-white" />
+                      </div>
+                      <div>
+                        <h3 className="text-sm font-bold text-slate-900 dark:text-white">How was your order?</h3>
+                        <p className="text-xs text-slate-600 dark:text-slate-400">
+                          Share your experience and verified feedback to help other customers!
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
+
               {/* Order Items Toggle Breakdown */}
-              <div className="mt-10 pt-6 border-t border-slate-100 dark:border-slate-800">
+              <div className="mt-6 pt-6 border-t border-slate-100 dark:border-slate-800">
                 <button
                   type="button"
                   onClick={() => setShowItemsBreakdown(!showItemsBreakdown)}
@@ -945,36 +975,87 @@ export default function OrderTrackingPage({
                     {(trackedOrder.items || []).map((item, idx) => {
                       const prodMatch = products.find((p) => p.id === item.productId);
                       const img = prodMatch?.imageUrl || (prodMatch?.images && prodMatch.images[0]) || '';
+                      const isDelivered = (
+                        trackedOrder.status === 'completed' ||
+                        trackedOrder.status === 'delivered' ||
+                        Boolean(trackedOrder.deliveryConfirmed)
+                      ) && trackedOrder.status !== 'cancelled' && trackedOrder.status !== 'refunded';
+                      const hasRev = item.hasReviewed || item.hasReview || item.reviewId;
+
+                      const handleItemReview = () => {
+                        if (onWriteReview) {
+                          onWriteReview(trackedOrder.id, item.id || item.productId);
+                        } else {
+                          window.dispatchEvent(
+                            new CustomEvent('veloce_open_review', {
+                              detail: {
+                                orderId: trackedOrder.id,
+                                orderItemId: item.id || item.productId,
+                              },
+                            })
+                          );
+                        }
+                      };
+
                       return (
                         <div
                           key={idx}
-                          className="flex items-center gap-3.5 p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800 text-xs"
+                          className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800 text-xs"
                         >
-                          <div className="w-12 h-12 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 overflow-hidden flex items-center justify-center shrink-0">
-                            {img ? (
-                              <img
-                                src={img}
-                                alt={item.name}
-                                width={48}
-                                height={48}
-                                loading="lazy"
-                                decoding="async"
-                                className="w-full h-full object-cover"
-                              />
-                            ) : (
-                              <Box className="w-5 h-5 text-slate-400" />
+                          <div className="flex items-center gap-3.5 min-w-0 flex-1">
+                            <div className="w-12 h-12 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 overflow-hidden flex items-center justify-center shrink-0">
+                              {img ? (
+                                <img
+                                  src={img}
+                                  alt={item.name}
+                                  width={48}
+                                  height={48}
+                                  loading="lazy"
+                                  decoding="async"
+                                  className="w-full h-full object-cover"
+                                />
+                              ) : (
+                                <Box className="w-5 h-5 text-slate-400" />
+                              )}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <strong className="block font-semibold text-slate-900 dark:text-white truncate">
+                                {item.name}
+                              </strong>
+                              <span className="text-[11px] text-slate-500 dark:text-slate-400 font-mono mt-0.5 block">
+                                QTY: {item.quantity} × {formatPrice(item.price, currency)}
+                              </span>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center justify-between sm:justify-end gap-3 shrink-0 pt-2 sm:pt-0 border-t sm:border-t-0 border-slate-200/60 dark:border-slate-700/60">
+                            {isDelivered && (
+                              hasRev ? (
+                                <button
+                                  type="button"
+                                  onClick={handleItemReview}
+                                  className="inline-flex items-center gap-1 text-[11px] font-semibold text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900/60 px-2.5 py-1 rounded-lg hover:bg-amber-100 transition-colors cursor-pointer"
+                                  title="Edit your review for this product"
+                                >
+                                  <Star className="h-3 w-3 fill-amber-400 text-amber-500" />
+                                  <span>Edit review ({item.rating || item.review?.rating || 5}★)</span>
+                                </button>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={handleItemReview}
+                                  className="inline-flex items-center gap-1 text-[11px] font-bold text-white bg-amber-500 hover:bg-amber-600 px-2.5 py-1 rounded-lg transition-colors shadow-2xs cursor-pointer"
+                                  title="Write review for this product"
+                                >
+                                  <Star className="h-3 w-3 fill-white text-white" />
+                                  <span>Write a review</span>
+                                </button>
+                              )
                             )}
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <strong className="block font-semibold text-slate-900 dark:text-white truncate">
-                              {item.name}
-                            </strong>
-                            <span className="text-[11px] text-slate-500 dark:text-slate-400 font-mono mt-0.5 block">
-                              QTY: {item.quantity} × {formatPrice(item.price, currency)}
-                            </span>
-                          </div>
-                          <div className="font-mono font-bold text-slate-900 dark:text-white text-right">
-                            {formatPrice(item.price * item.quantity, currency)}
+
+                            <div className="font-mono font-bold text-slate-900 dark:text-white text-right">
+                              {formatPrice(item.price * item.quantity, currency)}
+                            </div>
                           </div>
                         </div>
                       );

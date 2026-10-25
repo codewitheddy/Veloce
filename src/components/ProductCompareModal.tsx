@@ -286,11 +286,11 @@ export default function ProductCompareModal({
             {leftProduct && (mobileActiveTab === 'left' || mobileActiveTab === 'table') && (
               <div className="rounded-2xl border border-gray-150 bg-white p-4 relative flex flex-col justify-between">
                 <div>
-                  <div className="relative aspect-video w-full rounded-xl overflow-hidden bg-gray-50 border border-gray-100 flex items-center justify-center p-2">
+                  <div className="relative aspect-video w-full rounded-xl overflow-hidden bg-gray-50 border border-gray-100">
                     <img
                       src={leftProduct.imageUrl}
                       alt={leftProduct.name}
-                      className="w-full h-full object-contain object-center"
+                      className="w-full h-full object-cover object-center"
                       referrerPolicy="no-referrer"
                     />
                     {leftProduct.type && leftProduct.type !== 'physical' && (
@@ -359,11 +359,11 @@ export default function ProductCompareModal({
             {rightProduct && (mobileActiveTab === 'right' || mobileActiveTab === 'table') && (
               <div className="rounded-2xl border border-gray-150 bg-white p-4 relative flex flex-col justify-between">
                 <div>
-                  <div className="relative aspect-video w-full rounded-xl overflow-hidden bg-gray-50 border border-gray-100 flex items-center justify-center p-2">
+                  <div className="relative aspect-video w-full rounded-xl overflow-hidden bg-gray-50 border border-gray-100">
                     <img
                       src={rightProduct.imageUrl}
                       alt={rightProduct.name}
-                      className="w-full h-full object-contain object-center"
+                      className="w-full h-full object-cover object-center"
                       referrerPolicy="no-referrer"
                     />
                     {rightProduct.type && rightProduct.type !== 'physical' && (

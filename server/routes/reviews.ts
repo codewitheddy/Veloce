@@ -85,6 +85,31 @@ router.get(['/eligibility/:orderItemId', '/order-item/:orderItemId/eligibility']
 
     res.json({
       success: true,
+      item: (result as any).orderItem,
+      ...result,
+    });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Failed to verify review eligibility';
+    res.status(500).json({ success: false, error: message });
+  }
+});
+
+router.post('/check-eligibility', requireAuth, async (req: Request, res: Response) => {
+  try {
+    const user = req.user!;
+    const orderItemId = req.body?.orderItemId;
+    if (!orderItemId) {
+      return res.status(400).json({ success: false, error: 'orderItemId is required' });
+    }
+
+    const result = await checkMysqlReviewEligibility(
+      { id: user.id, email: user.email },
+      orderItemId
+    );
+
+    res.json({
+      success: true,
+      item: (result as any).orderItem,
       ...result,
     });
   } catch (err: unknown) {

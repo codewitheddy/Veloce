@@ -43,6 +43,7 @@ const PrivacyPolicy = lazyWithRetry(() => import('./components/PrivacyPolicy'), 
 const AdminLayout = lazyWithRetry(() => import('./layouts/AdminLayout'), 'AdminLayout');
 const OrderTrackingPage = lazyWithRetry(() => import('./components/OrderTrackingPage'), 'OrderTrackingPage');
 const ResetPasswordView = lazyWithRetry(() => import('./components/ResetPasswordView'), 'ResetPasswordView');
+const ReviewFormView = lazyWithRetry(() => import('./components/ReviewFormView'), 'ReviewFormView');
 import AdminPreloader from './components/AdminPreloader';
 import AdminOrderNotificationBanner from './components/AdminOrderNotificationBanner';
 
@@ -120,6 +121,25 @@ export default function App() {
     localStorage.setItem('app-font-size', fontSize);
   }, [fontSize]);
 
+  // Parse review deep-link route parameters: /orders/:orderId/review/:orderItemId
+  const parseReviewParamsFromUrl = (): { orderId: string; orderItemId: string } | null => {
+    if (typeof window === 'undefined') return null;
+    const match = window.location.pathname.match(/^\/orders?\/([^/]+)\/review\/([^/]+)/i);
+    if (match) {
+      return {
+        orderId: decodeURIComponent(match[1]),
+        orderItemId: decodeURIComponent(match[2]),
+      };
+    }
+    const params = new URLSearchParams(window.location.search);
+    const orderId = params.get('orderId') || params.get('order_id');
+    const orderItemId = params.get('orderItemId') || params.get('order_item_id');
+    if (orderId && orderItemId) {
+      return { orderId, orderItemId };
+    }
+    return null;
+  };
+
   // Helper to determine the initial tab from URL, session, or checkout state
   const getInitialTab = (): string => {
     if (typeof window === 'undefined') return 'home';
@@ -132,6 +152,7 @@ export default function App() {
     if (path.startsWith('/admin') || queryTab === 'admin') return 'admin';
     if (path === '/unsubscribe' || params.get('unsubscribe') || params.get('email')) return 'unsubscribe';
     if (path.startsWith('/reset-password') || params.get('token')) return 'reset-password';
+    if (path.match(/^\/orders?\/([^/]+)\/review\/([^/]+)/i) || queryTab === 'review') return 'review';
     if (path === '/checkout' || path === '/cart' || queryTab === 'checkout' || queryTab === 'cart') return 'checkout';
     if (path === '/services' || queryTab === 'services') return 'services';
     if (path === '/blog' || path === '/blogs' || queryTab === 'blog') return 'blog';
@@ -211,6 +232,12 @@ export default function App() {
     else if (tab === 'privacy') base = '/privacy';
     else if (tab === 'unsubscribe') base = '/unsubscribe';
     else if (tab === 'reset-password') base = '/reset-password';
+    else if (tab === 'review') {
+      if (activeReviewParams) {
+        return `/orders/${encodeURIComponent(activeReviewParams.orderId)}/review/${encodeURIComponent(activeReviewParams.orderItemId)}`;
+      }
+      return '/account';
+    }
     else base = '/';
 
     if (queryString && tab === 'store') {
@@ -219,8 +246,9 @@ export default function App() {
     return base;
   };
 
-  // Tabs: 'home' | 'store' | 'affiliate' | 'services' | 'blog' | 'contact' | 'user' | 'checkout' | 'admin' | 'unsubscribe' | 'reset-password'
+  // Tabs: 'home' | 'store' | 'affiliate' | 'services' | 'blog' | 'contact' | 'user' | 'checkout' | 'admin' | 'unsubscribe' | 'reset-password' | 'review'
   const [currentTab, setCurrentTab] = useState<string>(() => getInitialTab());
+  const [activeReviewParams, setActiveReviewParams] = useState<{ orderId: string; orderItemId: string } | null>(() => parseReviewParamsFromUrl());
 
   // Helper to switch tabs and synchronize browser URL for all pages
   const handleTabChange = (tab: string, editingProductOverride?: Product | null) => {
@@ -302,7 +330,7 @@ export default function App() {
         }
         // If external new tab, ignore
         if (anchor.target === '_blank') return;
-        
+
         // Scroll to top
         window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
         document.documentElement.scrollTop = 0;
@@ -501,8 +529,8 @@ export default function App() {
   useEffect(() => {
     try {
       localStorage.removeItem('veloce_products');
-      deleteFromIndexedDb('veloce_cache', 'veloce_products').catch(() => {});
-    } catch {}
+      deleteFromIndexedDb('veloce_cache', 'veloce_products').catch(() => { });
+    } catch { }
   }, []);
 
   // When network comes back online, fetch latest products automatically from backend
@@ -512,7 +540,7 @@ export default function App() {
         if (Array.isArray(fetchedProducts)) {
           setProducts(sortProductsLatestFirst(fetchedProducts));
         }
-      }).catch(() => {});
+      }).catch(() => { });
     };
     window.addEventListener('online', handleOnline);
     return () => window.removeEventListener('online', handleOnline);
@@ -612,11 +640,34 @@ export default function App() {
         } else if (path === '/track' || path.startsWith('/track/') || path === '/orders/track' || path.startsWith('/orders/track/')) {
           setCurrentTab('track');
         }
+
+        if (tab === 'review') {
+          const revParams = parseReviewParamsFromUrl();
+          if (revParams) {
+            setActiveReviewParams(revParams);
+          }
+        }
       }
     };
     handleLocationRouting();
     window.addEventListener('popstate', handleLocationRouting);
-    return () => window.removeEventListener('popstate', handleLocationRouting);
+
+    const handleOpenReview = (e: Event) => {
+      const ce = e as CustomEvent<{ orderId: string; orderItemId: string }>;
+      if (ce.detail?.orderId && ce.detail?.orderItemId) {
+        setActiveReviewParams({
+          orderId: ce.detail.orderId,
+          orderItemId: ce.detail.orderItemId,
+        });
+        handleTabChange('review');
+      }
+    };
+    window.addEventListener('veloce_open_review', handleOpenReview);
+
+    return () => {
+      window.removeEventListener('popstate', handleLocationRouting);
+      window.removeEventListener('veloce_open_review', handleOpenReview);
+    };
   }, []);
 
   // Fetch products, orders & inventory state directly from Django backend API as primary source of truth
@@ -657,7 +708,7 @@ export default function App() {
               };
             });
             safeLocalStorageSetItem('veloce_orders', JSON.stringify(merged));
-            saveToIndexedDb('veloce_cache', 'veloce_orders', merged).catch(() => {});
+            saveToIndexedDb('veloce_cache', 'veloce_orders', merged).catch(() => { });
             return merged;
           });
         }
@@ -703,7 +754,7 @@ export default function App() {
   useEffect(() => {
     if (orders && Array.isArray(orders)) {
       safeLocalStorageSetItem('veloce_orders', JSON.stringify(orders));
-      saveToIndexedDb('veloce_cache', 'veloce_orders', orders).catch(() => {});
+      saveToIndexedDb('veloce_cache', 'veloce_orders', orders).catch(() => { });
     }
   }, [orders]);
 
@@ -729,7 +780,7 @@ export default function App() {
         if (Array.isArray(idbCart) && idbCart.length > 0) {
           setCart((prev) => (prev.length === 0 ? idbCart : prev));
         }
-      }).catch(() => {});
+      }).catch(() => { });
     }
   }, []);
 
@@ -1031,8 +1082,8 @@ export default function App() {
         subject = `🎉 Return Request #${req.id} RESOLVED & FINALIZED`;
         body = `Hi ${customer},\n\n` +
           `Your return claim #${req.id} for Order Ref: ${req.orderId} has been successfully RESOLVED and finalized.\n\n` +
-          (req.type === 'refund' 
-            ? `Your refund has been authorized and returned to your account statement.` 
+          (req.type === 'refund'
+            ? `Your refund has been authorized and returned to your account statement.`
             : `Your replacement package has been dispatched.`) +
           (effectiveNote ? `\n\nMerchant Note: "${effectiveNote}"` : '') +
           `\n\nThank you for shopping with Veloce Hub!\n\nBest regards,\nThe Veloce Hub Returns Team`;
@@ -1074,7 +1125,7 @@ export default function App() {
 
   const triggerLowStockEmail = (product: Product, currentStock: number, threshold: number) => {
     const emailId = 'email-' + Math.random().toString(36).substring(2, 9);
-    
+
     const subject = `⚠️ ALERT: Low Stock Warning for [${product.sku}] ${product.name}`;
     const body = `Urgent System Alert: Inventory Level Compromised\n\n` +
       `Product: ${product.name}\n` +
@@ -1211,7 +1262,7 @@ export default function App() {
           if (p.price < prevP.price) {
             const wishlistEmailEnabled = localStorage.getItem('veloce_wishlist_email_notifications_enabled') !== 'false';
             const wishlistPriceEnabled = localStorage.getItem('veloce_wishlist_price_drops_enabled') !== 'false';
-            
+
             if (wishlist.includes(p.id) && wishlistEmailEnabled && wishlistPriceEnabled) {
               const recipientEmail = localStorage.getItem('veloce_wishlist_notification_email') || localStorage.getItem('veloce_login_email') || '';
               const recipientName = localStorage.getItem('veloce_login_name') || 'Customer';
@@ -1270,14 +1321,14 @@ export default function App() {
       if (p.type === 'physical' && p.stock !== null) {
         const threshold = p.lowStockThreshold ?? 5;
         const prevStock = prevStocksRef.current[p.id];
-        
+
         if (prevStock !== undefined) {
           // If the stock level has decreased AND it is now <= threshold, and previously it was > threshold
           if (p.stock < prevStock && p.stock <= threshold && prevStock > threshold) {
             triggerLowStockEmail(p, p.stock, threshold);
           }
         }
-        
+
         prevStocksRef.current[p.id] = p.stock;
       }
     });
@@ -1324,7 +1375,7 @@ export default function App() {
 
   useEffect(() => {
     safeLocalStorageSetItem('veloce_orders', JSON.stringify(orders));
-    saveToIndexedDb('veloce_cache', 'veloce_orders', orders).catch(() => {});
+    saveToIndexedDb('veloce_cache', 'veloce_orders', orders).catch(() => { });
   }, [orders]);
 
   useEffect(() => {
@@ -1407,7 +1458,7 @@ export default function App() {
     setCart((prevCart) => {
       const updated = prevCart.map((item) =>
         item.product.id === productId &&
-        JSON.stringify(item.selectedVariations) === JSON.stringify(vars)
+          JSON.stringify(item.selectedVariations) === JSON.stringify(vars)
           ? { ...item, quantity: qty }
           : item
       );
@@ -1786,7 +1837,7 @@ export default function App() {
       return prev;
     });
     // Persist directly to backend SQLite database
-    productService.updateProduct(id, type === 'price' ? { previousPrice: null } : { backInStockAlert: false }).catch(() => {});
+    productService.updateProduct(id, type === 'price' ? { previousPrice: null } : { backInStockAlert: false }).catch(() => { });
   };
 
   const handleUpdateProductSku = (id: string, newSku: string) => {
@@ -1866,8 +1917,8 @@ export default function App() {
       updatedFields.costPrice !== undefined && updatedFields.costPrice !== null && (updatedFields.costPrice as any) !== ''
         ? Number(updatedFields.costPrice)
         : (updatedFields as any)?.cost_price !== undefined && (updatedFields as any)?.cost_price !== null && (updatedFields as any)?.cost_price !== ''
-        ? Number((updatedFields as any).cost_price)
-        : undefined;
+          ? Number((updatedFields as any).cost_price)
+          : undefined;
 
     const normalizedFields: Partial<Product> = {
       ...updatedFields,
@@ -2059,7 +2110,7 @@ export default function App() {
               note: 'Order placed and payment validated.'
             });
           }
-          
+
           if (history[history.length - 1]?.status !== status) {
             let note = '';
             if (status === 'processing') note = 'Order has been compiled and is in sorting.';
@@ -2094,7 +2145,7 @@ export default function App() {
         return o;
       });
       safeLocalStorageSetItem('veloce_orders', JSON.stringify(updated));
-      saveToIndexedDb('veloce_cache', 'veloce_orders', updated).catch(() => {});
+      saveToIndexedDb('veloce_cache', 'veloce_orders', updated).catch(() => { });
       if (typeof window !== 'undefined') {
         window.dispatchEvent(new CustomEvent('veloce_order_status_updated', { detail: { orderId, status } }));
         window.dispatchEvent(new CustomEvent('veloce_orders_updated', { detail: updated }));
@@ -2146,7 +2197,7 @@ export default function App() {
       });
 
       safeLocalStorageSetItem('veloce_orders', JSON.stringify(updated));
-      saveToIndexedDb('veloce_cache', 'veloce_orders', updated).catch(() => {});
+      saveToIndexedDb('veloce_cache', 'veloce_orders', updated).catch(() => { });
       return updated;
     });
 
@@ -2176,7 +2227,7 @@ export default function App() {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ paymentStatus, paidNote, mpesaCode: patchPayload.payment_reference })
-    }).catch(() => {});
+    }).catch(() => { });
   };
 
   const handleCreateReturnRequest = (request: ReturnRequest) => {
@@ -2234,7 +2285,7 @@ export default function App() {
             adminNote: adminNote ?? req.adminNote,
             trackingNumber: trackingNumber ?? req.trackingNumber
           };
-          
+
           // Also append history entry to target order
           setOrders((prevOrders) =>
             prevOrders.map((o) => {
@@ -2288,7 +2339,7 @@ export default function App() {
       window.dispatchEvent(new CustomEvent('veloce_products_updated', { detail: next }));
       return next;
     });
-    productService.deleteProduct(id).catch(() => {});
+    productService.deleteProduct(id).catch(() => { });
   };
 
   const handleBulkDeleteProducts = async (ids: string[]) => {
@@ -2350,7 +2401,7 @@ export default function App() {
       try {
         localStorage.setItem('veloce_pending_wishlist_product_id', productId);
         localStorage.setItem('veloce_open_auth_mode', 'register');
-      } catch (e) {}
+      } catch (e) { }
 
       handleTabChange('user');
       return;
@@ -2466,6 +2517,10 @@ export default function App() {
               setPrefilledReviewerName(customerName);
               handleOpenProductDetail(product);
             }}
+            onWriteReview={(orderId, orderItemId) => {
+              setActiveReviewParams({ orderId, orderItemId });
+              handleTabChange('review');
+            }}
             wishlist={wishlist}
             cart={cart}
             onToggleWishlist={handleToggleWishlist}
@@ -2521,6 +2576,65 @@ export default function App() {
             onSelectProduct={(product) => {
               setSelectedProduct(product);
               handleTabChange('store');
+            }}
+            onWriteReview={(orderId, orderItemId) => {
+              setActiveReviewParams({ orderId, orderItemId });
+              handleTabChange('review');
+            }}
+          />
+        );
+      case 'review':
+        if (!activeReviewParams) {
+          return (
+            <UserAccount
+              orders={orders}
+              products={products}
+              onAddToCart={handleAddToCart}
+              setCurrentTab={handleTabChange}
+              onTrackOrder={(orderId) => {
+                if (orderId) {
+                  setGlobalTrackingOrderId(orderId);
+                }
+                handleTabChange('track');
+              }}
+              onUpdateOrderNote={handleUpdateOrderNote}
+              onUpdateOrderStatus={handleUpdateOrderStatus}
+              onLeaveReview={(product, customerName) => {
+                setPrefilledReviewerName(customerName);
+                handleOpenProductDetail(product);
+              }}
+              onWriteReview={(orderId, orderItemId) => {
+                setActiveReviewParams({ orderId, orderItemId });
+                handleTabChange('review');
+              }}
+              wishlist={wishlist}
+              cart={cart}
+              onToggleWishlist={handleToggleWishlist}
+              onClearWishlist={handleClearWishlist}
+              onClearCart={handleClearCart}
+              onAddCoupon={handleAddCoupon}
+              onAddOrder={(order) => setOrders((prev) => [order, ...prev])}
+              onTriggerCustomEmail={triggerCustomEmail}
+              onDismissProductNotification={handleDismissProductNotification}
+              darkMode={darkMode}
+              fontSize={fontSize}
+              onChangeFontSize={setFontSize}
+              currency={currency}
+              returnRequests={returnRequests}
+              onCreateReturnRequest={handleCreateReturnRequest}
+              onUpdateReturnRequestStatus={handleUpdateReturnRequestStatus}
+            />
+          );
+        }
+        return (
+          <ReviewFormView
+            orderId={activeReviewParams.orderId}
+            orderItemId={activeReviewParams.orderItemId}
+            onBack={() => handleTabChange('user')}
+            onReviewSubmitted={() => {
+              // Immediately dispatch event to refresh order list and eligibility counts in-memory without page reload
+              window.dispatchEvent(new CustomEvent('veloce_orders_updated'));
+              handleTabChange('user');
             }}
           />
         );

@@ -194,7 +194,7 @@ export default function BestSellingByCategory({
                     >
                       <div>
                         {/* Image Container with Rank Badge */}
-                        <div className="relative h-32 sm:h-44 w-full overflow-hidden rounded-lg bg-gray-50 dark:bg-slate-900 border border-slate-100 dark:border-slate-800 flex items-center justify-center p-2">
+                        <div className="relative h-32 sm:h-44 w-full overflow-hidden rounded-lg bg-gray-50 dark:bg-slate-900 border border-slate-100 dark:border-slate-800">
                           <LazyImage
                             src={product.imageUrl || (Array.isArray(product.images) ? product.images[0] : (product as any).image) || ''}
                             alt={product.name}
@@ -202,7 +202,7 @@ export default function BestSellingByCategory({
                             height={176}
                             aspectRatio="240/176"
                             responsiveType="grid_card"
-                            className="h-full w-full object-contain object-center group-hover:scale-105 transition-transform duration-500"
+                            className="h-full w-full object-cover object-center group-hover:scale-105 transition-transform duration-500"
                           />
                           
                           {/* Rank Badge */}

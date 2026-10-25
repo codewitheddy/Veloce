@@ -217,7 +217,7 @@ export default function SaleProducts({
                     </div>
 
                     {/* High Quality Render Block */}
-                    <div className="relative h-56 w-full overflow-hidden rounded-xl bg-gray-50 dark:bg-slate-950 border border-rose-50/20 dark:border-slate-800 flex items-center justify-center p-2">
+                    <div className="relative h-56 w-full overflow-hidden rounded-xl bg-gray-50 dark:bg-slate-950 border border-rose-50/20 dark:border-slate-800">
                       <LazyImage
                         src={product.imageUrl || (Array.isArray(product.images) ? product.images[0] : (product as any).image) || ''}
                         alt={product.name}
@@ -225,7 +225,7 @@ export default function SaleProducts({
                         height={224}
                         aspectRatio="320/224"
                         responsiveType="carousel"
-                        className="h-full w-full object-contain object-center transition-transform duration-500 hover:scale-105"
+                        className="h-full w-full object-cover object-center transition-transform duration-500 hover:scale-105"
                       />
                       
                       {/* Visual Flare badge */}

@@ -53,7 +53,8 @@ import {
   CheckCircle2,
   RotateCcw,
   AlertOctagon,
-  Loader2
+  Loader2,
+  Star,
 } from 'lucide-react';
 import { Order, Product, OrderStatusHistoryEntry, CartItem, ReturnRequest } from '../types';
 import { CurrencyType, formatPrice } from '../lib/currency';
@@ -79,6 +80,7 @@ interface UserAccountProps {
   onUpdateOrderStatus?: (orderId: string, status: 'pending' | 'completed' | 'cancelled' | 'pending-cancellation' | 'shipped') => void;
   onTriggerEmailToast?: (order: Order, status: string) => void;
   onLeaveReview?: (product: Product, customerName: string) => void;
+  onWriteReview?: (orderId: string, orderItemId: string) => void;
   wishlist?: string[];
   cart?: CartItem[];
   onToggleWishlist?: (productId: string) => void;
@@ -107,6 +109,7 @@ export default function UserAccount({
   onUpdateOrderStatus = () => {},
   onTriggerEmailToast,
   onLeaveReview,
+  onWriteReview,
   wishlist = [],
   cart = [],
   onToggleWishlist = () => {},
@@ -163,8 +166,28 @@ export default function UserAccount({
   // Order filters and view state
   const [orderViewMode, setOrderViewMode] = useState<'list' | 'cards'>('list');
   const [searchQuery, setSearchQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'processing' | 'shipped' | 'completed' | 'cancelled'>('all');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'to_review' | 'pending' | 'processing' | 'shipped' | 'completed' | 'cancelled'>(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('needsReview') === 'true' || params.get('filter') === 'to_review') {
+        return 'to_review';
+      }
+    }
+    return 'all';
+  });
   const [expandedOrderId, setExpandedOrderId] = useState<string | null>(null);
+
+  const handleOpenReview = (orderId: string, orderItemId: string) => {
+    if (onWriteReview) {
+      onWriteReview(orderId, orderItemId);
+    } else {
+      window.dispatchEvent(
+        new CustomEvent('veloce_open_review', {
+          detail: { orderId, orderItemId },
+        })
+      );
+    }
+  };
   const [editingNoteOrderId, setEditingNoteOrderId] = useState<string | null>(null);
   const [tempNoteText, setTempNoteText] = useState('');
   const [copiedOrderId, setCopiedOrderId] = useState<string | null>(null);
@@ -645,11 +668,37 @@ export default function UserAccount({
     });
   }, [orders, email, phone]);
 
+  const totalToReviewCount = useMemo(() => {
+    return customerOrders.filter((order) => {
+      const isDelivered = (
+        order.status === 'completed' ||
+        order.status === 'delivered' ||
+        Boolean(order.deliveryConfirmed)
+      ) && order.status !== 'cancelled' && order.status !== 'refunded';
+      if (!isDelivered) return false;
+      const unreviewed = (order.unreviewedCount !== undefined)
+        ? order.unreviewedCount
+        : (order.items || []).filter(it => it.canReview || (!it.hasReviewed && !it.hasReview && it.productId)).length;
+      return unreviewed > 0;
+    }).length;
+  }, [customerOrders]);
+
   const filteredOrders = useMemo(() => {
     return customerOrders.filter((order) => {
       if (!order) return false;
       if (statusFilter !== 'all') {
-        if (statusFilter === 'completed') {
+        if (statusFilter === 'to_review') {
+          const isDelivered = (
+            order.status === 'completed' ||
+            order.status === 'delivered' ||
+            Boolean(order.deliveryConfirmed)
+          ) && order.status !== 'cancelled' && order.status !== 'refunded';
+          if (!isDelivered) return false;
+          const unreviewed = (order.unreviewedCount !== undefined)
+            ? order.unreviewedCount
+            : (order.items || []).filter(it => it.canReview || (!it.hasReviewed && !it.hasReview && it.productId)).length;
+          if (unreviewed <= 0) return false;
+        } else if (statusFilter === 'completed') {
           if (order.status !== 'completed' && order.status !== 'delivered') return false;
         } else if (order.status !== statusFilter) {
           return false;
@@ -1432,19 +1481,33 @@ export default function UserAccount({
 
             {/* Filter pills */}
             <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0">
-              {(['all', 'pending', 'processing', 'shipped', 'completed', 'cancelled'] as const).map((status) => (
-                <button
-                  key={status}
-                  onClick={() => setStatusFilter(status)}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-medium capitalize transition-all cursor-pointer whitespace-nowrap ${
-                    statusFilter === status
-                      ? 'bg-indigo-600 text-white font-semibold shadow-xs'
-                      : 'bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700'
-                  }`}
-                >
-                  {status}
-                </button>
-              ))}
+              {(['all', 'to_review', 'pending', 'processing', 'shipped', 'completed', 'cancelled'] as const).map((status) => {
+                const label = status === 'to_review' ? 'To Review' : status;
+                return (
+                  <button
+                    key={status}
+                    onClick={() => setStatusFilter(status)}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-medium capitalize transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${
+                      statusFilter === status
+                        ? 'bg-indigo-600 text-white font-semibold shadow-xs'
+                        : 'bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700'
+                    }`}
+                  >
+                    <span>{label}</span>
+                    {status === 'to_review' && totalToReviewCount > 0 && (
+                      <span
+                        className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold ${
+                          statusFilter === 'to_review'
+                            ? 'bg-white text-indigo-700'
+                            : 'bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-400'
+                        }`}
+                      >
+                        {totalToReviewCount}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
             </div>
 
             {/* View Mode Toggle & Exports */}
@@ -1669,6 +1732,81 @@ export default function UserAccount({
 
                         {/* Actions */}
                         <div className="flex items-center gap-1.5 shrink-0">
+                          {/* Review Action for Delivered / Completed Orders */}
+                          {(() => {
+                            const isDelivered = (
+                              order.status === 'completed' ||
+                              order.status === 'delivered' ||
+                              Boolean(order.deliveryConfirmed)
+                            ) && order.status !== 'cancelled' && order.status !== 'refunded';
+
+                            if (!isDelivered) return null;
+
+                            const unreviewedItems = (order.items || []).filter(
+                              (it) => it.canReview || (!it.hasReviewed && !it.hasReview && it.productId)
+                            );
+                            const reviewedItems = (order.items || []).filter(
+                              (it) => it.hasReviewed || it.hasReview || it.reviewId
+                            );
+                            const unreviewedCount = order.unreviewedCount !== undefined ? order.unreviewedCount : unreviewedItems.length;
+
+                            if (order.items.length === 1) {
+                              const singleItem = order.items[0];
+                              const hasRev = singleItem.hasReviewed || singleItem.hasReview || singleItem.reviewId;
+                              if (hasRev) {
+                                return (
+                                  <button
+                                    onClick={() => handleOpenReview(order.id, singleItem.id || singleItem.productId)}
+                                    className="inline-flex h-8 items-center gap-1.5 rounded-xl bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400 border border-amber-200/60 dark:border-amber-900/40 px-2.5 text-xs font-semibold hover:bg-amber-100/60 transition-colors cursor-pointer whitespace-nowrap min-h-[32px]"
+                                    title="Edit your review"
+                                  >
+                                    <Star className="h-3.5 w-3.5 fill-amber-400 text-amber-500" />
+                                    <span>Reviewed ({singleItem.rating || singleItem.review?.rating || 5}★)</span>
+                                  </button>
+                                );
+                              }
+                              return (
+                                <button
+                                  onClick={() => handleOpenReview(order.id, singleItem.id || singleItem.productId)}
+                                  className="inline-flex h-8 items-center gap-1.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white px-2.5 text-xs font-bold transition-all shadow-2xs cursor-pointer whitespace-nowrap min-h-[32px]"
+                                  title="Write a verified review"
+                                >
+                                  <Star className="h-3.5 w-3.5 fill-white text-white" />
+                                  <span>Write a review</span>
+                                </button>
+                              );
+                            }
+
+                            // Multi-item order
+                            if (unreviewedCount > 0) {
+                              return (
+                                <button
+                                  onClick={() => setExpandedOrderId(order.id)}
+                                  className="inline-flex h-8 items-center gap-1.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white px-2.5 text-xs font-bold transition-all shadow-2xs cursor-pointer whitespace-nowrap min-h-[32px]"
+                                  title="Write reviews for unreviewed items"
+                                >
+                                  <Star className="h-3.5 w-3.5 fill-white text-white" />
+                                  <span>Write a review ({unreviewedCount})</span>
+                                </button>
+                              );
+                            }
+
+                            if (reviewedItems.length > 0) {
+                              return (
+                                <button
+                                  onClick={() => setExpandedOrderId(order.id)}
+                                  className="inline-flex h-8 items-center gap-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-amber-600 dark:text-amber-400 border border-slate-200 dark:border-slate-700 px-2.5 text-xs font-semibold hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors cursor-pointer whitespace-nowrap min-h-[32px]"
+                                  title="View and edit reviews"
+                                >
+                                  <Star className="h-3.5 w-3.5 fill-amber-400 text-amber-500" />
+                                  <span>Reviewed • Edit</span>
+                                </button>
+                              );
+                            }
+
+                            return null;
+                          })()}
+
                           <button
                             onClick={() => handleTrackOrder(order.id)}
                             className="inline-flex h-8 items-center gap-1.5 rounded-xl bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-400 border border-blue-200/60 dark:border-blue-900/40 px-2.5 text-xs font-semibold hover:bg-blue-100/60 transition-colors cursor-pointer whitespace-nowrap"
@@ -1820,6 +1958,13 @@ export default function UserAccount({
                             {order.items.map((item, idx) => {
                               const matchedProduct = products.find((p) => p.id === item.productId);
                               const imgUrl = matchedProduct?.imageUrl || 'https://images.unsplash.com/photo-1542831371-29b0f74f9713?w=100&auto=format&fit=crop&q=60';
+                              const isDelivered = (
+                                order.status === 'completed' ||
+                                order.status === 'delivered' ||
+                                Boolean(order.deliveryConfirmed)
+                              ) && order.status !== 'cancelled' && order.status !== 'refunded';
+                              const hasRev = item.hasReviewed || item.hasReview || item.reviewId;
+
                               return (
                                 <div key={idx} className="p-3.5 flex items-center justify-between gap-3">
                                   <div className="flex items-center gap-3 min-w-0">
@@ -1833,8 +1978,35 @@ export default function UserAccount({
                                       </p>
                                     </div>
                                   </div>
-                                  <div className="font-mono font-bold text-slate-900 dark:text-white shrink-0">
-                                    {formatPrice(item.price * item.quantity, currency)}
+
+                                  <div className="flex items-center gap-3 shrink-0">
+                                    {isDelivered && (
+                                      hasRev ? (
+                                        <button
+                                          type="button"
+                                          onClick={() => handleOpenReview(order.id, item.id || item.productId)}
+                                          className="inline-flex items-center gap-1 text-[11px] font-semibold text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900/60 px-2.5 py-1 rounded-lg hover:bg-amber-100 transition-colors cursor-pointer"
+                                          title="Edit your review for this product"
+                                        >
+                                          <Star className="h-3 w-3 fill-amber-400 text-amber-500" />
+                                          <span>Edit review ({item.rating || item.review?.rating || 5}★)</span>
+                                        </button>
+                                      ) : (
+                                        <button
+                                          type="button"
+                                          onClick={() => handleOpenReview(order.id, item.id || item.productId)}
+                                          className="inline-flex items-center gap-1 text-[11px] font-bold text-white bg-amber-500 hover:bg-amber-600 px-2.5 py-1 rounded-lg transition-colors shadow-2xs cursor-pointer"
+                                          title="Write review for this product"
+                                        >
+                                          <Star className="h-3 w-3 fill-white text-white" />
+                                          <span>Write a review</span>
+                                        </button>
+                                      )
+                                    )}
+
+                                    <div className="font-mono font-bold text-slate-900 dark:text-white">
+                                      {formatPrice(item.price * item.quantity, currency)}
+                                    </div>
                                   </div>
                                 </div>
                               );
@@ -2022,6 +2194,80 @@ export default function UserAccount({
                       {/* Action Toolbar */}
                       <div className="mt-4 pt-3.5 border-t border-slate-100 dark:border-slate-800/60 flex flex-wrap items-center justify-between gap-2.5">
                         <div className="flex flex-wrap items-center gap-2">
+                          {/* Review Action for Delivered / Completed Orders in Cards View */}
+                          {(() => {
+                            const isDelivered = (
+                              order.status === 'completed' ||
+                              order.status === 'delivered' ||
+                              Boolean(order.deliveryConfirmed)
+                            ) && order.status !== 'cancelled' && order.status !== 'refunded';
+
+                            if (!isDelivered) return null;
+
+                            const unreviewedItems = (order.items || []).filter(
+                              (it) => it.canReview || (!it.hasReviewed && !it.hasReview && it.productId)
+                            );
+                            const reviewedItems = (order.items || []).filter(
+                              (it) => it.hasReviewed || it.hasReview || it.reviewId
+                            );
+                            const unreviewedCount = order.unreviewedCount !== undefined ? order.unreviewedCount : unreviewedItems.length;
+
+                            if (order.items.length === 1) {
+                              const singleItem = order.items[0];
+                              const hasRev = singleItem.hasReviewed || singleItem.hasReview || singleItem.reviewId;
+                              if (hasRev) {
+                                return (
+                                  <button
+                                    onClick={() => handleOpenReview(order.id, singleItem.id || singleItem.productId)}
+                                    className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400 border border-amber-200/60 dark:border-amber-900/40 px-3 text-xs font-semibold hover:bg-amber-100/60 transition-colors cursor-pointer"
+                                    title="Edit your review"
+                                  >
+                                    <Star className="h-3.5 w-3.5 fill-amber-400 text-amber-500" />
+                                    <span>Reviewed ({singleItem.rating || singleItem.review?.rating || 5}★)</span>
+                                  </button>
+                                );
+                              }
+                              return (
+                                <button
+                                  onClick={() => handleOpenReview(order.id, singleItem.id || singleItem.productId)}
+                                  className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-amber-500 hover:bg-amber-600 text-white px-3 text-xs font-bold transition-all shadow-2xs cursor-pointer"
+                                  title="Write a verified review"
+                                >
+                                  <Star className="h-3.5 w-3.5 fill-white text-white" />
+                                  <span>Write a review</span>
+                                </button>
+                              );
+                            }
+
+                            if (unreviewedCount > 0) {
+                              return (
+                                <button
+                                  onClick={() => setExpandedOrderId(order.id)}
+                                  className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-amber-500 hover:bg-amber-600 text-white px-3 text-xs font-bold transition-all shadow-2xs cursor-pointer"
+                                  title="Write reviews for unreviewed items"
+                                >
+                                  <Star className="h-3.5 w-3.5 fill-white text-white" />
+                                  <span>Write a review ({unreviewedCount})</span>
+                                </button>
+                              );
+                            }
+
+                            if (reviewedItems.length > 0) {
+                              return (
+                                <button
+                                  onClick={() => setExpandedOrderId(order.id)}
+                                  className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-amber-600 dark:text-amber-400 border border-slate-200 dark:border-slate-700 px-3 text-xs font-semibold hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors cursor-pointer"
+                                  title="View and edit reviews"
+                                >
+                                  <Star className="h-3.5 w-3.5 fill-amber-400 text-amber-500" />
+                                  <span>Reviewed • Edit</span>
+                                </button>
+                              );
+                            }
+
+                            return null;
+                          })()}
+
                           <button
                             onClick={() => handleTrackOrder(order.id)}
                             className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-400 border border-blue-200/60 dark:border-blue-900/40 px-3 text-xs font-semibold hover:bg-blue-100/60 transition-colors cursor-pointer"

@@ -3,9 +3,11 @@ import { Order } from '../types';
 
 export interface OrderQueryParams {
   page?: number;
+  limit?: number;
   status?: string;
   search?: string;
   ordering?: string;
+  needsReview?: boolean | string;
 }
 
 export interface PaginatedOrdersResponse {
@@ -76,14 +78,23 @@ export const mapBackendOrderToFrontend = (ord: any): Order => {
     paymentConfirmedAt: ord.payment_confirmed_at || ord.paymentConfirmedAt || undefined,
     paymentAmount: ord.payment_amount ? Number(ord.payment_amount) : (ord.paymentAmount ? Number(ord.paymentAmount) : undefined),
     refundClaim: ord.refundClaim || null,
+    unreviewedCount: typeof ord.unreviewedCount === 'number' ? ord.unreviewedCount : 0,
     items: Array.isArray(ord.items)
       ? ord.items.map((it: any) => ({
-          productId: String(it.productId || it.product || it.id || ''),
+          id: it.id ? String(it.id) : undefined,
+          productId: String(it.productId || it.product_id || it.product || it.id || ''),
           name: it.product_name || it.name || 'Product Item',
           price: typeof it.unit_price === 'number' ? it.unit_price : (typeof it.price === 'number' ? it.price : parseFloat(it.unit_price || it.price || '0')),
           quantity: Number(it.quantity || 1),
           selectedVariations: it.selected_variations || it.selectedVariations || {},
           type: 'physical',
+          canReview: Boolean(it.canReview),
+          hasReviewed: Boolean(it.hasReviewed || it.hasReview),
+          hasReview: Boolean(it.hasReviewed || it.hasReview),
+          reviewId: it.reviewId ? String(it.reviewId) : (it.review?.id ? String(it.review.id) : null),
+          rating: it.rating !== undefined && it.rating !== null ? Number(it.rating) : (it.review?.rating ? Number(it.review.rating) : null),
+          review: it.review || null,
+          image: it.image || it.imageUrl || it.image_url || undefined,
         }))
       : [],
     statusHistory: ord.status_history || ord.statusHistory || [

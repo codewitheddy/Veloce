@@ -22,6 +22,8 @@ import {
   updateSqliteCategoriesBulk,
   getMysqlProducts,
   saveMysqlProduct,
+  getMysqlReviewsByProduct,
+  getMysqlProductReviewsSummary,
 } from '../../src/lib/mysql-db';
 import { requireAdmin } from '../middleware/auth';
 import { cartStreamManager } from '../services/cartStream';
@@ -65,28 +67,28 @@ export function normalizeProductVariants(p: any): any {
   const opts = Array.isArray(p.options)
     ? p.options
     : typeof p.options === 'string' && p.options.trim().startsWith('[')
-    ? (() => { try { return JSON.parse(p.options); } catch { return []; } })()
-    : [];
+      ? (() => { try { return JSON.parse(p.options); } catch { return []; } })()
+      : [];
   const matrix = Array.isArray(p.variantMatrix || p.variant_matrix)
     ? p.variantMatrix || p.variant_matrix
     : typeof (p.variantMatrix || p.variant_matrix) === 'string' && (p.variantMatrix || p.variant_matrix).trim().startsWith('[')
-    ? (() => { try { return JSON.parse(p.variantMatrix || p.variant_matrix); } catch { return []; } })()
-    : [];
+      ? (() => { try { return JSON.parse(p.variantMatrix || p.variant_matrix); } catch { return []; } })()
+      : [];
   const vars = Array.isArray(p.variants)
     ? p.variants
     : typeof p.variants === 'string' && p.variants.trim().startsWith('[')
-    ? (() => { try { return JSON.parse(p.variants); } catch { return []; } })()
-    : [];
+      ? (() => { try { return JSON.parse(p.variants); } catch { return []; } })()
+      : [];
   const variations = Array.isArray(p.variations)
     ? p.variations
     : typeof p.variations === 'string' && p.variations.trim().startsWith('[')
-    ? (() => { try { return JSON.parse(p.variations); } catch { return []; } })()
-    : [];
+      ? (() => { try { return JSON.parse(p.variations); } catch { return []; } })()
+      : [];
   const colorImgs = (p.colorImages || p.color_images) && typeof (p.colorImages || p.color_images) === 'object'
     ? p.colorImages || p.color_images
     : typeof (p.colorImages || p.color_images) === 'string' && (p.colorImages || p.color_images).trim().startsWith('{')
-    ? (() => { try { return JSON.parse(p.colorImages || p.color_images); } catch { return {}; } })()
-    : {};
+      ? (() => { try { return JSON.parse(p.colorImages || p.color_images); } catch { return {}; } })()
+      : {};
 
   const explicitFalse = Boolean(
     p.hasVariants === false ||
@@ -184,7 +186,7 @@ router.post(['/categories/bulk_action', '/categories/bulk_action/'], requireAdmi
           }
           return c;
         }).filter(c => !catIds.includes(String(c.id)));
-        
+
         await deleteSqliteCategoriesBulk(catIds);
         affectedCount = catIds.length;
       }
@@ -627,6 +629,54 @@ router.get('/', async (req: Request, res: Response) => {
   res.json(result);
 });
 
+// ==========================================
+// Public Product Reviews Endpoints
+// ==========================================
+
+// Public: Summary of reviews for a product (single aggregate SQL query)
+router.get(['/:id/reviews/summary', '/:id/reviews/summary/'], async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const summary = await getMysqlProductReviewsSummary(id);
+
+    res.json({
+      success: true,
+      ...summary,
+    });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Failed to retrieve review summary';
+    res.status(500).json({ success: false, error: message });
+  }
+});
+
+// Public: Reviews for a product (paginated, sorted, newest first)
+router.get(['/:id/reviews', '/:id/reviews/'], async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { rating, sort, page, limit } = req.query;
+
+    const result = await getMysqlReviewsByProduct(id, {
+      rating: rating ? Number(rating) : undefined,
+      sort: typeof sort === 'string' ? sort : undefined,
+      page: page ? Number(page) : undefined,
+      limit: limit ? Number(limit) : undefined,
+    });
+
+    res.json({
+      success: true,
+      ...result,
+      summary: {
+        average: result.averageRating,
+        totalCount: result.total,
+        distribution: result.ratingDistribution,
+      },
+    });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Failed to retrieve reviews';
+    res.status(500).json({ success: false, error: message });
+  }
+});
+
 router.get('/:id', async (req: Request, res: Response) => {
   await loadProductsCache();
   const item = productsCache.find(p => p.id === req.params.id || p.slug === req.params.id);
@@ -726,13 +776,13 @@ router.post('/', requireAdmin, async (req: Request, res: Response) => {
     cost_price: req.body.cost_price !== undefined && req.body.cost_price !== null && req.body.cost_price !== ''
       ? Number(req.body.cost_price)
       : req.body.costPrice !== undefined && req.body.costPrice !== null && req.body.costPrice !== ''
-      ? Number(req.body.costPrice)
-      : null,
+        ? Number(req.body.costPrice)
+        : null,
     costPrice: req.body.costPrice !== undefined && req.body.costPrice !== null && req.body.costPrice !== ''
       ? Number(req.body.costPrice)
       : req.body.cost_price !== undefined && req.body.cost_price !== null && req.body.cost_price !== ''
-      ? Number(req.body.cost_price)
-      : null,
+        ? Number(req.body.cost_price)
+        : null,
     category: req.body.category || 'General',
     type: req.body.type || 'physical',
     status: req.body.status || 'Active',
@@ -954,7 +1004,7 @@ router.delete(['/:id', '/:id/'], requireAdmin, async (req: Request, res: Respons
         });
         return res.json({ success: true, message: 'Product deleted successfully.' });
       }
-    } catch {}
+    } catch { }
     return res.status(404).json({ success: false, error: 'Product not found' });
   }
 
@@ -1048,22 +1098,5 @@ router.post('/inventory/adjust', requireAdmin, async (req: Request, res: Respons
   }
 });
 
-// Fetch verified reviews for a specific product
-router.get(['/:productId/reviews', '/:productId/reviews/'], async (req: Request, res: Response) => {
-  try {
-    const { productId } = req.params;
-    const { rating, sort } = req.query;
-
-    const result = await getSqliteReviewsByProduct(productId, {
-      rating: rating ? Number(rating) : undefined,
-      sort: typeof sort === 'string' ? sort : undefined,
-    });
-
-    res.json(result);
-  } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : 'Failed to retrieve product reviews';
-    res.status(500).json({ success: false, error: message });
-  }
-});
 
 export default router;

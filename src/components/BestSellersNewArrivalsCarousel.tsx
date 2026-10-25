@@ -314,7 +314,7 @@ export default function BestSellersNewArrivalsCarousel({
               >
                 <div>
                   {/* Top Image Box */}
-                  <div className="relative aspect-4/3 w-full overflow-hidden rounded-lg bg-gray-50 dark:bg-gray-950 flex items-center justify-center p-2">
+                  <div className="relative aspect-4/3 w-full overflow-hidden rounded-lg bg-gray-50 dark:bg-gray-950">
                     <LazyImage
                       src={p.imageUrl || (Array.isArray(p.images) ? p.images[0] : (p as any).image) || ''}
                       alt={p.name}
@@ -322,7 +322,7 @@ export default function BestSellersNewArrivalsCarousel({
                       height={210}
                       aspectRatio="4/3"
                       responsiveType="carousel"
-                      className="h-full w-full object-contain object-center transition-transform duration-500 group-hover:scale-105"
+                      className="h-full w-full object-cover object-center transition-transform duration-500 group-hover:scale-105"
                     />
 
                     {/* Badge Overlay */}
