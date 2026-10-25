@@ -4,10 +4,10 @@
  */
 
 import React, { useState } from 'react';
-import { Tag, Star, ShoppingBag, Check, Heart, Edit2 } from 'lucide-react';
+import { Tag, Star, ShoppingBag, Check, Heart, Edit2, SlidersHorizontal } from 'lucide-react';
 import { Product, CartItem } from '../types';
 import LazyImage from './LazyImage';
-import { getProductDiscountInfo } from '../utils/productUtils';
+import { getProductDiscountInfo, checkProductHasVariants } from '../utils/productUtils';
 import { CurrencyType, formatPrice } from '../lib/currency';
 
 export interface ProductCardProps {
@@ -45,6 +45,13 @@ export default function ProductCard({
     product.stock !== undefined &&
     product.stock <= 0;
 
+  const hasVariants = Boolean(
+    checkProductHasVariants(product) ||
+    (Array.isArray(product.options) && product.options.length > 0) ||
+    (Array.isArray(product.variations) && product.variations.length > 0) ||
+    (Array.isArray(product.variantMatrix) && product.variantMatrix.length > 0)
+  );
+
   const isInCart = cart.some((item) => item.product.id === product.id);
   const isWishlisted = wishlist.includes(product.id);
   const showViewCart = isInCart && !isAdded;
@@ -54,17 +61,14 @@ export default function ProductCard({
     e.stopPropagation();
     if (isOutOfStock) return;
 
-    if (onAddToCart) {
-      const defaultVars: Record<string, string> = {};
-      if (product.variations) {
-        product.variations.forEach((v) => {
-          if (v.options && v.options.length > 0) {
-            defaultVars[v.name] = v.options[0];
-          }
-        });
-      }
+    // For products with variants (sizes, colors, options), open the selection view
+    if (hasVariants) {
+      onSelectProduct?.(product);
+      return;
+    }
 
-      onAddToCart(product, 1, defaultVars);
+    if (onAddToCart) {
+      onAddToCart(product, 1, {});
       setIsAdded(true);
       setTimeout(() => {
         setIsAdded(false);
@@ -217,6 +221,16 @@ export default function ProductCard({
           >
             <ShoppingBag className="w-3.5 h-3.5" />
             <span>View Cart &rarr;</span>
+          </button>
+        ) : hasVariants ? (
+          <button
+            type="button"
+            onClick={handleQuickAdd}
+            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all duration-200 shadow-xs cursor-pointer active:scale-95 bg-slate-900 hover:bg-indigo-600 text-white dark:bg-white dark:text-slate-900 dark:hover:bg-indigo-400 dark:hover:text-white whitespace-nowrap"
+            title="Select options (sizes, colors, etc.)"
+          >
+            <SlidersHorizontal className="w-3.5 h-3.5" />
+            <span>Select</span>
           </button>
         ) : (
           <button
