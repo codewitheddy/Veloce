@@ -875,6 +875,13 @@ export async function initializeDatabaseSchema(): Promise<void> {
     await safeAddCol('pending_registrations', 'resend_window_start', 'VARCHAR(100) NULL');
     await safeAddCol('pending_registrations', 'ip_address', 'VARCHAR(100) NULL');
 
+    // Ensure reviews table columns for review-eligibility join
+    await safeAddCol('reviews', 'product_id', 'VARCHAR(255) NULL');
+    await safeAddCol('reviews', 'order_item_id', 'VARCHAR(255) NULL');
+    await safeAddCol('reviews', 'user_id', 'VARCHAR(255) NULL');
+    await safeAddCol('reviews', 'title', 'VARCHAR(255) NULL');
+    await safeAddCol('reviews', 'body', 'TEXT NULL');
+
     // Automatically normalize any legacy awaiting_delivery_quote / delivery_quoted orders to pending
     try {
       await pool.query("UPDATE orders SET status = 'pending' WHERE LOWER(status) IN ('awaiting_delivery_quote', 'delivery_quoted', 'order_received');");
@@ -4724,13 +4731,19 @@ export async function getMysqlOrderItemsWithReviews(orderIds: string[]): Promise
 
   const itemIds = items.map((it: any) => it.id);
 
-  // Query 2: Get reviews for these item IDs
-  const [reviews]: any = await pool.query(
-    `SELECT id, product_id, order_item_id, rating, title, body, status, created_at 
-     FROM reviews 
-     WHERE order_item_id IN (?)`,
-    [itemIds]
-  );
+  // Query 2: Get reviews for these item IDs (defensive against schema variants)
+  let reviews: any[] = [];
+  try {
+    const [revRows]: any = await pool.query(
+      `SELECT id, product_id, order_item_id, rating, title, body, status, created_at 
+       FROM reviews 
+       WHERE order_item_id IN (?)`,
+      [itemIds]
+    );
+    reviews = revRows || [];
+  } catch (revErr) {
+    console.warn('[MySQL] Could not query reviews for order items:', revErr);
+  }
 
   const reviewsByItemId = new Map<string, any>();
   for (const rev of reviews || []) {

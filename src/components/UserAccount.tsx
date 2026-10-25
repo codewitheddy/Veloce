@@ -327,6 +327,7 @@ export default function UserAccount({
   }, [resendCooldown]);
 
   // Real-time authoritative order synchronization with backend database
+  const [liveCustomerOrders, setLiveCustomerOrders] = useState<Order[] | null>(null);
   const [isSyncingOrders, setIsSyncingOrders] = useState(false);
 
   const fetchCustomerAuthoritativeOrders = useCallback(async (isManualTrigger = false) => {
@@ -344,6 +345,7 @@ export default function UserAccount({
       });
       if (Array.isArray(res.data) && res.data.length > 0) {
         const mapped = res.data.map(mapBackendOrderToFrontend);
+        setLiveCustomerOrders(mapped);
         window.dispatchEvent(new CustomEvent('veloce_orders_updated', { detail: mapped }));
       }
     } catch (err) {
@@ -700,13 +702,25 @@ export default function UserAccount({
     }
   };
 
-  // Filter Customer Orders
+  // Filter Customer Orders (merging live backend orders over prop orders)
   const customerOrders = useMemo(() => {
     if (!email && !phone) return [];
     const normalizedEmail = email.trim().toLowerCase();
     const normalizedPhone = phone.trim().replace(/\D/g, '');
 
-    return (orders || []).filter((order) => {
+    const liveMap = liveCustomerOrders ? new Map(liveCustomerOrders.map((o) => [o.id.toLowerCase(), o])) : null;
+    const baseOrders = liveMap
+      ? (orders || []).map((o) => {
+          const match = liveMap.get(o.id.toLowerCase());
+          return match ? { ...o, ...match } : o;
+        })
+      : (orders || []);
+
+    const effectiveOrders = liveMap
+      ? [...liveCustomerOrders.filter((l) => !(orders || []).some((o) => o.id.toLowerCase() === l.id.toLowerCase())), ...baseOrders]
+      : baseOrders;
+
+    return effectiveOrders.filter((order) => {
       if (!order) return false;
       const orderEmail = (order.customerEmail || '').trim().toLowerCase();
       const orderPhone = (order.phone || order.mpesaPhone || '').trim().replace(/\D/g, '');
@@ -722,7 +736,7 @@ export default function UserAccount({
       }
       return order;
     });
-  }, [orders, email, phone]);
+  }, [orders, liveCustomerOrders, email, phone]);
 
   const totalToReviewCount = useMemo(() => {
     return customerOrders.filter((order) => {

@@ -2,7 +2,7 @@ import axios, { AxiosInstance, InternalAxiosRequestConfig, AxiosResponse, AxiosE
 
 // Retrieve API Base URL from environment variable or default to relative /api endpoint on current server
 const getApiBaseUrl = (): string => {
-  const envUrl = import.meta.env.VITE_API_BASE_URL;
+  const envUrl = (typeof import.meta !== 'undefined' && import.meta.env) ? import.meta.env.VITE_API_BASE_URL : undefined;
   if (envUrl && typeof envUrl === 'string' && !envUrl.includes('127.0.0.1:8000') && !envUrl.includes('localhost:8000')) {
     return envUrl;
   }
