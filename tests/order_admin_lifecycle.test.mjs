@@ -75,6 +75,32 @@ describe('Admin Order Lifecycle: pending -> confirmed -> payment -> processing -
     const completeVal = validateWorkflowTransition({ ...mockPendingOrder, status: 'shipped' }, 'completed');
     assert.strictEqual(completeVal.valid, true, 'Shipped moving to completed should be valid');
 
+    // COD Step 5: Shipped order marked as paid moving to completed (e.g. ord-6492)
+    const codPaidShipped = {
+      id: 'ord-6492',
+      status: 'shipped',
+      paymentMethod: 'cod',
+      paymentStatus: 'paid',
+      isPaid: true,
+      total: 3499,
+      customerName: 'Edwin Muliro',
+    };
+    const codPaidCompleteVal = validateWorkflowTransition(codPaidShipped, 'completed');
+    assert.strictEqual(codPaidCompleteVal.valid, true, 'Paid COD shipped order should complete cleanly');
+
+    // COD Step 5b: Shipped COD order moving directly to completed
+    const codShipped = {
+      id: 'ord-6493',
+      status: 'shipped',
+      paymentMethod: 'cod',
+      paymentStatus: 'unpaid',
+      isPaid: false,
+      total: 3499,
+      customerName: 'Edwin Muliro',
+    };
+    const codShippedCompleteVal = validateWorkflowTransition(codShipped, 'completed');
+    assert.strictEqual(codShippedCompleteVal.valid, true, 'COD shipped order moving to completed should be valid');
+
     // Cancellation: cancellation requires reason
     const cancelNoReason = validateWorkflowTransition({ ...mockPendingOrder, status: 'confirmed' }, 'cancelled', {});
     assert.strictEqual(cancelNoReason.valid, false, 'Cancellation without reason should fail');

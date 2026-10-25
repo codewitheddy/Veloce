@@ -206,14 +206,24 @@ export function validateWorkflowTransition(
         };
       }
     }
-    if (toStatus === 'completed' && fromStatus !== 'payment_received') {
-      return {
-        valid: false,
-        error: `Cash payment must be received before completing Cash on Delivery order #${order.id}.`,
-        fromStatus,
-        toStatus,
-        paymentMethod,
-      };
+    if (toStatus === 'completed') {
+      const isPaid = Boolean(
+        order.isPaid ||
+        order.is_paid ||
+        order.paymentStatus === 'paid' ||
+        order.payment_status === 'paid' ||
+        fromStatus === 'payment_received' ||
+        (order.paymentReference && !order.paymentReference.toUpperCase().includes('PENDING') && !order.paymentReference.toUpperCase().includes('UNPAID'))
+      );
+      if (!isPaid && fromStatus !== 'shipped' && fromStatus !== 'payment_received') {
+        return {
+          valid: false,
+          error: `Order #${order.id} must be marked as shipped or have payment confirmed before it can be completed.`,
+          fromStatus,
+          toStatus,
+          paymentMethod,
+        };
+      }
     }
   }
 
