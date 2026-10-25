@@ -86,45 +86,72 @@ export const DEFAULT_CATEGORY_OBJECTS: Category[] = [
 const STORAGE_KEY_CATEGORIES = 'veloce_categories_v2';
 const STORAGE_KEY_AUDIT_LOGS = 'veloce_category_audit_logs';
 
+let inFlightCategoriesPromise: Promise<Category[]> | null = null;
+let lastCategoriesFetchTimestamp = 0;
+const CATEGORIES_CACHE_TTL_MS = 15000; // 15 seconds cooldown to prevent network storms
+
 /**
  * Fetch categories from Django/Node backend API, with fallback to local storage
  */
-export async function fetchCategoriesFromBackend(): Promise<Category[]> {
-  try {
-    const backendCategories = await categoriesApi.getCategories();
-    if (backendCategories !== null && Array.isArray(backendCategories)) {
-      const normalized: Category[] = backendCategories.map((c: any) => ({
-        id: String(c.id),
-        name: c.name,
-        slug: c.slug || String(c.name).toLowerCase().replace(/\s+/g, '-'),
-        parentId: c.parentId || c.parent_id || null,
-        description: c.description || '',
-        imageUrl: c.imageUrl || c.image_url || '',
-        status: c.status === 'Inactive' ? 'Inactive' : 'Active',
-        displayOrder: typeof c.displayOrder === 'number' ? c.displayOrder : (typeof c.display_order === 'number' ? c.display_order : 0),
-        previousSlugs: Array.isArray(c.previousSlugs) ? c.previousSlugs : (Array.isArray(c.previous_slugs) ? c.previous_slugs : []),
-        productCount: typeof c.productCount === 'number' ? c.productCount : 0,
-        createdAt: c.createdAt || c.created_at || new Date().toISOString(),
-      }));
-
-      // Cache normalized categories to localStorage
-      try {
-        localStorage.setItem(STORAGE_KEY_CATEGORIES, JSON.stringify(normalized));
-        const uniqueNames = Array.from(new Set(normalized.map((c) => c.name)));
-        localStorage.setItem('veloce_custom_categories', JSON.stringify(uniqueNames));
-        if (normalized.length === 0) {
-          localStorage.setItem('veloce_categories_cleared', 'true');
-        } else {
-          localStorage.removeItem('veloce_categories_cleared');
-        }
-      } catch {}
-
-      return normalized;
-    }
-  } catch (err) {
-    console.warn('[CategoryUtils] Backend fetch failed, falling back to cached storage:', err);
+export async function fetchCategoriesFromBackend(force: boolean = false): Promise<Category[]> {
+  const now = Date.now();
+  if (!force && inFlightCategoriesPromise) {
+    return inFlightCategoriesPromise;
   }
-  return loadCategoriesFromStorage();
+  if (!force && now - lastCategoriesFetchTimestamp < CATEGORIES_CACHE_TTL_MS) {
+    const cached = loadCategoriesFromStorage();
+    if (cached && cached.length > 0) {
+      return cached;
+    }
+  }
+
+  inFlightCategoriesPromise = (async () => {
+    try {
+      const backendCategories = await categoriesApi.getCategories();
+      if (backendCategories !== null && Array.isArray(backendCategories)) {
+        const normalized: Category[] = backendCategories.map((c: any) => ({
+          id: String(c.id),
+          name: c.name,
+          slug: c.slug || String(c.name).toLowerCase().replace(/\s+/g, '-'),
+          parentId: c.parentId || c.parent_id || null,
+          description: c.description || '',
+          imageUrl: c.imageUrl || c.image_url || '',
+          status: c.status === 'Inactive' ? 'Inactive' : 'Active',
+          displayOrder: typeof c.displayOrder === 'number' ? c.displayOrder : (typeof c.display_order === 'number' ? c.display_order : 0),
+          previousSlugs: Array.isArray(c.previousSlugs) ? c.previousSlugs : (Array.isArray(c.previous_slugs) ? c.previous_slugs : []),
+          productCount: typeof c.productCount === 'number' ? c.productCount : 0,
+          createdAt: c.createdAt || c.created_at || new Date().toISOString(),
+        }));
+
+        lastCategoriesFetchTimestamp = Date.now();
+
+        // Cache normalized categories to localStorage only if changed (prevents cross-tab ping-pong loops)
+        try {
+          const currentRaw = localStorage.getItem(STORAGE_KEY_CATEGORIES);
+          const nextRaw = JSON.stringify(normalized);
+          if (currentRaw !== nextRaw) {
+            localStorage.setItem(STORAGE_KEY_CATEGORIES, nextRaw);
+            const uniqueNames = Array.from(new Set(normalized.map((c) => c.name)));
+            localStorage.setItem('veloce_custom_categories', JSON.stringify(uniqueNames));
+            if (normalized.length === 0) {
+              localStorage.setItem('veloce_categories_cleared', 'true');
+            } else {
+              localStorage.removeItem('veloce_categories_cleared');
+            }
+          }
+        } catch {}
+
+        return normalized;
+      }
+    } catch (err) {
+      console.warn('[CategoryUtils] Backend fetch failed, falling back to cached storage:', err);
+    } finally {
+      inFlightCategoriesPromise = null;
+    }
+    return loadCategoriesFromStorage();
+  })();
+
+  return inFlightCategoriesPromise;
 }
 
 /**
@@ -186,6 +213,7 @@ export function loadCategoriesFromStorage(): Category[] {
  */
 export function saveCategoriesToStorage(categories: Category[]) {
   try {
+    lastCategoriesFetchTimestamp = Date.now();
     try {
       localStorage.setItem(STORAGE_KEY_CATEGORIES, JSON.stringify(categories));
     } catch (quotaErr) {

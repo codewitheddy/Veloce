@@ -1159,11 +1159,16 @@ export default function DashboardAnalytics({
       if (customEvent && customEvent.detail && Array.isArray(customEvent.detail)) {
         setCustomCategories(customEvent.detail.map((c: any) => c.name));
       } else {
-        fetchCategoriesFromBackend().then((cats) => {
-          if (cats && Array.isArray(cats)) {
-            setCustomCategories(cats.map((c) => c.name));
-          }
-        });
+        const loaded = loadCategoriesFromStorage();
+        if (loaded && loaded.length > 0) {
+          setCustomCategories(loaded.map((c) => c.name));
+        } else {
+          fetchCategoriesFromBackend().then((cats) => {
+            if (cats && Array.isArray(cats)) {
+              setCustomCategories(cats.map((c) => c.name));
+            }
+          });
+        }
       }
     };
 

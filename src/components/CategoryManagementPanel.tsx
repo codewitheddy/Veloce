@@ -75,18 +75,30 @@ export const CategoryManagementPanel: React.FC<CategoryManagementPanelProps> = (
       if (customEvent && customEvent.detail && Array.isArray(customEvent.detail)) {
         setCategories(customEvent.detail);
       } else {
-        fetchCategoriesFromBackend().then((cats) => {
-          if (cats && Array.isArray(cats)) {
-            setCategories(cats);
-          }
-        });
+        const loaded = loadCategoriesFromStorage();
+        if (loaded && loaded.length > 0) {
+          setCategories(loaded);
+        } else {
+          fetchCategoriesFromBackend().then((cats) => {
+            if (cats && Array.isArray(cats)) {
+              setCategories(cats);
+            }
+          });
+        }
       }
     };
 
-    window.addEventListener('storage', handleCategoriesChanged);
+    const handleStorageChange = (e: StorageEvent) => {
+      if (!e.key || e.key === 'veloce_categories_v2' || e.key === 'veloce_custom_categories' || e.key === 'veloce_categories_cleared') {
+        const loaded = loadCategoriesFromStorage();
+        setCategories(loaded);
+      }
+    };
+
+    window.addEventListener('storage', handleStorageChange);
     window.addEventListener('veloce_categories_updated', handleCategoriesChanged);
     return () => {
-      window.removeEventListener('storage', handleCategoriesChanged);
+      window.removeEventListener('storage', handleStorageChange);
       window.removeEventListener('veloce_categories_updated', handleCategoriesChanged);
     };
   }, []);

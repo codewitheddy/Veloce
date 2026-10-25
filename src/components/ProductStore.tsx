@@ -169,18 +169,30 @@ export default function ProductStore({
       if (customEvent && customEvent.detail && Array.isArray(customEvent.detail)) {
         setStoredCategories(customEvent.detail);
       } else {
-        fetchCategoriesFromBackend().then((cats) => {
-          if (cats && Array.isArray(cats)) {
-            setStoredCategories(cats);
-          }
-        });
+        const loaded = loadCategoriesFromStorage();
+        if (loaded && loaded.length > 0) {
+          setStoredCategories(loaded);
+        } else {
+          fetchCategoriesFromBackend().then((cats) => {
+            if (cats && Array.isArray(cats)) {
+              setStoredCategories(cats);
+            }
+          });
+        }
       }
     };
 
-    window.addEventListener('storage', handleCategoriesChanged);
+    const handleStorageChange = (e: StorageEvent) => {
+      if (!e.key || e.key === 'veloce_categories_v2' || e.key === 'veloce_custom_categories' || e.key === 'veloce_categories_cleared') {
+        const loaded = loadCategoriesFromStorage();
+        setStoredCategories(loaded);
+      }
+    };
+
+    window.addEventListener('storage', handleStorageChange);
     window.addEventListener('veloce_categories_updated', handleCategoriesChanged);
     return () => {
-      window.removeEventListener('storage', handleCategoriesChanged);
+      window.removeEventListener('storage', handleStorageChange);
       window.removeEventListener('veloce_categories_updated', handleCategoriesChanged);
     };
   }, []);
