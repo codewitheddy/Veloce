@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 import { Product, CartItem } from '../types';
 import LazyImage from './LazyImage';
+import ProductCard from './ProductCard';
 import { getProductDiscountInfo } from '../utils/productUtils';
 import { CurrencyType, formatPrice } from '../lib/currency';
 
@@ -302,150 +303,33 @@ export default function BestSellersNewArrivalsCarousel({
             const showViewCart = isInCart && !isJustAdded;
             const { hasDiscount, originalPrice: originalPriceVal, discountPercent } = getProductDiscountInfo(p);
 
+            const extraBadge = (activeTab === 'bestsellers' || (activeTab === 'all' && isBestSeller)) ? (
+              <span className="inline-flex items-center gap-1 rounded-md bg-amber-500 text-white px-2 py-0.5 font-mono text-[9px] font-extrabold uppercase tracking-wider shadow-xs">
+                <Flame className="h-3 w-3 fill-current" />
+                #{index + 1} Best Seller
+              </span>
+            ) : null;
+
             return (
               <motion.div
                 key={`${activeTab}-${p.id}`}
                 initial={{ opacity: 0, y: 15 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.35, delay: Math.min(index * 0.04, 0.25) }}
-                onClick={() => onSelectProduct(p)}
-                className="snap-start shrink-0 w-[280px] sm:w-[300px] group flex flex-col justify-between overflow-hidden rounded-xl border border-gray-150 dark:border-gray-800 bg-white dark:bg-gray-900 transition-all duration-300 hover:border-indigo-300 dark:hover:border-indigo-600 hover:shadow-[0_8px_30px_rgba(79,70,229,0.08)] cursor-pointer relative"
+                className="snap-start shrink-0 w-[260px] sm:w-[280px]"
               >
-                <div>
-                  {/* Top Image Box */}
-                  <div className="relative aspect-4/3 w-full overflow-hidden bg-gray-50 dark:bg-gray-950">
-                    <LazyImage
-                      src={p.imageUrl || (Array.isArray(p.images) ? p.images[0] : (p as any).image) || ''}
-                      alt={p.name}
-                      width={280}
-                      height={210}
-                      aspectRatio="4/3"
-                      responsiveType="carousel"
-                      className="h-full w-full object-cover object-center transition-transform duration-500 group-hover:scale-105"
-                    />
-
-                    {/* Badge Overlay */}
-                    <div className="absolute top-2.5 left-2.5 flex flex-col gap-1 items-start">
-                      {activeTab === 'bestsellers' || (activeTab === 'all' && isBestSeller) ? (
-                        <span className="inline-flex items-center gap-1 rounded-md bg-amber-500 text-white px-2 py-0.5 font-mono text-[9px] font-extrabold uppercase tracking-wider shadow-xs">
-                          <Flame className="h-3 w-3 fill-current" />
-                          #{index + 1} Best Seller
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-1 rounded-md bg-indigo-600 text-white px-2 py-0.5 font-mono text-[9px] font-extrabold uppercase tracking-wider shadow-xs">
-                          <Sparkles className="h-3 w-3" />
-                          New Arrival
-                        </span>
-                      )}
-
-                      {hasDiscount && (
-                        <span className="inline-flex items-center gap-1 rounded-md bg-amber-500 text-white px-2 py-0.5 font-mono text-[9px] font-black uppercase tracking-wider shadow-xs">
-                          <Sparkles className="h-2.5 w-2.5" />
-                          ON SALE -{discountPercent}%
-                        </span>
-                      )}
-                    </div>
-
-                    {/* Quick Wishlist Bookmark Button */}
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onToggleWishlist(p.id);
-                      }}
-                      className="absolute top-2.5 right-2.5 flex h-8 w-8 items-center justify-center rounded-full bg-white/90 dark:bg-gray-950/90 backdrop-blur-xs shadow-xs hover:bg-white dark:hover:bg-gray-850 text-gray-400 hover:text-rose-500 transition-all cursor-pointer border border-gray-100 dark:border-gray-800"
-                      title={isSaved ? "Saved to Wishlist" : "Save for later"}
-                    >
-                      <Heart
-                        className={`h-4 w-4 transition-all ${
-                          isSaved
-                            ? 'fill-current text-rose-500'
-                            : 'text-gray-400 dark:text-gray-500 hover:text-rose-500'
-                        }`}
-                      />
-                    </button>
-                  </div>
-
-                  {/* Product Details Header */}
-                  <div className="p-3.5 pb-0">
-                    <div className="flex items-center justify-between">
-                      <span className="text-[9px] font-bold tracking-wider text-indigo-600 dark:text-indigo-400 uppercase font-mono">
-                        {p.category}
-                      </span>
-                      
-                      {/* Rating Stars */}
-                      {p.reviewsCount > 0 && p.rating > 0 ? (
-                        <div className="flex items-center gap-1 text-amber-500 text-xs font-bold">
-                          <Star className="h-3 w-3 fill-current" />
-                          <span>{p.rating.toFixed(1)}</span>
-                          <span className="text-[9px] text-gray-400 dark:text-gray-500 font-normal">({p.reviewsCount})</span>
-                        </div>
-                      ) : (
-                        <span className="text-[9px] text-gray-400 dark:text-gray-500 font-medium">Unrated</span>
-                      )}
-                    </div>
-
-                    <h3 className="font-display font-bold text-sm text-gray-900 dark:text-white mt-1 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors line-clamp-1">
-                      {p.name}
-                    </h3>
-                  </div>
-                </div>
-
-                {/* Pricing & Add To Cart Button */}
-                <div className="p-3.5 pt-3 mt-3 border-t border-gray-100 dark:border-gray-800 flex items-center justify-between gap-2">
-                  <div className="flex flex-col">
-                    {hasDiscount && originalPriceVal && (
-                      <span className="text-[10px] font-mono text-gray-400 line-through">
-                        {formatPrice(originalPriceVal, currency)}
-                      </span>
-                    )}
-                    <span className="font-mono text-base font-bold text-gray-900 dark:text-white">
-                      {formatPrice(p.price, currency)}
-                    </span>
-                  </div>
-
-                  {isOutOfStock ? (
-                    <button
-                      type="button"
-                      disabled
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500 cursor-not-allowed border border-slate-200/60 dark:border-slate-700/60 shadow-none whitespace-nowrap"
-                      title="This item is currently out of stock"
-                    >
-                      <ShoppingBag className="h-3.5 w-3.5 opacity-50" />
-                      <span>Out of Stock</span>
-                    </button>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={(e) => handleActionClick(e, p)}
-                      className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer shadow-3xs active:scale-95 whitespace-nowrap ${
-                        isJustAdded
-                          ? 'bg-emerald-600 text-white animate-pulse'
-                          : showViewCart
-                          ? 'bg-emerald-600 hover:bg-emerald-700 dark:bg-emerald-500 dark:hover:bg-emerald-600 text-white ring-1 ring-emerald-500/50'
-                          : 'bg-indigo-600 hover:bg-indigo-700 dark:bg-indigo-500 dark:hover:bg-indigo-600 text-white'
-                      }`}
-                      title={isJustAdded ? 'Item added to cart!' : showViewCart ? 'View item in your cart' : 'Add to cart'}
-                    >
-                      {isJustAdded ? (
-                        <>
-                          <Check className="h-3.5 w-3.5" />
-                          <span>Added!</span>
-                        </>
-                      ) : showViewCart ? (
-                        <>
-                          <ShoppingBag className="h-3.5 w-3.5" />
-                          <span>View Cart &rarr;</span>
-                        </>
-                      ) : (
-                        <>
-                          <ShoppingBag className="h-3.5 w-3.5" />
-                          <span>Add</span>
-                        </>
-                      )}
-                    </button>
-                  )}
-                </div>
+                <ProductCard
+                  product={p}
+                  onSelectProduct={onSelectProduct}
+                  onAddToCart={onAddToCart}
+                  cart={cart}
+                  wishlist={wishlist}
+                  onToggleWishlist={onToggleWishlist}
+                  onViewCart={onViewCart}
+                  currency={currency}
+                  extraBadge={extraBadge}
+                  className="h-full"
+                />
               </motion.div>
             );
           })}

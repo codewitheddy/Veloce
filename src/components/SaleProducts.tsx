@@ -10,6 +10,7 @@ import CountdownTimer from './CountdownTimer';
 import { getProductDiscountInfo } from '../utils/productUtils';
 import { CurrencyType, formatPrice } from '../lib/currency';
 import LazyImage from './LazyImage';
+import ProductCard from './ProductCard';
 
 interface SaleProductsProps {
   products: Product[];
@@ -195,110 +196,13 @@ export default function SaleProducts({
               const isLowStock = currentStock < 20;
 
               return (
-                <div
-                  key={product.id}
-                  onClick={() => onProductClick(product)}
-                  className="snap-start shrink-0 w-[270px] xs:w-[300px] sm:w-[320px] md:w-[340px] lg:w-[360px] flex flex-col justify-between overflow-hidden rounded-2xl border border-rose-100/50 dark:border-rose-950/60 bg-[#fffdfd]/80 dark:bg-slate-900 cursor-pointer transition-all duration-300 hover:shadow-[0_16px_32px_rgba(220,38,38,0.08)] dark:hover:shadow-[0_16px_32px_rgba(0,0,0,0.5)] hover:border-rose-200 dark:hover:border-rose-500/40 hover:bg-white dark:hover:bg-slate-850"
-                >
-                  <div>
-                    {/* High Quality Render Block (Flush to top, left, and right) */}
-                    <div className="relative h-56 w-full overflow-hidden bg-gray-50 dark:bg-slate-950 border-b border-rose-50/20 dark:border-slate-800">
-                      <LazyImage
-                        src={product.imageUrl || (Array.isArray(product.images) ? product.images[0] : (product as any).image) || ''}
-                        alt={product.name}
-                        width={320}
-                        height={224}
-                        aspectRatio="320/224"
-                        responsiveType="carousel"
-                        className="h-full w-full object-cover object-center transition-transform duration-500 hover:scale-105"
-                      />
-                      
-                      {/* On Sale & Savings Overlay */}
-                      <div className="absolute top-3 left-3 flex flex-col gap-1 items-start z-10">
-                        <span className="inline-flex items-center gap-1 text-[10px] font-mono font-black text-rose-600 dark:text-rose-300 bg-white/95 dark:bg-rose-950/90 backdrop-blur-xs px-2 py-0.5 rounded-md border border-rose-100/60 dark:border-rose-900/60 shadow-xs">
-                          <span className="bg-rose-600 text-white text-[8px] font-sans font-black px-1.5 py-0.5 rounded uppercase tracking-wider flex items-center gap-0.5">
-                            <Sparkles className="h-2 w-2" />
-                            ON SALE
-                          </span>
-                          -{discountPercent}%
-                        </span>
-                      </div>
-
-                      {/* Visual Flare badge */}
-                      <div className="absolute top-3 right-3 rounded bg-indigo-950/90 backdrop-blur-sm text-white font-mono text-[8px] font-bold px-2 py-0.5 tracking-wider uppercase flex items-center gap-1 shadow-xs">
-                        <Sparkles className="h-2.5 w-2.5 text-amber-400" />
-                        Premium Grade
-                      </div>
-                    </div>
-
-                    {/* Meta & Info Block */}
-                    <div className="p-4 sm:p-5 pb-0">
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="inline-flex items-center rounded-md bg-gray-50 dark:bg-slate-800 px-2 py-0.5 text-[9px] font-mono font-bold text-gray-500 dark:text-slate-300 uppercase tracking-wider">
-                          {product.category}
-                        </span>
-                        <span className="font-mono text-[9px] text-gray-400 dark:text-slate-500">SKU: {product.sku}</span>
-                        {product.stock !== null && (
-                          <span className={`text-[10px] font-mono font-semibold ${isLowStock ? 'text-amber-600 dark:text-amber-400' : 'text-gray-400 dark:text-slate-500'}`}>
-                            {product.stock} Units
-                          </span>
-                        )}
-                      </div>
-
-                      <h3 className="font-display font-medium text-sm text-gray-900 dark:text-white group-hover:text-rose-600 dark:group-hover:text-rose-400 transition-colors mt-2">
-                        {product.name}
-                      </h3>
-
-                      {/* Stock level visual bar */}
-                      {product.stock !== null && (
-                        <div className="mt-3.5">
-                          <div className="h-1 w-full bg-rose-50 dark:bg-slate-800 rounded-full overflow-hidden">
-                            <div 
-                              className={`h-full rounded-full ${isLowStock ? 'bg-amber-500' : 'bg-rose-500'}`} 
-                              style={{ width: `${Math.min(100, Math.max(10, (product.stock / 100) * 100))}%` }}
-                            />
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Ratings & Countdown */}
-                      <div className="mt-3.5 flex items-center justify-between bg-rose-50/10 dark:bg-slate-800/40 rounded-lg p-2 border border-rose-100/10 dark:border-slate-800">
-                        {product.reviewsCount > 0 && product.rating > 0 ? (
-                          <div className="flex items-center gap-1">
-                            <Star className="h-3 w-3 fill-amber-400 text-amber-400" />
-                            <span className="text-[11px] font-semibold text-gray-700 dark:text-slate-300">{product.rating.toFixed(1)}</span>
-                            <span className="text-[10px] text-gray-400 dark:text-slate-500 font-extralight">({product.reviewsCount})</span>
-                          </div>
-                        ) : (
-                          <span className="text-[10px] text-gray-400 dark:text-slate-500 font-medium">Unrated</span>
-                        )}
-                        {product.saleEndDate ? (
-                          <CountdownTimer endDate={product.saleEndDate} compact className="scale-95 origin-right" />
-                        ) : (
-                          <span className="text-[8px] font-mono text-rose-500 dark:text-rose-400 font-bold tracking-widest uppercase">
-                            Limited Term
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Pricing Block with clear crossed-out original pricing */}
-                  <div className="p-4 sm:p-5 pt-3.5 mt-3.5 border-t border-rose-50/50 dark:border-slate-800 flex items-center justify-between">
-                    <div className="flex flex-col">
-                      {previousPrice && previousPrice > product.price && (
-                        <span className="font-mono text-[10px] line-through text-gray-400 dark:text-slate-500">
-                          {formatPrice(previousPrice, currency)}
-                        </span>
-                      )}
-                      <span className="font-mono font-bold text-base text-rose-600 dark:text-rose-400">
-                        {formatPrice(product.price, currency)}
-                      </span>
-                    </div>
-                    <span className="inline-flex items-center gap-0.5 text-[10px] font-bold text-rose-600 dark:text-rose-400 hover:text-rose-800 dark:hover:text-rose-300 transition-colors">
-                      Acquire Term <ArrowRight className="h-3 w-3 transition-transform hover:translate-x-0.5" />
-                    </span>
-                  </div>
+                <div key={product.id} className="snap-start shrink-0 w-[260px] sm:w-[280px]">
+                  <ProductCard
+                    product={product}
+                    onSelectProduct={onProductClick}
+                    currency={currency}
+                    className="h-full"
+                  />
                 </div>
               );
             })}

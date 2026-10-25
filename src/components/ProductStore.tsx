@@ -28,6 +28,7 @@ import BestSellersNewArrivalsCarousel from './BestSellersNewArrivalsCarousel';
 import ProductReviewsView from './ProductReviewsView';
 import LazyImage from './LazyImage';
 import RecentlyViewedSlider from './RecentlyViewedSlider';
+import ProductCard from './ProductCard';
 import { formatRichDescription, cleanDescriptionExcerpt } from '../utils/formatDescription';
 import { trackViewItemList, trackViewItem } from '../lib/analytics';
 
@@ -2958,147 +2959,20 @@ export default function ProductStore({
                       initial={{ opacity: 0, y: 16 }}
                       animate={{ opacity: 1, y: 0 }}
                       transition={{ duration: 0.45, delay: Math.min(index * 0.05, 0.4), ease: "easeOut" }}
-                      onClick={() => handleProductSelect(product)}
-                      className="group flex flex-col justify-between overflow-hidden rounded-xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 cursor-pointer transition-all hover:border-indigo-300 dark:hover:border-indigo-700 hover:shadow-md"
+                      className="h-full"
                     >
-                      <div>
-                        <div className="relative aspect-square w-full overflow-hidden bg-slate-100 dark:bg-slate-800/60">
-                          <LazyImage
-                            src={product.imageUrl}
-                            alt={product.name}
-                            width={280}
-                            height={280}
-                            aspectRatio="1/1"
-                            responsiveType="grid_card"
-                            className="h-full w-full object-cover object-center transition-transform duration-500 group-hover:scale-105"
-                          />
-                          {/* Heart Toggle Button */}
-                          <motion.button
-                            whileHover={{ scale: 1.15 }}
-                            whileTap={{ scale: 0.85 }}
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              onToggleWishlist(product.id);
-                            }}
-                            className="absolute top-2 right-2 z-10 flex h-7.5 w-7.5 items-center justify-center rounded-full bg-white/95 dark:bg-slate-900/95 backdrop-blur-sm shadow-xs hover:bg-white dark:hover:bg-slate-800 text-slate-400 hover:text-rose-500 transition-all cursor-pointer border border-slate-200 dark:border-slate-800"
-                            title={wishlist.includes(product.id) ? "Remove from Wishlist" : "Add to Wishlist"}
-                          >
-                            <Heart
-                              className={`h-4 w-4 transition-all ${
-                                wishlist.includes(product.id)
-                                  ? 'fill-current text-rose-500'
-                                  : 'text-slate-400 dark:text-slate-500 hover:text-rose-500'
-                              }`}
-                            />
-                          </motion.button>
-                          {onEditProduct && (
-                            <motion.button
-                              whileHover={{ scale: 1.15 }}
-                              whileTap={{ scale: 0.85 }}
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                onEditProduct(product);
-                              }}
-                              className="absolute top-11 right-2 z-10 flex h-7.5 w-7.5 items-center justify-center rounded-full bg-white/95 dark:bg-slate-900/95 backdrop-blur-sm shadow-xs hover:bg-indigo-50 dark:hover:bg-slate-800 text-slate-500 hover:text-indigo-600 dark:hover:text-indigo-400 transition-all cursor-pointer border border-slate-200 dark:border-slate-800"
-                              title="Edit product specification (Admin)"
-                            >
-                              <Edit2 className="h-3.5 w-3.5" />
-                            </motion.button>
-                          )}
-                          <div className="absolute top-2 left-2 flex flex-col gap-1 z-10">
-                            {(() => {
-                              const { hasDiscount, discountPercent } = getProductDiscountInfo(product);
-                              if (!hasDiscount) return null;
-                              return (
-                                <div className="rounded bg-amber-500 text-white px-1.5 py-0.5 font-mono text-[8px] sm:text-[9px] font-black uppercase shadow-xs flex items-center gap-1 w-fit">
-                                  <Sparkles className="h-2 w-2" />
-                                  <span>ON SALE</span>
-                                  <span>-{discountPercent}%</span>
-                                </div>
-                              );
-                            })()}
-                            {product.type && product.type !== 'physical' && (
-                              <div className="rounded bg-white/95 dark:bg-slate-900/95 backdrop-blur-sm px-1.5 py-0.5 font-mono text-[8px] sm:text-[9px] font-bold text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-800 uppercase shadow-xs w-fit">
-                                {product.type}
-                              </div>
-                            )}
-                            {product.paymentRestriction && product.paymentRestriction !== 'both' && (
-                              <div className={`rounded ${
-                                product.paymentRestriction === 'prepaid'
-                                  ? 'bg-emerald-50 dark:bg-emerald-950/90 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800'
-                                  : 'bg-amber-50 dark:bg-amber-950/90 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-800'
-                              } backdrop-blur-sm px-1.5 py-0.5 font-mono text-[8px] sm:text-[9px] font-black uppercase shadow-xs w-fit`}>
-                                {product.paymentRestriction === 'prepaid' ? 'Prepaid Only' : 'COD Only'}
-                              </div>
-                            )}
-                            {cart.some((item) => item.product.id === product.id) && (
-                              <div className="rounded bg-indigo-600 text-white px-1.5 py-0.5 font-mono text-[8px] sm:text-[9px] font-black uppercase shadow-xs flex items-center gap-1 w-fit animate-pulse">
-                                <ShoppingCart className="h-2.5 w-2.5 fill-current" /> In Cart
-                              </div>
-                            )}
-                          </div>
-                          {product.type === 'physical' ? (
-                            product.stock === 0 ? (
-                              <div className="absolute bottom-2 right-2 rounded-full bg-red-50 dark:bg-red-950/50 border border-red-200 dark:border-red-900 px-2 py-0.5 font-mono text-[8px] sm:text-[9px] font-bold text-red-600 dark:text-red-400">
-                                Sold Out
-                              </div>
-                            ) : product.stock !== null && product.stock <= 5 ? (
-                              <div className="absolute bottom-2 right-2 rounded-full bg-amber-50 dark:bg-amber-950/50 border border-amber-200 dark:border-amber-900 px-2 py-0.5 font-mono text-[8px] sm:text-[9px] font-bold text-amber-700 dark:text-amber-400 animate-pulse">
-                                {product.stock} left
-                              </div>
-                            ) : (
-                              <div className="absolute bottom-2 right-2 rounded-full bg-slate-100 dark:bg-slate-800/90 border border-slate-200 dark:border-slate-700 px-2 py-0.5 font-mono text-[8px] sm:text-[9px] font-bold text-slate-700 dark:text-slate-300">
-                                Qty: {product.stock}
-                              </div>
-                            )
-                          ) : (
-                            <div className="absolute bottom-2 right-2 rounded-full bg-slate-100 dark:bg-slate-800/90 border border-slate-200 dark:border-slate-700 px-2 py-0.5 font-mono text-[8px] sm:text-[9px] font-bold text-slate-700 dark:text-slate-300">
-                              {product.type === 'digital' ? 'Digital' : 'Service'}
-                            </div>
-                          )}
-                        </div>
-
-                        <div className="p-3 sm:p-3.5 pb-0">
-                          <div className="flex items-center gap-1">
-                            <span className="text-[9px] sm:text-[10px] font-bold tracking-wider text-indigo-600 dark:text-indigo-400 uppercase font-mono truncate max-w-[120px] sm:max-w-none">
-                              {product.category}{product.subcategoryId ? ` / ${product.subcategoryId}` : ''}
-                            </span>
-                            {product.reviewsCount > 0 && product.rating > 0 ? (
-                              <>
-                                <span className="text-slate-300 dark:text-slate-700">•</span>
-                                <div className="flex items-center text-amber-500">
-                                  <Star className="h-2.5 w-2.5 fill-current" />
-                                  <span className="text-[9px] sm:text-[10px] font-bold ml-0.5">{product.rating.toFixed(1)}</span>
-                                </div>
-                              </>
-                            ) : null}
-                          </div>
-                          <h3 className="font-display font-semibold text-xs sm:text-sm text-slate-900 dark:text-white mt-1 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors uppercase tracking-tight line-clamp-1">{product.name}</h3>
-                        </div>
-                      </div>
-
-                      <div className="p-3 sm:p-3.5 pt-2.5 mt-3 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between gap-1.5">
-                        {(() => {
-                          const { hasDiscount, originalPrice: originalPriceVal } = getProductDiscountInfo(product);
-                          return (
-                            <div className="flex flex-col">
-                              {hasDiscount && originalPriceVal && (
-                                <span className="font-mono text-[10px] sm:text-xs text-slate-400 dark:text-slate-500 line-through">
-                                  {formatPrice(originalPriceVal, currency)}
-                                </span>
-                              )}
-                              <span className="font-mono font-bold text-xs sm:text-sm text-slate-900 dark:text-white whitespace-nowrap">
-                                {formatPrice(product.price, currency)}
-                              </span>
-                            </div>
-                          );
-                        })()}
-                        <span className="inline-flex items-center gap-1 text-[11px] sm:text-xs font-semibold text-indigo-600 dark:text-indigo-400 group-hover:text-indigo-700 dark:group-hover:text-indigo-300 transition-all group-hover:translate-x-0.5">
-                          View Details &rarr;
-                        </span>
-                      </div>
+                      <ProductCard
+                        product={product}
+                        onSelectProduct={handleProductSelect}
+                        onAddToCart={onAddToCart}
+                        cart={cart}
+                        wishlist={wishlist}
+                        onToggleWishlist={onToggleWishlist}
+                        onEditProduct={onEditProduct}
+                        onViewCart={onViewCart}
+                        currency={currency}
+                        className="h-full"
+                      />
                     </motion.div>
                   ))}
                 </div>
@@ -3390,113 +3264,27 @@ export default function ProductStore({
         {/* Horizontal Scrollable Container */}
         <div className="relative">
           <div className="flex gap-5 overflow-x-auto pb-4 pt-1 snap-x snap-mandatory scrollbar-thin scrollbar-thumb-gray-200 dark:scrollbar-thumb-gray-800 scroll-smooth">
-            {recommendedProducts.map((p, index) => {
-              const isSaved = wishlist.includes(p.id);
-              return (
-                <motion.div
-                  key={`rec-${p.id}`}
-                  initial={{ opacity: 0, scale: 0.96 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  transition={{ duration: 0.4, delay: Math.min(index * 0.05, 0.3), ease: "easeOut" }}
-                  onClick={() => handleProductSelect(p)}
-                  className="snap-start shrink-0 min-w-[260px] max-w-[260px] group flex flex-col justify-between overflow-hidden rounded-xl border border-gray-100 dark:border-gray-800/60 bg-white dark:bg-gray-900 cursor-pointer transition-all hover:border-indigo-150 dark:hover:border-indigo-800 hover:shadow-[0_8px_30px_rgba(43,83,193,0.03)] dark:hover:shadow-[0_8px_30px_rgba(0,0,0,0.25)]"
-                >
-                  <div>
-                    {/* Image visual wrapper */}
-                    <div className="relative aspect-video w-full overflow-hidden bg-gray-50 dark:bg-gray-950">
-                      <LazyImage
-                        src={p.imageUrl}
-                        alt={p.name}
-                        className="h-full w-full object-cover object-center transition-transform duration-500 group-hover:scale-103"
-                      />
-                      
-                      {/* Interactive Heart Toggle */}
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onToggleWishlist(p.id);
-                        }}
-                        className="absolute top-2 right-2 flex h-8 w-8 items-center justify-center rounded-full bg-white/95 dark:bg-gray-950/95 backdrop-blur-xs shadow-3xs hover:bg-white dark:hover:bg-gray-850 text-gray-400 hover:text-rose-650 transition-all cursor-pointer border border-gray-100 dark:border-gray-800 z-10"
-                        title={isSaved ? "Remove from Wishlist" : "Add to Wishlist"}
-                      >
-                        <Heart
-                          className={`h-4 w-4 transition-all ${
-                            isSaved
-                              ? 'fill-current text-rose-500'
-                              : 'text-gray-400 dark:text-gray-500 hover:text-rose-500'
-                          }`}
-                        />
-                      </button>
-
-                      {/* On Sale Badge */}
-                      {(() => {
-                        const { hasDiscount, discountPercent } = getProductDiscountInfo(p);
-                        if (!hasDiscount) return null;
-                        return (
-                          <span className="absolute top-2 left-2 z-10 rounded bg-rose-600 text-white px-2 py-0.5 font-mono text-[8px] font-black uppercase tracking-wider shadow-xs flex items-center gap-1">
-                            <Sparkles className="w-2.5 h-2.5" />
-                            <span>ON SALE</span>
-                            <span>-{discountPercent}%</span>
-                          </span>
-                        );
-                      })()}
-
-                      {/* Item Type Badge */}
-                      {p.type && p.type !== 'physical' && (
-                        <span className="absolute bottom-2 left-2 rounded bg-white/95 dark:bg-gray-950/95 backdrop-blur-xs px-2 py-0.5 font-mono text-[8px] font-bold text-indigo-900 dark:text-indigo-300 border border-indigo-50 dark:border-gray-800 uppercase">
-                          {p.type}
-                        </span>
-                      )}
-                    </div>
-
-                    {/* Meta info */}
-                    <div className="p-3.5 pb-0">
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-[9px] font-bold tracking-wider text-indigo-505 dark:text-indigo-455 uppercase font-mono">{p.category}</span>
-                        <span className="text-gray-350 dark:text-gray-700">•</span>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setReviewsViewProduct(p);
-                          }}
-                          className="flex items-center text-amber-500 hover:scale-105 transition-transform cursor-pointer"
-                          title="Click to view verified reviews"
-                        >
-                          <Star className="h-2.5 w-2.5 fill-current" />
-                          <span className="text-[9px] font-bold ml-0.5">{p.rating.toFixed(1)}</span>
-                          <span className="text-[8px] font-mono text-gray-400 ml-1 hover:underline">({p.reviewsCount || 0})</span>
-                        </button>
-                      </div>
-                      
-                      <h3 className="font-display font-semibold text-xs text-gray-900 dark:text-gray-100 mt-1.5 group-hover:text-indigo-650 dark:group-hover:text-indigo-455 transition-colors uppercase tracking-tight line-clamp-1">{p.name}</h3>
-                    </div>
-                  </div>
-
-                  {/* Pricing and Action row */}
-                  <div className="p-3.5 pt-3 mt-3 border-t border-indigo-50/50 dark:border-gray-800/60 flex items-center justify-between">
-                    {(() => {
-                      const { hasDiscount, originalPrice: originalPriceVal } = getProductDiscountInfo(p);
-                      return (
-                        <div className="flex flex-col">
-                          {hasDiscount && originalPriceVal && (
-                            <span className="font-mono text-[10px] text-gray-400 dark:text-gray-500 line-through">
-                              {formatPrice(originalPriceVal, currency)}
-                            </span>
-                          )}
-                          <span className="font-mono font-bold text-xs text-indigo-950 dark:text-indigo-300">
-                            {formatPrice(p.price, currency)}
-                          </span>
-                        </div>
-                      );
-                    })()}
-                    <span className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-0.5 transition-all group-hover:translate-x-0.5">
-                      View Details &rarr;
-                    </span>
-                  </div>
-                </motion.div>
-              );
-            })}
+            {recommendedProducts.map((p, index) => (
+              <motion.div
+                key={`rec-${p.id}`}
+                initial={{ opacity: 0, scale: 0.96 }}
+                animate={{ opacity: 1, scale: 1 }}
+                transition={{ duration: 0.4, delay: Math.min(index * 0.05, 0.3), ease: "easeOut" }}
+                className="snap-start shrink-0 min-w-[260px] max-w-[260px]"
+              >
+                <ProductCard
+                  product={p}
+                  onSelectProduct={handleProductSelect}
+                  onAddToCart={onAddToCart}
+                  cart={cart}
+                  wishlist={wishlist}
+                  onToggleWishlist={onToggleWishlist}
+                  onViewCart={onViewCart}
+                  currency={currency}
+                  className="h-full"
+                />
+              </motion.div>
+            ))}
           </div>
         </div>
       </div>

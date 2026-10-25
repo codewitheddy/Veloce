@@ -9,6 +9,7 @@ import { Star, TrendingUp, ArrowRight, ShoppingBag, Award } from 'lucide-react';
 import { getProductDiscountInfo } from '../utils/productUtils';
 import { CurrencyType, formatPrice } from '../lib/currency';
 import LazyImage from './LazyImage';
+import ProductCard from './ProductCard';
 
 interface BestSellingByCategoryProps {
   products: Product[];
@@ -156,104 +157,22 @@ export default function BestSellingByCategory({
                   ];
                   const currentRank = rankStyles[index] || { bg: 'bg-indigo-100 dark:bg-indigo-950', text: 'text-indigo-800 dark:text-indigo-300', label: `#${index + 1}` };
 
-                  return (
-                    <div
-                      key={product.id}
-                      onClick={() => onProductClick(product)}
-                      className="group relative flex flex-col justify-between overflow-hidden rounded-xl border border-slate-200/80 dark:border-slate-800 bg-[#fbfcfd]/40 dark:bg-slate-850/60 cursor-pointer transition-all duration-300 hover:shadow-[0_8px_24px_rgba(37,44,139,0.04)] dark:hover:shadow-[0_8px_24px_rgba(0,0,0,0.4)] hover:border-indigo-200/80 dark:hover:border-indigo-500/50 hover:bg-white dark:hover:bg-slate-800"
-                    >
-                      <div>
-                        {/* Image Container with Rank Badge */}
-                        <div className="relative h-36 sm:h-48 w-full overflow-hidden bg-gray-50 dark:bg-slate-900 border-b border-slate-100 dark:border-slate-800">
-                          <LazyImage
-                            src={product.imageUrl || (Array.isArray(product.images) ? product.images[0] : (product as any).image) || ''}
-                            alt={product.name}
-                            width={240}
-                            height={192}
-                            aspectRatio="240/192"
-                            responsiveType="grid_card"
-                            className="h-full w-full object-cover object-center group-hover:scale-105 transition-transform duration-500"
-                          />
-                          
-                          {/* Rank Badge */}
-                          <div className={`absolute top-1.5 sm:top-2.5 left-1.5 sm:left-2.5 px-1.5 sm:px-2 py-0.5 rounded text-[7.5px] sm:text-[9px] font-bold uppercase tracking-wider shadow-xs ${currentRank.bg} ${currentRank.text} flex items-center gap-0.5 sm:gap-1 font-mono`}>
-                            <Award className="h-2.5 w-2.5" />
-                            <span>{currentRank.label}</span>
-                          </div>
-
-                          {/* Sale Discount Tag */}
-                          {isSale && (
-                            <div className="absolute top-1.5 sm:top-2.5 right-1.5 sm:right-2.5 px-1 sm:px-1.5 py-0.5 rounded bg-amber-500 text-white text-[7.5px] sm:text-[9px] font-mono font-black uppercase shadow-xs">
-                              -{discountPercent}%
-                            </div>
-                          )}
-                        </div>
-
-                        {/* Product Info */}
-                        <div className="p-3 sm:p-3.5 pb-0">
-                          <div className="flex items-center justify-between gap-1">
-                            <span className="text-[8.5px] sm:text-[10px] font-bold uppercase font-mono tracking-wider text-indigo-600 dark:text-indigo-400 truncate">
-                              {product.category}
-                            </span>
-                            {product.reviewsCount > 0 && product.rating > 0 ? (
-                              <div className="flex items-center text-amber-500 text-xs font-bold shrink-0">
-                                <Star className="h-2.5 w-2.5 fill-current" />
-                                <span className="ml-0.5 text-[8.5px] sm:text-[10px]">{product.rating.toFixed(1)}</span>
-                              </div>
-                            ) : (
-                              <span className="text-[8px] sm:text-[9.5px] text-gray-400 dark:text-slate-500 font-medium shrink-0">Unrated</span>
-                            )}
-                          </div>
-
-                          <h4 className="font-display font-semibold text-[11px] sm:text-xs text-gray-900 dark:text-white mt-0.5 sm:mt-1 uppercase tracking-tight line-clamp-1 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">
-                            {product.name}
-                          </h4>
-
-                          {/* Ratings info */}
-                          <div className="mt-1.5 sm:mt-2.5 flex items-center gap-1">
-                            {product.reviewsCount > 0 && product.rating > 0 ? (
-                              <>
-                                <div className="flex items-center">
-                                  {[...Array(5)].map((_, i) => (
-                                    <Star
-                                      key={i}
-                                      className={`h-2.5 w-2.5 sm:h-3 sm:w-3 ${
-                                        i < Math.floor(product.rating)
-                                          ? 'fill-amber-400 text-amber-400'
-                                          : 'text-gray-200 dark:text-slate-700'
-                                      }`}
-                                    />
-                                  ))}
-                                </div>
-                                <span className="text-[8.5px] sm:text-[10px] font-semibold text-gray-700 dark:text-slate-300 ml-0.5 sm:ml-1">{product.rating.toFixed(1)}</span>
-                                <span className="text-[8px] sm:text-[9px] text-gray-400 dark:text-slate-500">({product.reviewsCount})</span>
-                              </>
-                            ) : (
-                              <span className="text-[8.5px] sm:text-[10px] text-gray-400 dark:text-slate-500 italic">No reviews yet</span>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Pricing Footer */}
-                      <div className="p-3 sm:p-3.5 pt-2 sm:pt-2.5 mt-2.5 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between gap-1">
-                        <div className="flex flex-col">
-                          {isSale && originalPriceVal && (
-                            <span className="font-mono text-[8px] sm:text-[10px] line-through text-gray-400 dark:text-slate-500">
-                              {formatPrice(originalPriceVal, currency)}
-                            </span>
-                          )}
-                          <span className="font-mono font-bold text-[11px] sm:text-sm text-gray-900 dark:text-white">
-                            {formatPrice(product.price, currency)}
-                          </span>
-                        </div>
-                        <span className="inline-flex items-center gap-0.5 text-[8px] sm:text-[10px] font-bold text-indigo-600 dark:text-indigo-400 group-hover:text-indigo-800 dark:group-hover:text-indigo-300 transition-colors shrink-0">
-                          <span className="hidden sm:inline">View details</span>
-                          <span className="sm:hidden">View</span>
-                          <ArrowRight className="h-2.5 w-2.5 sm:h-3 sm:w-3 transition-transform group-hover:translate-x-0.5" />
-                        </span>
-                      </div>
+                  const extraBadge = (
+                    <div className={`px-1.5 sm:px-2 py-0.5 rounded text-[8px] sm:text-[9px] font-bold uppercase tracking-wider shadow-xs ${currentRank.bg} ${currentRank.text} flex items-center gap-0.5 sm:gap-1 font-mono w-fit`}>
+                      <Award className="h-2.5 w-2.5" />
+                      <span>{currentRank.label}</span>
                     </div>
+                  );
+
+                  return (
+                    <ProductCard
+                      key={product.id}
+                      product={product}
+                      onSelectProduct={onProductClick}
+                      currency={currency}
+                      extraBadge={extraBadge}
+                      className="h-full"
+                    />
                   );
                 })}
               </div>

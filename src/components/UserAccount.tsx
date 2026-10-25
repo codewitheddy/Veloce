@@ -59,6 +59,7 @@ import {
 import { Order, Product, OrderStatusHistoryEntry, CartItem, ReturnRequest } from '../types';
 import { CurrencyType, formatPrice } from '../lib/currency';
 import { getProductDiscountInfo } from '../utils/productUtils';
+import ProductCard from './ProductCard';
 import OrderReceiptModal from './OrderReceiptModal';
 import TaxInvoiceModal from './TaxInvoiceModal';
 import ReturnRequestModal from './ReturnRequestModal';
@@ -2562,88 +2563,19 @@ export default function UserAccount({
             </div>
           ) : wishlistViewMode === 'grid' ? (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {wishlistProducts.map((p) => {
-                const { hasDiscount, originalPrice, discountPercent } = getProductDiscountInfo(p);
-                const isOutOfStock = p.stock !== null && p.stock === 0;
-                const isInCart = cart.some((item) => item.product.id === p.id);
-
-                return (
-                  <div
-                    key={p.id}
-                    className="rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 overflow-hidden flex flex-col justify-between hover:border-indigo-200 dark:hover:border-indigo-900/50 transition-all shadow-xs group"
-                  >
-                    <div>
-                      <div className="relative aspect-square w-full bg-slate-50 dark:bg-slate-800 overflow-hidden border-b border-slate-100 dark:border-slate-800">
-                        <img src={p.imageUrl} alt={p.name} className="h-full w-full object-cover group-hover:scale-105 transition-transform duration-300" />
-                        {hasDiscount && (
-                          <span className="absolute top-2.5 left-2.5 bg-rose-600 text-white font-mono text-[10px] font-bold px-2 py-0.5 rounded-full shadow-xs">
-                            -{discountPercent}%
-                          </span>
-                        )}
-                        <button
-                          onClick={() => onToggleWishlist(p.id)}
-                          className="absolute top-2.5 right-2.5 p-1.5 rounded-full bg-white/90 dark:bg-slate-900/90 text-slate-400 hover:text-rose-600 hover:scale-110 transition-all cursor-pointer shadow-xs"
-                          title="Remove from wishlist"
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </button>
-                      </div>
-
-                      <div className="p-3.5 sm:p-4 pb-0">
-                        <div className="flex items-center justify-between text-[11px] text-slate-400 mb-1 font-mono">
-                          <span>{p.category}</span>
-                          {isOutOfStock ? (
-                            <span className="text-rose-500 font-semibold">Out of stock</span>
-                          ) : (
-                            <span className="text-emerald-600 font-medium">In stock</span>
-                          )}
-                        </div>
-
-                        <h3 className="text-xs sm:text-sm font-semibold text-slate-900 dark:text-white truncate" title={p.name}>
-                          {p.name}
-                        </h3>
-
-                        <div className="mt-2 flex items-baseline gap-2 font-mono">
-                          <span className="text-sm font-bold text-slate-900 dark:text-white">
-                            {formatPrice(p.price, currency)}
-                          </span>
-                          {hasDiscount && originalPrice && (
-                            <span className="text-xs text-slate-400 line-through">
-                              {formatPrice(originalPrice, currency)}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="p-3.5 sm:p-4 pt-3 mt-3 border-t border-slate-100 dark:border-slate-800/80 flex items-center gap-2">
-                      <button
-                        onClick={() => onAddToCart(p, 1, {})}
-                        disabled={isOutOfStock}
-                        className={`flex-1 h-8.5 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors cursor-pointer ${
-                          isOutOfStock
-                            ? 'bg-slate-100 dark:bg-slate-800 text-slate-400 cursor-not-allowed'
-                            : isInCart
-                            ? 'bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-900'
-                            : 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-xs'
-                        }`}
-                      >
-                        <ShoppingCart className="h-3.5 w-3.5" />
-                        <span>{isInCart ? 'Add Another' : 'Add to Cart'}</span>
-                      </button>
-
-                      {setCurrentTab && (
-                        <button
-                          onClick={() => setCurrentTab('store')}
-                          className="h-8.5 px-3 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors cursor-pointer"
-                        >
-                          View
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
+              {wishlistProducts.map((p) => (
+                <ProductCard
+                  key={p.id}
+                  product={p}
+                  onSelectProduct={() => setCurrentTab && setCurrentTab('store')}
+                  onAddToCart={onAddToCart}
+                  cart={cart}
+                  wishlist={wishlistProducts.map((wp) => wp.id)}
+                  onToggleWishlist={onToggleWishlist}
+                  currency={currency}
+                  className="h-full"
+                />
+              ))}
             </div>
           ) : (
             <div className="space-y-3">

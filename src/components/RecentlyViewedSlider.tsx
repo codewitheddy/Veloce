@@ -20,6 +20,7 @@ import {
 import { Product, CartItem } from '../types';
 import { CurrencyType, formatPrice } from '../lib/currency';
 import LazyImage from './LazyImage';
+import ProductCard from './ProductCard';
 import { getProductDiscountInfo } from '../utils/productUtils';
 
 interface RecentlyViewedSliderProps {
@@ -274,148 +275,18 @@ export const RecentlyViewedSlider: React.FC<RecentlyViewedSliderProps> = ({
         className="flex items-stretch gap-4 sm:gap-5 overflow-x-auto pb-4 pt-1 px-1 scroll-smooth snap-x snap-mandatory scrollbar-none"
         style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
       >
-        {displayedProducts.map((product) => {
-          const isOutOfStock =
-            product.type === 'physical' &&
-            product.stock !== null &&
-            product.stock !== undefined &&
-            product.stock <= 0;
-          const isAdded = addedProductIds.has(product.id);
-          const isInCart = Boolean(
-            cart &&
-            cart.some(
-              (item) => item.product?.id === product.id || (item as any).productId === product.id
-            )
-          );
-          const showViewCart = isInCart && !isAdded;
-          const { hasDiscount, originalPrice: origPrice, discountPercent } = getProductDiscountInfo(product);
-
-          return (
-            <div
-              key={product.id}
-              onClick={() => onSelectProduct?.(product)}
-              className="group shrink-0 w-[260px] sm:w-[280px] bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/85 dark:border-slate-800/90 overflow-hidden hover:border-indigo-400 dark:hover:border-indigo-600 hover:shadow-lg hover:-translate-y-0.5 transition-all duration-300 cursor-pointer snap-start flex flex-col justify-between"
-            >
-              <div>
-                {/* Product Image Box (Edge-to-Edge Flush) */}
-                <div className="relative aspect-square w-full overflow-hidden bg-slate-50 dark:bg-slate-950/80 border-b border-slate-100 dark:border-slate-800/80">
-                  <LazyImage
-                    src={product.imageUrl || product.images?.[0] || ''}
-                    alt={product.name}
-                    className="w-full h-full object-cover object-center group-hover:scale-105 transition-transform duration-500"
-                  />
-
-                  {/* Badges Overlay */}
-                  <div className="absolute top-2.5 left-2.5 flex flex-col gap-1 z-10">
-                    {hasDiscount && (
-                      <span className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-md text-[9.5px] font-mono font-bold bg-rose-600 text-white shadow-xs">
-                        <Tag className="w-2.5 h-2.5" />
-                        <span>-{discountPercent}%</span>
-                      </span>
-                    )}
-                    {product.type && product.type !== 'physical' && (
-                      <span className="px-1.5 py-0.5 rounded text-[8.5px] font-mono font-bold bg-white/95 dark:bg-slate-900/95 text-slate-700 dark:text-slate-300 uppercase shadow-xs border border-slate-200/50 dark:border-slate-800/50 w-fit">
-                        {product.type}
-                      </span>
-                    )}
-                  </div>
-
-                  {product.category && (
-                    <span className="absolute bottom-2.5 left-2.5 px-2 py-0.5 rounded-md text-[9px] font-semibold bg-white/90 dark:bg-slate-900/90 text-slate-700 dark:text-slate-300 backdrop-blur-xs border border-slate-200/60 dark:border-slate-700/60 truncate max-w-[150px]">
-                      {product.category}
-                    </span>
-                  )}
-                </div>
-
-                {/* Title & Ratings */}
-                <div className="p-3.5 sm:p-4 pb-0">
-                  <h4
-                    className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white line-clamp-2 leading-snug group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors"
-                    title={product.name}
-                  >
-                    {product.name}
-                  </h4>
-
-                  {/* Rating line */}
-                  <div className="flex items-center gap-1.5 mt-2">
-                    <div className="flex items-center text-amber-400">
-                      <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />
-                      <span className="text-xs font-bold text-slate-700 dark:text-slate-300 ml-1 font-mono">
-                        {(product.rating || 4.8).toFixed(1)}
-                      </span>
-                    </div>
-                    <span className="text-[10.5px] text-slate-400 dark:text-slate-500 font-mono">
-                      ({product.reviewsCount || product.reviews?.length || 12})
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Price & Quick Add Button */}
-              <div className="p-3.5 sm:p-4 pt-3 mt-3.5 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between gap-2">
-                <div className="flex flex-col">
-                  {hasDiscount && origPrice && (
-                    <span className="line-through text-[10.5px] text-slate-400 dark:text-slate-500 font-mono leading-none mb-0.5">
-                      {formatPrice(origPrice, currency)}
-                    </span>
-                  )}
-                  <span className="text-xs sm:text-sm font-bold text-slate-950 dark:text-white font-mono">
-                    {formatPrice(product.price, currency)}
-                  </span>
-                </div>
-
-                {isOutOfStock ? (
-                  <button
-                    type="button"
-                    disabled
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500 cursor-not-allowed border border-slate-200/60 dark:border-slate-700/60 shadow-none whitespace-nowrap"
-                    title="This item is currently out of stock"
-                  >
-                    <ShoppingBag className="w-3.5 h-3.5 opacity-50" />
-                    <span>Out of Stock</span>
-                  </button>
-                ) : isAdded ? (
-                  <button
-                    type="button"
-                    disabled
-                    className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold bg-emerald-600 text-white ring-2 ring-emerald-400/50 animate-pulse shadow-xs whitespace-nowrap"
-                    title="Added to cart!"
-                  >
-                    <Check className="w-3.5 h-3.5 stroke-[2.5]" />
-                    <span>Added</span>
-                  </button>
-                ) : showViewCart ? (
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      if (onViewCart) {
-                        onViewCart();
-                      } else if (onSelectProduct) {
-                        onSelectProduct(product);
-                      }
-                    }}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-700 dark:bg-emerald-500 dark:hover:bg-emerald-600 text-white ring-1 ring-emerald-400/40 shadow-xs cursor-pointer active:scale-95 transition-all whitespace-nowrap"
-                    title="View item in your cart"
-                  >
-                    <ShoppingBag className="w-3.5 h-3.5" />
-                    <span>View Cart &rarr;</span>
-                  </button>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={(e) => handleQuickAdd(e, product)}
-                    className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all duration-200 shadow-xs cursor-pointer active:scale-95 bg-slate-900 hover:bg-indigo-600 text-white dark:bg-white dark:text-slate-900 dark:hover:bg-indigo-400 dark:hover:text-white whitespace-nowrap"
-                    title="Add item to cart"
-                  >
-                    <ShoppingBag className="w-3.5 h-3.5" />
-                    <span>Add</span>
-                  </button>
-                )}
-              </div>
-            </div>
-          );
-        })}
+        {displayedProducts.map((product) => (
+          <ProductCard
+            key={product.id}
+            product={product}
+            onSelectProduct={onSelectProduct}
+            onAddToCart={onAddToCart}
+            cart={cart}
+            onViewCart={onViewCart}
+            currency={currency}
+            className="shrink-0 w-[260px] sm:w-[280px] snap-start"
+          />
+        ))}
       </div>
     </section>
   );
