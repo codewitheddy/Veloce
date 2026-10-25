@@ -551,5 +551,55 @@ describe('Step 3: Frontend Reviews API, Aggregate Summary, and Order Enrichment'
       assert.strictEqual(sumData.average, 3.5);
       assert.strictEqual(sumData.countPerStar[4], 2);
     });
+
+    it('Flexible review eligibility resolves order items by product_id with orderId and automatically backfills legacy JSON orders', async () => {
+      // 1. Resolve item_1_2 on delivered ord_1 using product_id instead of exact item ID
+      const resByProd = await fetch(`${serverUrl}/api/reviews/eligibility/prod_beta?orderId=ord_1`, {
+        headers: { Authorization: `Bearer ${testUserToken}` },
+      });
+      assert.strictEqual(resByProd.status, 200);
+      const prodData = await resByProd.json();
+      assert.strictEqual(prodData.success, true);
+      assert.strictEqual(prodData.eligible, true);
+      assert.strictEqual(prodData.item.id, 'item_1_2');
+      assert.strictEqual(prodData.item.product_id, 'prod_beta');
+
+      // 2. Insert a legacy completed order with items only in JSON (no order_items rows)
+      await testPool.query(`
+        INSERT INTO orders (id, customerName, customerEmail, total, status, date, deliveryConfirmed, items, created_at)
+        VALUES ('ord_legacy', 'Alice Wambui', 'step3_customer@example.com', 1500, 'completed', '2026-10-18', 1, ?, NOW())
+      `, [JSON.stringify([{ id: 'leg_item_1', productId: 'prod_beta', name: 'Beta Sport Cap', price: 1500, quantity: 1 }])]);
+
+      // 3. Verify eligibility check automatically backfills order_items and returns eligible = true
+      const resLegacy = await fetch(`${serverUrl}/api/reviews/eligibility/leg_item_1?orderId=ord_legacy`, {
+        headers: { Authorization: `Bearer ${testUserToken}` },
+      });
+      assert.strictEqual(resLegacy.status, 200);
+      const legacyData = await resLegacy.json();
+      assert.strictEqual(legacyData.success, true);
+      assert.strictEqual(legacyData.eligible, true);
+      assert.ok(legacyData.item.id);
+      assert.strictEqual(legacyData.item.product_id, 'prod_beta');
+
+      // 4. Submit review for this backfilled order item
+      const submitLegacyRes = await fetch(`${serverUrl}/api/reviews`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${testUserToken}`,
+        },
+        body: JSON.stringify({
+          orderItemId: legacyData.item.id,
+          orderId: 'ord_legacy',
+          rating: 5,
+          title: 'Outstanding legacy cap',
+          body: 'Love this cap, great fit and durable stitching.',
+        }),
+      });
+      assert.strictEqual(submitLegacyRes.status, 201);
+      const submitLegacyData = await submitLegacyRes.json();
+      assert.strictEqual(submitLegacyData.success, true);
+      assert.strictEqual(submitLegacyData.review.rating, 5);
+    });
   });
 });

@@ -1757,7 +1757,7 @@ export default function UserAccount({
                               if (hasRev) {
                                 return (
                                   <button
-                                    onClick={() => handleOpenReview(order.id, singleItem.id || singleItem.productId)}
+                                    onClick={() => handleOpenReview(order.id, singleItem.id || (singleItem as any).orderItemId || singleItem.productId)}
                                     className="inline-flex h-8 items-center gap-1.5 rounded-xl bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400 border border-amber-200/60 dark:border-amber-900/40 px-2.5 text-xs font-semibold hover:bg-amber-100/60 transition-colors cursor-pointer whitespace-nowrap min-h-[32px]"
                                     title="Edit your review"
                                   >
@@ -1768,7 +1768,7 @@ export default function UserAccount({
                               }
                               return (
                                 <button
-                                  onClick={() => handleOpenReview(order.id, singleItem.id || singleItem.productId)}
+                                  onClick={() => handleOpenReview(order.id, singleItem.id || (singleItem as any).orderItemId || singleItem.productId)}
                                   className="inline-flex h-8 items-center gap-1.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white px-2.5 text-xs font-bold transition-all shadow-2xs cursor-pointer whitespace-nowrap min-h-[32px]"
                                   title="Write a verified review"
                                 >
@@ -1985,7 +1985,7 @@ export default function UserAccount({
                                       hasRev ? (
                                         <button
                                           type="button"
-                                          onClick={() => handleOpenReview(order.id, item.id || item.productId)}
+                                          onClick={() => handleOpenReview(order.id, item.id || (item as any).orderItemId || item.productId)}
                                           className="inline-flex items-center gap-1 text-[11px] font-semibold text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900/60 px-2.5 py-1 rounded-lg hover:bg-amber-100 transition-colors cursor-pointer"
                                           title="Edit your review for this product"
                                         >
@@ -1995,7 +1995,7 @@ export default function UserAccount({
                                       ) : (
                                         <button
                                           type="button"
-                                          onClick={() => handleOpenReview(order.id, item.id || item.productId)}
+                                          onClick={() => handleOpenReview(order.id, item.id || (item as any).orderItemId || item.productId)}
                                           className="inline-flex items-center gap-1 text-[11px] font-bold text-white bg-amber-500 hover:bg-amber-600 px-2.5 py-1 rounded-lg transition-colors shadow-2xs cursor-pointer"
                                           title="Write review for this product"
                                         >
@@ -2219,7 +2219,7 @@ export default function UserAccount({
                               if (hasRev) {
                                 return (
                                   <button
-                                    onClick={() => handleOpenReview(order.id, singleItem.id || singleItem.productId)}
+                                    onClick={() => handleOpenReview(order.id, singleItem.id || (singleItem as any).orderItemId || singleItem.productId)}
                                     className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400 border border-amber-200/60 dark:border-amber-900/40 px-3 text-xs font-semibold hover:bg-amber-100/60 transition-colors cursor-pointer"
                                     title="Edit your review"
                                   >
@@ -2230,7 +2230,7 @@ export default function UserAccount({
                               }
                               return (
                                 <button
-                                  onClick={() => handleOpenReview(order.id, singleItem.id || singleItem.productId)}
+                                  onClick={() => handleOpenReview(order.id, singleItem.id || (singleItem as any).orderItemId || singleItem.productId)}
                                   className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-amber-500 hover:bg-amber-600 text-white px-3 text-xs font-bold transition-all shadow-2xs cursor-pointer"
                                   title="Write a verified review"
                                 >

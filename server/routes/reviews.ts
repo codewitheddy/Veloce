@@ -32,6 +32,7 @@ const reviewRateLimiter = createRateLimiter({
 // Validation Schemas
 const CreateReviewSchema = z.object({
   orderItemId: z.string().min(1, 'Order Item ID is required.'),
+  orderId: z.string().optional(),
   rating: z.number().int().min(1, 'Rating must be between 1 and 5.').max(5, 'Rating must be between 1 and 5.'),
   title: z.string().max(120, 'Title cannot exceed 120 characters.').optional(),
   body: z.string().min(10, 'Review must be at least 10 characters long.').max(2000, 'Review cannot exceed 2000 characters.'),
@@ -77,10 +78,12 @@ router.get(['/eligibility/:orderItemId', '/order-item/:orderItemId/eligibility']
   try {
     const user = req.user!;
     const { orderItemId } = req.params;
+    const orderId = (req.query.orderId as string) || (req.query.order_id as string) || undefined;
 
     const result = await checkMysqlReviewEligibility(
-      { id: user.id, email: user.email },
-      orderItemId
+      user,
+      orderItemId,
+      orderId
     );
 
     res.json({
@@ -98,13 +101,15 @@ router.post('/check-eligibility', requireAuth, async (req: Request, res: Respons
   try {
     const user = req.user!;
     const orderItemId = req.body?.orderItemId;
+    const orderId = req.body?.orderId;
     if (!orderItemId) {
       return res.status(400).json({ success: false, error: 'orderItemId is required' });
     }
 
     const result = await checkMysqlReviewEligibility(
-      { id: user.id, email: user.email },
-      orderItemId
+      user,
+      orderItemId,
+      orderId
     );
 
     res.json({
@@ -124,12 +129,13 @@ router.post('/check-eligibility', requireAuth, async (req: Request, res: Respons
 router.post('/', requireAuth, reviewRateLimiter, validateBody(CreateReviewSchema), async (req: Request, res: Response) => {
   try {
     const user = req.user!;
-    const { orderItemId, rating, title, body } = req.body;
+    const { orderItemId, orderId, rating, title, body } = req.body;
 
     const review = await createMysqlReview({
       userId: user.id,
       userEmail: user.email,
       orderItemId,
+      orderId,
       rating,
       title,
       body,

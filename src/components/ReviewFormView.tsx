@@ -89,31 +89,37 @@ export default function ReviewFormView({
       }
 
       try {
-        const res = await fetch(`/api/reviews/eligibility/${encodeURIComponent(orderItemId)}`, {
+        const queryParams = new URLSearchParams();
+        if (orderId) queryParams.set('orderId', orderId);
+        const url = `/api/reviews/eligibility/${encodeURIComponent(orderItemId)}${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
+
+        const res = await fetch(url, {
           headers: getAuthHeaders(),
         });
-        const data = await res.json();
+        const data = await res.json().catch(() => null);
 
         if (!isMounted) return;
 
-        if (!res.ok || !data.success) {
+        if (!data || !res.ok || !data.success) {
           setCanSubmit(false);
-          setIneligibilityReason(data.error || data.reason || 'Order item not eligible for review.');
+          setIneligibilityReason(data?.error || data?.message || data?.reason || `HTTP ${res.status}: Unable to verify eligibility`);
           setIsLoading(false);
           setEligibilityChecked(true);
           return;
         }
 
         const item = data.item;
-        setItemDetails({
-          id: item.id,
-          orderId: item.orderId || orderId,
-          productId: item.productId,
-          name: item.productName || item.name || 'Product',
-          price: Number(item.price || 0),
-          quantity: Number(item.quantity || 1),
-          imageUrl: item.imageUrl || item.image,
-        });
+        if (item) {
+          setItemDetails({
+            id: item.id,
+            orderId: item.order_id || item.orderId || orderId,
+            productId: item.product_id || item.productId,
+            name: item.name || item.product_name || item.catalogProductName || 'Product',
+            price: Number(item.price || 0),
+            quantity: Number(item.quantity || 1),
+            imageUrl: item.imageUrl || item.image,
+          });
+        }
 
         // Edge Case: Customer opens email link after already reviewing
         if (data.existingReview) {
@@ -128,12 +134,12 @@ export default function ReviewFormView({
           setCanSubmit(true);
         } else {
           setCanSubmit(false);
-          setIneligibilityReason(data.reason || 'This order item is not yet eligible for review.');
+          setIneligibilityReason(data.message || data.reason || 'This order item is not yet eligible for review.');
         }
-      } catch (err) {
+      } catch (err: any) {
         if (!isMounted) return;
         setCanSubmit(false);
-        setIneligibilityReason('Unable to verify order eligibility. Please check your connection.');
+        setIneligibilityReason(err?.message || 'Unable to verify order eligibility. Please check your connection.');
       } finally {
         if (isMounted) {
           setIsLoading(false);
@@ -238,7 +244,8 @@ export default function ReviewFormView({
             body: trimmedBody,
           }
         : {
-            orderItemId,
+            orderItemId: itemDetails?.id || orderItemId,
+            orderId: itemDetails?.orderId || orderId,
             rating,
             title: title.trim(),
             body: trimmedBody,

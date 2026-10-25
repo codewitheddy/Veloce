@@ -4122,18 +4122,166 @@ export async function getMysqlReviewsByProduct(
 /**
  * Checks if a customer is eligible to review an order item
  */
-export async function checkMysqlReviewEligibility(user: { id: string; email: string }, orderItemId: string) {
+export async function checkMysqlReviewEligibility(
+  user: { id: string; email: string; role?: string; is_staff?: boolean; is_superuser?: boolean },
+  orderItemId: string,
+  orderIdParam?: string
+) {
   const pool = await getDbPool();
-  const cleanItemId = String(orderItemId).trim();
+  const cleanItemId = String(orderItemId || '').trim();
+  let cleanOrderId = String(orderIdParam || '').trim();
 
-  // 1. Fetch order item
-  const [oiRows]: any = await pool.query(
-    `SELECT oi.*, p.name as catalogProductName
-     FROM order_items oi
-     LEFT JOIN products p ON p.id = oi.product_id
-     WHERE oi.id = ? LIMIT 1`,
-    [cleanItemId]
-  );
+  // If orderIdParam was not passed directly, see if orderItemId is formatted as oi_<orderId>_<suffix>
+  if (!cleanOrderId && cleanItemId.startsWith('oi_')) {
+    const parts = cleanItemId.split('_');
+    if (parts.length >= 3) {
+      cleanOrderId = parts.slice(1, -1).join('_');
+    }
+  }
+
+  // 1. Fetch order item:
+  // Step 1a: Try direct match on oi.id
+  let oiRows: any[] = [];
+  if (cleanItemId) {
+    const [rows]: any = await pool.query(
+      `SELECT oi.*, p.name as catalogProductName
+       FROM order_items oi
+       LEFT JOIN products p ON p.id = oi.product_id
+       WHERE oi.id = ? LIMIT 1`,
+      [cleanItemId]
+    );
+    oiRows = rows || [];
+  }
+
+  // Step 1b: If not found and orderId is known, try finding inside order_items by order_id
+  if (oiRows.length === 0 && cleanOrderId) {
+    const [rows]: any = await pool.query(
+      `SELECT oi.*, p.name as catalogProductName
+       FROM order_items oi
+       LEFT JOIN products p ON p.id = oi.product_id
+       WHERE oi.order_id = ?
+         AND (
+           oi.id = ?
+           OR oi.product_id = ?
+           OR oi.id LIKE ?
+         )
+       LIMIT 1`,
+      [cleanOrderId, cleanItemId, cleanItemId, `%_${cleanItemId}`]
+    );
+    oiRows = rows || [];
+  }
+
+  // Step 1c: If still not found and cleanOrderId is known, check if order_items has any rows for this order at all.
+  // If order_items has 0 rows for this order, or the order exists in orders table, backfill from orders.items!
+  if (cleanOrderId) {
+    const [orderCheck]: any = await pool.query(
+      `SELECT id, customerEmail, customerName, status, deliveryConfirmed, deliveredAt, items
+       FROM orders
+       WHERE id = ? LIMIT 1`,
+      [cleanOrderId]
+    );
+
+    if (orderCheck && orderCheck.length > 0) {
+      const parentOrder = orderCheck[0];
+
+      // If oiRows is still 0, check if we need to sync order_items from parentOrder.items
+      if (oiRows.length === 0) {
+        let rawItems: any[] = [];
+        try {
+          rawItems = Array.isArray(parentOrder.items)
+            ? parentOrder.items
+            : JSON.parse(parentOrder.items || '[]');
+        } catch {
+          rawItems = [];
+        }
+
+        if (rawItems.length > 0) {
+          // Sync items into order_items
+          for (let idx = 0; idx < rawItems.length; idx++) {
+            const it = rawItems[idx];
+            const rawId = it.id ? String(it.id).trim() : '';
+            const deterministicId = rawId && rawId !== 'undefined' && rawId !== '[object Object]'
+              ? (rawId.startsWith('oi_') ? rawId : `oi_${parentOrder.id}_${rawId}`)
+              : `oi_${parentOrder.id}_${idx}`;
+
+            const rawProductId = String(it.productId || it.product_id || it.product || it.id || '').trim();
+            let matchedProductId: string | null = null;
+            if (rawProductId) {
+              const [pRow]: any = await pool.query('SELECT id FROM products WHERE id = ? LIMIT 1', [rawProductId]);
+              if (pRow && pRow.length > 0) {
+                matchedProductId = pRow[0].id;
+              }
+            }
+
+            const itemName = String(it.name || it.product_name || it.title || 'Item').trim();
+            const itemPrice = typeof it.price === 'number'
+              ? it.price
+              : parseFloat(it.unit_price || it.price || '0') || 0;
+            const itemQty = Math.max(1, parseInt(String(it.quantity || 1), 10) || 1);
+            const variations = it.selectedVariations || it.selected_variations
+              ? JSON.stringify(it.selectedVariations || it.selected_variations)
+              : null;
+
+            await pool.query(
+              `INSERT INTO order_items (id, order_id, product_id, name, price, quantity, selected_variations, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, NOW())
+               ON DUPLICATE KEY UPDATE
+                 product_id = VALUES(product_id),
+                 name = VALUES(name),
+                 price = VALUES(price),
+                 quantity = VALUES(quantity),
+                 selected_variations = VALUES(selected_variations)`,
+              [deterministicId, parentOrder.id, matchedProductId, itemName, itemPrice, itemQty, variations]
+            );
+          }
+
+          // Now re-query
+          const [retryRows]: any = await pool.query(
+            `SELECT oi.*, p.name as catalogProductName
+             FROM order_items oi
+             LEFT JOIN products p ON p.id = oi.product_id
+             WHERE oi.order_id = ?
+               AND (
+                 oi.id = ?
+                 OR oi.product_id = ?
+                 OR oi.id LIKE ?
+               )
+             LIMIT 1`,
+            [cleanOrderId, cleanItemId, cleanItemId, `%_${cleanItemId}`]
+          );
+          oiRows = retryRows || [];
+
+          // If still 0 and the order has exactly 1 item, use that single item!
+          if (oiRows.length === 0) {
+            const [singleRows]: any = await pool.query(
+              `SELECT oi.*, p.name as catalogProductName
+               FROM order_items oi
+               LEFT JOIN products p ON p.id = oi.product_id
+               WHERE oi.order_id = ? LIMIT 2`,
+              [cleanOrderId]
+            );
+            if (singleRows && singleRows.length === 1) {
+              oiRows = singleRows;
+            }
+          }
+        }
+      }
+    }
+  }
+
+  // Step 1d: If still no rows found, check if cleanItemId is a productId or single item of order
+  if (oiRows.length === 0 && cleanOrderId) {
+    const [fallbackRows]: any = await pool.query(
+      `SELECT oi.*, p.name as catalogProductName
+       FROM order_items oi
+       LEFT JOIN products p ON p.id = oi.product_id
+       WHERE oi.order_id = ? LIMIT 1`,
+      [cleanOrderId]
+    );
+    if (fallbackRows && fallbackRows.length === 1) {
+      oiRows = fallbackRows;
+    }
+  }
 
   if (!oiRows || oiRows.length === 0) {
     return {
@@ -4145,6 +4293,7 @@ export async function checkMysqlReviewEligibility(user: { id: string; email: str
 
   const orderItem = oiRows[0];
   const orderId = orderItem.order_id;
+  const actualOrderItemId = orderItem.id;
 
   // 2. Fetch order
   const [orderRows]: any = await pool.query(
@@ -4167,7 +4316,14 @@ export async function checkMysqlReviewEligibility(user: { id: string; email: str
   const userEmail = (user.email || '').trim().toLowerCase();
 
   // 3. Ownership Verification
-  if (orderEmail !== userEmail) {
+  const isOwner = (
+    (orderEmail !== '' && orderEmail === userEmail) ||
+    user.role === 'admin' ||
+    Boolean(user.is_staff) ||
+    Boolean(user.is_superuser)
+  );
+
+  if (!isOwner) {
     return {
       eligible: false,
       reason: 'FORBIDDEN_NOT_OWNER',
@@ -4186,7 +4342,14 @@ export async function checkMysqlReviewEligibility(user: { id: string; email: str
   }
 
   // 5. Must be delivered/completed
-  const isDelivered = status === 'completed' || Boolean(order.deliveryConfirmed) || Boolean(order.deliveredAt);
+  const isDelivered = (
+    status === 'completed' ||
+    status === 'delivered' ||
+    order.deliveryConfirmed === true ||
+    order.deliveryConfirmed === 1 ||
+    String(order.deliveryConfirmed) === '1' ||
+    Boolean(order.deliveredAt)
+  );
   if (!isDelivered) {
     return {
       eligible: false,
@@ -4195,10 +4358,13 @@ export async function checkMysqlReviewEligibility(user: { id: string; email: str
     };
   }
 
-  // 6. Check if already reviewed
+  // 6. Check if already reviewed (check both actualOrderItemId and cleanItemId)
   const [revRows]: any = await pool.query(
-    `SELECT id, rating, title, body, status, created_at FROM reviews WHERE order_item_id = ? LIMIT 1`,
-    [cleanItemId]
+    `SELECT id, rating, title, body, status, created_at 
+     FROM reviews 
+     WHERE order_item_id = ? OR order_item_id = ? 
+     LIMIT 1`,
+    [actualOrderItemId, cleanItemId]
   );
 
   if (revRows && revRows.length > 0) {
@@ -4208,6 +4374,7 @@ export async function checkMysqlReviewEligibility(user: { id: string; email: str
       message: 'You have already reviewed this item.',
       existingReview: revRows[0],
       orderItem,
+      order,
     };
   }
 
@@ -4227,6 +4394,7 @@ export async function createMysqlReview(data: {
   userId: string;
   userEmail: string;
   orderItemId: string;
+  orderId?: string;
   rating: number;
   title?: string;
   body: string;
@@ -4246,10 +4414,11 @@ export async function createMysqlReview(data: {
     throw new Error('Review statement cannot exceed 2000 characters.');
   }
 
-  // Check eligibility
+  // Check eligibility (passing optional orderId for reliable resolution)
   const eligibility = await checkMysqlReviewEligibility(
     { id: data.userId, email: data.userEmail },
-    data.orderItemId
+    data.orderItemId,
+    data.orderId
   );
 
   if (!eligibility.eligible) {
@@ -4275,7 +4444,7 @@ export async function createMysqlReview(data: {
     const [insertResult]: any = await conn.query(
       `INSERT INTO reviews (product_id, user_id, order_item_id, rating, title, body, status, created_at)
        VALUES (?, ?, ?, ?, ?, ?, 'published', NOW())`,
-      [productId, data.userId, data.orderItemId, rating, cleanTitle, cleanBody]
+      [productId, data.userId, orderItem.id, rating, cleanTitle, cleanBody]
     );
 
     const newReviewId = insertResult.insertId;
@@ -4289,7 +4458,7 @@ export async function createMysqlReview(data: {
       id: String(newReviewId),
       productId,
       userId: data.userId,
-      orderItemId: data.orderItemId,
+      orderItemId: orderItem.id,
       rating,
       title: cleanTitle,
       body: cleanBody,
@@ -4631,16 +4800,26 @@ export async function enrichOrdersWithReviewEligibility(orders: any[]): Promise<
         : typeof order.items === 'string'
         ? (() => { try { return JSON.parse(order.items); } catch { return []; } })()
         : [];
-      enrichedItems = rawItems.map((item: any) => ({
-        ...item,
-        productId: item.productId || item.product_id || item.id,
-        name: item.name || item.product_name,
-        canReview: false,
-        hasReviewed: false,
-        reviewId: null,
-        rating: null,
-        review: null,
-      }));
+      enrichedItems = rawItems.map((item: any, idx: number) => {
+        const prodId = item.productId || item.product_id || item.id;
+        const canReview = Boolean(isDelivered && prodId);
+        const rawItemId = item.id ? String(item.id).trim() : '';
+        const effectiveId = rawItemId && rawItemId !== 'undefined' && rawItemId !== '[object Object]'
+          ? (rawItemId.startsWith('oi_') ? rawItemId : `oi_${oid}_${rawItemId}`)
+          : `oi_${oid}_${idx}`;
+
+        return {
+          ...item,
+          id: effectiveId,
+          productId: prodId,
+          name: item.name || item.product_name,
+          canReview,
+          hasReviewed: false,
+          reviewId: null,
+          rating: null,
+          review: null,
+        };
+      });
     }
 
     const unreviewedCount = isDelivered
