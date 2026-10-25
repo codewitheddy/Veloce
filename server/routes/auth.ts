@@ -789,14 +789,22 @@ const resetPasswordRateLimiter = createRateLimiter({
 async function handleForgotPassword(req: Request, res: Response) {
   try {
     const { email } = req.body || {};
-    const protocol = req.secure || req.headers['x-forwarded-proto'] === 'https' ? 'https' : 'http';
-    const hostHeader = (req.headers['x-forwarded-host'] as string) || req.get('host') || '';
-    const cleanHost = hostHeader.split(',')[0].trim();
-    const isLocalhostHost = !cleanHost || cleanHost.includes('127.0.0.1') || cleanHost.includes('localhost');
-    const configuredUrl = process.env.FRONTEND_URL || process.env.APP_URL;
-    const originUrl = isLocalhostHost && configuredUrl && !configuredUrl.includes('localhost')
-      ? configuredUrl.replace(/\/+$/, '')
-      : `${protocol}://${cleanHost || 'ropenix.co.ke'}`;
+    const rawOrigin = (req.headers.origin as string) || '';
+    let originUrl: string;
+    if (rawOrigin && typeof rawOrigin === 'string' && rawOrigin.startsWith('http')) {
+      originUrl = rawOrigin.trim();
+    } else {
+      const protocol = req.secure || req.headers['x-forwarded-proto'] === 'https' ? 'https' : 'http';
+      const hostHeader = (req.headers['x-forwarded-host'] as string) || req.get('host') || '';
+      const cleanHost = hostHeader.split(',')[0].trim();
+      const isLocalhostHost = !cleanHost || cleanHost.includes('127.0.0.1') || cleanHost.includes('localhost');
+      if (isLocalhostHost) {
+        originUrl = process.env.APP_URL || (cleanHost ? `${protocol}://${cleanHost}` : 'http://localhost:3000');
+      } else {
+        originUrl = process.env.FRONTEND_URL || (cleanHost ? `${protocol}://${cleanHost}` : 'https://ropenix.co.ke');
+      }
+    }
+    originUrl = originUrl.replace(/\/+$/, '');
 
     console.log(`[Auth /forgot-password] 📬 Processing forgot password request for <${email}> (Origin: ${originUrl}, IP: ${req.ip || 'unknown'})`);
     const result = await requestPasswordReset(email, String(req.ip || ''), originUrl);

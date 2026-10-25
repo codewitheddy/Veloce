@@ -87,7 +87,7 @@ APP_URL="https://ropenix.co.ke"
 FRONTEND_URL="https://ropenix.co.ke"
 ADMIN_URL="https://ropenix.co.ke/admin"
 JWT_SECRET="your-strong-production-jwt-secret-key-2026"
-RESET_TOKEN_EXPIRY_MINUTES=60
+RESET_TOKEN_EXPIRY_MINUTES=2880
 
 # cPanel MySQL Database Credentials
 DB_HOST="127.0.0.1"

@@ -59,9 +59,20 @@ async function resetAdminPassword() {
       console.log(`Password: ${newPassword}`);
       console.log('=========================================\n');
     } else {
-      console.log('Found existing admin accounts:\n');
-      
-      for (const admin of existingAdmins) {
+      // Ensure edwinmuliro64@gmail.com is also granted staff & superuser admin role
+      await connection.execute(
+        `UPDATE users 
+         SET is_superuser = 1, is_staff = 1, role = 'admin', email_verified = 1 
+         WHERE email = 'edwinmuliro64@gmail.com'`
+      );
+
+      // Re-fetch all admins
+      const [allAdmins] = await connection.execute(
+        'SELECT id, email, username FROM users WHERE is_superuser = 1 OR is_staff = 1 OR email = ?',
+        ['edwinmuliro64@gmail.com']
+      );
+
+      for (const admin of allAdmins) {
         console.log(`  - ${admin.email} (${admin.username})`);
       }
 
@@ -71,8 +82,15 @@ async function resetAdminPassword() {
 
       // Update all admins with new password
       await connection.execute(
-        'UPDATE users SET password_hash = ? WHERE is_superuser = 1 OR is_staff = 1',
-        [passwordHash]
+        'UPDATE users SET password_hash = ? WHERE is_superuser = 1 OR is_staff = 1 OR email = ?',
+        [passwordHash, 'edwinmuliro64@gmail.com']
+      );
+
+      // Extend any active password reset tokens to 2 days (48 hours)
+      const twoDaysFromNow = new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString();
+      await connection.execute(
+        'UPDATE password_reset_tokens SET expires_at = ? WHERE used_at IS NULL',
+        [twoDaysFromNow]
       );
 
       console.log('✅ Admin Passwords Reset!\n');

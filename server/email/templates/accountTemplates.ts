@@ -114,7 +114,11 @@ export function renderPasswordResetEmail(data: {
   expiresInMinutes?: number;
 }): RenderedEmail {
   const name = data.name || 'Customer';
-  const minutes = data.expiresInMinutes || 15;
+  const minutes = data.expiresInMinutes || 2880;
+  const expiryText = minutes >= 1440 
+    ? `${Math.round(minutes / 1440)} days (${Math.round(minutes / 60)} hours)`
+    : (minutes >= 60 ? `${Math.round(minutes / 60)} hours` : `${minutes} minutes`);
+
   const subject = data.code 
     ? `Password Reset Code: ${data.code} - Ropenix Collections`
     : 'Reset your password - Ropenix Collections';
@@ -140,7 +144,7 @@ export function renderPasswordResetEmail(data: {
       ${renderEmailButton('Reset My Password', data.resetUrl, 'amber')}
     </div>
     <div style="background-color: #fffbeb; border: 1px solid #fde68a; border-radius: 8px; padding: 14px; margin: 20px 0; font-size: 12px; color: #92400e;">
-      ⚠️ <strong>Security Notice:</strong> This password reset code and link are valid for <strong>${minutes} minutes</strong> and can only be used once.<br />
+      ⚠️ <strong>Security Notice:</strong> This password reset code and link are valid for <strong>${expiryText}</strong> and can only be used once.<br />
       If you did not request a password reset, please ignore this email.
     </div>
     <p style="font-size: 12px; color: #64748b;">
@@ -156,7 +160,7 @@ export function renderPasswordResetEmail(data: {
     bodyHtml,
   });
 
-  const text = `Hello ${name},\n\nWe received a request to reset your Ropenix Collections password.${data.code ? `\n\nYour reset verification code is: ${data.code}` : ''}\n\nReset your password here:\n${data.resetUrl}\n\nThis link is valid for ${minutes} minutes.\nIf you did not request this, please ignore this message.`;
+  const text = `Hello ${name},\n\nWe received a request to reset your Ropenix Collections password.${data.code ? `\n\nYour reset verification code is: ${data.code}` : ''}\n\nReset your password here:\n${data.resetUrl}\n\nThis link is valid for ${expiryText}.\nIf you did not request this, please ignore this message.`;
 
   return { subject, html, text };
 }

@@ -61,13 +61,14 @@ export function hashPassword(password: string): string {
 
 /**
  * Token Expiry Duration in minutes (configurable via RESET_TOKEN_EXPIRY_MINUTES)
+ * Default: 2 days (48 hours = 2880 minutes)
  */
 export function getTokenExpiryMinutes(): number {
   const envVal = Number(process.env.RESET_TOKEN_EXPIRY_MINUTES);
   if (!isNaN(envVal) && envVal > 0) {
     return envVal;
   }
-  return 60; // 60 minutes default
+  return 2880; // 2 days default (48 hours)
 }
 
 /**
