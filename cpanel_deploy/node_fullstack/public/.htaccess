@@ -25,9 +25,10 @@
   </FilesMatch>
 
   # ----------------------------------------------------------------------------
-  # 3. Single Page Application (SPA) Routing
+  # 3. Single Page Application (SPA) Routing & API/Feeds Passthrough
   # ----------------------------------------------------------------------------
-  # Pass through existing files and directories directly
+  # Pass through existing files, directories, API, and Feed endpoints directly
+  RewriteRule ^(api|feeds)/ - [L]
   RewriteCond %{REQUEST_FILENAME} -f [OR]
   RewriteCond %{REQUEST_FILENAME} -d
   RewriteRule ^ - [L]

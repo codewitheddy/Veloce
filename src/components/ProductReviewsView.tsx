@@ -8,7 +8,6 @@ import {
   AlertCircle,
   X,
   Upload,
-  Edit2,
   Trash2,
   ArrowLeft,
   Filter,
@@ -81,8 +80,7 @@ export default function ProductReviewsView({
 
   // Form state
   const [isFormOpen, setIsFormOpen] = useState(false);
-  const [isEditing, setIsEditing] = useState(false);
-  const [editingReviewId, setEditingReviewId] = useState<string | null>(null);
+
 
   const [rating, setRating] = useState<number>(5);
   const [hoverRating, setHoverRating] = useState<number>(0);
@@ -200,8 +198,8 @@ export default function ProductReviewsView({
     }
 
     try {
-      const url = isEditing && editingReviewId ? `/api/reviews/${editingReviewId}` : '/api/reviews';
-      const method = isEditing && editingReviewId ? 'PUT' : 'POST';
+      const url = '/api/reviews';
+      const method = 'POST';
 
       const res = await fetch(url, {
         method,
@@ -229,13 +227,11 @@ export default function ProductReviewsView({
         return;
       }
 
-      setFormSuccess(isEditing ? 'Your review has been updated!' : 'Thank you! Your verified purchase review has been published.');
+      setFormSuccess('Thank you! Your verified purchase review has been published.');
       setIsFormOpen(false);
-      setIsEditing(false);
-      setEditingReviewId(null);
 
       // Trigger admin email alert for new review submission
-      if (onTriggerEmailToast && !isEditing) {
+      if (onTriggerEmailToast) {
         const adminReviewAlert = buildAdminNewReviewEmail(product.name, finalDisplayName, rating, comment);
         onTriggerEmailToast(adminReviewAlert);
       }
@@ -250,17 +246,7 @@ export default function ProductReviewsView({
     }
   };
 
-  // Open Edit Form
-  const handleStartEdit = (rev: Review) => {
-    setEditingReviewId(rev.id);
-    setIsEditing(true);
-    setRating(rev.rating);
-    setTitle(rev.title || '');
-    setComment(rev.comment);
-    setMediaUrls(rev.mediaUrls || []);
-    setDisplayName(rev.reviewerDisplayName || rev.userName);
-    setIsFormOpen(true);
-  };
+
 
   // Handle Delete Review
   const handleDeleteReview = async (reviewId: string) => {
@@ -517,8 +503,6 @@ export default function ProductReviewsView({
               </div>
               <button
                 onClick={() => {
-                  setIsEditing(false);
-                  setEditingReviewId(null);
                   setTitle('');
                   setComment('');
                   setMediaUrls([]);
@@ -541,19 +525,10 @@ export default function ProductReviewsView({
                 <div>
                   <h4 className="text-xs font-bold text-indigo-950 dark:text-indigo-200">Review Submitted</h4>
                   <p className="text-[11px] text-indigo-800 dark:text-indigo-300 mt-0.5">
-                    You have already submitted a verified review for Order #{eligibility.orderId}. You can update your review at any time.
+                    You have already submitted a verified review for Order #{eligibility.orderId}. Reviews are final once submitted.
                   </p>
                 </div>
               </div>
-              {eligibility.existingReview && (
-                <button
-                  onClick={() => handleStartEdit(eligibility.existingReview!)}
-                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl transition-colors cursor-pointer shrink-0 flex items-center gap-1.5"
-                >
-                  <Edit2 className="h-3.5 w-3.5" />
-                  Edit My Review
-                </button>
-              )}
             </div>
           ) : eligibility.reason === 'ORDER_NOT_DELIVERED' ? (
             /* Order Not Delivered */
@@ -585,7 +560,7 @@ export default function ProductReviewsView({
               <div className="flex items-center justify-between">
                 <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
                   <Sparkles className="h-4 w-4 text-indigo-600" />
-                  {isEditing ? 'Edit Your Review' : 'Write Verified Purchaser Review'}
+                  Write Verified Purchaser Review
                 </h3>
                 <span className="text-[10px] font-mono bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded text-slate-500">
                   Order #{eligibility.orderId}
@@ -752,7 +727,7 @@ export default function ProductReviewsView({
                   ) : (
                     <>
                       <CheckCircle2 className="h-4 w-4" />
-                      {isEditing ? 'Save Changes' : 'Publish Verified Review'}
+                      Publish Verified Review
                     </>
                   )}
                 </button>
@@ -871,16 +846,9 @@ export default function ProductReviewsView({
                       </div>
                     </div>
 
-                    {/* Owner Actions (Edit / Delete) */}
+                    {/* Owner Actions (Delete) */}
                     {isOwner && (
                       <div className="flex items-center gap-2">
-                        <button
-                          onClick={() => handleStartEdit(rev)}
-                          className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors cursor-pointer"
-                          title="Edit Review"
-                        >
-                          <Edit2 className="h-3.5 w-3.5" />
-                        </button>
                         <button
                           onClick={() => handleDeleteReview(rev.id)}
                           className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors cursor-pointer"

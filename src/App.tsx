@@ -252,16 +252,14 @@ export default function App() {
 
   // Helper to switch tabs and synchronize browser URL for all pages
   const handleTabChange = (tab: string, editingProductOverride?: Product | null) => {
+    setSelectedProduct(null);
+    if (typeof window !== 'undefined') {
+      sessionStorage.removeItem('veloce_selected_product_id');
+      localStorage.removeItem('veloce_selected_product_id');
+    }
     if (tab === 'store') {
       if (currentTab !== 'store') {
-        setSelectedProduct(null);
         setSearchQuery('');
-      }
-    } else {
-      setSelectedProduct(null);
-      if (typeof window !== 'undefined') {
-        sessionStorage.removeItem('veloce_selected_product_id');
-        localStorage.removeItem('veloce_selected_product_id');
       }
     }
     setCurrentTab(tab);
@@ -275,9 +273,9 @@ export default function App() {
       if (window.history.pushState) {
         const url = new URL(window.location.href);
         const searchParams = new URLSearchParams(url.search);
+        searchParams.delete('product');
+        searchParams.delete('productId');
         if (tab !== 'store') {
-          searchParams.delete('product');
-          searchParams.delete('productId');
           searchParams.delete('category');
           searchParams.delete('subcategory');
           searchParams.delete('on_sale');
@@ -580,6 +578,11 @@ export default function App() {
 
   const [globalTrackingOrderId, setGlobalTrackingOrderId] = useState<string | null>(null);
 
+  const productsRef = useRef<Product[]>(products);
+  useEffect(() => {
+    productsRef.current = products;
+  }, [products]);
+
   // Check URL path & query parameters for routing on mount & popstate
   useEffect(() => {
     const handleLocationRouting = () => {
@@ -603,14 +606,29 @@ export default function App() {
 
         const params = new URLSearchParams(window.location.search);
         const targetProdId = params.get('product') || params.get('productId');
-        if (tab === 'store' && targetProdId && products.length > 0) {
-          const matched = products.find(
-            (p) =>
-              String(p.id).toLowerCase() === targetProdId.toLowerCase() ||
-              (p.slug && p.slug.toLowerCase() === targetProdId.toLowerCase())
-          );
-          if (matched) {
-            setSelectedProduct(matched);
+        if (tab === 'store') {
+          if (targetProdId) {
+            const cleanTarget = decodeURIComponent(targetProdId).trim().toLowerCase();
+            const currentProds = productsRef.current;
+            if (currentProds.length > 0) {
+              const matched = currentProds.find(
+                (p) =>
+                  String(p.id).toLowerCase() === cleanTarget ||
+                  (p.slug && p.slug.toLowerCase() === cleanTarget) ||
+                  (p.sku && p.sku.toLowerCase() === cleanTarget)
+              );
+              if (matched) {
+                setSelectedProduct(matched);
+                setPendingProductRestore(null);
+              } else {
+                setPendingProductRestore(decodeURIComponent(targetProdId).trim());
+              }
+            } else {
+              setPendingProductRestore(decodeURIComponent(targetProdId).trim());
+            }
+          } else {
+            setSelectedProduct(null);
+            setPendingProductRestore(null);
           }
         }
 
@@ -868,11 +886,63 @@ export default function App() {
     safeLocalStorageSetItem('veloce_return_requests', JSON.stringify(returnRequests));
   }, [returnRequests]);
 
+  // Track requested product ID on initial load or reload before products asynchronously finish fetching
+  const [pendingProductRestore, setPendingProductRestore] = useState<string | null>(() => {
+    if (typeof window === 'undefined') return null;
+    const params = new URLSearchParams(window.location.search);
+    const prodIdFromUrl = params.get('product') || params.get('productId');
+    if (prodIdFromUrl) return decodeURIComponent(prodIdFromUrl).trim();
+    const savedTab = sessionStorage.getItem('veloce_active_tab') || localStorage.getItem('veloce_active_tab');
+    if (savedTab === 'store' || window.location.pathname === '/store') {
+      const storedId = sessionStorage.getItem('veloce_selected_product_id') || localStorage.getItem('veloce_selected_product_id');
+      if (storedId) return storedId.trim();
+    }
+    return null;
+  });
+
   // Selected product state for Store deep-sheet modal with initial reload recovery
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
 
   // Track Google Analytics 4 page views on first load and navigation (deduplicated & storefront only)
   usePageTracking(currentTab, selectedProduct?.id);
+
+  // Dedicated immediate single-product fetch when URL or storage requests a specific product on direct load / reload
+  useEffect(() => {
+    if (!pendingProductRestore || selectedProduct) return;
+    let isCurrent = true;
+
+    // First check if already in products array
+    const cleanId = pendingProductRestore.trim().toLowerCase();
+    const existing = products.find(
+      (p) =>
+        String(p.id).toLowerCase() === cleanId ||
+        (p.slug && p.slug.toLowerCase() === cleanId) ||
+        (p.sku && p.sku.toLowerCase() === cleanId)
+    );
+    if (existing) {
+      setSelectedProduct(existing);
+      setPendingProductRestore(null);
+      return;
+    }
+
+    // Direct single product fetch from backend API
+    fetch(`/api/products/${encodeURIComponent(pendingProductRestore)}`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (!isCurrent) return;
+        if (data && data.id) {
+          setSelectedProduct(data);
+          setPendingProductRestore(null);
+        }
+      })
+      .catch((err) => {
+        console.warn('[App] Direct product rehydration fetch failed:', err);
+      });
+
+    return () => {
+      isCurrent = false;
+    };
+  }, [pendingProductRestore, products, selectedProduct]);
 
   // Rehydrate selected product if present in URL/storage when products load asynchronously
   useEffect(() => {
@@ -890,12 +960,20 @@ export default function App() {
 
     const params = new URLSearchParams(window.location.search);
     const prodIdFromUrl = params.get('product') || params.get('productId');
-    // Only use sessionStorage fallback if the user is explicitly already on the store tab
-    const prodId = prodIdFromUrl || (currentTab === 'store' ? sessionStorage.getItem('veloce_selected_product_id') : null);
+    const prodId =
+      prodIdFromUrl ||
+      pendingProductRestore ||
+      (currentTab === 'store'
+        ? sessionStorage.getItem('veloce_selected_product_id') || localStorage.getItem('veloce_selected_product_id')
+        : null);
 
-    if (prodId && (!selectedProduct || String(selectedProduct.id).toLowerCase() !== prodId.toLowerCase())) {
+    if (prodId) {
+      const cleanProdId = decodeURIComponent(prodId).trim().toLowerCase();
       const matched = products.find(
-        (p) => String(p.id).toLowerCase() === prodId.toLowerCase() || (p.slug && p.slug.toLowerCase() === prodId.toLowerCase())
+        (p) =>
+          String(p.id).toLowerCase() === cleanProdId ||
+          (p.slug && p.slug.toLowerCase() === cleanProdId) ||
+          (p.sku && p.sku.toLowerCase() === cleanProdId)
       );
       if (matched) {
         setSelectedProduct(matched);
@@ -904,12 +982,14 @@ export default function App() {
         }
       }
     }
-  }, [products, currentTab, adminEditingProduct]);
+    setPendingProductRestore(null);
+  }, [products, currentTab, adminEditingProduct, pendingProductRestore]);
 
   // Synchronize browser URL query param and storage when selectedProduct changes
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const url = new URL(window.location.href);
+
     if (selectedProduct) {
       sessionStorage.setItem('veloce_selected_product_id', String(selectedProduct.id));
       localStorage.setItem('veloce_selected_product_id', String(selectedProduct.id));
@@ -917,17 +997,28 @@ export default function App() {
       if (url.pathname !== '/store' && !url.pathname.startsWith('/admin')) {
         url.pathname = '/store';
       }
-      window.history.replaceState({ tab: 'store', productId: selectedProduct.id }, '', url.toString());
+      const currentUrlParam = new URLSearchParams(window.location.search).get('product') || new URLSearchParams(window.location.search).get('productId');
+      if (currentUrlParam !== String(selectedProduct.id)) {
+        window.history.pushState({ tab: 'store', productId: selectedProduct.id }, '', url.toString());
+      } else {
+        window.history.replaceState({ tab: 'store', productId: selectedProduct.id }, '', url.toString());
+      }
     } else {
+      // If products haven't loaded yet or we are waiting to restore a product from initial URL/storage, DO NOT wipe it!
+      const hasUrlProduct = url.searchParams.has('product') || url.searchParams.has('productId');
+      if (products.length === 0 || pendingProductRestore) {
+        return;
+      }
+
       sessionStorage.removeItem('veloce_selected_product_id');
       localStorage.removeItem('veloce_selected_product_id');
-      if (url.searchParams.has('product') || url.searchParams.has('productId')) {
+      if (hasUrlProduct) {
         url.searchParams.delete('product');
         url.searchParams.delete('productId');
-        window.history.replaceState({ tab: currentTab }, '', url.toString());
+        window.history.pushState({ tab: currentTab }, '', url.toString());
       }
     }
-  }, [selectedProduct, currentTab]);
+  }, [selectedProduct, currentTab, products.length, pendingProductRestore]);
 
   // Enforce page loading from top first on initial load, tab changes, product selections, or role changes
   useEffect(() => {
@@ -2505,6 +2596,7 @@ export default function App() {
             onAddReview={handleAddReview}
             selectedProduct={selectedProduct}
             setSelectedProduct={setSelectedProduct}
+            isRestoringProduct={Boolean(pendingProductRestore && !selectedProduct)}
             prefilledReviewerName={prefilledReviewerName}
             wishlist={wishlist}
             onToggleWishlist={handleToggleWishlist}

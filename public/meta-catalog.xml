@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss xmlns:g="http://base.google.com/ns/1.0" version="2.0">
+  <channel>
+    <title>Ropenix Collections | Meta Product Catalog Feed</title>
+    <link>https://ropenix.co.ke</link>
+    <description>Dynamic real-time product feed for Meta Commerce Manager, Facebook Shop, Instagram Shopping and Google Merchant Center.</description>
+    <lastBuildDate>Sun, 25 Oct 2026 20:31:07 GMT</lastBuildDate>
+    <item>
+      <g:id><![CDATA[prod-1791749045234]]></g:id>
+      <g:title><![CDATA[The Malindi Geometric Dashiki Long-Sleeve Tunic Shirt]]></g:title>
+      <g:description><![CDATA[Elevate your everyday and cultural wardrobe with this striking long-sleeve tunic shirt, designed to bring together heritage-inspired patterns and clean modern tailoring. Crafted from smooth, structured fabric, the shirt features a rich navy and cream horizontal geometric motif composed of alternating linear bars, triangles, and hatched block bands. Tailored with long sleeves, a comfortable round crew collar, and an extended tunic hemline, it offers a polished drape that pairs effortlessly with tailored trousers or casual dark denim. Whether dressed up for celebrations and cultural events or styled casually for relaxed weekends, this piece delivers distinct artistic character and lasting comfort.]]></g:description>
+      <g:link>https://ropenix.co.ke/store?product=prod-1791749045234</g:link>
+      <g:image_link>https://ropenix.co.ke/uploads/prod_1791749045567_c20b0b08.png</g:image_link>
+      <g:additional_image_link>https://ropenix.co.ke/uploads/prod_1791749045568_53dba34a.png</g:additional_image_link>
+      <g:brand><![CDATA[Veloce Kenya]]></g:brand>
+      <g:condition>new</g:condition>
+      <g:availability>in stock</g:availability>
+      <g:price>3000.00 KES</g:price>
+      <g:sale_price>2500.00 KES</g:sale_price>
+      <g:product_type><![CDATA[Beauty & Fragrances]]></g:product_type>
+      <g:item_group_id><![CDATA[prod-1791749045234]]></g:item_group_id>
+    </item>
+    <item>
+      <g:id><![CDATA[prod-1791737963851]]></g:id>
+      <g:title><![CDATA[Modern WebP Jacket]]></g:title>
+      <g:description><![CDATA[Tested product with image offloading to disk]]></g:description>
+      <g:link>https://ropenix.co.ke/store?product=prod-1791737963851</g:link>
+      <g:image_link>https://ropenix.co.ke/uploads/prod_1791750143923_11772a4a.png</g:image_link>
+      <g:brand><![CDATA[Ropenix]]></g:brand>
+      <g:condition>new</g:condition>
+      <g:availability>in stock</g:availability>
+      <g:price>3499.00 KES</g:price>
+      <g:product_type><![CDATA[Fashion]]></g:product_type>
+      <g:item_group_id><![CDATA[prod-1791737963851]]></g:item_group_id>
+    </item>
+  </channel>
+</rss>

@@ -20,6 +20,8 @@ Allow: /blog
 Allow: /contact
 Allow: /privacy
 Allow: /track
+Allow: /feeds
+Allow: /feeds/
 Allow: /favicon.ico
 Allow: /favicon.svg
 Allow: /og-image.svg

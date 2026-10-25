@@ -20,6 +20,8 @@ import { requireAuth, requireAdmin } from '../middleware/auth';
 import { validateBody } from '../middleware/validate';
 import { createRateLimiter } from '../middleware/rateLimit';
 
+import { loadProductsCache } from './products';
+
 const router = Router();
 
 // Rate limiter: Max 15 review submissions / updates per hour per IP/user
@@ -36,6 +38,8 @@ const CreateReviewSchema = z.object({
   rating: z.number().int().min(1, 'Rating must be between 1 and 5.').max(5, 'Rating must be between 1 and 5.'),
   title: z.string().max(120, 'Title cannot exceed 120 characters.').optional(),
   body: z.string().min(10, 'Review must be at least 10 characters long.').max(2000, 'Review cannot exceed 2000 characters.'),
+  mediaUrls: z.array(z.string()).max(5).optional(),
+  images: z.array(z.string()).max(5).optional(),
 });
 
 const UpdateReviewSchema = z.object({
@@ -129,7 +133,7 @@ router.post('/check-eligibility', requireAuth, async (req: Request, res: Respons
 router.post('/', requireAuth, reviewRateLimiter, validateBody(CreateReviewSchema), async (req: Request, res: Response) => {
   try {
     const user = req.user!;
-    const { orderItemId, orderId, rating, title, body } = req.body;
+    const { orderItemId, orderId, rating, title, body, mediaUrls, images } = req.body;
 
     const review = await createMysqlReview({
       userId: user.id,
@@ -139,7 +143,12 @@ router.post('/', requireAuth, reviewRateLimiter, validateBody(CreateReviewSchema
       rating,
       title,
       body,
+      mediaUrls: mediaUrls || images || [],
     });
+
+    try {
+      await loadProductsCache(true);
+    } catch (_) {}
 
     res.status(201).json({
       success: true,
@@ -157,34 +166,20 @@ router.post('/', requireAuth, reviewRateLimiter, validateBody(CreateReviewSchema
 });
 
 // ============================================================================
-// 4. Authenticated: Edit Review (Owner or Admin Only, Rate Limited)
+// 4. Authenticated: Edit Review - BLOCKED (Reviews are final once submitted)
 // ============================================================================
-router.put('/:id', requireAuth, reviewRateLimiter, validateBody(UpdateReviewSchema), async (req: Request, res: Response) => {
-  try {
-    const user = req.user!;
-    const { id } = req.params;
-    const { rating, title, body } = req.body;
+router.put('/:id', (_req: Request, res: Response) => {
+  return res.status(405).json({
+    success: false,
+    error: 'Reviews are final once submitted and cannot be edited.',
+  });
+});
 
-    const isAdmin = Boolean(user.is_superuser || user.is_staff || user.role === 'admin');
-    const updated = await updateMysqlReview(
-      id,
-      user.id,
-      { rating, title, body },
-      isAdmin
-    );
-
-    res.json({
-      success: true,
-      message: 'Review updated successfully.',
-      review: updated,
-    });
-  } catch (err: any) {
-    const statusCode = err.status || 500;
-    res.status(statusCode).json({
-      success: false,
-      error: err.message || 'Failed to update review',
-    });
-  }
+router.patch('/:id', (_req: Request, res: Response) => {
+  return res.status(405).json({
+    success: false,
+    error: 'Reviews are final once submitted and cannot be edited.',
+  });
 });
 
 // ============================================================================

@@ -809,6 +809,23 @@ async function initializeDatabaseSchema() {
         INDEX idx_rc_status (status)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
     `);
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS order_items (
+        id VARCHAR(255) PRIMARY KEY,
+        order_id VARCHAR(255) NOT NULL,
+        product_id VARCHAR(255) NULL,
+        name VARCHAR(255) NOT NULL,
+        price DECIMAL(15, 2) NOT NULL,
+        quantity INT NOT NULL DEFAULT 1,
+        selected_variations TEXT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        INDEX idx_oi_order (order_id),
+        INDEX idx_oi_product (product_id),
+        CONSTRAINT fk_oi_order FOREIGN KEY (order_id) REFERENCES orders (id) ON DELETE CASCADE,
+        CONSTRAINT fk_oi_product FOREIGN KEY (product_id) REFERENCES products (id) ON DELETE SET NULL
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    `);
     const safeAddCol = async (table, col, def) => {
       try {
         await pool.query(`ALTER TABLE \`${table}\` ADD COLUMN \`${col}\` ${def};`);
@@ -835,6 +852,13 @@ async function initializeDatabaseSchema() {
     await safeAddCol("payment_submissions", "amount_claimed", "DECIMAL(15, 2) NULL");
     await safeAddCol("payment_submissions", "payment_method", "VARCHAR(50) DEFAULT 'mpesa_paybill'");
     await safeAddCol("payment_submissions", "admin_notes", "TEXT NULL");
+    await safeAddCol("orders", "review_reminder_sent_at", "DATETIME NULL");
+    await safeAddCol("users", "marketing_emails_opt_out", "TINYINT(1) NOT NULL DEFAULT 0");
+    await safeAddCol("reviews", "mediaUrls", "TEXT NULL");
+    try {
+      await pool.query("CREATE INDEX `idx_orders_review_reminder` ON `orders` (`review_reminder_sent_at`);");
+    } catch (_) {
+    }
     const safeModifyCol = async (table, col, def) => {
       try {
         await pool.query(`ALTER TABLE \`${table}\` MODIFY COLUMN \`${col}\` ${def};`);
@@ -854,6 +878,17 @@ async function initializeDatabaseSchema() {
     await safeAddCol("pending_registrations", "resend_count", "INT DEFAULT 0");
     await safeAddCol("pending_registrations", "resend_window_start", "VARCHAR(100) NULL");
     await safeAddCol("pending_registrations", "ip_address", "VARCHAR(100) NULL");
+    await safeAddCol("reviews", "product_id", "VARCHAR(255) NULL");
+    await safeAddCol("reviews", "order_item_id", "VARCHAR(255) NULL");
+    await safeAddCol("reviews", "user_id", "VARCHAR(255) NULL");
+    await safeAddCol("reviews", "title", "VARCHAR(255) NULL");
+    await safeAddCol("reviews", "body", "TEXT NULL");
+    await safeAddCol("reviews", "updated_at", "DATETIME NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP");
+    try {
+      await pool.query("UPDATE orders SET status = 'pending' WHERE LOWER(status) IN ('awaiting_delivery_quote', 'delivery_quoted', 'order_received');");
+      await pool.query("UPDATE customer_orders SET status = 'pending' WHERE LOWER(status) IN ('awaiting_delivery_quote', 'delivery_quoted', 'order_received');");
+    } catch (_) {
+    }
     isInitialized = true;
     console.log("[MySQL] All core database tables verified and active in MySQL.");
   } catch (error) {
@@ -1108,6 +1143,11 @@ function parseOrderRow(row) {
   let status = row.status;
   if (typeof status !== "string" || status === "[object Object]" || !status) {
     status = row.deliveryConfirmed ? "delivered" : row.trackingNumber ? "shipped" : row.isPaid || row.paymentStatus === "paid" ? "processing" : "pending";
+  } else {
+    const sLower = status.trim().toLowerCase();
+    if (sLower === "awaiting_delivery_quote" || sLower === "delivery_quoted" || sLower === "order_received") {
+      status = "pending";
+    }
   }
   return {
     ...row,
@@ -1149,138 +1189,208 @@ async function saveMysqlOrder(order) {
   if (!safeStatus || safeStatus === "[object Object]") {
     safeStatus = order.deliveryConfirmed ? "delivered" : order.trackingNumber ? "shipped" : order.isPaid || order.paymentStatus === "paid" ? "processing" : "pending";
   }
-  await pool.query(
-    `INSERT INTO orders (
-      id, customerName, customerEmail, customerPhone, items, total, status, date, couponCode,
-      customNote, shippingAddress, notesHistory, statusHistory, isGuest, paymentMethod, checkoutChannel,
-      paymentStatus, paymentReference, mpesaPhone, isPaid, paidAt, mpesaReceiptNumber, deliveryConfirmed, deliveredAt, deliveryPerson,
-      deliveryNote, trackingNumber, deliveryFee, tax, discount, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    ON DUPLICATE KEY UPDATE
-      customerName = VALUES(customerName),
-      customerEmail = VALUES(customerEmail),
-      customerPhone = VALUES(customerPhone),
-      items = VALUES(items),
-      total = VALUES(total),
-      status = VALUES(status),
-      couponCode = VALUES(couponCode),
-      customNote = VALUES(customNote),
-      shippingAddress = VALUES(shippingAddress),
-      notesHistory = VALUES(notesHistory),
-      statusHistory = VALUES(statusHistory),
-      isGuest = VALUES(isGuest),
-      paymentMethod = VALUES(paymentMethod),
-      checkoutChannel = VALUES(checkoutChannel),
-      paymentStatus = VALUES(paymentStatus),
-      paymentReference = VALUES(paymentReference),
-      mpesaPhone = VALUES(mpesaPhone),
-      isPaid = VALUES(isPaid),
-      paidAt = VALUES(paidAt),
-      mpesaReceiptNumber = VALUES(mpesaReceiptNumber),
-      deliveryConfirmed = VALUES(deliveryConfirmed),
-      deliveredAt = VALUES(deliveredAt),
-      deliveryPerson = VALUES(deliveryPerson),
-      deliveryNote = VALUES(deliveryNote),
-      trackingNumber = VALUES(trackingNumber),
-      deliveryFee = VALUES(deliveryFee),
-      tax = VALUES(tax),
-      discount = VALUES(discount),
-      updated_at = VALUES(updated_at)`,
-    [
-      id,
-      order.customerName || "Customer",
-      (order.customerEmail || "").trim().toLowerCase(),
-      order.customerPhone || order.phone || "",
-      JSON.stringify(Array.isArray(order.items) ? order.items : []),
-      Number(order.total || 0),
-      safeStatus,
-      order.date || now,
-      order.couponCode || null,
-      order.customNote || null,
-      typeof order.shippingAddress === "object" ? JSON.stringify(order.shippingAddress) : order.shippingAddress || null,
-      JSON.stringify(Array.isArray(order.notesHistory) ? order.notesHistory : []),
-      JSON.stringify(Array.isArray(order.statusHistory) ? order.statusHistory : []),
-      order.isGuest ? 1 : 0,
-      order.paymentMethod || "cod",
-      order.checkoutChannel || "web",
-      order.paymentStatus || (refCode ? "pending_verification" : "pending"),
-      refCode,
-      phone,
-      order.isPaid ? 1 : 0,
-      order.paidAt || null,
-      refCode,
-      order.deliveryConfirmed ? 1 : 0,
-      order.deliveredAt || null,
-      order.deliveryPerson || null,
-      order.deliveryNote || null,
-      order.trackingNumber || null,
-      Number(order.deliveryFee || 0),
-      Number(order.tax || 0),
-      Number(order.discount || 0),
-      order.created_at || now,
-      now
-    ]
-  );
+  const conn = await pool.getConnection();
   try {
-    await pool.query(
-      `INSERT INTO customer_orders (
-        id, customer_name, customer_email, customer_phone, total, status,
-        payment_status, payment_reference, payment_amount, created_at, placed_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    await conn.beginTransaction();
+    await conn.query(
+      `INSERT INTO orders (
+        id, customerName, customerEmail, customerPhone, items, total, status, date, couponCode,
+        customNote, shippingAddress, notesHistory, statusHistory, isGuest, paymentMethod, checkoutChannel,
+        paymentStatus, paymentReference, mpesaPhone, isPaid, paidAt, mpesaReceiptNumber, deliveryConfirmed, deliveredAt, deliveryPerson,
+        deliveryNote, trackingNumber, deliveryFee, tax, discount, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON DUPLICATE KEY UPDATE
-        customer_name = VALUES(customer_name),
-        customer_email = VALUES(customer_email),
-        customer_phone = VALUES(customer_phone),
+        customerName = VALUES(customerName),
+        customerEmail = VALUES(customerEmail),
+        customerPhone = VALUES(customerPhone),
+        items = VALUES(items),
         total = VALUES(total),
         status = VALUES(status),
-        payment_status = VALUES(payment_status),
-        payment_reference = VALUES(payment_reference),
-        payment_amount = VALUES(payment_amount),
+        couponCode = VALUES(couponCode),
+        customNote = VALUES(customNote),
+        shippingAddress = VALUES(shippingAddress),
+        notesHistory = VALUES(notesHistory),
+        statusHistory = VALUES(statusHistory),
+        isGuest = VALUES(isGuest),
+        paymentMethod = VALUES(paymentMethod),
+        checkoutChannel = VALUES(checkoutChannel),
+        paymentStatus = VALUES(paymentStatus),
+        paymentReference = VALUES(paymentReference),
+        mpesaPhone = VALUES(mpesaPhone),
+        isPaid = VALUES(isPaid),
+        paidAt = VALUES(paidAt),
+        mpesaReceiptNumber = VALUES(mpesaReceiptNumber),
+        deliveryConfirmed = VALUES(deliveryConfirmed),
+        deliveredAt = VALUES(deliveredAt),
+        deliveryPerson = VALUES(deliveryPerson),
+        deliveryNote = VALUES(deliveryNote),
+        trackingNumber = VALUES(trackingNumber),
+        deliveryFee = VALUES(deliveryFee),
+        tax = VALUES(tax),
+        discount = VALUES(discount),
         updated_at = VALUES(updated_at)`,
       [
         id,
         order.customerName || "Customer",
         (order.customerEmail || "").trim().toLowerCase(),
         order.customerPhone || order.phone || "",
+        JSON.stringify(Array.isArray(order.items) ? order.items : []),
         Number(order.total || 0),
-        order.status || "Pending",
-        order.paymentStatus || (refCode ? "pending_verification" : "unpaid"),
-        refCode,
-        order.total || null,
-        order.created_at || now,
+        safeStatus,
         order.date || now,
+        order.couponCode || null,
+        order.customNote || null,
+        typeof order.shippingAddress === "object" ? JSON.stringify(order.shippingAddress) : order.shippingAddress || null,
+        JSON.stringify(Array.isArray(order.notesHistory) ? order.notesHistory : []),
+        JSON.stringify(Array.isArray(order.statusHistory) ? order.statusHistory : []),
+        order.isGuest ? 1 : 0,
+        order.paymentMethod || "cod",
+        order.checkoutChannel || "web",
+        order.paymentStatus || (refCode ? "pending_verification" : "pending"),
+        refCode,
+        phone,
+        order.isPaid ? 1 : 0,
+        order.paidAt || null,
+        refCode,
+        order.deliveryConfirmed ? 1 : 0,
+        order.deliveredAt || null,
+        order.deliveryPerson || null,
+        order.deliveryNote || null,
+        order.trackingNumber || null,
+        Number(order.deliveryFee || 0),
+        Number(order.tax || 0),
+        Number(order.discount || 0),
+        order.created_at || now,
         now
       ]
     );
-  } catch (_) {
-  }
-  if (refCode && refCode.trim().length >= 8) {
+    const orderItems = Array.isArray(order.items) ? order.items : [];
+    if (orderItems.length > 0) {
+      const [tableCheck] = await conn.query(
+        `SELECT COUNT(*) as cnt FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = 'order_items'`
+      );
+      if (tableCheck[0]?.cnt > 0) {
+        const activeItemIds = [];
+        for (let idx = 0; idx < orderItems.length; idx++) {
+          const it = orderItems[idx];
+          const rawItemId = it.id ? String(it.id).trim() : "";
+          const deterministicId = rawItemId && rawItemId !== "undefined" && rawItemId !== "[object Object]" ? rawItemId.startsWith("oi_") ? rawItemId : `oi_${id}_${rawItemId}` : `oi_${id}_${idx}`;
+          activeItemIds.push(deterministicId);
+          const rawProductId = String(it.productId || it.product_id || it.product || it.id || "").trim();
+          let matchedProductId = null;
+          if (rawProductId) {
+            const [pRow] = await conn.query("SELECT id FROM products WHERE id = ? LIMIT 1", [rawProductId]);
+            if (pRow && pRow.length > 0) {
+              matchedProductId = pRow[0].id;
+            }
+          }
+          const itemName = String(it.name || it.product_name || it.title || "Item").trim();
+          const itemPrice = typeof it.price === "number" ? it.price : parseFloat(it.unit_price || it.price || "0") || 0;
+          const itemQty = Math.max(1, parseInt(String(it.quantity || 1), 10) || 1);
+          const variations = it.selectedVariations || it.selected_variations ? JSON.stringify(it.selectedVariations || it.selected_variations) : null;
+          await conn.query(
+            `INSERT INTO order_items (id, order_id, product_id, name, price, quantity, selected_variations, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+             ON DUPLICATE KEY UPDATE
+               product_id = VALUES(product_id),
+               name = VALUES(name),
+               price = VALUES(price),
+               quantity = VALUES(quantity),
+               selected_variations = VALUES(selected_variations),
+               updated_at = VALUES(updated_at)`,
+            [
+              deterministicId,
+              id,
+              matchedProductId,
+              itemName,
+              itemPrice,
+              itemQty,
+              variations,
+              order.created_at || now,
+              now
+            ]
+          );
+        }
+        if (activeItemIds.length > 0) {
+          await conn.query(
+            `DELETE FROM order_items WHERE order_id = ? AND id NOT IN (?)`,
+            [id, activeItemIds]
+          );
+        }
+      }
+    }
     try {
-      const claimId = `sub-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
-      await pool.query(
-        `INSERT INTO payment_submissions (
-          id, order_id, mpesa_receipt_code, phone_number, amount_claimed, payment_method, status, admin_notes, submitted_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      await conn.query(
+        `INSERT INTO customer_orders (
+          id, customer_name, customer_email, customer_phone, total, status,
+          payment_status, payment_reference, payment_amount, created_at, placed_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON DUPLICATE KEY UPDATE
-          phone_number = VALUES(phone_number),
-          amount_claimed = VALUES(amount_claimed),
-          submitted_at = VALUES(submitted_at)`,
+          customer_name = VALUES(customer_name),
+          customer_email = VALUES(customer_email),
+          customer_phone = VALUES(customer_phone),
+          total = VALUES(total),
+          status = VALUES(status),
+          payment_status = VALUES(payment_status),
+          payment_reference = VALUES(payment_reference),
+          payment_amount = VALUES(payment_amount),
+          updated_at = VALUES(updated_at)`,
         [
-          claimId,
           id,
-          refCode.trim().toUpperCase(),
-          phone || "254700000000",
+          order.customerName || "Customer",
+          (order.customerEmail || "").trim().toLowerCase(),
+          order.customerPhone || order.phone || "",
           Number(order.total || 0),
-          order.paymentMethod || "mpesa_paybill",
-          "pending_verification",
-          "Submitted directly during checkout placement",
+          order.status || "Pending",
+          order.paymentStatus || (refCode ? "pending_verification" : "unpaid"),
+          refCode,
+          order.total || null,
+          order.created_at || now,
+          order.date || now,
           now
         ]
       );
     } catch (_) {
     }
+    if (refCode && refCode.trim().length >= 8) {
+      try {
+        const claimId = `sub-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+        await conn.query(
+          `INSERT INTO payment_submissions (
+            id, order_id, mpesa_receipt_code, phone_number, amount_claimed, payment_method, status, admin_notes, submitted_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ON DUPLICATE KEY UPDATE
+            phone_number = VALUES(phone_number),
+            amount_claimed = VALUES(amount_claimed),
+            submitted_at = VALUES(submitted_at)`,
+          [
+            claimId,
+            id,
+            refCode.trim().toUpperCase(),
+            phone || "254700000000",
+            Number(order.total || 0),
+            order.paymentMethod || "mpesa_paybill",
+            "pending_verification",
+            "Submitted directly during checkout placement",
+            now
+          ]
+        );
+      } catch (_) {
+      }
+    }
+    await conn.commit();
+  } catch (txErr) {
+    await conn.rollback();
+    throw txErr;
+  } finally {
+    conn.release();
   }
   return getMysqlOrderById(id);
+}
+async function getMysqlOrderItemsByOrderId(orderId) {
+  const pool = await getDbPool();
+  const [rows] = await pool.query("SELECT * FROM order_items WHERE order_id = ? ORDER BY id ASC", [orderId]);
+  return rows || [];
 }
 async function updateMysqlOrderStatus(id, statusOrUpdates, paymentStatus, trackingNumber) {
   const pool = await getDbPool();
@@ -1763,42 +1873,6 @@ async function getMysqlReviews(productId) {
     verified: Boolean(r.verified)
   }));
 }
-async function saveMysqlReview(r) {
-  const pool = await getDbPool();
-  const id = r.id || `rev-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
-  const now = (/* @__PURE__ */ new Date()).toISOString();
-  await pool.query(
-    `INSERT INTO reviews (id, productId, userName, userEmail, rating, comment, verified, status, helpfulCount, date, reply, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-     ON DUPLICATE KEY UPDATE
-       rating = VALUES(rating),
-       comment = VALUES(comment),
-       status = VALUES(status),
-       helpfulCount = VALUES(helpfulCount),
-       reply = VALUES(reply)`,
-    [
-      id,
-      r.productId,
-      r.userName || "Customer",
-      (r.userEmail || "").trim().toLowerCase(),
-      Number(r.rating || 5),
-      r.comment || "",
-      r.verified !== void 0 ? r.verified ? 1 : 0 : 1,
-      r.status || "approved",
-      Number(r.helpfulCount || 0),
-      r.date || now,
-      r.reply || null,
-      r.created_at || now
-    ]
-  );
-  const [rows] = await pool.query("SELECT * FROM reviews WHERE id = ? LIMIT 1", [id]);
-  return rows[0];
-}
-async function deleteMysqlReview(id) {
-  const pool = await getDbPool();
-  const [res] = await pool.query("DELETE FROM reviews WHERE id = ?", [id]);
-  return res.affectedRows > 0;
-}
 async function getMysqlCoupons() {
   const pool = await getDbPool();
   const [rows] = await pool.query("SELECT * FROM coupons ORDER BY created_at DESC");
@@ -2184,8 +2258,8 @@ async function ensureDefaultProducts() {
         ],
         stock: 14,
         lowStockThreshold: 5,
-        rating: 4.8,
-        reviewsCount: 12,
+        rating: 0,
+        reviewsCount: 0,
         status: "Active"
       },
       {
@@ -2211,8 +2285,8 @@ async function ensureDefaultProducts() {
         ],
         stock: 19,
         lowStockThreshold: 4,
-        rating: 4.9,
-        reviewsCount: 24,
+        rating: 0,
+        reviewsCount: 0,
         status: "Active"
       },
       {
@@ -2238,8 +2312,8 @@ async function ensureDefaultProducts() {
         ],
         stock: 32,
         lowStockThreshold: 8,
-        rating: 4.7,
-        reviewsCount: 18,
+        rating: 0,
+        reviewsCount: 0,
         status: "Active"
       },
       {
@@ -2265,8 +2339,8 @@ async function ensureDefaultProducts() {
         ],
         stock: 22,
         lowStockThreshold: 6,
-        rating: 4.9,
-        reviewsCount: 15,
+        rating: 0,
+        reviewsCount: 0,
         status: "Active"
       }
     ];
@@ -2538,10 +2612,7 @@ async function getSqliteOrdersByUser(userIdOrEmail) {
     "SELECT * FROM orders WHERE customerEmail = ? OR customerEmail = (SELECT email FROM users WHERE id = ? LIMIT 1) ORDER BY date DESC",
     [userIdOrEmail, userIdOrEmail]
   );
-  return (rows || []).map((r) => ({
-    ...r,
-    items: typeof r.items === "string" ? JSON.parse(r.items) : r.items
-  }));
+  return (rows || []).map(parseOrderRow);
 }
 async function syncSqliteOrders(orders) {
   for (const o of orders) {
@@ -2716,31 +2787,6 @@ async function saveSqliteCustomerOrder(order) {
   );
   return { ...order, id };
 }
-async function getSqliteReviewsByProduct(productId) {
-  const pool = await getDbPool();
-  const [rows] = await pool.query('SELECT * FROM reviews WHERE productId = ? AND status = "approved" ORDER BY date DESC', [productId]);
-  return rows || [];
-}
-async function updateSqliteReview(review) {
-  await saveMysqlReview(review);
-}
-async function toggleSqliteReviewHelpful(reviewId) {
-  const pool = await getDbPool();
-  await pool.query("UPDATE reviews SET helpfulCount = helpfulCount + 1 WHERE id = ?", [reviewId]);
-  const [rows] = await pool.query("SELECT helpfulCount FROM reviews WHERE id = ? LIMIT 1", [reviewId]);
-  return rows[0]?.helpfulCount || 0;
-}
-async function updateSqliteReviewStatus(reviewId, status) {
-  const pool = await getDbPool();
-  await pool.query("UPDATE reviews SET status = ? WHERE id = ?", [status, reviewId]);
-}
-async function recomputeSqliteProductRating(productId) {
-  const pool = await getDbPool();
-  const [rows] = await pool.query('SELECT AVG(rating) as avgRating, COUNT(*) as count FROM reviews WHERE productId = ? AND status = "approved"', [productId]);
-  const avg = rows[0]?.avgRating || 0;
-  const count = rows[0]?.count || 0;
-  await pool.query("UPDATE products SET rating = ?, reviewsCount = ? WHERE id = ?", [Number(avg).toFixed(1), count, productId]);
-}
 async function getSqliteCustomClothingRequestById(id) {
   const pool = await getDbPool();
   const [rows] = await pool.query("SELECT * FROM custom_clothing_requests WHERE id = ? LIMIT 1", [id]);
@@ -2827,7 +2873,662 @@ async function getAllMysqlRefundClaims(statusFilter) {
     amount: Number(r.amount)
   }));
 }
-var import_promise, import_dotenv, import_crypto2, dbPool, isInitialized, isInitializing, DEFAULT_CORE_CATEGORIES, getSqliteUserByEmail, getSqliteUserById, saveSqliteUser, getAllSqliteUsers, getSqlitePendingRegistration, saveSqlitePendingRegistration, deleteSqlitePendingRegistration, updateSqlitePendingRegistrationAttempts, deleteSqliteProduct, getAllSqliteCategories, deleteSqliteCategory, getAllSqliteOrders, getSqliteOrderById, saveSqliteOrder, deleteSqliteOrder, getAllSqliteSuppliers, saveSqliteSupplier, deleteSqliteSupplier, getAllSqliteSupplierProducts, saveSqliteSupplierProduct, getAllSqliteSupplierIntakes, saveSqliteSupplierIntake, getAllSqliteSupplierPayments, saveSqliteSupplierPayment, getAllSqliteCustomers, saveSqliteCustomer, getAllSqliteHeroBanners, saveSqliteHeroBanners, getAllSqliteReviews, saveSqliteReview, deleteSqliteReview, getSqliteReviewRequestLogs, getSqliteReviewRequestSettings, saveSqliteReviewRequestSettings, addSqliteReviewOptOut, getSqliteReviewOptOutsCount, getSqliteCustomClothingRequests, saveSqliteCustomClothingRequest, updateSqliteCustomClothingRequestStatus, getSqliteInventoryAuditLogs, addSqliteInventoryAuditLog, pullSyncDataSqlite;
+function sanitizeReviewPlainText(input) {
+  if (!input) return "";
+  return String(input).replace(/<[^>]*>?/gm, "").replace(/[\r\n]{3,}/g, "\n\n").trim();
+}
+async function syncProductRatingInTx(conn, productId) {
+  const [stats] = await conn.query(
+    `SELECT COUNT(*) as count, COALESCE(ROUND(AVG(rating), 2), 0) as avg_rating
+     FROM reviews 
+     WHERE product_id = ? AND status = 'published'`,
+    [productId]
+  );
+  const reviewsCount = Number(stats[0]?.count || 0);
+  const rating = Number(stats[0]?.avg_rating || 0);
+  await conn.query(
+    `UPDATE products 
+     SET rating = ?, reviewsCount = ?, updated_at = NOW() 
+     WHERE id = ?`,
+    [rating, reviewsCount, productId]
+  );
+  return { rating, reviewsCount };
+}
+async function getMysqlProductReviewsSummary(productId) {
+  const pool = await getDbPool();
+  const cleanPid = String(productId).trim();
+  let targetProductId = cleanPid;
+  try {
+    const [pRows] = await pool.query("SELECT id FROM products WHERE id = ? OR slug = ? LIMIT 1", [cleanPid, cleanPid]);
+    if (pRows && pRows[0]?.id) {
+      targetProductId = pRows[0].id;
+    }
+  } catch (_) {
+  }
+  const [rows] = await pool.query(
+    `SELECT 
+       COUNT(*) as total,
+       ROUND(COALESCE(AVG(rating), 0), 1) as average,
+       COUNT(CASE WHEN rating = 5 THEN 1 END) as star_5,
+       COUNT(CASE WHEN rating = 4 THEN 1 END) as star_4,
+       COUNT(CASE WHEN rating = 3 THEN 1 END) as star_3,
+       COUNT(CASE WHEN rating = 2 THEN 1 END) as star_2,
+       COUNT(CASE WHEN rating = 1 THEN 1 END) as star_1
+     FROM reviews
+     WHERE (product_id = ? OR product_id = ? OR productId = ? OR productId = ?) AND status = 'published'`,
+    [targetProductId, cleanPid, targetProductId, cleanPid]
+  );
+  const row = rows[0] || {};
+  const total = Number(row.total || 0);
+  const average = Number(row.average || 0);
+  const countPerStar = {
+    5: Number(row.star_5 || 0),
+    4: Number(row.star_4 || 0),
+    3: Number(row.star_3 || 0),
+    2: Number(row.star_2 || 0),
+    1: Number(row.star_1 || 0)
+  };
+  return {
+    productId: targetProductId,
+    average,
+    total,
+    countPerStar,
+    distribution: countPerStar
+  };
+}
+async function getMysqlReviewsByProduct(productId, options = {}) {
+  const pool = await getDbPool();
+  const cleanPid = String(productId).trim();
+  let targetProductId = cleanPid;
+  try {
+    const [pRows] = await pool.query("SELECT id FROM products WHERE id = ? OR slug = ? LIMIT 1", [cleanPid, cleanPid]);
+    if (pRows && pRows[0]?.id) {
+      targetProductId = pRows[0].id;
+    }
+  } catch (_) {
+  }
+  let query = `
+    SELECT r.id, r.product_id, r.user_id, r.order_item_id, r.rating, r.title, r.body, r.mediaUrls, r.status, r.created_at, r.updated_at,
+           u.first_name, u.last_name, u.username
+    FROM reviews r
+    LEFT JOIN users u ON u.id = r.user_id
+    WHERE (r.product_id = ? OR r.product_id = ? OR r.productId = ? OR r.productId = ?) AND r.status = 'published'
+  `;
+  const params = [targetProductId, cleanPid, targetProductId, cleanPid];
+  if (options.rating && options.rating >= 1 && options.rating <= 5) {
+    query += ` AND r.rating = ?`;
+    params.push(Math.round(options.rating));
+  }
+  if (options.sort === "highest") {
+    query += ` ORDER BY r.rating DESC, r.created_at DESC`;
+  } else if (options.sort === "lowest") {
+    query += ` ORDER BY r.rating ASC, r.created_at DESC`;
+  } else {
+    query += ` ORDER BY r.created_at DESC`;
+  }
+  let totalMatching = 0;
+  if (options.page && options.limit) {
+    let countQuery = `SELECT COUNT(*) as total FROM reviews WHERE (product_id = ? OR product_id = ? OR productId = ? OR productId = ?) AND status = 'published'`;
+    const countParams = [targetProductId, cleanPid, targetProductId, cleanPid];
+    if (options.rating && options.rating >= 1 && options.rating <= 5) {
+      countQuery += ` AND rating = ?`;
+      countParams.push(Math.round(options.rating));
+    }
+    const [countRows] = await pool.query(countQuery, countParams);
+    totalMatching = Number(countRows[0]?.total || 0);
+    const page = Math.max(1, Number(options.page) || 1);
+    const limit = Math.max(1, Math.min(100, Number(options.limit) || 10));
+    const offset = (page - 1) * limit;
+    query += ` LIMIT ? OFFSET ?`;
+    params.push(limit, offset);
+  }
+  const [rows] = await pool.query(query, params);
+  const reviews = (rows || []).map((r) => {
+    const fullName = `${r.first_name || ""} ${r.last_name || ""}`.trim();
+    const displayName = fullName || r.username || "Verified Customer";
+    return {
+      id: String(r.id),
+      productId: r.product_id || targetProductId,
+      userId: r.user_id,
+      orderItemId: r.order_item_id,
+      rating: Number(r.rating),
+      title: r.title,
+      body: r.body,
+      comment: r.body,
+      mediaUrls: typeof r.mediaUrls === "string" ? safeJsonParse(r.mediaUrls, []) : r.mediaUrls || [],
+      status: r.status,
+      reviewerDisplayName: displayName,
+      userName: displayName,
+      verifiedPurchase: true,
+      createdAt: r.created_at,
+      updatedAt: r.updated_at
+    };
+  });
+  const summary = await getMysqlProductReviewsSummary(targetProductId);
+  return {
+    productId: targetProductId,
+    total: summary.total,
+    matchingTotal: options.page && options.limit ? totalMatching : reviews.length,
+    page: options.page ? Number(options.page) : 1,
+    limit: options.limit ? Number(options.limit) : reviews.length,
+    totalPages: options.limit ? Math.ceil((totalMatching || reviews.length) / Number(options.limit)) : 1,
+    averageRating: summary.average,
+    ratingDistribution: summary.countPerStar,
+    reviews
+  };
+}
+async function checkMysqlReviewEligibility(user, orderItemId, orderIdParam) {
+  const pool = await getDbPool();
+  const cleanItemId = String(orderItemId || "").trim();
+  let cleanOrderId = String(orderIdParam || "").trim();
+  if (!cleanOrderId && cleanItemId.startsWith("oi_")) {
+    const parts = cleanItemId.split("_");
+    if (parts.length >= 3) {
+      cleanOrderId = parts.slice(1, -1).join("_");
+    }
+  }
+  let oiRows = [];
+  if (cleanItemId) {
+    const [rows] = await pool.query(
+      `SELECT oi.*, p.name as catalogProductName
+       FROM order_items oi
+       LEFT JOIN products p ON p.id = oi.product_id
+       WHERE oi.id = ? LIMIT 1`,
+      [cleanItemId]
+    );
+    oiRows = rows || [];
+  }
+  if (oiRows.length === 0 && cleanOrderId) {
+    const [rows] = await pool.query(
+      `SELECT oi.*, p.name as catalogProductName
+       FROM order_items oi
+       LEFT JOIN products p ON p.id = oi.product_id
+       WHERE oi.order_id = ?
+         AND (
+           oi.id = ?
+           OR oi.product_id = ?
+           OR oi.id LIKE ?
+         )
+       LIMIT 1`,
+      [cleanOrderId, cleanItemId, cleanItemId, `%_${cleanItemId}`]
+    );
+    oiRows = rows || [];
+  }
+  if (cleanOrderId) {
+    const [orderCheck] = await pool.query(
+      `SELECT id, customerEmail, customerName, status, deliveryConfirmed, deliveredAt, items
+       FROM orders
+       WHERE id = ? LIMIT 1`,
+      [cleanOrderId]
+    );
+    if (orderCheck && orderCheck.length > 0) {
+      const parentOrder = orderCheck[0];
+      if (oiRows.length === 0) {
+        let rawItems = [];
+        try {
+          rawItems = Array.isArray(parentOrder.items) ? parentOrder.items : JSON.parse(parentOrder.items || "[]");
+        } catch {
+          rawItems = [];
+        }
+        if (rawItems.length > 0) {
+          for (let idx = 0; idx < rawItems.length; idx++) {
+            const it = rawItems[idx];
+            const rawId = it.id ? String(it.id).trim() : "";
+            const deterministicId = rawId && rawId !== "undefined" && rawId !== "[object Object]" ? rawId.startsWith("oi_") ? rawId : `oi_${parentOrder.id}_${rawId}` : `oi_${parentOrder.id}_${idx}`;
+            const rawProductId = String(it.productId || it.product_id || it.product || it.id || "").trim();
+            let matchedProductId = null;
+            if (rawProductId) {
+              const [pRow] = await pool.query("SELECT id FROM products WHERE id = ? LIMIT 1", [rawProductId]);
+              if (pRow && pRow.length > 0) {
+                matchedProductId = pRow[0].id;
+              }
+            }
+            const itemName = String(it.name || it.product_name || it.title || "Item").trim();
+            const itemPrice = typeof it.price === "number" ? it.price : parseFloat(it.unit_price || it.price || "0") || 0;
+            const itemQty = Math.max(1, parseInt(String(it.quantity || 1), 10) || 1);
+            const variations = it.selectedVariations || it.selected_variations ? JSON.stringify(it.selectedVariations || it.selected_variations) : null;
+            await pool.query(
+              `INSERT INTO order_items (id, order_id, product_id, name, price, quantity, selected_variations, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, NOW())
+               ON DUPLICATE KEY UPDATE
+                 product_id = VALUES(product_id),
+                 name = VALUES(name),
+                 price = VALUES(price),
+                 quantity = VALUES(quantity),
+                 selected_variations = VALUES(selected_variations)`,
+              [deterministicId, parentOrder.id, matchedProductId, itemName, itemPrice, itemQty, variations]
+            );
+          }
+          const [retryRows] = await pool.query(
+            `SELECT oi.*, p.name as catalogProductName
+             FROM order_items oi
+             LEFT JOIN products p ON p.id = oi.product_id
+             WHERE oi.order_id = ?
+               AND (
+                 oi.id = ?
+                 OR oi.product_id = ?
+                 OR oi.id LIKE ?
+               )
+             LIMIT 1`,
+            [cleanOrderId, cleanItemId, cleanItemId, `%_${cleanItemId}`]
+          );
+          oiRows = retryRows || [];
+          if (oiRows.length === 0) {
+            const [singleRows] = await pool.query(
+              `SELECT oi.*, p.name as catalogProductName
+               FROM order_items oi
+               LEFT JOIN products p ON p.id = oi.product_id
+               WHERE oi.order_id = ? LIMIT 2`,
+              [cleanOrderId]
+            );
+            if (singleRows && singleRows.length === 1) {
+              oiRows = singleRows;
+            }
+          }
+        }
+      }
+    }
+  }
+  if (oiRows.length === 0 && cleanOrderId) {
+    const [fallbackRows] = await pool.query(
+      `SELECT oi.*, p.name as catalogProductName
+       FROM order_items oi
+       LEFT JOIN products p ON p.id = oi.product_id
+       WHERE oi.order_id = ? LIMIT 1`,
+      [cleanOrderId]
+    );
+    if (fallbackRows && fallbackRows.length === 1) {
+      oiRows = fallbackRows;
+    }
+  }
+  if (!oiRows || oiRows.length === 0) {
+    return {
+      eligible: false,
+      reason: "ITEM_NOT_FOUND",
+      message: "Order item does not exist."
+    };
+  }
+  const orderItem = oiRows[0];
+  const orderId = orderItem.order_id;
+  const actualOrderItemId = orderItem.id;
+  const [orderRows] = await pool.query(
+    `SELECT id, customerEmail, customerName, status, deliveryConfirmed, deliveredAt
+     FROM orders 
+     WHERE id = ? LIMIT 1`,
+    [orderId]
+  );
+  if (!orderRows || orderRows.length === 0) {
+    return {
+      eligible: false,
+      reason: "ORDER_NOT_FOUND",
+      message: "Parent order not found."
+    };
+  }
+  const order = orderRows[0];
+  const orderEmail = (order.customerEmail || "").trim().toLowerCase();
+  const userEmail = (user.email || "").trim().toLowerCase();
+  const isOwner = orderEmail !== "" && orderEmail === userEmail || user.role === "admin" || Boolean(user.is_staff) || Boolean(user.is_superuser);
+  if (!isOwner) {
+    return {
+      eligible: false,
+      reason: "FORBIDDEN_NOT_OWNER",
+      message: "Forbidden: You can only review items from your own orders."
+    };
+  }
+  const status = String(order.status || "").toLowerCase();
+  if (status === "cancelled" || status === "canceled" || status === "refunded") {
+    return {
+      eligible: false,
+      reason: "ORDER_INELIGIBLE_STATUS",
+      message: `Orders with status '${order.status}' are not eligible for review.`
+    };
+  }
+  const isDelivered = status === "completed" || status === "delivered" || order.deliveryConfirmed === true || order.deliveryConfirmed === 1 || String(order.deliveryConfirmed) === "1" || Boolean(order.deliveredAt);
+  if (!isDelivered) {
+    return {
+      eligible: false,
+      reason: "ORDER_NOT_DELIVERED",
+      message: "You can review this product once your order has been delivered."
+    };
+  }
+  const [revRows] = await pool.query(
+    `SELECT id, rating, title, body, status, created_at 
+     FROM reviews 
+     WHERE order_item_id = ? OR order_item_id = ? 
+     LIMIT 1`,
+    [actualOrderItemId, cleanItemId]
+  );
+  if (revRows && revRows.length > 0) {
+    return {
+      eligible: false,
+      reason: "ALREADY_REVIEWED",
+      message: "You have already reviewed this item.",
+      existingReview: revRows[0],
+      orderItem,
+      order
+    };
+  }
+  return {
+    eligible: true,
+    reason: "ELIGIBLE",
+    message: "Eligible to review this item.",
+    orderItem,
+    order
+  };
+}
+async function createMysqlReview(data) {
+  const rating = Math.round(Number(data.rating));
+  if (rating < 1 || rating > 5) {
+    throw new Error("Rating must be an integer between 1 and 5.");
+  }
+  const cleanTitle = sanitizeReviewPlainText(data.title || "").slice(0, 120);
+  const cleanBody = sanitizeReviewPlainText(data.body || "");
+  if (cleanBody.length < 10) {
+    throw new Error("Review statement must be at least 10 characters long.");
+  }
+  if (cleanBody.length > 2e3) {
+    throw new Error("Review statement cannot exceed 2000 characters.");
+  }
+  const eligibility = await checkMysqlReviewEligibility(
+    { id: data.userId, email: data.userEmail },
+    data.orderItemId,
+    data.orderId
+  );
+  if (!eligibility.eligible) {
+    const error = new Error(eligibility.message);
+    error.code = eligibility.reason;
+    error.status = eligibility.reason === "FORBIDDEN_NOT_OWNER" ? 403 : 400;
+    throw error;
+  }
+  const orderItem = eligibility.orderItem;
+  const productId = orderItem.product_id;
+  if (!productId) {
+    throw new Error("Cannot review an item whose product is no longer in the catalog.");
+  }
+  const pool = await getDbPool();
+  const conn = await pool.getConnection();
+  try {
+    await conn.beginTransaction();
+    const [existingRev] = await conn.query(
+      `SELECT id FROM reviews 
+       WHERE (order_item_id = ?) 
+          OR (user_id = ? AND (product_id = ? OR productId = ?)) 
+       LIMIT 1`,
+      [orderItem.id, data.userId, productId, productId]
+    );
+    if (existingRev && existingRev.length > 0) {
+      const conflictErr = new Error("You have already submitted a review for this product. Reviews are final once submitted.");
+      conflictErr.status = 409;
+      conflictErr.code = "ALREADY_REVIEWED";
+      throw conflictErr;
+    }
+    const revId = `rev-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+    const [uRows] = await conn.query("SELECT username, first_name, last_name, email FROM users WHERE id = ? LIMIT 1", [data.userId]);
+    const u = uRows && uRows[0] ? uRows[0] : null;
+    const displayName = u ? `${u.first_name || ""} ${u.last_name || ""}`.trim() || u.username || u.email : data.userEmail.split("@")[0] || "Verified Customer";
+    const mediaList = Array.isArray(data.mediaUrls) && data.mediaUrls.length > 0 ? data.mediaUrls : Array.isArray(data.images) ? data.images : [];
+    const mediaUrlsJson = JSON.stringify(mediaList);
+    await conn.query(
+      `INSERT INTO reviews (id, product_id, productId, user_id, userName, userEmail, order_item_id, rating, title, body, comment, mediaUrls, verified, status, date, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 'published', CURDATE(), NOW(), NOW())`,
+      [revId, productId, productId, data.userId, displayName, data.userEmail, orderItem.id, rating, cleanTitle, cleanBody, cleanBody, mediaUrlsJson]
+    );
+    const updatedStats = await syncProductRatingInTx(conn, productId);
+    await conn.commit();
+    return {
+      id: revId,
+      productId,
+      userId: data.userId,
+      orderItemId: orderItem.id,
+      rating,
+      title: cleanTitle,
+      body: cleanBody,
+      mediaUrls: mediaList,
+      status: "published",
+      productRating: updatedStats.rating,
+      productReviewsCount: updatedStats.reviewsCount
+    };
+  } catch (err) {
+    await conn.rollback();
+    throw err;
+  } finally {
+    conn.release();
+  }
+}
+async function deleteMysqlReview(reviewId, userId, isAdmin = false) {
+  const pool = await getDbPool();
+  const conn = await pool.getConnection();
+  try {
+    await conn.beginTransaction();
+    const [revRows] = await conn.query(
+      `SELECT * FROM reviews WHERE id = ? LIMIT 1`,
+      [reviewId]
+    );
+    if (!revRows || revRows.length === 0) {
+      const err = new Error("Review not found.");
+      err.status = 404;
+      throw err;
+    }
+    const review = revRows[0];
+    if (!isAdmin && String(review.user_id) !== String(userId)) {
+      const err = new Error("Forbidden: You can only delete your own reviews.");
+      err.status = 403;
+      throw err;
+    }
+    await conn.query(`DELETE FROM reviews WHERE id = ?`, [reviewId]);
+    const updatedStats = await syncProductRatingInTx(conn, review.product_id);
+    await conn.commit();
+    return {
+      success: true,
+      deletedId: String(reviewId),
+      productId: review.product_id,
+      productRating: updatedStats.rating,
+      productReviewsCount: updatedStats.reviewsCount
+    };
+  } catch (err) {
+    await conn.rollback();
+    throw err;
+  } finally {
+    conn.release();
+  }
+}
+async function adminUpdateMysqlReviewStatus(reviewId, status) {
+  if (status !== "published" && status !== "hidden") {
+    throw new Error("Status must be either 'published' or 'hidden'.");
+  }
+  const pool = await getDbPool();
+  const conn = await pool.getConnection();
+  try {
+    await conn.beginTransaction();
+    const [revRows] = await conn.query(
+      `SELECT * FROM reviews WHERE id = ? LIMIT 1`,
+      [reviewId]
+    );
+    if (!revRows || revRows.length === 0) {
+      const err = new Error("Review not found.");
+      err.status = 404;
+      throw err;
+    }
+    const review = revRows[0];
+    await conn.query(
+      `UPDATE reviews SET status = ?, updated_at = NOW() WHERE id = ?`,
+      [status, reviewId]
+    );
+    const updatedStats = await syncProductRatingInTx(conn, review.product_id);
+    await conn.commit();
+    return {
+      success: true,
+      reviewId: String(reviewId),
+      status,
+      productId: review.product_id,
+      productRating: updatedStats.rating,
+      productReviewsCount: updatedStats.reviewsCount
+    };
+  } catch (err) {
+    await conn.rollback();
+    throw err;
+  } finally {
+    conn.release();
+  }
+}
+async function getMysqlAllReviewsForAdmin(options = {}) {
+  const pool = await getDbPool();
+  const limit = Math.max(1, Math.min(100, options.limit || 50));
+  const offset = Math.max(0, options.offset || 0);
+  let query = `
+    SELECT r.*, p.name as productName, u.email as userEmail, u.first_name, u.last_name, u.username
+    FROM reviews r
+    LEFT JOIN products p ON p.id = r.product_id
+    LEFT JOIN users u ON u.id = r.user_id
+  `;
+  const params = [];
+  if (options.status) {
+    query += ` WHERE r.status = ?`;
+    params.push(options.status);
+  }
+  query += ` ORDER BY r.created_at DESC LIMIT ? OFFSET ?`;
+  params.push(limit, offset);
+  const [rows] = await pool.query(query, params);
+  const [cntRes] = await pool.query(`SELECT COUNT(*) as total FROM reviews`);
+  return {
+    total: Number(cntRes[0]?.total || 0),
+    reviews: rows || []
+  };
+}
+async function getMysqlOrderItemsWithReviews(orderIds) {
+  const map = /* @__PURE__ */ new Map();
+  if (!orderIds || orderIds.length === 0) return map;
+  const pool = await getDbPool();
+  const [items] = await pool.query(
+    `SELECT * FROM order_items WHERE order_id IN (?) ORDER BY order_id, id ASC`,
+    [orderIds]
+  );
+  if (!items || items.length === 0) return map;
+  const itemIds = items.map((it) => it.id);
+  let reviews = [];
+  try {
+    const [revRows] = await pool.query(
+      `SELECT id, product_id, order_item_id, rating, title, body, status, created_at 
+       FROM reviews 
+       WHERE order_item_id IN (?)`,
+      [itemIds]
+    );
+    reviews = revRows || [];
+  } catch (revErr) {
+    console.warn("[MySQL] Could not query reviews for order items:", revErr);
+  }
+  const reviewsByItemId = /* @__PURE__ */ new Map();
+  for (const rev of reviews || []) {
+    reviewsByItemId.set(String(rev.order_item_id), rev);
+  }
+  for (const it of items) {
+    const oid = String(it.order_id);
+    const existing = map.get(oid) || [];
+    const rev = reviewsByItemId.get(String(it.id));
+    const hasReviewed = Boolean(rev);
+    existing.push({
+      ...it,
+      hasReview: hasReviewed,
+      hasReviewed,
+      reviewId: rev ? String(rev.id) : null,
+      rating: rev ? Number(rev.rating) : null,
+      review: rev ? {
+        id: String(rev.id),
+        productId: rev.product_id,
+        orderItemId: rev.order_item_id,
+        rating: Number(rev.rating),
+        title: rev.title,
+        body: rev.body,
+        status: rev.status,
+        createdAt: rev.created_at
+      } : null
+    });
+    map.set(oid, existing);
+  }
+  return map;
+}
+async function enrichOrdersWithReviewEligibility(orders) {
+  if (!orders || !Array.isArray(orders) || orders.length === 0) return [];
+  const orderIds = orders.map((o) => String(o.id)).filter(Boolean);
+  if (orderIds.length === 0) return orders;
+  const itemsMap = await getMysqlOrderItemsWithReviews(orderIds);
+  return orders.map((order) => {
+    const oid = String(order.id);
+    const dbItems = itemsMap.get(oid);
+    const isDelivered = (order.status === "delivered" || order.status === "completed" || order.deliveryConfirmed === true || order.deliveryConfirmed === 1 || order.delivery_confirmed === true || order.delivery_confirmed === 1) && order.status !== "cancelled" && order.status !== "refunded";
+    let enrichedItems = [];
+    if (dbItems && dbItems.length > 0) {
+      enrichedItems = dbItems.map((item) => {
+        const canReview = Boolean(isDelivered && !item.hasReviewed && (item.product_id || item.productId));
+        return {
+          ...item,
+          productId: item.product_id || item.productId,
+          name: item.product_name || item.name,
+          canReview
+        };
+      });
+    } else {
+      const rawItems = Array.isArray(order.items) ? order.items : typeof order.items === "string" ? (() => {
+        try {
+          return JSON.parse(order.items);
+        } catch {
+          return [];
+        }
+      })() : [];
+      enrichedItems = rawItems.map((item, idx) => {
+        const prodId = item.productId || item.product_id || item.id;
+        const canReview = Boolean(isDelivered && prodId);
+        const rawItemId = item.id ? String(item.id).trim() : "";
+        const effectiveId = rawItemId && rawItemId !== "undefined" && rawItemId !== "[object Object]" ? rawItemId.startsWith("oi_") ? rawItemId : `oi_${oid}_${rawItemId}` : `oi_${oid}_${idx}`;
+        return {
+          ...item,
+          id: effectiveId,
+          productId: prodId,
+          name: item.name || item.product_name,
+          canReview,
+          hasReviewed: false,
+          reviewId: null,
+          rating: null,
+          review: null
+        };
+      });
+    }
+    const unreviewedCount = isDelivered ? enrichedItems.filter((it) => it.canReview).length : 0;
+    return {
+      ...order,
+      items: enrichedItems,
+      unreviewedCount
+    };
+  });
+}
+async function setMysqlMarketingEmailOptOut(email, optOut) {
+  const pool = await getDbPool();
+  const cleanEmail = (email || "").trim().toLowerCase();
+  const [result] = await pool.query(
+    `UPDATE users SET marketing_emails_opt_out = ?, updated_at = NOW() WHERE LOWER(email) = ?`,
+    [optOut ? 1 : 0, cleanEmail]
+  );
+  return (result?.affectedRows || 0) > 0;
+}
+async function setMysqlMarketingEmailOptOutByUserId(userId, optOut) {
+  const pool = await getDbPool();
+  const [result] = await pool.query(
+    `UPDATE users SET marketing_emails_opt_out = ?, updated_at = NOW() WHERE id = ?`,
+    [optOut ? 1 : 0, userId]
+  );
+  return (result?.affectedRows || 0) > 0;
+}
+async function isMysqlUserOptedOutOfMarketing(email) {
+  const pool = await getDbPool();
+  const cleanEmail = (email || "").trim().toLowerCase();
+  const [rows] = await pool.query(
+    `SELECT marketing_emails_opt_out FROM users WHERE LOWER(email) = ? LIMIT 1`,
+    [cleanEmail]
+  );
+  if (!rows || rows.length === 0) return false;
+  return Boolean(rows[0].marketing_emails_opt_out);
+}
+var import_promise, import_dotenv, import_crypto2, dbPool, isInitialized, isInitializing, DEFAULT_CORE_CATEGORIES, getSqliteUserByEmail, getSqliteUserById, saveSqliteUser, getAllSqliteUsers, getSqlitePendingRegistration, saveSqlitePendingRegistration, deleteSqlitePendingRegistration, updateSqlitePendingRegistrationAttempts, deleteSqliteProduct, getAllSqliteCategories, deleteSqliteCategory, getAllSqliteOrders, getSqliteOrderById, saveSqliteOrder, deleteSqliteOrder, getAllSqliteSuppliers, saveSqliteSupplier, deleteSqliteSupplier, getAllSqliteSupplierProducts, saveSqliteSupplierProduct, getAllSqliteSupplierIntakes, saveSqliteSupplierIntake, getAllSqliteSupplierPayments, saveSqliteSupplierPayment, getAllSqliteCustomers, saveSqliteCustomer, getAllSqliteHeroBanners, saveSqliteHeroBanners, getSqliteCustomClothingRequests, saveSqliteCustomClothingRequest, updateSqliteCustomClothingRequestStatus, getSqliteInventoryAuditLogs, addSqliteInventoryAuditLog, pullSyncDataSqlite;
 var init_mysql_db = __esm({
   "src/lib/mysql-db.ts"() {
     import_promise = __toESM(require("mysql2/promise"), 1);
@@ -2912,14 +3613,6 @@ var init_mysql_db = __esm({
     saveSqliteCustomer = saveMysqlCustomer;
     getAllSqliteHeroBanners = getMysqlHeroBanners;
     saveSqliteHeroBanners = saveMysqlHeroBanners;
-    getAllSqliteReviews = getMysqlReviews;
-    saveSqliteReview = saveMysqlReview;
-    deleteSqliteReview = deleteMysqlReview;
-    getSqliteReviewRequestLogs = async () => [];
-    getSqliteReviewRequestSettings = async () => getAppSetting("review_request_settings", { enabled: true, delayDays: 7 });
-    saveSqliteReviewRequestSettings = async (s) => setAppSetting("review_request_settings", s);
-    addSqliteReviewOptOut = async (email) => setAppSetting(`optout_review_${email}`, true);
-    getSqliteReviewOptOutsCount = async () => 0;
     getSqliteCustomClothingRequests = getMysqlCustomClothingRequests;
     saveSqliteCustomClothingRequest = saveMysqlCustomClothingRequest;
     updateSqliteCustomClothingRequestStatus = updateMysqlCustomClothingRequestStatus;
@@ -4060,7 +4753,8 @@ If you did not request this, please ignore this email.`;
 }
 function renderPasswordResetEmail(data) {
   const name = data.name || "Customer";
-  const minutes = data.expiresInMinutes || 15;
+  const minutes = data.expiresInMinutes || 2880;
+  const expiryText = minutes >= 1440 ? `${Math.round(minutes / 1440)} days (${Math.round(minutes / 60)} hours)` : minutes >= 60 ? `${Math.round(minutes / 60)} hours` : `${minutes} minutes`;
   const subject = data.code ? `Password Reset Code: ${data.code} - Ropenix Collections` : "Reset your password - Ropenix Collections";
   const codeSnippet = data.code ? `
     <div style="text-align: center; margin: 24px 0 16px 0;">
@@ -4082,7 +4776,7 @@ function renderPasswordResetEmail(data) {
       ${renderEmailButton("Reset My Password", data.resetUrl, "amber")}
     </div>
     <div style="background-color: #fffbeb; border: 1px solid #fde68a; border-radius: 8px; padding: 14px; margin: 20px 0; font-size: 12px; color: #92400e;">
-      \u26A0\uFE0F <strong>Security Notice:</strong> This password reset code and link are valid for <strong>${minutes} minutes</strong> and can only be used once.<br />
+      \u26A0\uFE0F <strong>Security Notice:</strong> This password reset code and link are valid for <strong>${expiryText}</strong> and can only be used once.<br />
       If you did not request a password reset, please ignore this email.
     </div>
     <p style="font-size: 12px; color: #64748b;">
@@ -4105,7 +4799,7 @@ Your reset verification code is: ${data.code}` : ""}
 Reset your password here:
 ${data.resetUrl}
 
-This link is valid for ${minutes} minutes.
+This link is valid for ${expiryText}.
 If you did not request this, please ignore this message.`;
   return { subject, html, text };
 }
@@ -5629,9 +6323,30 @@ var init_queue = __esm({
 });
 
 // server/email/events.ts
-function registerEmailEventListeners() {
+function getAdminRecipients() {
   const config2 = getEmailConfig();
-  const adminEmail = config2.admin.email;
+  const recipients = /* @__PURE__ */ new Set();
+  if (config2.admin.email && config2.admin.email.includes("@")) {
+    recipients.add(config2.admin.email.trim().toLowerCase());
+  }
+  if (config2.smtp.user && config2.smtp.user.includes("@")) {
+    recipients.add(config2.smtp.user.trim().toLowerCase());
+  }
+  if (config2.smtp.replyTo && config2.smtp.replyTo.includes("@")) {
+    recipients.add(config2.smtp.replyTo.trim().toLowerCase());
+  }
+  if (process.env.ADMIN_EMAIL && process.env.ADMIN_EMAIL.includes("@")) {
+    recipients.add(process.env.ADMIN_EMAIL.trim().toLowerCase());
+  }
+  if (process.env.ADMIN_DIGEST_RECIPIENTS) {
+    process.env.ADMIN_DIGEST_RECIPIENTS.split(",").forEach((r) => {
+      const trimmed = r.trim().toLowerCase();
+      if (trimmed.includes("@")) recipients.add(trimmed);
+    });
+  }
+  return Array.from(recipients);
+}
+function registerEmailEventListeners() {
   emailEvents.on("order:created", async (order) => {
     try {
       const shortId = order.id.startsWith("ROP-") ? order.id : `ROP-${order.id.slice(-6).toUpperCase()}`;
@@ -5650,14 +6365,15 @@ function registerEmailEventListeners() {
       } else {
         console.warn(`[Email Events] \u26A0\uFE0F Order ${order.id} has no valid customerEmail ("${customerEmail}"). Customer confirmation email skipped.`);
       }
-      if (adminEmail) {
+      const adminRecipients = getAdminRecipients();
+      for (const adminEmail of adminRecipients) {
         console.log(`[Email Events] \u{1F514} Enqueueing admin alert for order ${shortId} -> ${adminEmail}`);
         await enqueueEmail({
           emailType: "admin_new_order",
           recipient: adminEmail,
           subject: `\u{1F514} [NEW ORDER] ${shortId} by ${customerName} (${totalFormatted})`,
           payload: { ...order, customerEmail, customerName },
-          dedupeKey: `admin_new_order:${order.id}`
+          dedupeKey: `admin_new_order:${order.id}:${adminEmail}`
         });
       }
     } catch (err) {
@@ -5677,13 +6393,14 @@ function registerEmailEventListeners() {
           dedupeKey: `payment_submitted_cust:${data.orderId}:${data.mpesaCode}`
         });
       }
-      if (adminEmail) {
+      const adminRecipients = getAdminRecipients();
+      for (const adminEmail of adminRecipients) {
         await enqueueEmail({
           emailType: "admin_payment_submitted",
           recipient: adminEmail,
           subject: `\u{1F4B0} [VERIFY PAYMENT] M-Pesa ${data.mpesaCode.toUpperCase()} for Order ${shortId}`,
           payload: { ...data, customerEmail },
-          dedupeKey: `payment_submitted_admin:${data.orderId}:${data.mpesaCode}`
+          dedupeKey: `payment_submitted_admin:${data.orderId}:${data.mpesaCode}:${adminEmail}`
         });
       }
     } catch (err) {
@@ -6531,11 +7248,11 @@ __export(server_exports, {
 module.exports = __toCommonJS(server_exports);
 
 // server/index.ts
-var import_express19 = __toESM(require("express"), 1);
+var import_express20 = __toESM(require("express"), 1);
 var import_path2 = __toESM(require("path"), 1);
 var import_fs2 = __toESM(require("fs"), 1);
 var import_url = require("url");
-var import_dotenv4 = __toESM(require("dotenv"), 1);
+var import_dotenv5 = __toESM(require("dotenv"), 1);
 init_mysql_db();
 
 // server/email/startupCheck.ts
@@ -7266,7 +7983,7 @@ function getTokenExpiryMinutes() {
   if (!isNaN(envVal) && envVal > 0) {
     return envVal;
   }
-  return 60;
+  return 2880;
 }
 var GENERIC_FORGOT_PASSWORD_MESSAGE = "If an account is associated with that email address, you will receive a password reset link shortly.";
 async function requestPasswordReset(email, clientIp = "", originUrl) {
@@ -8188,12 +8905,22 @@ var resetPasswordRateLimiter = createRateLimiter({
 async function handleForgotPassword(req, res) {
   try {
     const { email } = req.body || {};
-    const protocol = req.secure || req.headers["x-forwarded-proto"] === "https" ? "https" : "http";
-    const hostHeader = req.headers["x-forwarded-host"] || req.get("host") || "";
-    const cleanHost = hostHeader.split(",")[0].trim();
-    const isLocalhostHost = !cleanHost || cleanHost.includes("127.0.0.1") || cleanHost.includes("localhost");
-    const configuredUrl = process.env.FRONTEND_URL || process.env.APP_URL;
-    const originUrl = isLocalhostHost && configuredUrl && !configuredUrl.includes("localhost") ? configuredUrl.replace(/\/+$/, "") : `${protocol}://${cleanHost || "ropenix.co.ke"}`;
+    const rawOrigin = req.headers.origin || "";
+    let originUrl;
+    if (rawOrigin && typeof rawOrigin === "string" && rawOrigin.startsWith("http")) {
+      originUrl = rawOrigin.trim();
+    } else {
+      const protocol = req.secure || req.headers["x-forwarded-proto"] === "https" ? "https" : "http";
+      const hostHeader = req.headers["x-forwarded-host"] || req.get("host") || "";
+      const cleanHost = hostHeader.split(",")[0].trim();
+      const isLocalhostHost = !cleanHost || cleanHost.includes("127.0.0.1") || cleanHost.includes("localhost");
+      if (isLocalhostHost) {
+        originUrl = process.env.APP_URL || (cleanHost ? `${protocol}://${cleanHost}` : "http://localhost:3000");
+      } else {
+        originUrl = process.env.FRONTEND_URL || (cleanHost ? `${protocol}://${cleanHost}` : "https://ropenix.co.ke");
+      }
+    }
+    originUrl = originUrl.replace(/\/+$/, "");
     console.log(`[Auth /forgot-password] \u{1F4EC} Processing forgot password request for <${email}> (Origin: ${originUrl}, IP: ${req.ip || "unknown"})`);
     const result = await requestPasswordReset(email, String(req.ip || ""), originUrl);
     return res.status(200).json(result);
@@ -8945,6 +9672,43 @@ router3.get("/", async (req, res) => {
   }
   res.json(result);
 });
+router3.get(["/:id/reviews/summary", "/:id/reviews/summary/"], async (req, res) => {
+  try {
+    const { id } = req.params;
+    const summary = await getMysqlProductReviewsSummary(id);
+    res.json({
+      success: true,
+      ...summary
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Failed to retrieve review summary";
+    res.status(500).json({ success: false, error: message });
+  }
+});
+router3.get(["/:id/reviews", "/:id/reviews/"], async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { rating, sort, page, limit } = req.query;
+    const result = await getMysqlReviewsByProduct(id, {
+      rating: rating ? Number(rating) : void 0,
+      sort: typeof sort === "string" ? sort : void 0,
+      page: page ? Number(page) : void 0,
+      limit: limit ? Number(limit) : void 0
+    });
+    res.json({
+      success: true,
+      ...result,
+      summary: {
+        average: result.averageRating,
+        totalCount: result.total,
+        distribution: result.ratingDistribution
+      }
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Failed to retrieve reviews";
+    res.status(500).json({ success: false, error: message });
+  }
+});
 router3.get("/:id", async (req, res) => {
   await loadProductsCache();
   const item = productsCache.find((p) => p.id === req.params.id || p.slug === req.params.id);
@@ -9282,20 +10046,6 @@ router3.post("/inventory/adjust", requireAdmin, async (req, res) => {
     res.status(500).json({ success: false, error: message });
   }
 });
-router3.get(["/:productId/reviews", "/:productId/reviews/"], async (req, res) => {
-  try {
-    const { productId } = req.params;
-    const { rating, sort } = req.query;
-    const result = await getSqliteReviewsByProduct(productId, {
-      rating: rating ? Number(rating) : void 0,
-      sort: typeof sort === "string" ? sort : void 0
-    });
-    res.json(result);
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "Failed to retrieve product reviews";
-    res.status(500).json({ success: false, error: message });
-  }
-});
 var products_default = router3;
 
 // server/routes/categories.ts
@@ -9426,8 +10176,10 @@ init_transporter();
 init_baseLayout();
 init_urlHelper();
 var MPESA_TRANSITION_MAP = {
-  order_received: ["payment_confirmed", "cancelled"],
-  payment_confirmed: ["processing", "cancelled"],
+  pending: ["confirmed", "payment_confirmed", "processing", "cancelled"],
+  order_received: ["confirmed", "payment_confirmed", "processing", "cancelled"],
+  confirmed: ["payment_confirmed", "processing", "cancelled"],
+  payment_confirmed: ["confirmed", "processing", "cancelled"],
   processing: ["shipped", "cancelled"],
   shipped: ["completed", "cancelled"],
   completed: [],
@@ -9436,9 +10188,11 @@ var MPESA_TRANSITION_MAP = {
   // Terminal
 };
 var COD_TRANSITION_MAP = {
-  order_received: ["processing", "cancelled"],
+  pending: ["confirmed", "processing", "cancelled"],
+  order_received: ["confirmed", "processing", "cancelled"],
+  confirmed: ["processing", "cancelled"],
   processing: ["shipped", "cancelled"],
-  shipped: ["payment_received", "cancelled"],
+  shipped: ["payment_received", "completed", "cancelled"],
   payment_received: ["completed", "cancelled"],
   completed: [],
   // Terminal
@@ -9454,8 +10208,8 @@ function normalizePaymentMethod(method) {
 }
 function normalizeOrderStatus(status, paymentMethod) {
   const s = (status || "").toLowerCase().trim();
-  if (!s || s === "pending" || s === "awaiting_delivery_quote" || s === "delivery_quoted") {
-    return "order_received";
+  if (!s || s === "awaiting_delivery_quote" || s === "delivery_quoted") {
+    return "pending";
   }
   if (s === "delivered") {
     return paymentMethod === "cod" ? "payment_received" : "shipped";
@@ -9541,14 +10295,19 @@ function validateWorkflowTransition(order, targetStatus, payload) {
         };
       }
     }
-    if (toStatus === "processing" && fromStatus === "order_received") {
-      return {
-        valid: false,
-        error: `M-Pesa payment must be confirmed before order #${order.id} can move to processing.`,
-        fromStatus,
-        toStatus,
-        paymentMethod
-      };
+    if (toStatus === "processing" && (fromStatus === "order_received" || fromStatus === "pending")) {
+      const isPaid = Boolean(
+        order.isPaid || order.paymentStatus === "paid" || order.paymentReference && !order.paymentReference.toUpperCase().includes("PENDING") && !order.paymentReference.toUpperCase().includes("UNPAID")
+      );
+      if (!isPaid) {
+        return {
+          valid: false,
+          error: `M-Pesa payment must be verified or order confirmed before order #${order.id} can move to processing.`,
+          fromStatus,
+          toStatus,
+          paymentMethod
+        };
+      }
     }
   } else if (paymentMethod === "cod") {
     if (toStatus === "payment_received") {
@@ -9563,14 +10322,19 @@ function validateWorkflowTransition(order, targetStatus, payload) {
         };
       }
     }
-    if (toStatus === "completed" && fromStatus !== "payment_received") {
-      return {
-        valid: false,
-        error: `Cash payment must be received before completing Cash on Delivery order #${order.id}.`,
-        fromStatus,
-        toStatus,
-        paymentMethod
-      };
+    if (toStatus === "completed") {
+      const isPaid = Boolean(
+        order.isPaid || order.is_paid || order.paymentStatus === "paid" || order.payment_status === "paid" || fromStatus === "payment_received" || order.paymentReference && !order.paymentReference.toUpperCase().includes("PENDING") && !order.paymentReference.toUpperCase().includes("UNPAID")
+      );
+      if (!isPaid && fromStatus !== "shipped" && fromStatus !== "payment_received") {
+        return {
+          valid: false,
+          error: `Order #${order.id} must be marked as shipped or have payment confirmed before it can be completed.`,
+          fromStatus,
+          toStatus,
+          paymentMethod
+        };
+      }
     }
   }
   return { valid: true, fromStatus, toStatus, paymentMethod };
@@ -9607,7 +10371,12 @@ async function executeOrderTransition(orderId, targetStatus, changedBy = "Admin"
     let refundClaim = null;
     const updateSets = ["status = ?", "updated_at = ?"];
     const updateVals = [toStatus, nowIso];
-    if (toStatus === "payment_confirmed") {
+    if (toStatus === "confirmed") {
+      if (options?.transactionCode) {
+        updateSets.push("paymentReference = ?");
+        updateVals.push(options.transactionCode.trim().toUpperCase());
+      }
+    } else if (toStatus === "payment_confirmed") {
       const txCode = (options?.transactionCode || currentOrder.paymentReference || "MANUAL-ADMIN").trim().toUpperCase();
       const phone = options?.phone || currentOrder.mpesaPhone || currentOrder.customerPhone || "";
       const amount = options?.amount !== void 0 ? Number(options.amount) : Number(currentOrder.total);
@@ -9678,8 +10447,10 @@ async function executeOrderTransition(orderId, targetStatus, changedBy = "Admin"
           );
         }
       }
+      const rawRef = String(currentOrder.paymentReference || currentOrder.mpesaReceiptNumber || "").trim();
+      const hasValidRef = rawRef !== "" && !rawRef.toUpperCase().includes("PENDING") && !rawRef.toUpperCase().includes("UNPAID");
       const isPaidOrder = Boolean(
-        currentOrder.isPaid === 1 || currentOrder.paymentStatus === "paid" || fromStatus === "payment_confirmed" || paymentMethod === "mpesa" && ["processing", "shipped"].includes(fromStatus) || fromStatus === "payment_received"
+        currentOrder.isPaid === 1 || currentOrder.paymentStatus === "paid" || hasValidRef || fromStatus === "payment_confirmed" || paymentMethod === "mpesa" && ["confirmed", "processing", "shipped"].includes(fromStatus) && (currentOrder.isPaid || currentOrder.paymentStatus === "paid" || hasValidRef) || fromStatus === "payment_received"
       );
       if (isPaidOrder) {
         const claimId = `ref-claim-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
@@ -9725,7 +10496,7 @@ async function executeOrderTransition(orderId, targetStatus, changedBy = "Admin"
       updateVals
     );
     const historyId = `osh-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
-    const historyNote = options?.note || (toStatus === "payment_confirmed" ? `M-Pesa payment confirmed. Ref: ${options?.transactionCode || currentOrder.paymentReference}` : toStatus === "payment_received" ? `Cash collected by ${options?.collectedBy || changedBy}. Amount: KES ${options?.amount || currentOrder.total}` : toStatus === "cancelled" ? `Order cancelled: ${options?.cancellationReason || "No reason specified"}` : `Status transitioned from ${fromStatus} to ${toStatus}`);
+    const historyNote = options?.note || (toStatus === "confirmed" ? `Order confirmed by ${changedBy}. Ready for payment verification & processing.` : toStatus === "payment_confirmed" ? `M-Pesa payment confirmed. Ref: ${options?.transactionCode || currentOrder.paymentReference}` : toStatus === "payment_received" ? `Cash collected by ${options?.collectedBy || changedBy}. Amount: KES ${options?.amount || currentOrder.total}` : toStatus === "cancelled" ? `Order cancelled: ${options?.cancellationReason || "No reason specified"}` : `Status transitioned from ${fromStatus} to ${toStatus}`);
     const historyMetadata = {
       paymentMethod,
       transactionCode: options?.transactionCode,
@@ -9808,7 +10579,7 @@ async function customerCancelOrder(orderId, customerEmail, cancellationReason) {
   }
   const paymentMethod = normalizePaymentMethod(order.paymentMethod);
   const currentStatus = normalizeOrderStatus(order.status, paymentMethod);
-  if (currentStatus !== "order_received" && currentStatus !== "processing" && currentStatus !== "payment_confirmed") {
+  if (currentStatus !== "order_received" && currentStatus !== "pending" && currentStatus !== "confirmed" && currentStatus !== "processing" && currentStatus !== "payment_confirmed") {
     return {
       success: false,
       error: `Cancellation not allowed: Order #${orderId} is currently '${currentStatus}'. Orders that are already shipped or completed cannot be cancelled directly.`,
@@ -9878,7 +10649,12 @@ async function sendWorkflowStatusEmail(order, status, extra) {
   let heading = `Order Status: ${status.replace(/_/g, " ").toUpperCase()}`;
   let badgeColor = "indigo";
   let message = `Your order status has been updated to <strong>${escapeHtml(status.replace(/_/g, " "))}</strong>.`;
-  if (status === "payment_confirmed") {
+  if (status === "confirmed") {
+    badgeColor = "indigo";
+    subject = `Order Confirmed: #${shortId} has been Confirmed`;
+    heading = "Order Confirmed";
+    message = `Thank you! Your order <strong>#${escapeHtml(shortId)}</strong> has been confirmed by our team. We are checking details and preparing it for fulfillment.`;
+  } else if (status === "payment_confirmed") {
     badgeColor = "emerald";
     subject = `Payment Confirmed: Order #${shortId} is Verified!`;
     heading = "Payment Verified & Confirmed";
@@ -10285,7 +11061,7 @@ router5.get("/track/:orderId", trackingRateLimiter, async (req, res) => {
         { status: "Delivered & Completed", code: "completed", timestamp: order.deliveredAt || null, completed: isCompleted }
       ];
     }
-    const canCancel = (normalizedStatus === "order_received" || normalizedStatus === "processing" || normalizedStatus === "payment_confirmed") && normalizedStatus !== "completed" && normalizedStatus !== "cancelled";
+    const canCancel = normalizedStatus === "order_received" || normalizedStatus === "pending" || normalizedStatus === "confirmed" || normalizedStatus === "processing" || normalizedStatus === "payment_confirmed";
     return res.json({
       success: true,
       id: order.id,
@@ -10333,22 +11109,102 @@ router5.get("/track/:orderId", trackingRateLimiter, async (req, res) => {
 router5.get("/", async (req, res) => {
   try {
     const token = getAuthTokenFromRequest(req);
-    if (!token) {
+    const emailQuery = String(req.query.email || req.query.customerEmail || req.query.customer_email || "").trim().toLowerCase();
+    const phoneQuery = String(req.query.phone || req.query.customerPhone || req.query.customer_phone || "").trim();
+    const user = token ? await extractUserFromToken(token) : null;
+    let orders = [];
+    if (user && (user.is_staff || user.is_superuser || user.role === "admin")) {
+      if (emailQuery) {
+        orders = await getSqliteOrdersByUser(emailQuery);
+      } else {
+        orders = await getAllSqliteOrders();
+      }
+    } else if (user) {
+      orders = await getSqliteOrdersByUser(user.email || user.id);
+    } else if (emailQuery || phoneQuery) {
+      orders = await getSqliteOrdersByUser(emailQuery || phoneQuery);
+    } else {
       return res.json([]);
     }
-    const user = await extractUserFromToken(token);
-    if (!user) {
-      return res.json([]);
+    orders = await enrichOrdersWithReviewEligibility(orders);
+    if (req.query.needsReview === "true" || req.query.needsReview === "1") {
+      orders = orders.filter((o) => (o.unreviewedCount || 0) > 0);
     }
-    if (user.is_staff || user.is_superuser || user.role === "admin") {
-      const allOrders = await getAllSqliteOrders();
-      return res.json(allOrders);
+    if (req.query.page && req.query.limit) {
+      const page = Math.max(1, Number(req.query.page) || 1);
+      const limit = Math.max(1, Math.min(100, Number(req.query.limit) || 10));
+      const total = orders.length;
+      const offset = (page - 1) * limit;
+      const paginatedOrders = orders.slice(offset, offset + limit);
+      return res.json({
+        count: total,
+        next: page * limit < total ? `/api/orders/?page=${page + 1}&limit=${limit}${req.query.needsReview ? "&needsReview=true" : ""}` : null,
+        previous: page > 1 ? `/api/orders/?page=${page - 1}&limit=${limit}${req.query.needsReview ? "&needsReview=true" : ""}` : null,
+        results: paginatedOrders
+      });
     }
-    const userOrders = await getSqliteOrdersByUser(user.email || user.id);
-    return res.json(userOrders);
+    return res.json(orders);
   } catch (err) {
     const message = err instanceof Error ? err.message : "Failed to retrieve orders";
     return res.status(500).json({ success: false, error: message });
+  }
+});
+var adminSseClients = /* @__PURE__ */ new Set();
+function broadcastOrderToAdmin(order) {
+  const payload = JSON.stringify({
+    type: "NEW_ORDER_PLACED",
+    order,
+    timestamp: Date.now()
+  });
+  for (const client of adminSseClients) {
+    try {
+      client.write(`event: new_order
+data: ${payload}
+
+`);
+    } catch (_) {
+      adminSseClients.delete(client);
+    }
+  }
+}
+router5.get("/live-stream", (req, res) => {
+  res.setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache, no-transform");
+  res.setHeader("Connection", "keep-alive");
+  res.setHeader("X-Accel-Buffering", "no");
+  res.flushHeaders();
+  res.write(`event: connected
+data: {"status":"connected","timestamp":${Date.now()}}
+
+`);
+  adminSseClients.add(res);
+  const heartbeat = setInterval(() => {
+    try {
+      res.write(`: heartbeat
+
+`);
+    } catch (_) {
+      clearInterval(heartbeat);
+      adminSseClients.delete(res);
+    }
+  }, 25e3);
+  req.on("close", () => {
+    clearInterval(heartbeat);
+    adminSseClients.delete(res);
+  });
+});
+router5.get("/latest", async (req, res) => {
+  try {
+    const limit = Math.min(Number(req.query.limit) || 10, 50);
+    const allOrders = await getAllSqliteOrders();
+    const sorted = (allOrders || []).sort((a, b) => {
+      const timeA = new Date(a.created_at || a.date || 0).getTime();
+      const timeB = new Date(b.created_at || b.date || 0).getTime();
+      return timeB - timeA;
+    });
+    return res.json({ success: true, orders: sorted.slice(0, limit) });
+  } catch (err) {
+    return res.status(500).json({ success: false, error: "Failed to retrieve latest orders" });
   }
 });
 router5.get("/:id", async (req, res) => {
@@ -10369,7 +11225,8 @@ router5.get("/:id", async (req, res) => {
         return res.status(403).json({ success: false, error: "Access denied. You do not have permission to view this order." });
       }
     }
-    return res.json(order);
+    const [enrichedOrder] = await enrichOrdersWithReviewEligibility([order]);
+    return res.json(enrichedOrder || order);
   } catch (err) {
     const message = err instanceof Error ? err.message : "Failed to retrieve order";
     return res.status(500).json({ success: false, error: message });
@@ -10468,6 +11325,11 @@ router5.post("/", validateBody(CreateOrderSchema), async (req, res) => {
       updated_at: (/* @__PURE__ */ new Date()).toISOString()
     };
     const savedOrder = await saveSqliteOrder(newOrderPayload);
+    try {
+      broadcastOrderToAdmin(savedOrder);
+    } catch (sseErr) {
+      console.warn("[Orders API] Real-time admin SSE broadcast warning:", sseErr);
+    }
     try {
       emailEvents.emit("order:created", {
         id: orderId,
@@ -12020,357 +12882,186 @@ var cart_default = router10;
 // server/routes/reviews.ts
 var import_express11 = require("express");
 var import_zod8 = require("zod");
+init_mysql_db();
 var router11 = (0, import_express11.Router)();
-var reviewSubmissionRateLimiter = createRateLimiter({
+var reviewRateLimiter = createRateLimiter({
   windowMs: 60 * 60 * 1e3,
-  max: 10,
-  message: "Rate limit exceeded. Maximum 10 review submissions per hour allowed."
+  max: 15,
+  message: "Review rate limit exceeded. Please try again later."
 });
 var CreateReviewSchema = import_zod8.z.object({
-  productId: import_zod8.z.string().min(1, "Product ID is required."),
-  rating: import_zod8.z.number().min(1).max(5),
-  title: import_zod8.z.string().optional(),
-  comment: import_zod8.z.string().min(10, "Review statement must be at least 10 characters long.").max(2e3),
+  orderItemId: import_zod8.z.string().min(1, "Order Item ID is required."),
   orderId: import_zod8.z.string().optional(),
+  rating: import_zod8.z.number().int().min(1, "Rating must be between 1 and 5.").max(5, "Rating must be between 1 and 5."),
+  title: import_zod8.z.string().max(120, "Title cannot exceed 120 characters.").optional(),
+  body: import_zod8.z.string().min(10, "Review must be at least 10 characters long.").max(2e3, "Review cannot exceed 2000 characters."),
   mediaUrls: import_zod8.z.array(import_zod8.z.string()).max(5).optional(),
-  reviewerDisplayName: import_zod8.z.string().optional(),
-  purchasedVariant: import_zod8.z.string().optional(),
-  userEmail: import_zod8.z.string().optional(),
-  userId: import_zod8.z.union([import_zod8.z.string(), import_zod8.z.number()]).optional(),
-  userName: import_zod8.z.string().optional()
+  images: import_zod8.z.array(import_zod8.z.string()).max(5).optional()
+});
+var UpdateReviewSchema = import_zod8.z.object({
+  rating: import_zod8.z.number().int().min(1).max(5).optional(),
+  title: import_zod8.z.string().max(120).optional(),
+  body: import_zod8.z.string().min(10).max(2e3).optional()
+});
+var AdminStatusSchema = import_zod8.z.object({
+  status: import_zod8.z.enum(["published", "hidden"])
 });
 router11.get(["/product/:productId", "/:productId/reviews", "/:productId/reviews/"], async (req, res) => {
   try {
     const { productId } = req.params;
     const { rating, sort } = req.query;
-    const result = await getSqliteReviewsByProduct(productId, {
+    const result = await getMysqlReviewsByProduct(productId, {
       rating: rating ? Number(rating) : void 0,
       sort: typeof sort === "string" ? sort : void 0
     });
-    res.json(result);
+    res.json({
+      success: true,
+      ...result
+    });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Failed to retrieve reviews";
     res.status(500).json({ success: false, error: message });
   }
 });
-router11.post(["/check-eligibility", "/check-eligibility/"], async (req, res) => {
+router11.get(["/eligibility/:orderItemId", "/order-item/:orderItemId/eligibility"], requireAuth, async (req, res) => {
   try {
-    const token = getAuthTokenFromRequest(req);
-    const tokenUser = token ? await extractUserFromToken(token) : null;
-    const { userEmail: bodyEmail, userId: bodyUserId, productId, sku } = req.body || {};
-    const userEmail = (tokenUser?.email || bodyEmail || "").trim().toLowerCase();
-    const userId = tokenUser?.id || bodyUserId || void 0;
-    if (!userEmail && !userId) {
-      return res.json({
-        eligible: false,
-        reason: "NOT_LOGGED_IN",
-        message: "Please log in to your customer account to leave a verified review."
-      });
-    }
-    if (!productId) {
-      return res.status(400).json({
-        eligible: false,
-        reason: "NOT_PURCHASED",
-        message: "Product ID is required to verify purchase."
-      });
-    }
-    const orders = await getSqliteOrdersByUser(userEmail, userId ? String(userId) : void 0);
-    const normalizedProdId = String(productId).trim().toLowerCase();
-    const normalizedSku = sku ? String(sku).trim().toLowerCase() : "";
-    let matchingOrder = null;
-    let purchasedVariant = void 0;
-    for (const order of orders) {
-      const status = String(order.status || "").toLowerCase();
-      if (status === "cancelled" || status === "canceled" || status === "refunded") {
-        continue;
-      }
-      const items = Array.isArray(order.items) ? order.items : [];
-      for (const item of items) {
-        const itemId = String(item.id || item.productId || "").trim().toLowerCase();
-        const itemSku = String(item.sku || item.product_sku || "").trim().toLowerCase();
-        if (normalizedProdId && itemId === normalizedProdId || normalizedSku && itemSku === normalizedSku || normalizedProdId && itemSku === normalizedProdId) {
-          matchingOrder = order;
-          purchasedVariant = item.selectedVariant || item.selectedVariations ? typeof item.selectedVariations === "object" ? Object.values(item.selectedVariations).join(" / ") : String(item.selectedVariations) : void 0;
-          break;
-        }
-      }
-      if (matchingOrder) break;
-    }
-    if (!matchingOrder) {
-      return res.json({
-        eligible: false,
-        reason: "NOT_PURCHASED",
-        message: "Only verified customers who have bought this product can leave a review."
-      });
-    }
-    const { reviews: existingReviews } = await getSqliteReviewsByProduct(productId);
-    const existing = existingReviews.find(
-      (r) => userEmail && r.userEmail && r.userEmail.toLowerCase() === userEmail || userId && r.userId && String(r.userId) === String(userId)
-    );
-    if (existing) {
-      return res.json({
-        eligible: false,
-        reason: "ALREADY_REVIEWED",
-        message: "You have already submitted a review for this product.",
-        existingReview: existing,
-        orderId: matchingOrder.id,
-        purchasedVariant
-      });
-    }
-    return res.json({
-      eligible: true,
-      reason: "ELIGIBLE",
-      message: "Verified Purchaser: You are eligible to review this product.",
-      orderId: matchingOrder.id,
-      purchasedVariant
-    });
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "Failed to verify purchase eligibility";
-    return res.status(500).json({ eligible: false, reason: "NOT_PURCHASED", message });
-  }
-});
-router11.post("/", reviewSubmissionRateLimiter, validateBody(CreateReviewSchema), async (req, res) => {
-  try {
-    const token = getAuthTokenFromRequest(req);
-    const tokenUser = token ? await extractUserFromToken(token) : null;
-    const {
-      productId,
-      rating,
-      title,
-      comment,
-      mediaUrls,
-      orderId,
-      reviewerDisplayName,
-      purchasedVariant,
-      userEmail: bodyEmail,
-      userId: bodyUserId,
-      userName: bodyUserName
-    } = req.body;
-    const userEmail = (tokenUser?.email || bodyEmail || "").trim().toLowerCase();
-    const userId = tokenUser?.id || bodyUserId || void 0;
-    const userName = tokenUser ? `${tokenUser.first_name || ""} ${tokenUser.last_name || ""}`.trim() || tokenUser.username : bodyUserName || "Verified Customer";
-    if (!userEmail && !userId) {
-      return res.status(401).json({
-        success: false,
-        error: "Authentication required. Please log in to post a review."
-      });
-    }
-    const orders = await getSqliteOrdersByUser(userEmail, userId ? String(userId) : void 0);
-    const normalizedProdId = String(productId).trim().toLowerCase();
-    let matchingOrder = null;
-    for (const order of orders) {
-      const status = String(order.status || "").toLowerCase();
-      if (status === "cancelled" || status === "canceled" || status === "refunded") continue;
-      const items = Array.isArray(order.items) ? order.items : [];
-      for (const item of items) {
-        const itemId = String(item.id || item.productId || "").trim().toLowerCase();
-        const itemSku = String(item.sku || item.product_sku || "").trim().toLowerCase();
-        if (itemId === normalizedProdId || itemSku === normalizedProdId) {
-          matchingOrder = order;
-          break;
-        }
-      }
-      if (matchingOrder) break;
-    }
-    if (!matchingOrder && !orderId) {
-      return res.status(403).json({
-        success: false,
-        error: "Review submission denied: Only verified customers who purchased this product can leave a review."
-      });
-    }
-    const newReview = {
-      id: `rev-${Date.now()}`,
-      productId: String(productId).trim(),
-      orderId: matchingOrder ? matchingOrder.id : orderId || void 0,
-      userId: userId ? String(userId) : null,
-      userEmail,
-      userName,
-      reviewerDisplayName: reviewerDisplayName || userName,
-      rating: Number(rating),
-      title: title ? String(title).trim() : "",
-      comment: String(comment).trim(),
-      mediaUrls: Array.isArray(mediaUrls) ? mediaUrls.slice(0, 5) : [],
-      verifiedPurchase: true,
-      status: "Published",
-      date: (/* @__PURE__ */ new Date()).toISOString().split("T")[0],
-      createdAt: (/* @__PURE__ */ new Date()).toISOString(),
-      helpfulVotes: 0,
-      helpfulUserIds: [],
-      purchasedVariant: purchasedVariant || void 0,
-      isEdited: false
-    };
-    const saved = await saveSqliteReview(newReview);
-    await recomputeSqliteProductRating(productId);
-    res.status(201).json({
-      success: true,
-      message: "Verified customer review published successfully!",
-      review: saved
-    });
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "Failed to submit review";
-    res.status(500).json({ success: false, error: message });
-  }
-});
-router11.put("/:id", requireAuth, async (req, res) => {
-  try {
-    const { id } = req.params;
     const user = req.user;
-    const { rating, title, comment, mediaUrls, reviewerDisplayName } = req.body || {};
-    const all = await getAllSqliteReviews();
-    const existing = all.find((r) => r.id === id);
-    if (!existing) {
-      return res.status(404).json({ success: false, error: "Review not found." });
-    }
-    if (!user.is_superuser && !user.is_staff && existing.userEmail.toLowerCase() !== user.email.toLowerCase()) {
-      return res.status(403).json({ success: false, error: "Forbidden: You can only edit your own reviews." });
-    }
-    const updated = await updateSqliteReview(id, {
-      rating: rating ? Number(rating) : existing.rating,
-      title: title !== void 0 ? String(title).trim() : existing.title,
-      comment: comment !== void 0 ? String(comment).trim() : existing.comment,
-      mediaUrls: Array.isArray(mediaUrls) ? mediaUrls.slice(0, 5) : existing.mediaUrls,
-      reviewerDisplayName: reviewerDisplayName || existing.reviewerDisplayName
-    });
+    const { orderItemId } = req.params;
+    const orderId = req.query.orderId || req.query.order_id || void 0;
+    const result = await checkMysqlReviewEligibility(
+      user,
+      orderItemId,
+      orderId
+    );
     res.json({
       success: true,
-      message: "Review updated successfully.",
-      review: updated
+      item: result.orderItem,
+      ...result
     });
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Failed to update review";
+    const message = err instanceof Error ? err.message : "Failed to verify review eligibility";
     res.status(500).json({ success: false, error: message });
   }
+});
+router11.post("/check-eligibility", requireAuth, async (req, res) => {
+  try {
+    const user = req.user;
+    const orderItemId = req.body?.orderItemId;
+    const orderId = req.body?.orderId;
+    if (!orderItemId) {
+      return res.status(400).json({ success: false, error: "orderItemId is required" });
+    }
+    const result = await checkMysqlReviewEligibility(
+      user,
+      orderItemId,
+      orderId
+    );
+    res.json({
+      success: true,
+      item: result.orderItem,
+      ...result
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Failed to verify review eligibility";
+    res.status(500).json({ success: false, error: message });
+  }
+});
+router11.post("/", requireAuth, reviewRateLimiter, validateBody(CreateReviewSchema), async (req, res) => {
+  try {
+    const user = req.user;
+    const { orderItemId, orderId, rating, title, body, mediaUrls, images } = req.body;
+    const review = await createMysqlReview({
+      userId: user.id,
+      userEmail: user.email,
+      orderItemId,
+      orderId,
+      rating,
+      title,
+      body,
+      mediaUrls: mediaUrls || images || []
+    });
+    try {
+      await loadProductsCache(true);
+    } catch (_) {
+    }
+    res.status(201).json({
+      success: true,
+      message: "Review published successfully!",
+      review
+    });
+  } catch (err) {
+    const statusCode = err.status || 500;
+    res.status(statusCode).json({
+      success: false,
+      error: err.message || "Failed to submit review",
+      code: err.code || "REVIEW_SUBMISSION_FAILED"
+    });
+  }
+});
+router11.put("/:id", (_req, res) => {
+  return res.status(405).json({
+    success: false,
+    error: "Reviews are final once submitted and cannot be edited."
+  });
+});
+router11.patch("/:id", (_req, res) => {
+  return res.status(405).json({
+    success: false,
+    error: "Reviews are final once submitted and cannot be edited."
+  });
 });
 router11.delete("/:id", requireAuth, async (req, res) => {
   try {
-    const { id } = req.params;
     const user = req.user;
-    const all = await getAllSqliteReviews();
-    const existing = all.find((r) => r.id === id);
-    if (!existing) {
-      return res.status(404).json({ success: false, error: "Review not found." });
-    }
-    if (!user.is_superuser && !user.is_staff && existing.userEmail.toLowerCase() !== user.email.toLowerCase()) {
-      return res.status(403).json({ success: false, error: "Forbidden: You can only delete your own reviews." });
-    }
-    await deleteSqliteReview(id);
-    res.json({ success: true, message: "Review removed successfully." });
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "Failed to delete review";
-    res.status(500).json({ success: false, error: message });
-  }
-});
-router11.post("/:id/helpful", async (req, res) => {
-  try {
     const { id } = req.params;
-    const token = getAuthTokenFromRequest(req);
-    const voterId = token ? `user-${token.slice(0, 10)}` : String(req.ip || "ip");
-    const result = await toggleSqliteReviewHelpful(id, voterId);
-    if (!result) {
-      return res.status(404).json({ success: false, error: "Review not found." });
-    }
+    const isAdmin = Boolean(user.is_superuser || user.is_staff || user.role === "admin");
+    const result = await deleteMysqlReview(id, user.id, isAdmin);
     res.json({
       success: true,
-      helpfulVotes: result.helpfulVotes,
-      voted: result.voted
+      message: "Review removed successfully.",
+      ...result
     });
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Failed to register vote";
-    res.status(500).json({ success: false, error: message });
+    const statusCode = err.status || 500;
+    res.status(statusCode).json({
+      success: false,
+      error: err.message || "Failed to delete review"
+    });
   }
 });
-router11.get("/admin/list", requireAdmin, async (_req, res) => {
+router11.get("/admin/list", requireAdmin, async (req, res) => {
   try {
-    const reviews = await getAllSqliteReviews();
-    res.json({ success: true, reviews });
+    const { status, limit, offset } = req.query;
+    const result = await getMysqlAllReviewsForAdmin({
+      status: typeof status === "string" ? status : void 0,
+      limit: limit ? Number(limit) : void 0,
+      offset: offset ? Number(offset) : void 0
+    });
+    res.json({
+      success: true,
+      ...result
+    });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Failed to fetch reviews list";
     res.status(500).json({ success: false, error: message });
   }
 });
-router11.put("/admin/:id/status", requireAdmin, async (req, res) => {
+router11.put("/admin/:id/status", requireAdmin, validateBody(AdminStatusSchema), async (req, res) => {
   try {
     const { id } = req.params;
     const { status } = req.body;
-    const updated = await updateSqliteReviewStatus(id, status);
-    if (!updated) {
-      return res.status(404).json({ success: false, error: "Review not found." });
-    }
+    const result = await adminUpdateMysqlReviewStatus(id, status);
     res.json({
       success: true,
-      message: `Review status updated to '${status}'.`,
-      review: updated
+      message: `Review status changed to '${status}'.`,
+      ...result
     });
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Failed to update review status";
-    res.status(500).json({ success: false, error: message });
-  }
-});
-router11.get(["/admin/requests/logs", "/admin/review-requests/logs", "/requests/logs"], requireAdmin, async (_req, res) => {
-  try {
-    const logs = await getSqliteReviewRequestLogs();
-    const settings = await getSqliteReviewRequestSettings();
-    const optOutsCount = await getSqliteReviewOptOutsCount();
-    const totalRequestsSent = logs.length;
-    const totalReviewed = logs.filter((l) => l.status === "reviewed").length;
-    const conversionRatePercent = totalRequestsSent > 0 ? Math.round(totalReviewed / totalRequestsSent * 1e3) / 10 : 0;
-    res.json({
-      success: true,
-      logs,
-      settings,
-      optOutsCount,
-      funnel: {
-        totalRequestsSent,
-        totalReviewed,
-        conversionRatePercent
-      }
+    const statusCode = err.status || 500;
+    res.status(statusCode).json({
+      success: false,
+      error: err.message || "Failed to update review status"
     });
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "Failed to fetch review request logs";
-    res.status(500).json({ success: false, error: message });
-  }
-});
-router11.get(["/admin/requests/settings", "/admin/review-requests/settings", "/requests/settings"], requireAdmin, async (_req, res) => {
-  try {
-    const settings = await getSqliteReviewRequestSettings();
-    res.json({ success: true, settings });
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "Failed to fetch review settings";
-    res.status(500).json({ success: false, error: message });
-  }
-});
-router11.put(["/admin/requests/settings", "/admin/review-requests/settings", "/requests/settings"], requireAdmin, async (req, res) => {
-  try {
-    const { enabled, delayDays, autoTriggerOnDelivery, incentiveDiscountPercent } = req.body || {};
-    if (delayDays !== void 0 && (Number(delayDays) < 0 || Number(delayDays) > 30)) {
-      return res.status(400).json({ success: false, error: "Delay days must be between 0 and 30 days." });
-    }
-    const updated = await saveSqliteReviewRequestSettings({
-      enabled: enabled !== void 0 ? Boolean(enabled) : void 0,
-      delayDays: delayDays !== void 0 ? Number(delayDays) : void 0,
-      autoTriggerOnDelivery: autoTriggerOnDelivery !== void 0 ? Boolean(autoTriggerOnDelivery) : void 0,
-      incentiveDiscountPercent: incentiveDiscountPercent !== void 0 ? Number(incentiveDiscountPercent) : void 0
-    });
-    res.json({ success: true, settings: updated });
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "Failed to update review settings";
-    res.status(500).json({ success: false, error: message });
-  }
-});
-router11.post("/requests/unsubscribe", async (req, res) => {
-  try {
-    const { email } = req.body || {};
-    if (!email || !String(email).includes("@")) {
-      return res.status(400).json({ success: false, error: "Valid email address is required to unsubscribe." });
-    }
-    await addSqliteReviewOptOut(String(email));
-    res.json({
-      success: true,
-      message: "You have been unsubscribed from post-delivery review request emails."
-    });
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "Failed to process unsubscribe";
-    res.status(500).json({ success: false, error: message });
   }
 });
 var reviews_default = router11;
@@ -13171,6 +13862,82 @@ router14.get("/cloudinary/status", (_req, res) => {
     message: isConfigured ? `Cloudinary signed upload active with server-side WebP optimization.` : "Cloudinary not configured. Using Sharp server-side WebP compression and thumbnail generation."
   });
 });
+router14.post(["/", "/review"], requireAuth, async (req, res) => {
+  try {
+    const { image, file, folder = "ropenix_reviews" } = req.body || {};
+    const input = image || file;
+    if (!input || typeof input !== "string") {
+      return res.status(400).json({
+        success: false,
+        error: "Image data is required (base64 data URI)."
+      });
+    }
+    if (!input.startsWith("data:image/")) {
+      return res.status(400).json({
+        success: false,
+        error: "Invalid image format. Must be an image data URI (e.g. data:image/jpeg;base64,...)."
+      });
+    }
+    if (input.length > 8 * 1024 * 1024) {
+      return res.status(400).json({
+        success: false,
+        error: "Image file is too large. Maximum allowed size is 5MB."
+      });
+    }
+    const cloudName = process.env.CLOUDINARY_CLOUD_NAME || process.env.VITE_CLOUDINARY_CLOUD_NAME || "";
+    const apiKey = process.env.CLOUDINARY_API_KEY || "";
+    const apiSecret = process.env.CLOUDINARY_API_SECRET || "";
+    if (cloudName && apiKey && apiSecret) {
+      try {
+        const timestamp = Math.floor(Date.now() / 1e3);
+        const targetFolder = String(folder || "ropenix_reviews").trim();
+        const paramsToSign = {
+          folder: targetFolder,
+          timestamp: String(timestamp)
+        };
+        const sortedKeys = Object.keys(paramsToSign).sort();
+        const toSign = sortedKeys.map((k) => `${k}=${paramsToSign[k]}`).join("&") + apiSecret;
+        const signature = import_crypto8.default.createHash("sha1").update(toSign).digest("hex");
+        const uploadPayload = {
+          file: input,
+          api_key: apiKey,
+          timestamp,
+          signature,
+          folder: targetFolder
+        };
+        const cloudinaryRes = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/image/upload`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(uploadPayload)
+        });
+        const data = await cloudinaryRes.json();
+        if (cloudinaryRes.ok && (data.secure_url || data.url)) {
+          const finalUrl = data.secure_url || data.url;
+          return res.status(200).json({
+            success: true,
+            url: finalUrl,
+            secure_url: data.secure_url,
+            format: data.format || "webp",
+            isCloudinary: true
+          });
+        }
+      } catch (cloudErr) {
+        console.warn("[Review Upload Cloudinary Warning, falling back to disk]:", cloudErr);
+      }
+    }
+    const staticUrl = await saveBase64ImageToDisk(input, "rev");
+    return res.status(200).json({
+      success: true,
+      url: staticUrl,
+      format: "webp",
+      isCloudinary: false
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Failed to upload photo";
+    console.error("[Upload Service Error]:", err);
+    return res.status(500).json({ success: false, error: message });
+  }
+});
 router14.post("/optimize", requireAdmin, async (req, res) => {
   try {
     const { image, file, maxWidth = 1600, quality = 82 } = req.body || {};
@@ -13404,6 +14171,8 @@ router15.get(["/unsubscribe", "/unsubscribe/"], async (req, res) => {
          updated_at = VALUES(updated_at);`,
       [id, email, nowIso]
     );
+    await setMysqlMarketingEmailOptOut(email, true).catch(() => {
+    });
     return res.send(`
       <!DOCTYPE html>
       <html>
@@ -13453,6 +14222,8 @@ router15.post(["/unsubscribe", "/unsubscribe/"], async (req, res) => {
          updated_at = VALUES(updated_at);`,
       [id, email, nowIso]
     );
+    await setMysqlMarketingEmailOptOut(email, true).catch(() => {
+    });
     return res.json({
       success: true,
       email,
@@ -13461,6 +14232,34 @@ router15.post(["/unsubscribe", "/unsubscribe/"], async (req, res) => {
     });
   } catch (err) {
     return res.status(500).json({ success: false, error: err?.message || "Failed to unsubscribe." });
+  }
+});
+router15.get("/opt-out", requireAuth, async (req, res) => {
+  try {
+    const user = req.user;
+    const optedOut = await isMysqlUserOptedOutOfMarketing(user.email);
+    res.json({
+      success: true,
+      email: user.email,
+      marketing_emails_opt_out: optedOut
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err?.message || "Failed to check opt-out status." });
+  }
+});
+router15.post("/opt-out", requireAuth, async (req, res) => {
+  try {
+    const user = req.user;
+    const optOut = Boolean(req.body.optOut ?? req.body.marketing_emails_opt_out);
+    await setMysqlMarketingEmailOptOutByUserId(user.id, optOut);
+    res.json({
+      success: true,
+      email: user.email,
+      marketing_emails_opt_out: optOut,
+      message: optOut ? "You have opted out of marketing emails and review requests." : "You are subscribed to marketing emails and review requests."
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err?.message || "Failed to update opt-out status." });
   }
 });
 router15.post(["/resubscribe", "/resubscribe/"], async (req, res) => {
@@ -13756,7 +14555,180 @@ var emailDiagnostics_default = router16;
 
 // server/routes/system.ts
 var import_express17 = require("express");
+var import_crypto9 = __toESM(require("crypto"), 1);
 init_mysql_db();
+
+// server/services/reviewReminderService.ts
+var import_dotenv4 = __toESM(require("dotenv"), 1);
+init_mysql_db();
+init_engagementTemplates();
+init_transporter();
+import_dotenv4.default.config();
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+async function processReviewReminders(options = {}) {
+  const reminderDays = Math.max(1, options.days || Number(process.env.REVIEW_REMINDER_DAYS) || 7);
+  const batchSize = Math.max(1, Math.min(100, options.batchSize || Number(process.env.REMINDER_BATCH_SIZE) || 25));
+  const delayMs = options.delayMs !== void 0 ? options.delayMs : Number(process.env.REMINDER_DELAY_MS) || 1500;
+  const dryRun = Boolean(options.dryRun);
+  console.log(`
+=========================================================`);
+  console.log(`[Review Reminders] Starting reminder runner`);
+  console.log(`[Review Reminders] Mode: ${dryRun ? "DRY-RUN (No emails/writes)" : "LIVE"}`);
+  console.log(`[Review Reminders] Reminder threshold: ${reminderDays} days from purchase date`);
+  console.log(`[Review Reminders] Batch limit: ${batchSize} orders | Delay: ${delayMs}ms`);
+  console.log(`=========================================================`);
+  const pool = await getDbPool();
+  const stats = {
+    inspectedOrders: 0,
+    eligibleOrders: 0,
+    claimedOrders: 0,
+    sentReminders: 0,
+    skippedNotDelivered: 0,
+    skippedOptedOut: 0,
+    skippedIneligibleStatus: 0,
+    failedDeliveries: 0,
+    claimedAndResetOrders: 0,
+    errors: []
+  };
+  const [candidateOrders] = await pool.query(
+    `SELECT o.id, o.customerName, o.customerEmail, o.customerPhone, o.items, o.total,
+            o.status, o.date, o.deliveryConfirmed, o.deliveredAt, o.created_at,
+            u.marketing_emails_opt_out, u.id as user_id
+     FROM orders o
+     LEFT JOIN users u ON (LOWER(u.email) = LOWER(o.customerEmail))
+     WHERE o.review_reminder_sent_at IS NULL
+       AND (
+         (o.created_at IS NOT NULL AND o.created_at <= DATE_SUB(NOW(), INTERVAL ? DAY))
+         OR (o.created_at IS NULL AND o.date <= DATE_SUB(NOW(), INTERVAL ? DAY))
+       )
+     ORDER BY o.created_at ASC
+     LIMIT ?`,
+    [reminderDays, reminderDays, batchSize]
+  );
+  stats.inspectedOrders = candidateOrders?.length || 0;
+  console.log(`[Review Reminders] Candidate orders found: ${stats.inspectedOrders}`);
+  if (stats.inspectedOrders === 0) {
+    console.log(`[Review Reminders] No pending orders match the ${reminderDays}-day reminder window.`);
+    return stats;
+  }
+  const appBaseUrl = process.env.APP_URL || process.env.FRONTEND_URL || "https://ropenix.co.ke";
+  for (const order of candidateOrders) {
+    const orderId = String(order.id);
+    const orderStatus = String(order.status || "").toLowerCase();
+    if (orderStatus === "cancelled" || orderStatus === "canceled" || orderStatus === "refunded") {
+      stats.skippedIneligibleStatus++;
+      if (!dryRun) {
+        await pool.query(
+          `UPDATE orders SET review_reminder_sent_at = NOW() WHERE id = ? AND review_reminder_sent_at IS NULL`,
+          [orderId]
+        );
+      }
+      continue;
+    }
+    const isDelivered = orderStatus === "completed" || Boolean(order.deliveryConfirmed) || Boolean(order.deliveredAt);
+    if (!isDelivered) {
+      stats.skippedNotDelivered++;
+      console.log(`  - Order ${orderId}: Not delivered yet (status: ${order.status}). Skipped without marking reminder.`);
+      continue;
+    }
+    if (Boolean(order.marketing_emails_opt_out)) {
+      stats.skippedOptedOut++;
+      console.log(`  - Order ${orderId}: Customer <${order.customerEmail}> opted out of marketing emails. Skipped.`);
+      if (!dryRun) {
+        await pool.query(
+          `UPDATE orders SET review_reminder_sent_at = NOW() WHERE id = ? AND review_reminder_sent_at IS NULL`,
+          [orderId]
+        );
+      }
+      continue;
+    }
+    stats.eligibleOrders++;
+    if (dryRun) {
+      console.log(`  - [DRY-RUN] Would claim Order ${orderId} and send reminder to <${order.customerEmail}>.`);
+      stats.sentReminders++;
+      continue;
+    }
+    const [claimResult] = await pool.query(
+      `UPDATE orders SET review_reminder_sent_at = NOW() WHERE id = ? AND review_reminder_sent_at IS NULL`,
+      [orderId]
+    );
+    if (!claimResult || claimResult.affectedRows !== 1) {
+      console.log(`  - Order ${orderId}: Already claimed by concurrent worker. Skipped.`);
+      continue;
+    }
+    stats.claimedOrders++;
+    let orderItems = await getMysqlOrderItemsByOrderId(orderId);
+    if (!orderItems || orderItems.length === 0) {
+      try {
+        orderItems = typeof order.items === "string" ? JSON.parse(order.items) : order.items;
+      } catch (_) {
+        orderItems = [];
+      }
+    }
+    const firstItem = orderItems && orderItems.length > 0 ? orderItems[0] : null;
+    const firstItemId = firstItem ? firstItem.id || `oi_${orderId}_0` : "0";
+    const customerEmail = String(order.customerEmail || "").trim().toLowerCase();
+    const unsubscribeUrl = `${appBaseUrl}/api/marketing/unsubscribe?email=${encodeURIComponent(customerEmail)}`;
+    const reviewDeepLink = `${appBaseUrl}/orders/${orderId}/review/${firstItemId}`;
+    try {
+      const emailContent = renderReviewRequestEmail({
+        id: orderId,
+        customerName: order.customerName || "Valued Customer",
+        customerEmail,
+        total: Number(order.total || 0),
+        createdAt: order.created_at || order.date || (/* @__PURE__ */ new Date()).toISOString(),
+        items: (orderItems || []).map((it) => ({
+          name: it.name || "Ordered Product",
+          price: Number(it.price || 0),
+          quantity: Number(it.quantity || 1)
+        })),
+        reviewUrl: reviewDeepLink,
+        unsubscribeUrl
+      });
+      const sendRes = await sendRawMail({
+        to: customerEmail,
+        subject: emailContent.subject,
+        html: emailContent.html,
+        text: emailContent.text,
+        category: "marketing",
+        listUnsubscribeUrl: unsubscribeUrl
+      });
+      if (!sendRes.success) {
+        throw new Error(sendRes.error || "SMTP delivery reported failure");
+      }
+      stats.sentReminders++;
+      console.log(`  \u2705 Sent review reminder for Order ${orderId} to <${customerEmail}>.`);
+    } catch (sendErr) {
+      stats.failedDeliveries++;
+      stats.claimedAndResetOrders++;
+      stats.errors.push({ orderId, error: sendErr.message || String(sendErr) });
+      console.error(`  \u274C Failed to send reminder for Order ${orderId}: ${sendErr.message}`);
+      await pool.query(
+        `UPDATE orders SET review_reminder_sent_at = NULL WHERE id = ?`,
+        [orderId]
+      );
+      console.log(`  \u{1F504} Reset review_reminder_sent_at = NULL for Order ${orderId} for future retry.`);
+    }
+    if (delayMs > 0) {
+      await delay(delayMs);
+    }
+  }
+  console.log(`
+[Review Reminders] Run complete:`);
+  console.log(`  - Inspected candidate orders:  ${stats.inspectedOrders}`);
+  console.log(`  - Eligible orders:             ${stats.eligibleOrders}`);
+  console.log(`  - Skipped (not delivered yet): ${stats.skippedNotDelivered}`);
+  console.log(`  - Skipped (marketing opt-out): ${stats.skippedOptedOut}`);
+  console.log(`  - Sent reminders:              ${stats.sentReminders}`);
+  console.log(`  - Failed & reset for retry:    ${stats.failedDeliveries}`);
+  console.log(`=========================================================
+`);
+  return stats;
+}
+
+// server/routes/system.ts
 var router17 = (0, import_express17.Router)();
 router17.get("/health", (_req, res) => {
   res.json({ status: "healthy", brand: "Ropenix", timestamp: (/* @__PURE__ */ new Date()).toISOString(), database: "MySQL" });
@@ -13886,15 +14858,402 @@ router17.get("/courier/track", (req, res) => {
     res.status(500).json({ success: false, error: message });
   }
 });
+function verifyInternalCronToken(req) {
+  const configuredToken = (process.env.REMINDER_CRON_TOKEN || process.env.INTERNAL_API_SECRET || process.env.CRON_SECRET || process.env.JWT_SECRET || "").trim();
+  if (!configuredToken) return false;
+  let providedToken = (req.headers["x-cron-token"] || req.headers["x-internal-secret"] || req.headers["x-api-key"] || "").toString().trim();
+  if (!providedToken && req.headers.authorization) {
+    const parts = req.headers.authorization.split(" ");
+    if (parts.length === 2 && parts[0].toLowerCase() === "bearer") {
+      providedToken = parts[1].trim();
+    }
+  }
+  if (!providedToken) return false;
+  const bufProvided = Buffer.from(providedToken);
+  const bufConfigured = Buffer.from(configuredToken);
+  if (bufProvided.length !== bufConfigured.length) {
+    return false;
+  }
+  return import_crypto9.default.timingSafeEqual(bufProvided, bufConfigured);
+}
+router17.post(["/internal/send-review-reminders", "/internal/send-review-reminders/"], async (req, res) => {
+  if (!verifyInternalCronToken(req)) {
+    return res.status(401).json({
+      success: false,
+      error: "Unauthorized: Invalid or missing cron security token in header (x-cron-token or Bearer token required)."
+    });
+  }
+  try {
+    const { days, batchSize, delayMs, dryRun } = req.body || {};
+    const stats = await processReviewReminders({
+      days: days ? Number(days) : void 0,
+      batchSize: batchSize ? Number(batchSize) : void 0,
+      delayMs: delayMs !== void 0 ? Number(delayMs) : void 0,
+      dryRun: Boolean(dryRun || req.query.dryRun === "true")
+    });
+    return res.json({
+      success: true,
+      message: "Review reminder execution finished successfully.",
+      stats
+    });
+  } catch (err) {
+    return res.status(500).json({
+      success: false,
+      error: err?.message || "Failed to execute review reminders"
+    });
+  }
+});
 var system_default = router17;
 
 // server/index.ts
 var import_compression = __toESM(require("compression"), 1);
 
-// server/routes/seo.ts
+// server/routes/feeds.ts
 var import_express18 = require("express");
 var router18 = (0, import_express18.Router)();
-router18.get("/robots.txt", (_req, res) => {
+function getBaseUrl(req) {
+  const host = req.get("host") || "ropenix.co.ke";
+  const protocol = req.secure || req.headers["x-forwarded-proto"] === "https" ? "https" : host.includes("localhost") ? "http" : "https";
+  const cleanHost = host.includes("localhost") || host.includes("127.0.0.1") ? host : "ropenix.co.ke";
+  return `${protocol}://${cleanHost}`;
+}
+function cleanDescription(rawDesc) {
+  if (!rawDesc || typeof rawDesc !== "string") {
+    return "Exclusive handcrafted fashion, luxury timepieces and bespoke apparel from Ropenix Collections.";
+  }
+  const clean = rawDesc.replace(/<[^>]*>?/gm, " ").replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/\s+/g, " ").trim();
+  return clean.substring(0, 5e3);
+}
+function resolveImageUrl(imgUrl, baseUrl) {
+  if (!imgUrl || typeof imgUrl !== "string") {
+    return `${baseUrl}/og-image.svg`;
+  }
+  if (imgUrl.startsWith("http://") || imgUrl.startsWith("https://")) {
+    return imgUrl;
+  }
+  const normalized = imgUrl.startsWith("/") ? imgUrl : `/${imgUrl}`;
+  return `${baseUrl}${normalized}`;
+}
+function csvEscape(val) {
+  if (val === null || val === void 0) return "";
+  const str = String(val).trim();
+  if (str.includes(",") || str.includes('"') || str.includes("\n") || str.includes("\r")) {
+    return `"${str.replace(/"/g, '""')}"`;
+  }
+  return str;
+}
+function cdata(val) {
+  const clean = (val || "").replace(/]]>/g, "]]&gt;");
+  return `<![CDATA[${clean}]]>`;
+}
+async function getExportProducts() {
+  const allProducts = await loadProductsCache();
+  if (!Array.isArray(allProducts)) return [];
+  return allProducts.filter((p) => {
+    return p.status !== "Draft" && p.status !== "Archived" && !p.isHidden && !p.isArchived;
+  });
+}
+router18.get(["/meta.xml", "/facebook.xml", "/catalog.xml", "/products.xml"], async (req, res) => {
+  try {
+    const baseUrl = getBaseUrl(req);
+    const products = await getExportProducts();
+    const currency = "KES";
+    let itemsXml = "";
+    for (const prod of products) {
+      const prodId = prod.id || prod.sku;
+      const title = prod.name || prod.title || "Untitled Product";
+      const desc = cleanDescription(prod.description || prod.shortDescription || prod.detailedDescription);
+      const link = `${baseUrl}/store?product=${encodeURIComponent(prodId)}`;
+      const primaryImg = resolveImageUrl(prod.imageUrl || prod.images && prod.images[0] || prod.image, baseUrl);
+      const gallery = (Array.isArray(prod.images) ? prod.images : []).filter((img) => img && img !== prod.imageUrl && img !== prod.image).slice(0, 10);
+      let additionalImagesXml = "";
+      for (const gImg of gallery) {
+        additionalImagesXml += `
+      <g:additional_image_link>${resolveImageUrl(gImg, baseUrl)}</g:additional_image_link>`;
+      }
+      const isAvailable = (prod.stock > 0 || prod.stockQty && prod.stockQty > 0) && prod.status === "Active";
+      const availability = isAvailable ? "in stock" : "out of stock";
+      const condition = "new";
+      const brand = prod.brand || "Ropenix Collections";
+      const productType = [prod.category, prod.subcategory].filter(Boolean).join(" > ") || "Fashion & Accessories";
+      const numericPrice = Number(prod.price) || 0;
+      const numericOrig = Number(prod.originalPrice || prod.previousPrice || 0);
+      let priceStr = `${numericPrice.toFixed(2)} ${currency}`;
+      let salePriceStr = "";
+      if (numericOrig > numericPrice) {
+        priceStr = `${numericOrig.toFixed(2)} ${currency}`;
+        salePriceStr = `
+      <g:sale_price>${numericPrice.toFixed(2)} ${currency}</g:sale_price>`;
+      }
+      itemsXml += `
+    <item>
+      <g:id>${cdata(String(prodId))}</g:id>
+      <g:title>${cdata(title)}</g:title>
+      <g:description>${cdata(desc)}</g:description>
+      <g:link>${link}</g:link>
+      <g:image_link>${primaryImg}</g:image_link>${additionalImagesXml}
+      <g:brand>${cdata(brand)}</g:brand>
+      <g:condition>${condition}</g:condition>
+      <g:availability>${availability}</g:availability>
+      <g:price>${priceStr}</g:price>${salePriceStr}
+      <g:product_type>${cdata(productType)}</g:product_type>
+      <g:item_group_id>${cdata(String(prodId))}</g:item_group_id>
+    </item>`;
+    }
+    const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<rss xmlns:g="http://base.google.com/ns/1.0" version="2.0">
+  <channel>
+    <title>Ropenix Collections | Meta Product Catalog Feed</title>
+    <link>${baseUrl}</link>
+    <description>Dynamic real-time product feed for Meta Commerce Manager, Facebook Shop, Instagram Shopping and Google Merchant Center.</description>
+    <lastBuildDate>${(/* @__PURE__ */ new Date()).toUTCString()}</lastBuildDate>${itemsXml}
+  </channel>
+</rss>`;
+    res.setHeader("Content-Type", "application/xml; charset=utf-8");
+    res.setHeader("Cache-Control", "public, max-age=300, stale-while-revalidate=600");
+    res.send(xml);
+  } catch (err) {
+    console.error("[Feeds API] Error generating Meta XML feed:", err);
+    res.status(500).send("Error generating XML feed.");
+  }
+});
+router18.get(["/meta.csv", "/facebook.csv", "/catalog.csv", "/products.csv"], async (req, res) => {
+  try {
+    const baseUrl = getBaseUrl(req);
+    const products = await getExportProducts();
+    const currency = "KES";
+    const headers = [
+      "id",
+      "title",
+      "description",
+      "availability",
+      "condition",
+      "price",
+      "sale_price",
+      "link",
+      "image_link",
+      "additional_image_link",
+      "brand",
+      "product_type",
+      "item_group_id"
+    ];
+    const rows = [headers.join(",")];
+    for (const prod of products) {
+      const prodId = prod.id || prod.sku;
+      const title = prod.name || prod.title || "Untitled Product";
+      const desc = cleanDescription(prod.description || prod.shortDescription || prod.detailedDescription);
+      const link = `${baseUrl}/store?product=${encodeURIComponent(prodId)}`;
+      const primaryImg = resolveImageUrl(prod.imageUrl || prod.images && prod.images[0] || prod.image, baseUrl);
+      const gallery = (Array.isArray(prod.images) ? prod.images : []).filter((img) => img && img !== prod.imageUrl && img !== prod.image).slice(0, 10).map((img) => resolveImageUrl(img, baseUrl)).join(",");
+      const isAvailable = (prod.stock > 0 || prod.stockQty && prod.stockQty > 0) && prod.status === "Active";
+      const availability = isAvailable ? "in stock" : "out of stock";
+      const condition = "new";
+      const brand = prod.brand || "Ropenix Collections";
+      const productType = [prod.category, prod.subcategory].filter(Boolean).join(" > ") || "Fashion & Accessories";
+      const numericPrice = Number(prod.price) || 0;
+      const numericOrig = Number(prod.originalPrice || prod.previousPrice || 0);
+      let priceStr = `${numericPrice.toFixed(2)} ${currency}`;
+      let salePriceStr = "";
+      if (numericOrig > numericPrice) {
+        priceStr = `${numericOrig.toFixed(2)} ${currency}`;
+        salePriceStr = `${numericPrice.toFixed(2)} ${currency}`;
+      }
+      const rowValues = [
+        csvEscape(prodId),
+        csvEscape(title),
+        csvEscape(desc),
+        csvEscape(availability),
+        csvEscape(condition),
+        csvEscape(priceStr),
+        csvEscape(salePriceStr),
+        csvEscape(link),
+        csvEscape(primaryImg),
+        csvEscape(gallery),
+        csvEscape(brand),
+        csvEscape(productType),
+        csvEscape(prodId)
+      ];
+      rows.push(rowValues.join(","));
+    }
+    const csvContent = rows.join("\r\n");
+    res.setHeader("Content-Type", "text/csv; charset=utf-8");
+    res.setHeader("Content-Disposition", 'inline; filename="meta-product-catalog.csv"');
+    res.setHeader("Cache-Control", "public, max-age=300, stale-while-revalidate=600");
+    res.send(csvContent);
+  } catch (err) {
+    console.error("[Feeds API] Error generating Meta CSV feed:", err);
+    res.status(500).send("Error generating CSV feed.");
+  }
+});
+router18.get(["/meta.tsv", "/facebook.tsv"], async (req, res) => {
+  try {
+    const baseUrl = getBaseUrl(req);
+    const products = await getExportProducts();
+    const currency = "KES";
+    const headers = [
+      "id",
+      "title",
+      "description",
+      "availability",
+      "condition",
+      "price",
+      "sale_price",
+      "link",
+      "image_link",
+      "brand",
+      "product_type"
+    ];
+    const rows = [headers.join("	")];
+    for (const prod of products) {
+      const prodId = prod.id || prod.sku;
+      const title = (prod.name || prod.title || "Untitled Product").replace(/[\t\r\n]+/g, " ");
+      const desc = cleanDescription(prod.description || prod.shortDescription).replace(/[\t\r\n]+/g, " ");
+      const link = `${baseUrl}/store?product=${encodeURIComponent(prodId)}`;
+      const primaryImg = resolveImageUrl(prod.imageUrl || prod.images && prod.images[0] || prod.image, baseUrl);
+      const isAvailable = (prod.stock > 0 || prod.stockQty && prod.stockQty > 0) && prod.status === "Active";
+      const availability = isAvailable ? "in stock" : "out of stock";
+      const condition = "new";
+      const brand = (prod.brand || "Ropenix Collections").replace(/[\t\r\n]+/g, " ");
+      const productType = ([prod.category, prod.subcategory].filter(Boolean).join(" > ") || "Fashion & Accessories").replace(/[\t\r\n]+/g, " ");
+      const numericPrice = Number(prod.price) || 0;
+      const numericOrig = Number(prod.originalPrice || prod.previousPrice || 0);
+      let priceStr = `${numericPrice.toFixed(2)} ${currency}`;
+      let salePriceStr = "";
+      if (numericOrig > numericPrice) {
+        priceStr = `${numericOrig.toFixed(2)} ${currency}`;
+        salePriceStr = `${numericPrice.toFixed(2)} ${currency}`;
+      }
+      rows.push([
+        prodId,
+        title,
+        desc,
+        availability,
+        condition,
+        priceStr,
+        salePriceStr,
+        link,
+        primaryImg,
+        brand,
+        productType
+      ].join("	"));
+    }
+    res.setHeader("Content-Type", "text/tab-separated-values; charset=utf-8");
+    res.setHeader("Content-Disposition", 'inline; filename="meta-product-catalog.tsv"');
+    res.setHeader("Cache-Control", "public, max-age=300, stale-while-revalidate=600");
+    res.send(rows.join("\r\n"));
+  } catch (err) {
+    console.error("[Feeds API] Error generating Meta TSV feed:", err);
+    res.status(500).send("Error generating TSV feed.");
+  }
+});
+router18.get("/", async (req, res) => {
+  try {
+    const baseUrl = getBaseUrl(req);
+    const products = await getExportProducts();
+    if (req.headers.accept?.includes("text/html")) {
+      return res.send(`<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Ropenix Collections - Meta & Google Catalog Feeds</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background: #0f172a; color: #f8fafc; margin: 0; padding: 40px 20px; display: flex; justify-content: center; }
+    .card { background: #1e293b; border: 1px solid #334155; border-radius: 16px; padding: 32px; max-width: 720px; width: 100%; box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.3); }
+    h1 { margin-top: 0; color: #38bdf8; font-size: 24px; }
+    p { color: #94a3b8; font-size: 14px; line-height: 1.6; }
+    .badge { display: inline-block; background: #059669; color: white; padding: 4px 10px; border-radius: 9999px; font-size: 12px; font-weight: 600; margin-bottom: 20px; }
+    .feed-item { background: #0b1329; border: 1px solid #1e293b; border-radius: 10px; padding: 16px; margin: 14px 0; }
+    .feed-title { font-weight: 600; color: #f1f5f9; display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+    .feed-url { font-family: monospace; background: #1e293b; padding: 8px 12px; border-radius: 6px; color: #38bdf8; word-break: break-all; font-size: 13px; }
+    a.btn { display: inline-block; background: #3b82f6; color: white; text-decoration: none; padding: 6px 12px; border-radius: 6px; font-size: 12px; font-weight: 500; }
+    a.btn:hover { background: #2563eb; }
+    .steps { margin-top: 24px; padding-top: 20px; border-top: 1px solid #334155; }
+    .steps ol { padding-left: 20px; color: #cbd5e1; font-size: 13px; line-height: 1.8; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="badge">\u25CF Live & Synced (${products.length} Products Active)</div>
+    <h1>Meta & Google Product Catalog Data Feeds</h1>
+    <p>Use these dynamic URLs in Meta Commerce Manager (Facebook & Instagram Shopping) and Google Merchant Center. They update automatically whenever products or prices change.</p>
+
+    <div class="feed-item">
+      <div class="feed-title">
+        <span>Meta / Google XML Feed (Recommended)</span>
+        <a class="btn" href="${baseUrl}/feeds/meta.xml" target="_blank">Open XML</a>
+      </div>
+      <div class="feed-url">${baseUrl}/feeds/meta.xml</div>
+    </div>
+
+    <div class="feed-item">
+      <div class="feed-title">
+        <span>Meta CSV Catalog Feed</span>
+        <a class="btn" href="${baseUrl}/feeds/meta.csv" target="_blank">Download CSV</a>
+      </div>
+      <div class="feed-url">${baseUrl}/feeds/meta.csv</div>
+    </div>
+
+    <div class="feed-item">
+      <div class="feed-title">
+        <span>Meta TSV Catalog Feed</span>
+        <a class="btn" href="${baseUrl}/feeds/meta.tsv" target="_blank">Download TSV</a>
+      </div>
+      <div class="feed-url">${baseUrl}/feeds/meta.tsv</div>
+    </div>
+
+    <div class="steps">
+      <strong style="color: #f1f5f9;">How to Add to Meta Commerce Manager:</strong>
+      <ol>
+        <li>Open <strong>Meta Commerce Manager</strong> and select your Catalog.</li>
+        <li>Navigate to <strong>Catalog</strong> &rarr; <strong>Data Sources</strong> &rarr; <strong>Add Items</strong>.</li>
+        <li>Select <strong>Data Feed</strong> &rarr; <strong>Use a URL</strong>.</li>
+        <li>Paste the XML link: <code>${baseUrl}/feeds/meta.xml</code></li>
+        <li>Choose your automatic refresh schedule (e.g., <strong>Hourly</strong> or <strong>Daily</strong>).</li>
+      </ol>
+    </div>
+  </div>
+</body>
+</html>`);
+    }
+    res.json({
+      success: true,
+      store: "Ropenix Collections",
+      activeProductCount: products.length,
+      updatedAt: (/* @__PURE__ */ new Date()).toISOString(),
+      feeds: {
+        metaXml: `${baseUrl}/feeds/meta.xml`,
+        metaCsv: `${baseUrl}/feeds/meta.csv`,
+        metaTsv: `${baseUrl}/feeds/meta.tsv`,
+        facebookXml: `${baseUrl}/feeds/facebook.xml`,
+        googleXml: `${baseUrl}/feeds/catalog.xml`
+      },
+      headers: [
+        "id",
+        "title",
+        "description",
+        "availability",
+        "condition",
+        "price",
+        "sale_price",
+        "link",
+        "image_link",
+        "additional_image_link",
+        "brand",
+        "product_type",
+        "item_group_id"
+      ]
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: "Could not load feed directory" });
+  }
+});
+var feeds_default = router18;
+
+// server/routes/seo.ts
+var import_express19 = require("express");
+var router19 = (0, import_express19.Router)();
+router19.get("/robots.txt", (_req, res) => {
   const robotsTxt = `# Robots.txt for Ropenix Collections
 # https://ropenix.co.ke
 
@@ -13906,6 +15265,9 @@ Allow: /blog
 Allow: /contact
 Allow: /privacy
 Allow: /track
+Allow: /feeds
+Allow: /feeds/
+Allow: /favicon.ico
 Allow: /favicon.svg
 Allow: /og-image.svg
 Allow: /site.webmanifest
@@ -13913,6 +15275,7 @@ Allow: /site.webmanifest
 Disallow: /admin
 Disallow: /admin/
 Disallow: /checkout
+Disallow: /api/
 Disallow: /api/admin/
 Disallow: /api/orders/
 Disallow: /api/payment/
@@ -13925,7 +15288,7 @@ Sitemap: https://ropenix.co.ke/sitemap.xml
   res.header("Cache-Control", "public, max-age=86400");
   res.send(robotsTxt);
 });
-router18.get("/sitemap.xml", async (req, res) => {
+router19.get("/sitemap.xml", async (req, res) => {
   try {
     const host = req.get("host") || "ropenix.co.ke";
     const protocol = req.secure || req.headers["x-forwarded-proto"] === "https" ? "https" : "https";
@@ -13982,7 +15345,13 @@ router18.get("/sitemap.xml", async (req, res) => {
       const activeProducts = products.filter((p) => p.status !== "Draft" && !p.isHidden && !p.isArchived);
       for (const prod of activeProducts) {
         const prodId = prod.id || prod.sku;
-        const prodDate = prod.updatedAt || prod.createdAt || now;
+        let prodDate = now;
+        try {
+          if (prod.updatedAt || prod.createdAt) {
+            prodDate = new Date(prod.updatedAt || prod.createdAt).toISOString();
+          }
+        } catch (_) {
+        }
         const prodTitle = (prod.title || prod.name || "").replace(/[<>&'"]/g, (c) => {
           switch (c) {
             case "<":
@@ -14035,7 +15404,230 @@ router18.get("/sitemap.xml", async (req, res) => {
     res.status(500).type("text/plain").send("Error generating sitemap");
   }
 });
-var seo_default = router18;
+function escapeAttr(str) {
+  return str.replace(/[&<>"']/g, (m) => {
+    switch (m) {
+      case "&":
+        return "&amp;";
+      case "<":
+        return "&lt;";
+      case ">":
+        return "&gt;";
+      case '"':
+        return "&quot;";
+      case "'":
+        return "&#039;";
+      default:
+        return m;
+    }
+  });
+}
+async function resolveSeoMetadata(req) {
+  const host = req.get("host") || "ropenix.co.ke";
+  const protocol = req.secure || req.headers["x-forwarded-proto"] === "https" ? "https" : "https";
+  const baseUrl = `${protocol}://${host.includes("localhost") || host.includes("127.0.0.1") ? "ropenix.co.ke" : host}`;
+  const path3 = req.path.toLowerCase();
+  const defaultImage = `${baseUrl}/og-image.svg`;
+  if (req.query.product) {
+    const prodParam = String(req.query.product).trim();
+    const products = await loadProductsCache();
+    const activeProducts = Array.isArray(products) ? products.filter((p) => p.status !== "Draft" && !p.isHidden && !p.isArchived) : [];
+    const product = activeProducts.find(
+      (p) => String(p.id) === prodParam || String(p.sku).toLowerCase() === prodParam.toLowerCase()
+    );
+    if (product) {
+      const prodName = product.title || product.name || "Curated Product";
+      const cleanDesc = (product.description || product.shortDescription || "").replace(/<[^>]*>?/gm, "").replace(/\s+/g, " ").trim().slice(0, 160) || `Buy ${prodName} on Ropenix Collections. Luxury bespoke tailoring, premium physical products, and verified delivery across Kenya.`;
+      const prodImg = product.image || product.galleryImages && product.galleryImages[0] || defaultImage;
+      const canonicalUrl = `${baseUrl}/store?product=${encodeURIComponent(prodParam)}`;
+      const productSchema = {
+        "@context": "https://schema.org",
+        "@type": "Product",
+        name: prodName,
+        image: [prodImg],
+        description: cleanDesc,
+        sku: product.sku || `ROP-${product.id}`,
+        brand: {
+          "@type": "Brand",
+          name: product.brand || "Ropenix Collections"
+        },
+        offers: {
+          "@type": "Offer",
+          url: canonicalUrl,
+          priceCurrency: product.currency || "KES",
+          price: product.price || 0,
+          priceValidUntil: "2028-12-31",
+          itemCondition: "https://schema.org/NewCondition",
+          availability: product.stock === null || product.stock > 0 ? "https://schema.org/InStock" : "https://schema.org/OutOfStock",
+          seller: {
+            "@type": "Organization",
+            name: "Ropenix Collections",
+            url: baseUrl
+          }
+        }
+      };
+      return {
+        title: `${prodName} | Ropenix Collections`,
+        description: cleanDesc,
+        canonical: canonicalUrl,
+        image: prodImg,
+        schema: productSchema
+      };
+    } else {
+      return {
+        title: "Product Not Found | Ropenix Collections",
+        description: "The requested product is no longer available in the Ropenix Collections catalog.",
+        canonical: `${baseUrl}/store`,
+        image: defaultImage,
+        notFound: true
+      };
+    }
+  }
+  if (path3.startsWith("/admin") || path3.startsWith("/checkout") || path3.startsWith("/login") || path3.startsWith("/register")) {
+    return {
+      title: "Portal | Ropenix Collections",
+      description: "Secure client portal and management services.",
+      canonical: `${baseUrl}${path3}`,
+      image: defaultImage,
+      noindex: true
+    };
+  }
+  if (path3 === "/store" && req.query.category) {
+    const cat = String(req.query.category).trim();
+    return {
+      title: `${cat} Collections | Ropenix Collections`,
+      description: `Explore our curated selection of ${cat} on Ropenix Collections. Master craftsmanship and verified quality.`,
+      canonical: `${baseUrl}/store?category=${encodeURIComponent(cat)}`,
+      image: defaultImage
+    };
+  }
+  switch (path3) {
+    case "/store":
+      return {
+        title: "Store & Curated Luxury Collections | Ropenix Collections",
+        description: "Explore Ropenix Collections: bespoke tailoring, luxury apparel, physical tools, and high-utility digital assets in Kenya.",
+        canonical: `${baseUrl}/store`,
+        image: defaultImage
+      };
+    case "/services":
+      return {
+        title: "Bespoke Tailoring & Artisan Services | Ropenix Collections",
+        description: "Experience bespoke tailoring, custom garment fabrication, precision measurement fittings, and master styling consultations.",
+        canonical: `${baseUrl}/services`,
+        image: defaultImage
+      };
+    case "/blog":
+      return {
+        title: "Style Journal, Fashion Guides & Tailoring Insights | Ropenix Collections",
+        description: "Read sartorial insights, bespoke tailoring care guides, luxury styling advice, and modern African textile heritage.",
+        canonical: `${baseUrl}/blog`,
+        image: defaultImage
+      };
+    case "/track":
+      return {
+        title: "Real-Time Order Tracking & Courier Transit | Ropenix Collections",
+        description: "Track your Ropenix luxury orders with live dispatch updates, courier checkpoints, and estimated delivery times.",
+        canonical: `${baseUrl}/track`,
+        image: defaultImage
+      };
+    case "/contact":
+      return {
+        title: "Contact Us & VIP Customer Concierge | Ropenix Collections",
+        description: "Get in touch with Ropenix concierge for support, bespoke tailoring appointments, and merchant partnership inquiries.",
+        canonical: `${baseUrl}/contact`,
+        image: defaultImage
+      };
+    case "/privacy":
+      return {
+        title: "Privacy Policy & Customer Security | Ropenix Collections",
+        description: "Learn how Ropenix Collections protects your personal data, transaction security, and customer privacy.",
+        canonical: `${baseUrl}/privacy`,
+        image: defaultImage
+      };
+    default:
+      return {
+        title: "Ropenix Collections | Premium eCommerce & Affiliate Marketplace",
+        description: "Explore Ropenix Collections, Kenya's unified luxury eCommerce and affiliate marketplace featuring bespoke tailoring, curated physical products, and verified merchant tracking.",
+        canonical: `${baseUrl}/`,
+        image: defaultImage
+      };
+  }
+}
+async function renderHtmlWithSeo(rawHtml, req) {
+  try {
+    const meta = await resolveSeoMetadata(req);
+    if (meta.notFound) {
+      return {
+        html: `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Product Not Found | Ropenix Collections</title>
+  <meta name="robots" content="noindex, follow">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    body { font-family: system-ui, -apple-system, sans-serif; background: #0b0f19; color: #f8fafc; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; padding: 20px; box-sizing: border-box; }
+    .card { background: #161e2e; border: 1px solid #2d3748; border-radius: 16px; padding: 40px; max-width: 480px; text-align: center; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.5); }
+    h1 { color: #f59e0b; font-size: 24px; margin-top: 0; }
+    p { color: #94a3b8; font-size: 15px; line-height: 1.6; }
+    a { display: inline-block; margin-top: 20px; background: #4f46e5; color: white; padding: 12px 24px; border-radius: 8px; text-decoration: none; font-weight: 600; }
+    a:hover { background: #4338ca; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>Item Not Found</h1>
+    <p>The product or collection item you were searching for has moved, expired, or is currently unavailable.</p>
+    <a href="/store">Explore Available Store Collections &rarr;</a>
+  </div>
+</body>
+</html>`,
+        status: 404
+      };
+    }
+    let html = rawHtml;
+    html = html.replace(/<title>[^<]*<\/title>/i, `<title>${escapeAttr(meta.title)}</title>`);
+    if (html.includes('name="title"')) {
+      html = html.replace(/(<meta\s+name=["']title["']\s+content=)[^>]*>/i, `<meta name="title" content="${escapeAttr(meta.title)}" />`);
+    } else {
+      html = html.replace(/<head>/i, `<head>
+  <meta name="title" content="${escapeAttr(meta.title)}" />`);
+    }
+    html = html.replace(/(<meta\s+name=["']description["']\s+content=)[^>]*>/i, `<meta name="description" content="${escapeAttr(meta.description)}" />`);
+    if (html.includes('rel="canonical"') || html.includes("rel='canonical'")) {
+      html = html.replace(/(<link\s+[^>]*rel=["']canonical["'][^>]*>)/i, `<link rel="canonical" href="${escapeAttr(meta.canonical)}" />`);
+    } else {
+      html = html.replace(/<\/head>/i, `  <link rel="canonical" href="${escapeAttr(meta.canonical)}" />
+</head>`);
+    }
+    html = html.replace(/(<meta\s+property=["']og:title["']\s+content=)[^>]*>/i, `<meta property="og:title" content="${escapeAttr(meta.title)}" />`);
+    html = html.replace(/(<meta\s+property=["']og:description["']\s+content=)[^>]*>/i, `<meta property="og:description" content="${escapeAttr(meta.description)}" />`);
+    html = html.replace(/(<meta\s+property=["']og:url["']\s+content=)[^>]*>/i, `<meta property="og:url" content="${escapeAttr(meta.canonical)}" />`);
+    html = html.replace(/(<meta\s+property=["']og:image["']\s+content=)[^>]*>/i, `<meta property="og:image" content="${escapeAttr(meta.image)}" />`);
+    html = html.replace(/(<meta\s+property=["']og:image:secure_url["']\s+content=)[^>]*>/i, `<meta property="og:image:secure_url" content="${escapeAttr(meta.image)}" />`);
+    html = html.replace(/(<meta\s+name=["']twitter:title["']\s+content=)[^>]*>/i, `<meta name="twitter:title" content="${escapeAttr(meta.title)}" />`);
+    html = html.replace(/(<meta\s+name=["']twitter:description["']\s+content=)[^>]*>/i, `<meta name="twitter:description" content="${escapeAttr(meta.description)}" />`);
+    html = html.replace(/(<meta\s+name=["']twitter:url["']\s+content=)[^>]*>/i, `<meta name="twitter:url" content="${escapeAttr(meta.canonical)}" />`);
+    html = html.replace(/(<meta\s+name=["']twitter:image["']\s+content=)[^>]*>/i, `<meta name="twitter:image" content="${escapeAttr(meta.image)}" />`);
+    if (meta.noindex) {
+      html = html.replace(/(<meta\s+name=["']robots["']\s+content=)[^>]*>/i, `<meta name="robots" content="noindex, nofollow" />`);
+      html = html.replace(/(<meta\s+name=["']googlebot["']\s+content=)[^>]*>/i, `<meta name="googlebot" content="noindex, nofollow" />`);
+    }
+    if (meta.schema) {
+      const schemaScript = `
+  <!-- Googlebot Structured Data (Auto-Injected) -->
+  <script type="application/ld+json">
+${JSON.stringify(meta.schema, null, 2)}
+  </script>
+`;
+      html = html.replace(/<\/head>/i, `${schemaScript}</head>`);
+    }
+    return { html, status: 200 };
+  } catch (err) {
+    return { html: rawHtml, status: 200 };
+  }
+}
+var seo_default = router19;
 
 // server/index.ts
 var import_meta = {};
@@ -14050,7 +15642,7 @@ var getAppDirname = () => {
   return process.cwd();
 };
 var appDir = getAppDirname();
-import_dotenv4.default.config();
+import_dotenv5.default.config();
 if (!process.env.NODE_ENV) {
   const isCjsOrDist = Boolean(process.argv[1]) && (process.argv[1].endsWith(".cjs") || process.argv[1].includes("dist"));
   if (isCjsOrDist || typeof global.PhusionPassenger !== "undefined" || process.env.PORT === "passenger") {
@@ -14060,7 +15652,7 @@ if (!process.env.NODE_ENV) {
 if (!process.env.EMAIL_DEV_MODE && process.env.NODE_ENV === "production") {
   process.env.EMAIL_DEV_MODE = "false";
 }
-var app = (0, import_express19.default)();
+var app = (0, import_express20.default)();
 var rawPort = process.env.PORT;
 var isNumericPort = rawPort && !isNaN(Number(rawPort));
 var PORT = isNumericPort ? Number(rawPort) : rawPort || 3e3;
@@ -14126,8 +15718,8 @@ app.get(["/health", "/api/health"], async (_req, res) => {
     });
   }
 });
-app.use(import_express19.default.json({ limit: "50mb" }));
-app.use(import_express19.default.urlencoded({ limit: "50mb", extended: true }));
+app.use(import_express20.default.json({ limit: "50mb" }));
+app.use(import_express20.default.urlencoded({ limit: "50mb", extended: true }));
 var uploadsStaticDir = import_path2.default.resolve(process.cwd(), "public", "uploads");
 if (!import_fs2.default.existsSync(uploadsStaticDir)) {
   try {
@@ -14135,7 +15727,7 @@ if (!import_fs2.default.existsSync(uploadsStaticDir)) {
   } catch (_) {
   }
 }
-app.use("/uploads", import_express19.default.static(uploadsStaticDir, { maxAge: "30d" }));
+app.use("/uploads", import_express20.default.static(uploadsStaticDir, { maxAge: "30d" }));
 app.use("/auth", auth_default);
 app.use("/api/auth", auth_default);
 app.use("/api/users", users_default);
@@ -14159,11 +15751,14 @@ app.use("/api/reviews", reviews_default);
 app.use("/api/admin/reviews", reviews_default);
 app.use("/api/payments", payments_default);
 app.use("/api/email", emailPreferences_default);
+app.use("/api/marketing", emailPreferences_default);
 app.use("/api/admin/email", emailDiagnostics_default);
 app.use("/api/upload", upload_default);
 app.use("/api/newsletter", newsletter_default);
 app.post(["/api/contact", "/api/contact/"], handleContactForm);
 app.use("/api", system_default);
+app.use("/feeds", feeds_default);
+app.use("/api/feeds", feeds_default);
 app.use("/", seo_default);
 app.use(errorHandler);
 async function startServer() {
@@ -14206,7 +15801,7 @@ async function startServer() {
     if (import_fs2.default.existsSync(assetsPath)) {
       app.use(
         "/assets",
-        import_express19.default.static(assetsPath, {
+        import_express20.default.static(assetsPath, {
           maxAge: "1y",
           immutable: true,
           setHeaders: (res, filePath) => {
@@ -14220,7 +15815,7 @@ async function startServer() {
       );
     }
     app.use(
-      import_express19.default.static(distPath, {
+      import_express20.default.static(distPath, {
         maxAge: "1h",
         setHeaders: (res, filePath) => {
           if (filePath.endsWith(".webmanifest")) {
@@ -14233,11 +15828,17 @@ async function startServer() {
         }
       })
     );
-    app.get("*", (_req, res) => {
+    app.get("*", async (req, res) => {
       res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
       const indexPath = import_path2.default.join(distPath, "index.html");
       if (import_fs2.default.existsSync(indexPath)) {
-        res.sendFile(indexPath);
+        try {
+          const rawHtml = await import_fs2.default.promises.readFile(indexPath, "utf-8");
+          const { html, status } = await renderHtmlWithSeo(rawHtml, req);
+          res.status(status).setHeader("Content-Type", "text/html; charset=utf-8").send(html);
+        } catch (_) {
+          res.sendFile(indexPath);
+        }
       } else {
         res.status(404).send(`
           <!DOCTYPE html>
@@ -14253,16 +15854,32 @@ async function startServer() {
     });
   };
   const isProduction = process.env.NODE_ENV === "production" || Boolean(process.argv[1]) && (process.argv[1].endsWith(".cjs") || process.argv[1].includes("dist"));
+  let viteInstance = null;
   if (isProduction) {
     serveStaticProductionAssets();
   } else {
     try {
       const { createServer: createViteServer } = await import("vite");
-      const vite = await createViteServer({
+      viteInstance = await createViteServer({
         server: { middlewareMode: true },
-        appType: "spa"
+        appType: "custom"
       });
-      app.use(vite.middlewares);
+      app.use(async (req, res, next) => {
+        if (req.method === "GET" && !req.path.startsWith("/api") && !req.path.startsWith("/@") && !req.path.includes(".") && (req.headers.accept?.includes("text/html") || req.headers.accept === "*/*")) {
+          try {
+            const templatePath = import_path2.default.resolve(process.cwd(), "index.html");
+            if (import_fs2.default.existsSync(templatePath)) {
+              let template = await import_fs2.default.promises.readFile(templatePath, "utf-8");
+              template = await viteInstance.transformIndexHtml(req.originalUrl || req.url, template);
+              const { html, status } = await renderHtmlWithSeo(template, req);
+              return res.status(status).setHeader("Content-Type", "text/html; charset=utf-8").send(html);
+            }
+          } catch (e) {
+          }
+        }
+        next();
+      });
+      app.use(viteInstance.middlewares);
     } catch (viteErr) {
       console.warn("[Vite Middleware Notice]:", viteErr instanceof Error ? viteErr.message : viteErr);
       serveStaticProductionAssets();
@@ -14285,25 +15902,56 @@ async function startServer() {
     console.log(`[Ropenix Products API] Route registered at /api/products`);
     console.log(`[Ropenix Orders API] Route registered at /api/orders`);
     console.log(`[Ropenix Suppliers API] Route registered at /api/suppliers`);
+    registerEmailEventListeners();
+    try {
+      validateEmailConfigOnStartup();
+    } catch (_) {
+    }
+    startEmailQueueWorker();
+    startEmailScheduler();
   });
-  registerEmailEventListeners();
-  try {
-    validateEmailConfigOnStartup();
-  } catch (_) {
-  }
-  startEmailQueueWorker();
-  startEmailScheduler();
-  const handleShutdown = (signal) => {
+  server.on("error", (err) => {
+    if (err.code === "EADDRINUSE") {
+      console.error(`
+\u274C [Ropenix Server] Port ${listenPort} is already in use.`);
+      console.error(`\u{1F449} Run the following in your terminal to free port ${listenPort}:`);
+      console.error(`   Windows PowerShell: Get-NetTCPConnection -LocalPort ${listenPort} | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force }`);
+      console.error(`   Or Windows Command Prompt: netstat -ano | findstr :${listenPort}
+`);
+    } else {
+      console.error("[Ropenix Server] Server listen error:", err);
+    }
+    stopEmailQueueWorker();
+    stopEmailScheduler();
+    process.exit(1);
+  });
+  const handleShutdown = async (signal) => {
     console.log(`[Ropenix Server] Received ${signal}. Gracefully stopping workers and closing server...`);
     stopEmailQueueWorker();
     stopEmailScheduler();
+    if (typeof server.closeAllConnections === "function") {
+      server.closeAllConnections();
+    }
+    if (viteInstance && typeof viteInstance.close === "function") {
+      try {
+        await viteInstance.close();
+      } catch (_) {
+      }
+    }
     server.close(() => {
       console.log("[Ropenix Server] Server closed gracefully.");
       process.exit(0);
     });
+    setTimeout(() => {
+      process.exit(0);
+    }, 2e3).unref();
   };
-  process.on("SIGTERM", () => handleShutdown("SIGTERM"));
-  process.on("SIGINT", () => handleShutdown("SIGINT"));
+  process.on("SIGTERM", () => {
+    void handleShutdown("SIGTERM");
+  });
+  process.on("SIGINT", () => {
+    void handleShutdown("SIGINT");
+  });
   return server;
 }
 var isMain = process.argv[1] && (process.argv[1].endsWith("server.ts") || process.argv[1].endsWith("server.cjs") || process.argv[1].endsWith("index.ts") || process.argv[1].endsWith("index.cjs") || process.argv[1].endsWith("app.cjs") || process.argv[1].endsWith("app.js"));
@@ -14366,8 +16014,40 @@ var server_default2 = server_default;
  * @license
  * SPDX-License-Identifier: Apache-2.0
  * 
+ * Product Reviews Domain API Routes (MySQL Authoritative)
+ */
+/**
+ * @license
+ * SPDX-License-Identifier: Apache-2.0
+ * 
  * High-Performance Image Upload & Optimization Service
  * Supports Sharp-powered server-side WebP compression, thumbnail generation, and Cloudinary CDN storage.
+ */
+/**
+ * @license
+ * SPDX-License-Identifier: Apache-2.0
+ * 
+ * Review Reminder Automated Runner Service
+ * 
+ * Requirements:
+ * 1. Counts reminder days (REVIEW_REMINDER_DAYS) from the order's creation date.
+ * 2. If the order is not yet delivered/completed, skips it WITHOUT marking review_reminder_sent_at
+ *    so it is automatically picked up on a subsequent run once delivered.
+ * 3. Claims orders one at a time via atomic UPDATE:
+ *    UPDATE orders SET review_reminder_sent_at = NOW() WHERE id = ? AND review_reminder_sent_at IS NULL
+ *    Sends ONLY if affectedRows = 1.
+ * 4. Resets review_reminder_sent_at = NULL on send failure so it can be retried.
+ * 5. Respects users.marketing_emails_opt_out.
+ * 6. Includes unsubscribe link in email.
+ * 7. Rate-limits sending with an inter-email delay to respect shared-hosting SMTP limits.
+ */
+/**
+ * @license
+ * SPDX-License-Identifier: Apache-2.0
+ * 
+ * Dynamic Product Catalog Feeds
+ * Supports Meta (Facebook & Instagram Shopping / Advantage+ Catalog Ads)
+ * and Google Merchant Center (RSS 2.0 / XML, CSV, and TSV formats).
  */
 /**
  * @license

@@ -173,6 +173,17 @@ async function run() {
   if (fs.existsSync(path.join(ROOT_DIR, 'public', '.htaccess'))) {
     fs.copyFileSync(path.join(ROOT_DIR, 'public', '.htaccess'), path.join(staticDir, '.htaccess'));
   }
+  // Ensure .cpanel.yml is in the static folder
+  if (fs.existsSync(path.join(ROOT_DIR, '.cpanel.yml'))) {
+    fs.copyFileSync(path.join(ROOT_DIR, '.cpanel.yml'), path.join(staticDir, '.cpanel.yml'));
+  }
+  // Ensure static catalog feeds are copied to root of static bundle
+  ['meta-catalog.csv', 'meta-catalog.xml'].forEach(feedFile => {
+    const srcFeed = path.join(ROOT_DIR, 'public', feedFile);
+    if (fs.existsSync(srcFeed)) {
+      fs.copyFileSync(srcFeed, path.join(staticDir, feedFile));
+    }
+  });
   // Ensure uploads directory exists in static bundle
   const staticUploadsDir = path.join(staticDir, 'uploads');
   if (!fs.existsSync(staticUploadsDir)) {

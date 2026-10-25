@@ -321,8 +321,8 @@ export const mapBackendProductToFrontend = (item: any): any => {
     images: parsedImages,
     stock: item.stock !== undefined && item.stock !== null ? Number(item.stock) : 10,
     lowStockThreshold: item.low_stock_threshold || item.lowStockThreshold || 5,
-    rating: item.rating || 4.8,
-    reviewsCount: item.reviewsCount || (Array.isArray(item.reviews) ? item.reviews.length : 0),
+    rating: item.rating !== undefined && item.rating !== null ? Number(item.rating) : 0,
+    reviewsCount: Number(item.reviewsCount ?? (Array.isArray(item.reviews) ? item.reviews.length : 0)),
     reviews: Array.isArray(item.reviews) ? item.reviews : [],
     features: Array.isArray(item.features)
       ? item.features

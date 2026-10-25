@@ -5,10 +5,10 @@
 # When pushing or deploying via cPanel Git Version Control, tasks listed below
 # are automatically executed by cPanel's deployment engine.
 #
-# Default configuration deploys to public_html and prepares the Node.js application
-# environment with zero-downtime Phusion Passenger reloading.
+# Default configuration deploys to $HOME/public_html and synchronizes to
+# $HOME/ropenix-app (if present) with zero-downtime Phusion Passenger reloading.
 #
-# Customize DEPLOYPATH to match your cPanel username and destination directory:
+# Customize DEPLOYPATH if needed:
 # Example for Node.js Application root: export DEPLOYPATH=$HOME/ropenix-app/
 # Example for Static HTML public:       export DEPLOYPATH=$HOME/public_html/
 # ==============================================================================
@@ -19,18 +19,25 @@ deployment:
     - /bin/mkdir -p $DEPLOYPATH/dist
     - /bin/mkdir -p $DEPLOYPATH/public/uploads
     - /bin/mkdir -p $DEPLOYPATH/tmp
-    # 2. Deploy compiled frontend assets and backend server bundle
-    - /bin/cp -R dist/* $DEPLOYPATH/dist/ 2>/dev/null || /bin/cp -R dist $DEPLOYPATH/
-    - /bin/cp -R public/* $DEPLOYPATH/public/ 2>/dev/null || /bin/cp -R public $DEPLOYPATH/
-    # 3. Deploy cPanel Passenger startup & package metadata
+    # 2. Ensure production bundles exist (build if missing and npm is available)
+    - if [ ! -f dist/server.cjs ] || [ ! -f dist/index.html ]; then (which npm >/dev/null 2>&1 && npm run build) || true; fi
+    # 3. Deploy compiled frontend assets and backend server bundle
+    - /bin/cp -R dist/* $DEPLOYPATH/dist/ 2>/dev/null || /bin/cp -R dist $DEPLOYPATH/ 2>/dev/null || true
+    - /bin/cp -R public/* $DEPLOYPATH/public/ 2>/dev/null || /bin/cp -R public $DEPLOYPATH/ 2>/dev/null || true
+    # 4. Deploy cPanel Passenger startup & package metadata
     - /bin/cp app.cjs $DEPLOYPATH/app.cjs 2>/dev/null || true
     - /bin/cp package.json $DEPLOYPATH/package.json 2>/dev/null || true
     - /bin/cp package-lock.json $DEPLOYPATH/package-lock.json 2>/dev/null || true
-    # 4. Deploy Apache .htaccess for SPA routing & security
+    # 5. Deploy Apache .htaccess for SPA routing & security
     - /bin/cp public/.htaccess $DEPLOYPATH/.htaccess 2>/dev/null || true
-    # 5. Provide default .env.example if .env is missing
+    # 6. If dedicated Node application directory exists ($HOME/ropenix-app), synchronize files there
+    - if [ -d "$HOME/ropenix-app" ]; then /bin/mkdir -p $HOME/ropenix-app/dist $HOME/ropenix-app/public/uploads $HOME/ropenix-app/tmp; /bin/cp -R dist/* $HOME/ropenix-app/dist/ 2>/dev/null || true; /bin/cp -R public/* $HOME/ropenix-app/public/ 2>/dev/null || true; /bin/cp app.cjs $HOME/ropenix-app/app.cjs 2>/dev/null || true; /bin/cp package.json $HOME/ropenix-app/package.json 2>/dev/null || true; /bin/cp package-lock.json $HOME/ropenix-app/package-lock.json 2>/dev/null || true; /bin/cp public/.htaccess $HOME/ropenix-app/.htaccess 2>/dev/null || true; /bin/touch $HOME/ropenix-app/tmp/restart.txt 2>/dev/null || true; fi
+    # 7. Provide default .env.example if .env is missing
     - test -f $DEPLOYPATH/.env || /bin/cp .env.cpanel.example $DEPLOYPATH/.env.example 2>/dev/null || true
-    # 6. Ensure uploads directory is writable
+    - if [ -d "$HOME/ropenix-app" ] && [ ! -f "$HOME/ropenix-app/.env" ]; then /bin/cp .env.cpanel.example $HOME/ropenix-app/.env.example 2>/dev/null || true; fi
+    # 8. Ensure uploads directory is writable
     - /bin/chmod -R 775 $DEPLOYPATH/public/uploads 2>/dev/null || true
-    # 7. Zero-downtime Phusion Passenger restart trigger
+    - if [ -d "$HOME/ropenix-app/public/uploads" ]; then /bin/chmod -R 775 $HOME/ropenix-app/public/uploads 2>/dev/null || true; fi
+    # 9. Zero-downtime Phusion Passenger restart triggers
     - /bin/touch $DEPLOYPATH/tmp/restart.txt 2>/dev/null || true
+    - if [ -d "$HOME/ropenix-app/tmp" ]; then /bin/touch $HOME/ropenix-app/tmp/restart.txt 2>/dev/null || true; fi

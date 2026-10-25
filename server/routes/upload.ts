@@ -8,7 +8,7 @@
 
 import { Router, Request, Response } from 'express';
 import crypto from 'crypto';
-import { requireAdmin } from '../middleware/auth';
+import { requireAuth, requireAdmin } from '../middleware/auth';
 import { saveBase64ImageToDisk } from '../../src/lib/image-storage';
 
 let sharp: any = null;
@@ -121,6 +121,101 @@ router.get('/cloudinary/status', (_req: Request, res: Response) => {
       ? `Cloudinary signed upload active with server-side WebP optimization.`
       : 'Cloudinary not configured. Using Sharp server-side WebP compression and thumbnail generation.',
   });
+});
+
+/**
+ * Universal & Review Photo Upload Endpoint (Authenticated Customers & Admins)
+ * Mounts at POST /api/upload and POST /api/upload/review
+ * Accepts JSON { image: base64DataUri, folder?: string }
+ */
+router.post(['/', '/review'], requireAuth, async (req: Request, res: Response) => {
+  try {
+    const { image, file, folder = 'ropenix_reviews' } = req.body || {};
+    const input = image || file;
+
+    if (!input || typeof input !== 'string') {
+      return res.status(400).json({
+        success: false,
+        error: 'Image data is required (base64 data URI).',
+      });
+    }
+
+    if (!input.startsWith('data:image/')) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid image format. Must be an image data URI (e.g. data:image/jpeg;base64,...).',
+      });
+    }
+
+    // Size limit check: 5MB file is roughly ~7MB in base64 string length
+    if (input.length > 8 * 1024 * 1024) {
+      return res.status(400).json({
+        success: false,
+        error: 'Image file is too large. Maximum allowed size is 5MB.',
+      });
+    }
+
+    const cloudName = process.env.CLOUDINARY_CLOUD_NAME || process.env.VITE_CLOUDINARY_CLOUD_NAME || '';
+    const apiKey = process.env.CLOUDINARY_API_KEY || '';
+    const apiSecret = process.env.CLOUDINARY_API_SECRET || '';
+
+    // If Cloudinary credentials are set, attempt Cloudinary upload
+    if (cloudName && apiKey && apiSecret) {
+      try {
+        const timestamp = Math.floor(Date.now() / 1000);
+        const targetFolder = String(folder || 'ropenix_reviews').trim();
+        const paramsToSign: Record<string, string> = {
+          folder: targetFolder,
+          timestamp: String(timestamp),
+        };
+        const sortedKeys = Object.keys(paramsToSign).sort();
+        const toSign = sortedKeys.map((k) => `${k}=${paramsToSign[k]}`).join('&') + apiSecret;
+        const signature = crypto.createHash('sha1').update(toSign).digest('hex');
+
+        const uploadPayload: Record<string, any> = {
+          file: input,
+          api_key: apiKey,
+          timestamp,
+          signature,
+          folder: targetFolder,
+        };
+
+        const cloudinaryRes = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/image/upload`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(uploadPayload),
+        });
+
+        const data = await cloudinaryRes.json();
+        if (cloudinaryRes.ok && (data.secure_url || data.url)) {
+          const finalUrl = data.secure_url || data.url;
+          return res.status(200).json({
+            success: true,
+            url: finalUrl,
+            secure_url: data.secure_url,
+            format: data.format || 'webp',
+            isCloudinary: true,
+          });
+        }
+      } catch (cloudErr) {
+        console.warn('[Review Upload Cloudinary Warning, falling back to disk]:', cloudErr);
+      }
+    }
+
+    // High-performance Sharp WebP disk storage
+    const staticUrl = await saveBase64ImageToDisk(input, 'rev');
+
+    return res.status(200).json({
+      success: true,
+      url: staticUrl,
+      format: 'webp',
+      isCloudinary: false,
+    });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Failed to upload photo';
+    console.error('[Upload Service Error]:', err);
+    return res.status(500).json({ success: false, error: message });
+  }
 });
 
 /**

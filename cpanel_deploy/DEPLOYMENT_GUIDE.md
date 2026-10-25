@@ -87,7 +87,7 @@ APP_URL="https://ropenix.co.ke"
 FRONTEND_URL="https://ropenix.co.ke"
 ADMIN_URL="https://ropenix.co.ke/admin"
 JWT_SECRET="your-strong-production-jwt-secret-key-2026"
-RESET_TOKEN_EXPIRY_MINUTES=60
+RESET_TOKEN_EXPIRY_MINUTES=2880
 
 # cPanel MySQL Database Credentials
 DB_HOST="127.0.0.1"
@@ -168,4 +168,28 @@ If you only wish to host static frontend assets inside `public_html/`:
 | **`ER_ACCESS_DENIED_ERROR`** | MySQL user credentials incorrect or privileges unassigned | In cPanel **MySQL Databases**, verify that the user is assigned to the database with **ALL PRIVILEGES**. Use `DB_HOST="127.0.0.1"`. |
 | **404 on Page Refresh in SPA** | Missing `.htaccess` file | Ensure `.htaccess` is present in `public_html` or app root (turn on "Show Hidden Files" in File Manager). |
 | **SMTP Delivery Timeout** | Port blocked or incorrect host | Use `EMAIL_HOST="smtppro.zoho.com"` with `EMAIL_PORT=465` and `EMAIL_USE_SSL=true`. Verify email password. |
+| **Meta Feed "Couldn't access URL"** | BitNinja / cPGuard WAF JavaScript challenge | Whitelist `/feeds/*` or User-Agents (`facebookcatalog`, `facebookexternalhit`) in cPanel BitNinja / cPGuard or Cloudflare WAF. |
 | **Changes not visible** | Browser or CDN caching | Hard refresh your browser (`Ctrl + F5` or `Cmd + Shift + R`). The build uses cache-busting asset hashes. |
+
+---
+
+## 📱 Meta & Google Product Catalog Feeds
+
+Ropenix includes automated, real-time product feeds compliant with Meta Commerce Manager (Facebook & Instagram Shopping / Advantage+ Catalog Ads) and Google Merchant Center:
+
+### 1. Dynamic Feed Endpoints (Real-Time Live Sync)
+- **Meta / Facebook Catalog XML**: `https://ropenix.co.ke/feeds/meta.xml`
+- **Meta / Facebook Catalog CSV**: `https://ropenix.co.ke/feeds/meta.csv`
+- **Meta / Facebook Catalog TSV**: `https://ropenix.co.ke/feeds/meta.tsv`
+- **Google Merchant Center XML**: `https://ropenix.co.ke/feeds/google.xml`
+
+### 2. Static Pre-Generated Files (Manual Upload or Direct Fallback)
+- **Direct CSV File**: `https://ropenix.co.ke/meta-catalog.csv` (or upload `public/meta-catalog.csv` in Meta Commerce Manager)
+- **Direct XML File**: `https://ropenix.co.ke/meta-catalog.xml`
+
+### 3. Server WAF / Anti-Bot Exemption
+If your cPanel host uses **BitNinja**, **cPGuard**, or **Cloudflare Bot Fight Mode**:
+- Automated bots like Meta's crawler cannot solve JavaScript browser challenges.
+- In **cPanel -> BitNinja / cPGuard WAF**: add `/feeds/*` to the **URL Whitelist / Path Exclusions** (or whitelist User-Agent `facebookcatalog` and `facebookexternalhit`).
+- In **Cloudflare**: add a WAF Custom Rule to **Skip WAF / Bot Management** for URI Path starting with `/feeds/`.
+

@@ -1841,14 +1841,13 @@ export default function UserAccount({
                               const hasRev = singleItem.hasReviewed || singleItem.hasReview || singleItem.reviewId;
                               if (hasRev) {
                                 return (
-                                  <button
-                                    onClick={() => handleOpenReview(order.id, singleItem.id || (singleItem as any).orderItemId || singleItem.productId)}
-                                    className="inline-flex h-8 items-center gap-1.5 rounded-xl bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400 border border-amber-200/60 dark:border-amber-900/40 px-2.5 text-xs font-semibold hover:bg-amber-100/60 transition-colors cursor-pointer whitespace-nowrap min-h-[32px]"
-                                    title="Edit your review"
+                                  <span
+                                    className="inline-flex h-8 items-center gap-1.5 rounded-xl bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400 border border-amber-200/60 dark:border-amber-900/40 px-2.5 text-xs font-semibold whitespace-nowrap min-h-[32px]"
+                                    title="Review submitted (final)"
                                   >
                                     <Star className="h-3.5 w-3.5 fill-amber-400 text-amber-500" />
                                     <span>Reviewed ({singleItem.rating || singleItem.review?.rating || 5}★)</span>
-                                  </button>
+                                  </span>
                                 );
                               }
                               return (
@@ -1879,14 +1878,13 @@ export default function UserAccount({
 
                             if (reviewedItems.length > 0) {
                               return (
-                                <button
-                                  onClick={() => setExpandedOrderId(order.id)}
-                                  className="inline-flex h-8 items-center gap-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-amber-600 dark:text-amber-400 border border-slate-200 dark:border-slate-700 px-2.5 text-xs font-semibold hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors cursor-pointer whitespace-nowrap min-h-[32px]"
-                                  title="View and edit reviews"
+                                <span
+                                  className="inline-flex h-8 items-center gap-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-amber-600 dark:text-amber-400 border border-slate-200 dark:border-slate-700 px-2.5 text-xs font-semibold whitespace-nowrap min-h-[32px]"
+                                  title="All items reviewed (final)"
                                 >
                                   <Star className="h-3.5 w-3.5 fill-amber-400 text-amber-500" />
-                                  <span>Reviewed • Edit</span>
-                                </button>
+                                  <span>Reviewed</span>
+                                </span>
                               );
                             }
 
@@ -2068,15 +2066,13 @@ export default function UserAccount({
                                   <div className="flex items-center gap-3 shrink-0">
                                     {isDelivered && (
                                       hasRev ? (
-                                        <button
-                                          type="button"
-                                          onClick={() => handleOpenReview(order.id, item.id || (item as any).orderItemId || item.productId)}
-                                          className="inline-flex items-center gap-1 text-[11px] font-semibold text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900/60 px-2.5 py-1 rounded-lg hover:bg-amber-100 transition-colors cursor-pointer"
-                                          title="Edit your review for this product"
+                                        <span
+                                          className="inline-flex items-center gap-1 text-[11px] font-semibold text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900/60 px-2.5 py-1 rounded-lg"
+                                          title="Review submitted (final)"
                                         >
                                           <Star className="h-3 w-3 fill-amber-400 text-amber-500" />
-                                          <span>Edit review ({item.rating || item.review?.rating || 5}★)</span>
-                                        </button>
+                                          <span>Reviewed ({item.rating || item.review?.rating || 5}★)</span>
+                                        </span>
                                       ) : (
                                         <button
                                           type="button"

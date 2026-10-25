@@ -498,8 +498,7 @@ export function HeroBannerSlider({
                       height={260}
                       loading={currentIndex === 0 ? 'eager' : 'lazy'}
                       decoding="async"
-                      // @ts-ignore fetchpriority attribute
-                      fetchpriority={currentIndex === 0 ? 'high' : 'auto'}
+                      fetchPriority={currentIndex === 0 ? 'high' : 'auto'}
                       referrerPolicy="no-referrer"
                       className="w-full h-auto max-h-[190px] sm:max-h-[230px] lg:max-h-[260px] object-contain drop-shadow-[0_15px_30px_rgba(0,0,0,0.85)] transition-transform duration-500 hover:scale-105"
                     />

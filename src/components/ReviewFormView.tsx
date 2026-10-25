@@ -47,9 +47,7 @@ export default function ReviewFormView({
   const [ineligibilityReason, setIneligibilityReason] = useState('');
   const [itemDetails, setItemDetails] = useState<ItemDetails | null>(null);
 
-  // Review editing state
-  const [isEditing, setIsEditing] = useState(false);
-  const [reviewId, setReviewId] = useState<string | null>(null);
+
 
   // Form fields
   const [rating, setRating] = useState<number>(5);
@@ -123,14 +121,9 @@ export default function ReviewFormView({
 
         // Edge Case: Customer opens email link after already reviewing
         if (data.existingReview) {
-          setIsEditing(true);
-          setReviewId(String(data.existingReview.id));
-          setRating(Number(data.existingReview.rating || 5));
-          setTitle(data.existingReview.title || '');
-          setBody(data.existingReview.body || data.existingReview.comment || '');
-          setCanSubmit(true);
+          setCanSubmit(false);
+          setIneligibilityReason('You have already submitted a review for this item. Reviews are final once submitted.');
         } else if (data.eligible) {
-          setIsEditing(false);
           setCanSubmit(true);
         } else {
           setCanSubmit(false);
@@ -180,23 +173,31 @@ export default function ReviewFormView({
     setErrorMsg('');
 
     try {
-      const formData = new FormData();
-      formData.append('image', file);
+      const base64DataUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = () => reject(new Error('Failed to read image file'));
+        reader.readAsDataURL(file);
+      });
 
       const res = await fetch('/api/upload', {
         method: 'POST',
-        headers: getAuthHeaders(),
-        body: formData,
+        headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({
+          image: base64DataUrl,
+          folder: 'ropenix_reviews',
+        }),
       });
 
-      const data = await res.json();
-      if (res.ok && data.url) {
+      const data = await res.json().catch(() => null);
+
+      if (res.ok && data?.success && data?.url) {
         setUploadedImages((prev) => [...prev, data.url]);
       } else {
-        setErrorMsg(data.error || 'Failed to upload photo.');
+        setErrorMsg(data?.error || `Failed to upload photo (Status ${res.status}).`);
       }
-    } catch {
-      setErrorMsg('Network error while uploading photo.');
+    } catch (err: any) {
+      setErrorMsg(err?.message || 'Network error while uploading photo.');
     } finally {
       setIsUploading(false);
       if (fileInputRef.current) {
@@ -234,25 +235,19 @@ export default function ReviewFormView({
     setIsSubmitting(true);
 
     try {
-      const endpoint = isEditing && reviewId ? `/api/reviews/${reviewId}` : '/api/reviews';
-      const method = isEditing && reviewId ? 'PUT' : 'POST';
-
-      const payload = isEditing
-        ? {
-            rating,
-            title: title.trim(),
-            body: trimmedBody,
-          }
-        : {
-            orderItemId: itemDetails?.id || orderItemId,
-            orderId: itemDetails?.orderId || orderId,
-            rating,
-            title: title.trim(),
-            body: trimmedBody,
-          };
+      const endpoint = '/api/reviews';
+      const payload = {
+        orderItemId: itemDetails?.id || orderItemId,
+        orderId: itemDetails?.orderId || orderId,
+        rating,
+        title: title.trim(),
+        body: trimmedBody,
+        mediaUrls: uploadedImages,
+        images: uploadedImages,
+      };
 
       const res = await fetch(endpoint, {
-        method,
+        method: 'POST',
         headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify(payload),
       });
@@ -265,11 +260,7 @@ export default function ReviewFormView({
         return;
       }
 
-      setSuccessMsg(
-        isEditing
-          ? 'Your review has been updated successfully!'
-          : 'Thank you! Your verified purchase review has been published.'
-      );
+      setSuccessMsg('Thank you! Your verified purchase review has been published.');
 
       // Trigger callback to update orders list without full reload
       if (onReviewSubmitted) {
@@ -391,11 +382,7 @@ export default function ReviewFormView({
                   </div>
                 </div>
 
-                {isEditing && (
-                  <span className="shrink-0 inline-flex items-center gap-1 px-3 py-1 rounded-xl text-xs font-semibold bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-400 border border-indigo-200/60 dark:border-indigo-900/40">
-                    Editing Review
-                  </span>
-                )}
+
               </div>
             </div>
 
@@ -585,10 +572,10 @@ export default function ReviewFormView({
                   {isSubmitting ? (
                     <>
                       <Loader2 className="h-4 w-4 animate-spin" />
-                      <span>{isEditing ? 'Updating...' : 'Publishing...'}</span>
+                      <span>Publishing...</span>
                     </>
                   ) : (
-                    <span>{isEditing ? 'Save Changes' : 'Submit Review'}</span>
+                    <span>Submit Review</span>
                   )}
                 </button>
               </div>

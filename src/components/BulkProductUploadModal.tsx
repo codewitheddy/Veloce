@@ -554,7 +554,7 @@ export default function BulkProductUploadModal({
         imageUrl: rawImgUrl || 'https://images.unsplash.com/photo-1586075010923-2dd4570fb338?auto=format&fit=crop&q=80&w=800',
         tags: rawTags ? rawTags.split(',').map(t => t.trim()).filter(Boolean) : [resolvedCategory.toLowerCase() || 'workspace'],
         status: parsedStatus,
-        rating: 5.0,
+        rating: 0,
         reviewsCount: 0,
         reviews: []
       };

@@ -55,6 +55,7 @@ import emailPreferencesRouter from './routes/emailPreferences';
 import emailDiagnosticsRouter from './routes/emailDiagnostics';
 import systemRouter from './routes/system';
 import compression from 'compression';
+import feedsRouter from './routes/feeds';
 import seoRouter, { renderHtmlWithSeo } from './routes/seo';
 
 dotenv.config();
@@ -192,6 +193,8 @@ app.use('/api/upload', uploadRouter);
 app.use('/api/newsletter', newsletterRouter);
 app.post(['/api/contact', '/api/contact/'], handleContactForm);
 app.use('/api', systemRouter);
+app.use('/feeds', feedsRouter);
+app.use('/api/feeds', feedsRouter);
 app.use('/', seoRouter);
 
 // Global Error Handler

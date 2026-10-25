@@ -111,8 +111,7 @@ export const LazyImage: React.FC<LazyImageProps> = ({
           height={height}
           loading={effectiveLoading}
           decoding={decoding}
-          // @ts-ignore fetchpriority is a valid modern HTML attribute
-          fetchpriority={effectiveFetchPriority}
+          fetchPriority={effectiveFetchPriority}
           onLoad={handleLoad}
           onError={handleError}
           className={`transition-all duration-300 ease-out ${

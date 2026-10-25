@@ -5,7 +5,7 @@
 
 import React, { useState } from 'react';
 import { motion } from 'motion/react';
-import { Search, Filter, Star, Plus, Check, CheckCircle2, ShoppingBag, X, FileText, Sparkles, User, Heart, ArrowLeft, Tag, Share2, Clock, ArrowRightLeft, Twitter, Linkedin, Bell, Mail, ArrowUpDown, Package, Layers, ChevronLeft, ChevronRight, ChevronDown, ShoppingCart, FolderTree, Edit2, Edit3, Flame, ShieldCheck, SlidersHorizontal, RotateCcw, WifiOff } from 'lucide-react';
+import { Search, Filter, Star, Plus, Check, CheckCircle2, ShoppingBag, X, FileText, Sparkles, User, Heart, ArrowLeft, Tag, Share2, Clock, ArrowRightLeft, Twitter, Linkedin, Bell, Mail, ArrowUpDown, Package, Layers, ChevronLeft, ChevronRight, ChevronDown, ShoppingCart, FolderTree, Edit2, Edit3, Flame, ShieldCheck, SlidersHorizontal, RotateCcw, WifiOff, Loader2 } from 'lucide-react';
 import { Product, CartItem, Review } from '../types';
 import {
   isProductHiddenFromStorefront,
@@ -43,6 +43,7 @@ interface ProductStoreProps {
   onAddReview: (productId: string, review: Review) => void;
   selectedProduct: Product | null;
   setSelectedProduct: (product: Product | null) => void;
+  isRestoringProduct?: boolean;
   prefilledReviewerName?: string;
   wishlist?: string[];
   onToggleWishlist?: (productId: string) => void;
@@ -77,6 +78,7 @@ export default function ProductStore({
   onAddReview,
   selectedProduct,
   setSelectedProduct,
+  isRestoringProduct = false,
   prefilledReviewerName = '',
   wishlist = [],
   onToggleWishlist = () => {},
@@ -104,6 +106,44 @@ export default function ProductStore({
   const setSearch = onSearchQueryChange !== undefined ? onSearchQueryChange : setLocalSearch;
 
   const [reviewsViewProduct, setReviewsViewProduct] = useState<Product | null>(null);
+
+  // Live product detail reviews & summary state
+  const [detailReviews, setDetailReviews] = useState<any[] | null>(null);
+  const [detailReviewsSummary, setDetailReviewsSummary] = useState<{ average: number; totalCount: number; distribution: Record<number, number> } | null>(null);
+  const [isLoadingDetailReviews, setIsLoadingDetailReviews] = useState(false);
+
+  React.useEffect(() => {
+    if (!selectedProduct?.id) {
+      setDetailReviews(null);
+      setDetailReviewsSummary(null);
+      return;
+    }
+
+    let isCurrent = true;
+    setIsLoadingDetailReviews(true);
+
+    fetch(`/api/products/${encodeURIComponent(selectedProduct.id)}/reviews`)
+      .then((res) => res.json())
+      .then((data) => {
+        if (!isCurrent) return;
+        if (data && data.success && Array.isArray(data.reviews)) {
+          setDetailReviews(data.reviews);
+          if (data.summary) {
+            setDetailReviewsSummary(data.summary);
+          }
+        }
+      })
+      .catch((err) => {
+        console.warn('[ProductStore] Could not fetch product reviews:', err);
+      })
+      .finally(() => {
+        if (isCurrent) setIsLoadingDetailReviews(false);
+      });
+
+    return () => {
+      isCurrent = false;
+    };
+  }, [selectedProduct?.id]);
 
   const [activeCategory, setActiveCategory] = useState(initialCategory || 'All');
   const [activeSubcategory, setActiveSubcategory] = useState(initialSubcategory || 'All');
@@ -919,6 +959,46 @@ export default function ProductStore({
     );
   }
 
+  if (isRestoringProduct && !selectedProduct) {
+    return (
+      <div className="w-full max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8 font-sans animate-pulse">
+        {/* Back navigation & Title Skeleton */}
+        <div className="border-b border-gray-150 dark:border-gray-800 pb-5 mb-8 flex flex-col gap-3">
+          <div className="h-4 w-36 bg-gray-200 dark:bg-gray-800 rounded"></div>
+          <div className="h-7 w-64 bg-gray-200 dark:bg-gray-800 rounded"></div>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12">
+          {/* Gallery Skeleton */}
+          <div className="lg:col-span-7 flex flex-col gap-4">
+            <div className="aspect-square w-full bg-gray-100 dark:bg-gray-800/60 rounded-2xl flex items-center justify-center">
+              <Loader2 className="w-10 h-10 text-indigo-500 animate-spin opacity-40" />
+            </div>
+            <div className="flex gap-3">
+              {[1, 2, 3, 4].map((i) => (
+                <div key={i} className="w-20 h-20 bg-gray-100 dark:bg-gray-800/60 rounded-xl"></div>
+              ))}
+            </div>
+          </div>
+
+          {/* Details Skeleton */}
+          <div className="lg:col-span-5 flex flex-col gap-6">
+            <div className="space-y-2">
+              <div className="h-4 w-24 bg-gray-200 dark:bg-gray-800 rounded"></div>
+              <div className="h-8 w-4/5 bg-gray-200 dark:bg-gray-800 rounded-lg"></div>
+              <div className="h-6 w-32 bg-gray-200 dark:bg-gray-800 rounded-lg"></div>
+            </div>
+            <div className="h-28 w-full bg-gray-100 dark:bg-gray-800/50 rounded-xl"></div>
+            <div className="space-y-3">
+              <div className="h-12 w-full bg-indigo-500/20 rounded-xl"></div>
+              <div className="h-12 w-full bg-gray-100 dark:bg-gray-800/50 rounded-xl"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   if (selectedProduct) {
     return (
       <div className="w-full max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8 font-sans">
@@ -1165,38 +1245,46 @@ export default function ProductStore({
                     <h1 className="font-display font-bold text-lg sm:text-xl md:text-2xl text-gray-900 dark:text-gray-50 tracking-tight mt-1 leading-snug break-words">{selectedProduct.name}</h1>
                     
                     <div className="mt-3 flex items-center gap-2 flex-wrap">
-                      {selectedProduct.reviewsCount > 0 && selectedProduct.rating > 0 ? (
-                        <>
-                          <div className="flex items-center text-amber-500">
-                            {Array.from({ length: 5 }).map((_, i) => (
-                              <Star
-                                key={i}
-                                className={`h-4 w-4 ${
-                                  i < Math.floor(selectedProduct.rating) ? 'text-amber-500 fill-amber-500' : 'text-gray-200 dark:text-gray-800'
-                                }`}
-                              />
-                            ))}
+                      {(() => {
+                        const effectiveReviewsCount = detailReviewsSummary
+                          ? detailReviewsSummary.totalCount
+                          : (detailReviews ? detailReviews.length : (selectedProduct.reviewsCount || 0));
+                        const effectiveRating = detailReviewsSummary
+                          ? detailReviewsSummary.average
+                          : (selectedProduct.rating || 0);
+
+                        if (effectiveReviewsCount > 0 && effectiveRating > 0) {
+                          return (
+                            <button
+                              type="button"
+                              onClick={() => setReviewsViewProduct(selectedProduct)}
+                              className="flex items-center gap-2 group cursor-pointer hover:opacity-85 transition-all text-left"
+                              title="View all verified customer reviews"
+                            >
+                              <div className="flex items-center text-amber-500">
+                                {Array.from({ length: 5 }).map((_, i) => (
+                                  <Star
+                                    key={i}
+                                    className={`h-4 w-4 ${
+                                      i < Math.floor(effectiveRating) ? 'text-amber-500 fill-amber-500' : 'text-gray-200 dark:text-gray-800'
+                                    }`}
+                                  />
+                                ))}
+                              </div>
+                              <span className="text-xs font-bold text-gray-700 dark:text-gray-300 font-mono group-hover:text-amber-600 dark:group-hover:text-amber-400 group-hover:underline flex items-center gap-1">
+                                <span>{effectiveRating.toFixed(1)} rating ({effectiveReviewsCount} verified review{effectiveReviewsCount === 1 ? '' : 's'})</span>
+                                <ChevronRight className="h-3.5 w-3.5 text-gray-400 group-hover:text-amber-500 transition-transform group-hover:translate-x-0.5" />
+                              </span>
+                            </button>
+                          );
+                        }
+
+                        return (
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs text-gray-500 dark:text-gray-400 font-mono">No reviews on this product yet.</span>
                           </div>
-                          <button
-                            onClick={() => setReviewsViewProduct(selectedProduct)}
-                            className="text-xs font-bold text-indigo-600 dark:text-indigo-400 hover:underline cursor-pointer flex items-center gap-1 font-mono"
-                          >
-                            <span>{selectedProduct.rating.toFixed(1)} rating ({selectedProduct.reviewsCount} verified review{selectedProduct.reviewsCount === 1 ? '' : 's'})</span>
-                            <span className="bg-indigo-50 dark:bg-indigo-950 px-2 py-0.5 rounded text-[10px] text-indigo-700 dark:text-indigo-300">View Reviews &rarr;</span>
-                          </button>
-                        </>
-                      ) : (
-                        <div className="flex items-center gap-2">
-                          <span className="text-xs text-gray-500 dark:text-gray-400 font-mono">No reviews yet</span>
-                          <button
-                            onClick={() => setReviewsViewProduct(selectedProduct)}
-                            className="text-xs font-bold text-indigo-600 dark:text-indigo-400 hover:underline cursor-pointer flex items-center gap-1 font-mono bg-indigo-50 dark:bg-indigo-950/60 px-2.5 py-1 rounded-lg"
-                          >
-                            <span>Write a review</span>
-                            <ChevronRight className="h-3 w-3" />
-                          </button>
-                        </div>
-                      )}
+                        );
+                      })()}
                     </div>
 
                     {/* Price Display & On Sale Badge */}
@@ -1488,321 +1576,7 @@ export default function ProductStore({
               );
             })()}
 
-              {/* Product Specifications, Features, and Detailed Overview Tabs */}
-              <div className="border-t border-indigo-50/50 dark:border-gray-800/50 pt-6">
-                <div className="flex border-b border-gray-200 dark:border-gray-800 overflow-x-auto scrollbar-none gap-1 sm:gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setDetailActiveTab('description')}
-                    className={`pb-3 text-xs font-bold font-mono uppercase tracking-wider border-b-2 px-3 transition-colors shrink-0 whitespace-nowrap cursor-pointer ${
-                      detailActiveTab === 'description'
-                        ? 'border-indigo-600 text-indigo-705 dark:border-indigo-400 dark:text-indigo-400 font-bold'
-                        : 'border-transparent text-gray-400 hover:text-gray-600 dark:hover:text-gray-300'
-                    }`}
-                  >
-                    Details
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setDetailActiveTab('features')}
-                    className={`pb-3 text-xs font-bold font-mono uppercase tracking-wider border-b-2 px-3 transition-colors shrink-0 whitespace-nowrap cursor-pointer ${
-                      detailActiveTab === 'features'
-                        ? 'border-indigo-600 text-indigo-705 dark:border-indigo-400 dark:text-indigo-400 font-bold'
-                        : 'border-transparent text-gray-400 hover:text-gray-600 dark:hover:text-gray-300'
-                    }`}
-                  >
-                    Features
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setDetailActiveTab('specifications')}
-                    className={`pb-3 text-xs font-bold font-mono uppercase tracking-wider border-b-2 px-3 transition-colors shrink-0 whitespace-nowrap cursor-pointer ${
-                      detailActiveTab === 'specifications'
-                        ? 'border-indigo-600 text-indigo-705 dark:border-indigo-400 dark:text-indigo-400 font-bold'
-                        : 'border-transparent text-gray-400 hover:text-gray-600 dark:hover:text-gray-300'
-                    }`}
-                  >
-                    Specs
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setDetailActiveTab('whatsInTheBox')}
-                    className={`pb-3 text-xs font-bold font-mono uppercase tracking-wider border-b-2 px-3 transition-colors shrink-0 whitespace-nowrap cursor-pointer ${
-                      detailActiveTab === 'whatsInTheBox'
-                        ? 'border-indigo-600 text-indigo-705 dark:border-indigo-400 dark:text-indigo-400 font-bold'
-                        : 'border-transparent text-gray-400 hover:text-gray-600 dark:hover:text-gray-300'
-                    }`}
-                  >
-                    In the Box
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setDetailActiveTab('categoryInfo')}
-                    className={`pb-3 text-xs font-bold font-mono uppercase tracking-wider border-b-2 px-3 transition-colors shrink-0 whitespace-nowrap cursor-pointer ${
-                      detailActiveTab === 'categoryInfo'
-                        ? 'border-indigo-600 text-indigo-705 dark:border-indigo-400 dark:text-indigo-400 font-bold'
-                        : 'border-transparent text-gray-400 hover:text-gray-600 dark:hover:text-gray-300'
-                    }`}
-                  >
-                    Care & Info
-                  </button>
-                </div>
 
-                <div className="py-5 text-xs text-gray-600 dark:text-gray-350 leading-relaxed font-sans">
-                  {detailActiveTab === 'description' && (
-                    <div className="flex flex-col gap-3">
-                      <h4 className="font-display text-xs font-bold text-gray-900 dark:text-white uppercase tracking-wider">Detailed Description</h4>
-                      {(selectedProduct.detailedDescription || (selectedProduct as any).detailed_description || selectedProduct.description) ? (
-                        <div 
-                          className="prose prose-sm max-w-none dark:prose-invert space-y-2 text-gray-650 dark:text-gray-300"
-                          dangerouslySetInnerHTML={{ 
-                            __html: formatRichDescription(selectedProduct.detailedDescription || (selectedProduct as any).detailed_description || selectedProduct.description) 
-                          }} 
-                        />
-                      ) : (
-                        <p className="font-extralight text-gray-500 italic">No detailed overview provided for this product.</p>
-                      )}
-                    </div>
-                  )}
-
-                  {detailActiveTab === 'features' && (
-                    <div className="flex flex-col gap-3">
-                      <h4 className="font-display text-xs font-bold text-gray-900 dark:text-white uppercase tracking-wider">Key Highlights & Features</h4>
-                      {Array.isArray(selectedProduct.features) && selectedProduct.features.length > 0 ? (
-                        <ul className="grid grid-cols-1 md:grid-cols-2 gap-2 mt-1">
-                          {selectedProduct.features.map((feat, idx) => (
-                            <li key={idx} className="flex items-start gap-2 text-xs font-normal text-gray-700 dark:text-gray-300">
-                              <Check className="h-3.5 w-3.5 text-emerald-550 dark:text-emerald-400 mt-0.5 shrink-0" />
-                              <span>{feat}</span>
-                            </li>
-                          ))}
-                        </ul>
-                      ) : (
-                        <p className="font-extralight text-gray-500 italic">No features listed yet.</p>
-                      )}
-                    </div>
-                  )}
-
-                  {detailActiveTab === 'specifications' && (
-                    <div className="flex flex-col gap-3">
-                      <h4 className="font-display text-xs font-bold text-gray-900 dark:text-white uppercase tracking-wider">Technical Specifications</h4>
-                      {selectedProduct.specifications && selectedProduct.specifications.length > 0 ? (
-                        <div className="border border-gray-150 dark:border-gray-800 rounded-xl overflow-x-auto shadow-3xs mt-1">
-                          <table className="w-full text-left text-xs border-collapse">
-                            <tbody>
-                              {selectedProduct.specifications.map((spec, idx) => (
-                                <tr 
-                                  key={idx} 
-                                  className={`border-b border-gray-100 dark:border-gray-850/60 ${
-                                    idx % 2 === 0 ? 'bg-gray-50/50 dark:bg-gray-900/30' : 'bg-white dark:bg-gray-950/20'
-                                  }`}
-                                >
-                                  <td className="py-2.5 px-4 font-mono text-[10px] uppercase font-bold text-gray-400 w-1/3 shrink-0">
-                                    {spec.key}
-                                  </td>
-                                  <td className="py-2.5 px-4 font-semibold text-gray-800 dark:text-gray-250">
-                                    {spec.value}
-                                  </td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
-                      ) : (
-                        <p className="font-extralight text-gray-500 italic">No detailed specifications logged.</p>
-                      )}
-                    </div>
-                  )}
-
-                  {detailActiveTab === 'whatsInTheBox' && (
-                    <div className="flex flex-col gap-3">
-                      <h4 className="font-display text-xs font-bold text-gray-900 dark:text-white uppercase tracking-wider">What’s in the box</h4>
-                      {selectedProduct.whatsInTheBox ? (
-                        <div className="flex items-start gap-3 rounded-xl border border-indigo-50/80 bg-indigo-50/10 dark:border-gray-800 dark:bg-indigo-950/10 p-4.5 mt-1">
-                          <Package className="h-5 w-5 text-indigo-550 dark:text-indigo-400 mt-0.5 shrink-0" />
-                          <div className="flex flex-col gap-1">
-                            <span className="text-xs font-bold text-indigo-900 dark:text-indigo-300 font-mono">Package Ship Contents:</span>
-                            <p className="text-xs font-semibold text-gray-750 dark:text-gray-300 leading-relaxed whitespace-pre-line">{selectedProduct.whatsInTheBox}</p>
-                          </div>
-                        </div>
-                      ) : (
-                        <p className="font-extralight text-gray-500 italic">Package inventory details not specified.</p>
-                      )}
-                    </div>
-                  )}
-
-                  {detailActiveTab === 'categoryInfo' && (() => {
-                    const catType = getCategoryType(selectedProduct.category);
-                    return (
-                      <div className="flex flex-col gap-4">
-                        <h4 className="font-display text-xs font-bold text-gray-900 dark:text-white uppercase tracking-wider">
-                          Product Disclosures & Care Information
-                        </h4>
-
-                        {/* Expiry Badge if applicable */}
-                        {selectedProduct.hasExpiryDate && selectedProduct.expiryDate && (
-                          <div className="p-3 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-xl text-xs flex items-center gap-2">
-                            <Clock className="h-4 w-4 text-amber-600 shrink-0" />
-                            <span className="font-bold text-amber-900 dark:text-amber-200">
-                              Expiry Date: {selectedProduct.expiryDate}
-                            </span>
-                          </div>
-                        )}
-
-                        {/* Clothes & Wearables */}
-                        {catType === 'clothing' && (
-                          <div className="space-y-3">
-                            {selectedProduct.sizeGuide && (
-                              <div className="p-3 bg-slate-50 dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800">
-                                <span className="font-bold text-xs text-indigo-600 block mb-1">Size Guide & Measurements:</span>
-                                <p className="text-xs font-mono whitespace-pre-line">{selectedProduct.sizeGuide}</p>
-                              </div>
-                            )}
-
-                            {selectedProduct.availableSizes && selectedProduct.availableSizes.length > 0 && (
-                              <div>
-                                <span className="font-bold text-xs text-slate-700 dark:text-slate-300 block mb-1">Available Sizes:</span>
-                                <div className="flex flex-wrap gap-1.5">
-                                  {selectedProduct.availableSizes.map((s) => (
-                                    <span key={s} className="px-2.5 py-1 bg-indigo-50 dark:bg-indigo-950 text-indigo-900 dark:text-indigo-200 border border-indigo-200 text-xs font-bold rounded-lg font-mono">
-                                      {s}
-                                    </span>
-                                  ))}
-                                </div>
-                              </div>
-                            )}
-
-                            {selectedProduct.material && (
-                              <p className="text-xs"><strong className="text-slate-900 dark:text-white">Material:</strong> {selectedProduct.material}</p>
-                            )}
-
-                            {selectedProduct.colorOptions && selectedProduct.colorOptions.length > 0 && (
-                              <div>
-                                <span className="font-bold text-xs text-slate-700 dark:text-slate-300 block mb-1">Color Options:</span>
-                                <div className="flex flex-wrap gap-1">
-                                  {selectedProduct.colorOptions.map((c) => (
-                                    <span key={c} className="px-2 py-0.5 bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 text-[11px] rounded font-medium">
-                                      {c}
-                                    </span>
-                                  ))}
-                                </div>
-                              </div>
-                            )}
-
-                            {selectedProduct.careInstructions && (
-                              <p className="text-xs text-slate-600 dark:text-slate-400"><strong>Care Instructions:</strong> {selectedProduct.careInstructions}</p>
-                            )}
-                          </div>
-                        )}
-
-                        {/* Food & Beverages */}
-                        {catType === 'food' && (
-                          <div className="space-y-3">
-                            {selectedProduct.ingredients && (
-                              <div className="p-3 bg-slate-50 dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800">
-                                <span className="font-bold text-xs text-indigo-600 block mb-1">Ingredients:</span>
-                                <p className="text-xs leading-relaxed">{selectedProduct.ingredients}</p>
-                              </div>
-                            )}
-
-                            {selectedProduct.allergyInfo && selectedProduct.allergyInfo.length > 0 && (
-                              <div>
-                                <span className="font-bold text-xs text-rose-600 block mb-1">Allergy Warning:</span>
-                                <div className="flex flex-wrap gap-1.5">
-                                  {selectedProduct.allergyInfo.map((a) => (
-                                    <span key={a} className="px-2.5 py-1 bg-rose-50 dark:bg-rose-950 text-rose-900 dark:text-rose-200 border border-rose-200 text-xs font-bold rounded-lg">
-                                      ⚠️ {a}
-                                    </span>
-                                  ))}
-                                </div>
-                                {selectedProduct.allergyTracesNotes && (
-                                  <p className="text-[11px] text-rose-700 dark:text-rose-300 mt-1">{selectedProduct.allergyTracesNotes}</p>
-                                )}
-                              </div>
-                            )}
-
-                            <div className="grid grid-cols-2 gap-2 text-xs">
-                              {selectedProduct.manufacturer && (
-                                <p><strong>Manufacturer:</strong> {selectedProduct.manufacturer}</p>
-                              )}
-                              {selectedProduct.countryOfOrigin && (
-                                <p><strong>Origin:</strong> {selectedProduct.countryOfOrigin}</p>
-                              )}
-                            </div>
-
-                            {selectedProduct.nutritionalInfo && (
-                              <div className="text-xs"><strong>Nutritional Info:</strong> {selectedProduct.nutritionalInfo}</div>
-                            )}
-
-                            {selectedProduct.storageInstructions && (
-                              <div className="text-xs text-slate-600 dark:text-slate-400"><strong>Storage:</strong> {selectedProduct.storageInstructions}</div>
-                            )}
-                          </div>
-                        )}
-
-                        {/* Perfumes & Beauty */}
-                        {catType === 'beauty' && (
-                          <div className="space-y-3">
-                            {(selectedProduct.beautyIngredients || selectedProduct.ingredients) && (
-                              <div className="p-3 bg-slate-50 dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800">
-                                <span className="font-bold text-xs text-indigo-600 block mb-1">INCI Ingredients:</span>
-                                <p className="text-xs font-mono leading-relaxed">{selectedProduct.beautyIngredients || selectedProduct.ingredients}</p>
-                              </div>
-                            )}
-
-                            {selectedProduct.howToUse && (
-                              <div className="p-3 bg-purple-50 dark:bg-purple-950/30 rounded-xl border border-purple-200 dark:border-purple-800">
-                                <span className="font-bold text-xs text-purple-900 dark:text-purple-300 block mb-1">How to Use:</span>
-                                <p className="text-xs leading-relaxed">{selectedProduct.howToUse}</p>
-                              </div>
-                            )}
-
-                            <div className="grid grid-cols-3 gap-2 text-xs">
-                              {(selectedProduct.beautyManufacturer || selectedProduct.manufacturer) && (
-                                <p><strong>Manufacturer:</strong> {selectedProduct.beautyManufacturer || selectedProduct.manufacturer}</p>
-                              )}
-                              {(selectedProduct.beautyCountryOfOrigin || selectedProduct.countryOfOrigin) && (
-                                <p><strong>Origin:</strong> {selectedProduct.beautyCountryOfOrigin || selectedProduct.countryOfOrigin}</p>
-                              )}
-                              {selectedProduct.volumeNetWeight && (
-                                <p><strong>Volume/Net Wt:</strong> {selectedProduct.volumeNetWeight}</p>
-                              )}
-                            </div>
-                          </div>
-                        )}
-
-                        {/* General Default */}
-                        {catType === 'general' && (
-                          <div className="space-y-3">
-                            {(selectedProduct.brand || selectedProduct.countryOfOrigin || (selectedProduct as any).country_of_origin) && (
-                              <div className="p-3.5 bg-slate-50 dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 flex flex-wrap gap-4 text-xs font-mono">
-                                {selectedProduct.brand && (
-                                  <div>
-                                    <span className="text-slate-400 dark:text-slate-500 block text-[10px] uppercase font-bold">Brand / Label</span>
-                                    <span className="font-bold text-slate-800 dark:text-slate-200">{selectedProduct.brand}</span>
-                                  </div>
-                                )}
-                                {(selectedProduct.countryOfOrigin || (selectedProduct as any).country_of_origin) && (
-                                  <div>
-                                    <span className="text-slate-400 dark:text-slate-500 block text-[10px] uppercase font-bold">Country of Origin</span>
-                                    <span className="font-bold text-emerald-700 dark:text-emerald-400 flex items-center gap-1">
-                                      <span>{getCountryFlag(selectedProduct.countryOfOrigin || (selectedProduct as any).country_of_origin)}</span>
-                                      <span>{selectedProduct.countryOfOrigin || (selectedProduct as any).country_of_origin}</span>
-                                    </span>
-                                  </div>
-                                )}
-                              </div>
-                            )}
-                            {!selectedProduct.hasExpiryDate && !selectedProduct.brand && !selectedProduct.countryOfOrigin && (
-                              <p className="text-xs text-slate-500 italic">No additional category safety or compliance disclosures required for this standard item.</p>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })()}
-                </div>
-              </div>
 
               {/* Toast confirmation */}
               {addedToCartToast && (
@@ -1837,27 +1611,354 @@ export default function ProductStore({
           />
         )}
 
+        {/* Product Specifications, Features, and Detailed Overview Tabs */}
+        <div className="mt-12 rounded-2xl border border-gray-200/90 bg-white dark:bg-gray-900 p-6 sm:p-8 shadow-xs">
+          <div className="flex border-b border-gray-200 dark:border-gray-800 overflow-x-auto scrollbar-none gap-2 sm:gap-6">
+            <button
+              type="button"
+              onClick={() => setDetailActiveTab('description')}
+              className={`pb-3 text-xs sm:text-sm font-bold font-mono uppercase tracking-wider border-b-2 px-2 transition-colors shrink-0 whitespace-nowrap cursor-pointer ${
+                detailActiveTab === 'description'
+                  ? 'border-indigo-600 text-indigo-705 dark:border-indigo-400 dark:text-indigo-400 font-bold'
+                  : 'border-transparent text-gray-400 hover:text-gray-600 dark:hover:text-gray-300'
+              }`}
+            >
+              Details
+            </button>
+            <button
+              type="button"
+              onClick={() => setDetailActiveTab('features')}
+              className={`pb-3 text-xs sm:text-sm font-bold font-mono uppercase tracking-wider border-b-2 px-2 transition-colors shrink-0 whitespace-nowrap cursor-pointer ${
+                detailActiveTab === 'features'
+                  ? 'border-indigo-600 text-indigo-705 dark:border-indigo-400 dark:text-indigo-400 font-bold'
+                  : 'border-transparent text-gray-400 hover:text-gray-600 dark:hover:text-gray-300'
+              }`}
+            >
+              Features
+            </button>
+            <button
+              type="button"
+              onClick={() => setDetailActiveTab('specifications')}
+              className={`pb-3 text-xs sm:text-sm font-bold font-mono uppercase tracking-wider border-b-2 px-2 transition-colors shrink-0 whitespace-nowrap cursor-pointer ${
+                detailActiveTab === 'specifications'
+                  ? 'border-indigo-600 text-indigo-705 dark:border-indigo-400 dark:text-indigo-400 font-bold'
+                  : 'border-transparent text-gray-400 hover:text-gray-600 dark:hover:text-gray-300'
+              }`}
+            >
+              Specs
+            </button>
+            <button
+              type="button"
+              onClick={() => setDetailActiveTab('whatsInTheBox')}
+              className={`pb-3 text-xs sm:text-sm font-bold font-mono uppercase tracking-wider border-b-2 px-2 transition-colors shrink-0 whitespace-nowrap cursor-pointer ${
+                detailActiveTab === 'whatsInTheBox'
+                  ? 'border-indigo-600 text-indigo-705 dark:border-indigo-400 dark:text-indigo-400 font-bold'
+                  : 'border-transparent text-gray-400 hover:text-gray-600 dark:hover:text-gray-300'
+              }`}
+            >
+              In the Box
+            </button>
+            <button
+              type="button"
+              onClick={() => setDetailActiveTab('categoryInfo')}
+              className={`pb-3 text-xs sm:text-sm font-bold font-mono uppercase tracking-wider border-b-2 px-2 transition-colors shrink-0 whitespace-nowrap cursor-pointer ${
+                detailActiveTab === 'categoryInfo'
+                  ? 'border-indigo-600 text-indigo-705 dark:border-indigo-400 dark:text-indigo-400 font-bold'
+                  : 'border-transparent text-gray-400 hover:text-gray-600 dark:hover:text-gray-300'
+              }`}
+            >
+              Care & Info
+            </button>
+          </div>
+
+          <div className="py-6 text-xs text-gray-600 dark:text-gray-350 leading-relaxed font-sans">
+            {detailActiveTab === 'description' && (
+              <div className="flex flex-col gap-3">
+                <h4 className="font-display text-xs font-bold text-gray-900 dark:text-white uppercase tracking-wider">Detailed Description</h4>
+                {(selectedProduct.detailedDescription || (selectedProduct as any).detailed_description || selectedProduct.description) ? (
+                  <div 
+                    className="prose prose-sm max-w-none dark:prose-invert space-y-2 text-gray-650 dark:text-gray-300"
+                    dangerouslySetInnerHTML={{ 
+                      __html: formatRichDescription(selectedProduct.detailedDescription || (selectedProduct as any).detailed_description || selectedProduct.description) 
+                    }} 
+                  />
+                ) : (
+                  <p className="font-extralight text-gray-500 italic">No detailed overview provided for this product.</p>
+                )}
+              </div>
+            )}
+
+            {detailActiveTab === 'features' && (
+              <div className="flex flex-col gap-3">
+                <h4 className="font-display text-xs font-bold text-gray-900 dark:text-white uppercase tracking-wider">Key Highlights & Features</h4>
+                {Array.isArray(selectedProduct.features) && selectedProduct.features.length > 0 ? (
+                  <ul className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 mt-1">
+                    {selectedProduct.features.map((feat, idx) => (
+                      <li key={idx} className="flex items-start gap-2 text-xs font-normal text-gray-700 dark:text-gray-300 bg-gray-50/50 dark:bg-gray-800/40 p-2.5 rounded-xl border border-gray-100 dark:border-gray-800">
+                        <Check className="h-3.5 w-3.5 text-emerald-550 dark:text-emerald-400 mt-0.5 shrink-0" />
+                        <span>{feat}</span>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="font-extralight text-gray-500 italic">No features listed yet.</p>
+                )}
+              </div>
+            )}
+
+            {detailActiveTab === 'specifications' && (
+              <div className="flex flex-col gap-3">
+                <h4 className="font-display text-xs font-bold text-gray-900 dark:text-white uppercase tracking-wider">Technical Specifications</h4>
+                {selectedProduct.specifications && selectedProduct.specifications.length > 0 ? (
+                  <div className="border border-gray-150 dark:border-gray-800 rounded-xl overflow-x-auto shadow-3xs mt-1">
+                    <table className="w-full text-left text-xs border-collapse">
+                      <tbody>
+                        {selectedProduct.specifications.map((spec, idx) => (
+                          <tr 
+                            key={idx} 
+                            className={`border-b border-gray-100 dark:border-gray-850/60 ${
+                              idx % 2 === 0 ? 'bg-gray-50/50 dark:bg-gray-900/30' : 'bg-white dark:bg-gray-950/20'
+                            }`}
+                          >
+                            <td className="py-2.5 px-4 font-mono text-[10px] uppercase font-bold text-gray-400 w-1/4 shrink-0">
+                              {spec.key}
+                            </td>
+                            <td className="py-2.5 px-4 font-semibold text-gray-800 dark:text-gray-250">
+                              {spec.value}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <p className="font-extralight text-gray-500 italic">No detailed specifications logged.</p>
+                )}
+              </div>
+            )}
+
+            {detailActiveTab === 'whatsInTheBox' && (
+              <div className="flex flex-col gap-3">
+                <h4 className="font-display text-xs font-bold text-gray-900 dark:text-white uppercase tracking-wider">What’s in the box</h4>
+                {selectedProduct.whatsInTheBox ? (
+                  <div className="flex items-start gap-3 rounded-xl border border-indigo-50/80 bg-indigo-50/10 dark:border-gray-800 dark:bg-indigo-950/10 p-4.5 mt-1">
+                    <Package className="h-5 w-5 text-indigo-550 dark:text-indigo-400 mt-0.5 shrink-0" />
+                    <div className="flex flex-col gap-1">
+                      <span className="text-xs font-bold text-indigo-900 dark:text-indigo-300 font-mono">Package Ship Contents:</span>
+                      <p className="text-xs font-semibold text-gray-750 dark:text-gray-300 leading-relaxed whitespace-pre-line">{selectedProduct.whatsInTheBox}</p>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="font-extralight text-gray-500 italic">Package inventory details not specified.</p>
+                )}
+              </div>
+            )}
+
+            {detailActiveTab === 'categoryInfo' && (() => {
+              const catType = getCategoryType(selectedProduct.category);
+              return (
+                <div className="flex flex-col gap-4">
+                  <h4 className="font-display text-xs font-bold text-gray-900 dark:text-white uppercase tracking-wider">
+                    Product Disclosures & Care Information
+                  </h4>
+
+                  {/* Expiry Badge if applicable */}
+                  {selectedProduct.hasExpiryDate && selectedProduct.expiryDate && (
+                    <div className="p-3 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-xl text-xs flex items-center gap-2">
+                      <Clock className="h-4 w-4 text-amber-600 shrink-0" />
+                      <span className="font-bold text-amber-900 dark:text-amber-200">
+                        Expiry Date: {selectedProduct.expiryDate}
+                      </span>
+                    </div>
+                  )}
+
+                  {/* Clothes & Wearables */}
+                  {catType === 'clothing' && (
+                    <div className="space-y-3">
+                      {selectedProduct.sizeGuide && (
+                        <div className="p-3 bg-slate-50 dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800">
+                          <span className="font-bold text-xs text-indigo-600 block mb-1">Size Guide & Measurements:</span>
+                          <p className="text-xs font-mono whitespace-pre-line">{selectedProduct.sizeGuide}</p>
+                        </div>
+                      )}
+
+                      {selectedProduct.availableSizes && selectedProduct.availableSizes.length > 0 && (
+                        <div>
+                          <span className="font-bold text-xs text-slate-700 dark:text-slate-300 block mb-1">Available Sizes:</span>
+                          <div className="flex flex-wrap gap-1.5">
+                            {selectedProduct.availableSizes.map((s) => (
+                              <span key={s} className="px-2.5 py-1 bg-indigo-50 dark:bg-indigo-950 text-indigo-900 dark:text-indigo-200 border border-indigo-200 text-xs font-bold rounded-lg font-mono">
+                                {s}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {selectedProduct.material && (
+                        <p className="text-xs"><strong className="text-slate-900 dark:text-white">Material:</strong> {selectedProduct.material}</p>
+                      )}
+
+                      {selectedProduct.colorOptions && selectedProduct.colorOptions.length > 0 && (
+                        <div>
+                          <span className="font-bold text-xs text-slate-700 dark:text-slate-300 block mb-1">Color Options:</span>
+                          <div className="flex flex-wrap gap-1">
+                            {selectedProduct.colorOptions.map((c) => (
+                              <span key={c} className="px-2 py-0.5 bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 text-[11px] rounded font-medium">
+                                {c}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {selectedProduct.careInstructions && (
+                        <p className="text-xs text-slate-600 dark:text-slate-400"><strong>Care Instructions:</strong> {selectedProduct.careInstructions}</p>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Food & Beverages */}
+                  {catType === 'food' && (
+                    <div className="space-y-3">
+                      {selectedProduct.ingredients && (
+                        <div className="p-3 bg-slate-50 dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800">
+                          <span className="font-bold text-xs text-indigo-600 block mb-1">Ingredients:</span>
+                          <p className="text-xs leading-relaxed">{selectedProduct.ingredients}</p>
+                        </div>
+                      )}
+
+                      {selectedProduct.allergyInfo && selectedProduct.allergyInfo.length > 0 && (
+                        <div>
+                          <span className="font-bold text-xs text-rose-600 block mb-1">Allergy Warning:</span>
+                          <div className="flex flex-wrap gap-1.5">
+                            {selectedProduct.allergyInfo.map((a) => (
+                              <span key={a} className="px-2.5 py-1 bg-rose-50 dark:bg-rose-950 text-rose-900 dark:text-rose-200 border border-rose-200 text-xs font-bold rounded-lg">
+                                ⚠️ {a}
+                              </span>
+                            ))}
+                          </div>
+                          {selectedProduct.allergyTracesNotes && (
+                            <p className="text-[11px] text-rose-700 dark:text-rose-300 mt-1">{selectedProduct.allergyTracesNotes}</p>
+                          )}
+                        </div>
+                      )}
+
+                      <div className="grid grid-cols-2 gap-2 text-xs">
+                        {selectedProduct.manufacturer && (
+                          <p><strong>Manufacturer:</strong> {selectedProduct.manufacturer}</p>
+                        )}
+                        {selectedProduct.countryOfOrigin && (
+                          <p><strong>Origin:</strong> {selectedProduct.countryOfOrigin}</p>
+                        )}
+                      </div>
+
+                      {selectedProduct.nutritionalInfo && (
+                        <div className="text-xs"><strong>Nutritional Info:</strong> {selectedProduct.nutritionalInfo}</div>
+                      )}
+
+                      {selectedProduct.storageInstructions && (
+                        <div className="text-xs text-slate-600 dark:text-slate-400"><strong>Storage:</strong> {selectedProduct.storageInstructions}</div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Perfumes & Beauty */}
+                  {catType === 'beauty' && (
+                    <div className="space-y-3">
+                      {(selectedProduct.beautyIngredients || selectedProduct.ingredients) && (
+                        <div className="p-3 bg-slate-50 dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800">
+                          <span className="font-bold text-xs text-indigo-600 block mb-1">INCI Ingredients:</span>
+                          <p className="text-xs font-mono leading-relaxed">{selectedProduct.beautyIngredients || selectedProduct.ingredients}</p>
+                        </div>
+                      )}
+
+                      {selectedProduct.howToUse && (
+                        <div className="p-3 bg-purple-50 dark:bg-purple-950/30 rounded-xl border border-purple-200 dark:border-purple-800">
+                          <span className="font-bold text-xs text-purple-900 dark:text-purple-300 block mb-1">How to Use:</span>
+                          <p className="text-xs leading-relaxed">{selectedProduct.howToUse}</p>
+                        </div>
+                      )}
+
+                      <div className="grid grid-cols-3 gap-2 text-xs">
+                        {(selectedProduct.beautyManufacturer || selectedProduct.manufacturer) && (
+                          <p><strong>Manufacturer:</strong> {selectedProduct.beautyManufacturer || selectedProduct.manufacturer}</p>
+                        )}
+                        {(selectedProduct.beautyCountryOfOrigin || selectedProduct.countryOfOrigin) && (
+                          <p><strong>Origin:</strong> {selectedProduct.beautyCountryOfOrigin || selectedProduct.countryOfOrigin}</p>
+                        )}
+                        {selectedProduct.volumeNetWeight && (
+                          <p><strong>Volume/Net Wt:</strong> {selectedProduct.volumeNetWeight}</p>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* General Default */}
+                  {catType === 'general' && (
+                    <div className="space-y-3">
+                      {(selectedProduct.brand || selectedProduct.countryOfOrigin || (selectedProduct as any).country_of_origin) && (
+                        <div className="p-3.5 bg-slate-50 dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 flex flex-wrap gap-4 text-xs font-mono">
+                          {selectedProduct.brand && (
+                            <div>
+                              <span className="text-slate-400 dark:text-slate-500 block text-[10px] uppercase font-bold">Brand / Label</span>
+                              <span className="font-bold text-slate-800 dark:text-slate-200">{selectedProduct.brand}</span>
+                            </div>
+                          )}
+                          {(selectedProduct.countryOfOrigin || (selectedProduct as any).country_of_origin) && (
+                            <div>
+                              <span className="text-slate-400 dark:text-slate-500 block text-[10px] uppercase font-bold">Country of Origin</span>
+                              <span className="font-bold text-emerald-700 dark:text-emerald-400 flex items-center gap-1">
+                                <span>{getCountryFlag(selectedProduct.countryOfOrigin || (selectedProduct as any).country_of_origin)}</span>
+                                <span>{selectedProduct.countryOfOrigin || (selectedProduct as any).country_of_origin}</span>
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                      {!selectedProduct.hasExpiryDate && !selectedProduct.brand && !selectedProduct.countryOfOrigin && (
+                        <p className="text-xs text-slate-500 italic">No additional category safety or compliance disclosures required for this standard item.</p>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+          </div>
+        </div>
+
         {/* Customer Feedback Section */}
         {(() => {
-          const existingReviews = selectedProduct.reviews || [];
-          const totalReviews = existingReviews.length;
+          const effectiveReviews = detailReviews !== null ? detailReviews : (selectedProduct.reviews || []);
+          const totalReviews = detailReviewsSummary
+            ? detailReviewsSummary.totalCount
+            : (detailReviews ? detailReviews.length : (selectedProduct.reviewsCount || effectiveReviews.length));
 
-          const counts: Record<number, number> = { 5: 0, 4: 0, 3: 0, 2: 0, 1: 0 };
-          let sumRating = 0;
+          let avgRating = detailReviewsSummary
+            ? detailReviewsSummary.average
+            : (selectedProduct.rating || 0);
 
-          existingReviews.forEach((r) => {
-            const s = Math.min(5, Math.max(1, Math.floor(r.rating || 5)));
-            counts[s] = (counts[s] || 0) + 1;
-            sumRating += r.rating || 5;
-          });
-
-          const avgRating = totalReviews > 0 ? sumRating / totalReviews : 0;
-
-          const starBreakdowns = [5, 4, 3, 2, 1].map((star) => ({
+          let starBreakdowns = [5, 4, 3, 2, 1].map((star) => ({
             star,
-            count: counts[star] || 0,
-            percent: totalReviews > 0 ? Math.round(((counts[star] || 0) / totalReviews) * 100) : 0,
+            count: detailReviewsSummary?.distribution?.[star] || 0,
+            percent: totalReviews > 0 ? Math.round(((detailReviewsSummary?.distribution?.[star] || 0) / totalReviews) * 100) : 0,
           }));
+
+          if (!detailReviewsSummary && effectiveReviews.length > 0) {
+            const counts: Record<number, number> = { 5: 0, 4: 0, 3: 0, 2: 0, 1: 0 };
+            let sumRating = 0;
+            effectiveReviews.forEach((r: any) => {
+              const s = Math.min(5, Math.max(1, Math.floor(r.rating || 5)));
+              counts[s] = (counts[s] || 0) + 1;
+              sumRating += r.rating || 5;
+            });
+            avgRating = sumRating / effectiveReviews.length;
+            starBreakdowns = [5, 4, 3, 2, 1].map((star) => ({
+              star,
+              count: counts[star] || 0,
+              percent: Math.round(((counts[star] || 0) / effectiveReviews.length) * 100),
+            }));
+          }
 
           return (
             <div className="mt-14 rounded-2xl border border-gray-200/90 bg-white dark:bg-gray-900 p-6 sm:p-8 shadow-xs">
@@ -1872,31 +1973,27 @@ export default function ProductStore({
                     100% Real Buyers
                   </span>
                 </div>
-                <button
-                  onClick={() => setReviewsViewProduct(selectedProduct)}
-                  className="text-xs sm:text-sm font-semibold text-[#f68b1e] hover:underline flex items-center gap-0.5 cursor-pointer"
-                >
-                  <span>{totalReviews > 0 ? 'View All & Write Review' : 'Write a Review'}</span>
-                  <ChevronRight className="h-4 w-4" />
-                </button>
+                {totalReviews > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setReviewsViewProduct(selectedProduct)}
+                    className="text-xs sm:text-sm font-semibold text-[#f68b1e] hover:underline flex items-center gap-0.5 cursor-pointer"
+                  >
+                    <span>View all {totalReviews.toLocaleString()} reviews</span>
+                    <ChevronRight className="h-4 w-4" />
+                  </button>
+                )}
               </div>
 
               {totalReviews === 0 ? (
                 <div className="text-center py-10 px-4">
-                  <div className="h-12 w-12 rounded-full bg-amber-50 dark:bg-amber-950/40 text-amber-500 border border-amber-200 dark:border-amber-800/60 flex items-center justify-center mx-auto mb-3">
-                    <Star className="h-6 w-6 fill-amber-400 text-amber-400" />
+                  <div className="h-12 w-12 rounded-full bg-gray-50 dark:bg-gray-800/50 text-gray-400 border border-gray-200 dark:border-gray-700 flex items-center justify-center mx-auto mb-3">
+                    <Star className="h-6 w-6 text-gray-300 dark:text-gray-600" />
                   </div>
-                  <h4 className="text-sm font-bold text-gray-900 dark:text-white">No Customer Reviews Yet</h4>
+                  <h4 className="text-sm font-bold text-gray-900 dark:text-white">No reviews on this product yet.</h4>
                   <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 max-w-md mx-auto leading-relaxed">
-                    Only verified customers who have bought this product can submit authentic feedback. Have you purchased this item?
+                    Customer feedback and ratings from verified purchases will be displayed here.
                   </p>
-                  <button
-                    onClick={() => setReviewsViewProduct(selectedProduct)}
-                    className="mt-4 inline-flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white text-xs font-bold rounded-xl shadow-xs transition-all cursor-pointer"
-                  >
-                    <Sparkles className="h-4 w-4" />
-                    <span>Leave a Verified Review</span>
-                  </button>
                 </div>
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-12 gap-8 pt-6">
@@ -1948,48 +2045,74 @@ export default function ProductStore({
 
                   {/* Right Column: Product Reviews */}
                   <div className="md:col-span-8 space-y-4">
-                    <h4 className="text-xs font-bold uppercase tracking-wider text-gray-700 dark:text-gray-300">
-                      PRODUCT REVIEWS ({totalReviews.toLocaleString()})
-                    </h4>
+                    <div className="flex items-center justify-between">
+                      <h4 className="text-xs font-bold uppercase tracking-wider text-gray-700 dark:text-gray-300">
+                        PRODUCT REVIEWS ({totalReviews.toLocaleString()})
+                      </h4>
+                      {totalReviews > 3 && (
+                        <span className="text-[11px] text-gray-500 dark:text-gray-400 font-mono">
+                          Showing 3 of {totalReviews.toLocaleString()}
+                        </span>
+                      )}
+                    </div>
 
                     <div className="space-y-5">
-                      {existingReviews.map((rev, i) => (
-                        <div key={rev.id || `rev-${i}`} className="pb-4 border-b border-gray-100 dark:border-gray-800 last:border-0 last:pb-0">
-                          <div className="flex items-center gap-0.5 text-[#f68b1e]">
-                            {Array.from({ length: 5 }).map((_, idx) => (
-                              <Star
-                                key={idx}
-                                className={`h-3.5 w-3.5 ${
-                                  idx < (rev.rating || 5)
-                                    ? 'fill-[#f68b1e] text-[#f68b1e]'
-                                    : 'fill-gray-200 text-gray-200 dark:fill-gray-700 dark:text-gray-700'
-                                }`}
-                              />
-                            ))}
+                      {effectiveReviews.slice(0, 3).map((rev: any, i: number) => {
+                        const reviewDate = rev.date || (rev.createdAt ? new Date(rev.createdAt).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }) : 'Recent');
+                        const reviewerName = rev.reviewerDisplayName || rev.userName || 'Verified Buyer';
+                        const reviewText = rev.comment || rev.body || '';
+
+                        return (
+                          <div key={rev.id || `rev-${i}`} className="pb-4 border-b border-gray-100 dark:border-gray-800 last:border-0 last:pb-0">
+                            <div className="flex items-center gap-0.5 text-[#f68b1e]">
+                              {Array.from({ length: 5 }).map((_, idx) => (
+                                <Star
+                                  key={idx}
+                                  className={`h-3.5 w-3.5 ${
+                                    idx < (rev.rating || 5)
+                                      ? 'fill-[#f68b1e] text-[#f68b1e]'
+                                      : 'fill-gray-200 text-gray-200 dark:fill-gray-700 dark:text-gray-700'
+                                  }`}
+                                />
+                              ))}
+                            </div>
+
+                            {rev.title && (
+                              <h5 className="font-bold text-xs sm:text-sm text-gray-900 dark:text-white mt-1.5">
+                                {rev.title}
+                              </h5>
+                            )}
+
+                            {reviewText && (
+                              <p className="text-xs text-gray-600 dark:text-gray-300 mt-1 leading-relaxed">
+                                {reviewText}
+                              </p>
+                            )}
+
+                            <div className="mt-2.5 flex items-center justify-between text-[11px]">
+                              <span className="text-gray-500 dark:text-gray-400 font-mono">
+                                {reviewDate} by {reviewerName}
+                              </span>
+
+                              <span className="text-emerald-700 dark:text-emerald-400 font-medium flex items-center gap-1">
+                                <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
+                                Verified Purchase
+                              </span>
+                            </div>
                           </div>
+                        );
+                      })}
 
-                          {rev.title && (
-                            <h5 className="font-bold text-xs sm:text-sm text-gray-900 dark:text-white mt-1.5">
-                              {rev.title}
-                            </h5>
-                          )}
-
-                          <p className="text-xs text-gray-600 dark:text-gray-300 mt-1 leading-relaxed">
-                            {rev.comment}
-                          </p>
-
-                          <div className="mt-2.5 flex items-center justify-between text-[11px]">
-                            <span className="text-gray-500 dark:text-gray-400 font-mono">
-                              {rev.date || 'Recent'} by {rev.reviewerDisplayName || rev.userName || 'Verified Buyer'}
-                            </span>
-
-                            <span className="text-emerald-700 dark:text-emerald-400 font-medium flex items-center gap-1">
-                              <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
-                              Verified Purchase
-                            </span>
-                          </div>
-                        </div>
-                      ))}
+                      {totalReviews > 3 && (
+                        <button
+                          type="button"
+                          onClick={() => setReviewsViewProduct(selectedProduct)}
+                          className="mt-4 w-full py-2.5 px-4 rounded-xl border border-gray-200 dark:border-gray-800 bg-gray-50/70 dark:bg-gray-800/50 hover:bg-gray-100 dark:hover:bg-gray-800 text-xs font-bold text-gray-800 dark:text-gray-200 flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                        >
+                          <span>See all {totalReviews.toLocaleString()} verified reviews</span>
+                          <ChevronRight className="h-3.5 w-3.5 text-[#f68b1e]" />
+                        </button>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -2069,17 +2192,31 @@ export default function ProductStore({
                             <h4 className="font-display font-bold text-sm text-gray-950 mt-1.5 group-hover:text-indigo-655 transition-colors line-clamp-1" title={p.name}>
                               {p.name}
                             </h4>
-                            <div className="flex items-center gap-1.5 mt-1">
-                              <div className="flex items-center text-amber-500">
-                                {Array.from({ length: 5 }).map((_, idx) => (
-                                  <Star
-                                    key={idx}
-                                    className={`h-2.5 w-2.5 ${idx < Math.floor(p.rating) ? 'fill-current text-amber-500' : 'text-gray-200'}`}
-                                  />
-                                ))}
-                              </div>
-                              <span className="text-[9px] text-gray-400 font-medium">({p.rating.toFixed(1)})</span>
-                            </div>
+                            {(() => {
+                              const pCount = Number(p.reviewsCount ?? (Array.isArray(p.reviews) ? p.reviews.length : 0));
+                              const pRating = Number(p.rating || 0);
+                              if (pCount > 0 && pRating > 0) {
+                                return (
+                                  <div
+                                    className="flex items-center gap-1.5 mt-1"
+                                    title={`${pRating.toFixed(1)} rating (${pCount} verified ${pCount === 1 ? 'review' : 'reviews'})`}
+                                  >
+                                    <div className="flex items-center text-amber-500">
+                                      {Array.from({ length: 5 }).map((_, idx) => (
+                                        <Star
+                                          key={idx}
+                                          className={`h-2.5 w-2.5 ${idx < Math.floor(pRating) ? 'fill-current text-amber-500' : 'text-gray-200'}`}
+                                        />
+                                      ))}
+                                    </div>
+                                    <span className="text-[9px] text-gray-500 dark:text-gray-400 font-mono">
+                                      {pRating.toFixed(1)} ({pCount})
+                                    </span>
+                                  </div>
+                                );
+                              }
+                              return null;
+                            })()}
                           </div>
                         </div>
 
@@ -3096,15 +3233,28 @@ export default function ProductStore({
                         <div className="space-y-1.5">
                           <div className="flex flex-wrap items-center gap-1.5">
                             <span className="text-[9px] sm:text-[10px] font-bold tracking-wider text-indigo-600 dark:text-indigo-400 uppercase font-mono">{product.category}</span>
-                            {product.reviewsCount > 0 && product.rating > 0 ? (
-                              <>
-                                <span className="text-slate-300 dark:text-slate-700 font-bold">•</span>
-                                <div className="flex items-center text-amber-500">
-                                  <Star className="h-2.5 w-2.5 fill-current" />
-                                  <span className="text-[9px] sm:text-[10px] font-bold ml-0.5">{product.rating.toFixed(1)}</span>
-                                </div>
-                              </>
-                            ) : null}
+                            {(() => {
+                              const count = Number(product.reviewsCount ?? (Array.isArray(product.reviews) ? product.reviews.length : 0));
+                              const rating = Number(product.rating || 0);
+                              if (count > 0 && rating > 0) {
+                                return (
+                                  <>
+                                    <span className="text-slate-300 dark:text-slate-700 font-bold">•</span>
+                                    <div
+                                      className="flex items-center text-amber-500"
+                                      title={`${rating.toFixed(1)} (${count} verified ${count === 1 ? 'review' : 'reviews'})`}
+                                    >
+                                      <Star className="h-2.5 w-2.5 fill-current" />
+                                      <span className="text-[9px] sm:text-[10px] font-bold ml-0.5">{rating.toFixed(1)}</span>
+                                    </div>
+                                    <span className="text-[9px] sm:text-[10px] text-slate-400 dark:text-slate-500 font-mono">
+                                      ({count})
+                                    </span>
+                                  </>
+                                );
+                              }
+                              return null;
+                            })()}
                           </div>
                           
                           <h3 className="font-display font-semibold text-sm sm:text-base text-slate-900 dark:text-white group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors uppercase tracking-tight truncate max-w-xl">

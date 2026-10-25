@@ -2178,7 +2178,7 @@ admin@ropenix.co.ke`;
       stock: newProdType === 'physical' ? Number(newProdStock) : null,
       lowStockThreshold: newProdType === 'physical' ? Number(newProdLowStockThreshold) : undefined,
       variations: createdVariations.length > 0 ? createdVariations : undefined,
-      rating: 5.0,
+      rating: 0,
       reviewsCount: 0,
       reviews: [],
       paymentRestriction: newProdPaymentRestriction,

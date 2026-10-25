@@ -847,6 +847,7 @@ export async function initializeDatabaseSchema(): Promise<void> {
     await safeAddCol('payment_submissions', 'admin_notes', 'TEXT NULL');
     await safeAddCol('orders', 'review_reminder_sent_at', 'DATETIME NULL');
     await safeAddCol('users', 'marketing_emails_opt_out', 'TINYINT(1) NOT NULL DEFAULT 0');
+    await safeAddCol('reviews', 'mediaUrls', 'TEXT NULL');
 
     try {
       await pool.query('CREATE INDEX `idx_orders_review_reminder` ON `orders` (`review_reminder_sent_at`);');
@@ -881,6 +882,7 @@ export async function initializeDatabaseSchema(): Promise<void> {
     await safeAddCol('reviews', 'user_id', 'VARCHAR(255) NULL');
     await safeAddCol('reviews', 'title', 'VARCHAR(255) NULL');
     await safeAddCol('reviews', 'body', 'TEXT NULL');
+    await safeAddCol('reviews', 'updated_at', 'DATETIME NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP');
 
     // Automatically normalize any legacy awaiting_delivery_quote / delivery_quoted orders to pending
     try {
@@ -2981,8 +2983,8 @@ export async function ensureDefaultProducts(): Promise<void> {
         ],
         stock: 14,
         lowStockThreshold: 5,
-        rating: 4.8,
-        reviewsCount: 12,
+        rating: 0,
+        reviewsCount: 0,
         status: 'Active',
       },
       {
@@ -3008,8 +3010,8 @@ export async function ensureDefaultProducts(): Promise<void> {
         ],
         stock: 19,
         lowStockThreshold: 4,
-        rating: 4.9,
-        reviewsCount: 24,
+        rating: 0,
+        reviewsCount: 0,
         status: 'Active',
       },
       {
@@ -3035,8 +3037,8 @@ export async function ensureDefaultProducts(): Promise<void> {
         ],
         stock: 32,
         lowStockThreshold: 8,
-        rating: 4.7,
-        reviewsCount: 18,
+        rating: 0,
+        reviewsCount: 0,
         status: 'Active',
       },
       {
@@ -3062,8 +3064,8 @@ export async function ensureDefaultProducts(): Promise<void> {
         ],
         stock: 22,
         lowStockThreshold: 6,
-        rating: 4.9,
-        reviewsCount: 15,
+        rating: 0,
+        reviewsCount: 0,
         status: 'Active',
       }
     ];
@@ -4009,6 +4011,14 @@ export async function getMysqlProductReviewsSummary(productId: string) {
   const pool = await getDbPool();
   const cleanPid = String(productId).trim();
 
+  let targetProductId = cleanPid;
+  try {
+    const [pRows]: any = await pool.query('SELECT id FROM products WHERE id = ? OR slug = ? LIMIT 1', [cleanPid, cleanPid]);
+    if (pRows && pRows[0]?.id) {
+      targetProductId = pRows[0].id;
+    }
+  } catch (_) {}
+
   const [rows]: any = await pool.query(
     `SELECT 
        COUNT(*) as total,
@@ -4019,8 +4029,8 @@ export async function getMysqlProductReviewsSummary(productId: string) {
        COUNT(CASE WHEN rating = 2 THEN 1 END) as star_2,
        COUNT(CASE WHEN rating = 1 THEN 1 END) as star_1
      FROM reviews
-     WHERE product_id = ? AND status = 'published'`,
-    [cleanPid]
+     WHERE (product_id = ? OR product_id = ? OR productId = ? OR productId = ?) AND status = 'published'`,
+    [targetProductId, cleanPid, targetProductId, cleanPid]
   );
 
   const row = rows[0] || {};
@@ -4035,7 +4045,7 @@ export async function getMysqlProductReviewsSummary(productId: string) {
   };
 
   return {
-    productId: cleanPid,
+    productId: targetProductId,
     average,
     total,
     countPerStar,
@@ -4053,14 +4063,22 @@ export async function getMysqlReviewsByProduct(
   const pool = await getDbPool();
   const cleanPid = String(productId).trim();
 
+  let targetProductId = cleanPid;
+  try {
+    const [pRows]: any = await pool.query('SELECT id FROM products WHERE id = ? OR slug = ? LIMIT 1', [cleanPid, cleanPid]);
+    if (pRows && pRows[0]?.id) {
+      targetProductId = pRows[0].id;
+    }
+  } catch (_) {}
+
   let query = `
-    SELECT r.id, r.product_id, r.user_id, r.order_item_id, r.rating, r.title, r.body, r.status, r.created_at, r.updated_at,
+    SELECT r.id, r.product_id, r.user_id, r.order_item_id, r.rating, r.title, r.body, r.mediaUrls, r.status, r.created_at, r.updated_at,
            u.first_name, u.last_name, u.username
     FROM reviews r
     LEFT JOIN users u ON u.id = r.user_id
-    WHERE r.product_id = ? AND r.status = 'published'
+    WHERE (r.product_id = ? OR r.product_id = ? OR r.productId = ? OR r.productId = ?) AND r.status = 'published'
   `;
-  const params: any[] = [cleanPid];
+  const params: any[] = [targetProductId, cleanPid, targetProductId, cleanPid];
 
   if (options.rating && options.rating >= 1 && options.rating <= 5) {
     query += ` AND r.rating = ?`;
@@ -4078,8 +4096,8 @@ export async function getMysqlReviewsByProduct(
   // Get total matching reviews for pagination metadata
   let totalMatching = 0;
   if (options.page && options.limit) {
-    let countQuery = `SELECT COUNT(*) as total FROM reviews WHERE product_id = ? AND status = 'published'`;
-    const countParams: any[] = [cleanPid];
+    let countQuery = `SELECT COUNT(*) as total FROM reviews WHERE (product_id = ? OR product_id = ? OR productId = ? OR productId = ?) AND status = 'published'`;
+    const countParams: any[] = [targetProductId, cleanPid, targetProductId, cleanPid];
     if (options.rating && options.rating >= 1 && options.rating <= 5) {
       countQuery += ` AND rating = ?`;
       countParams.push(Math.round(options.rating));
@@ -4102,13 +4120,14 @@ export async function getMysqlReviewsByProduct(
     const displayName = fullName || r.username || 'Verified Customer';
     return {
       id: String(r.id),
-      productId: r.product_id,
+      productId: r.product_id || targetProductId,
       userId: r.user_id,
       orderItemId: r.order_item_id,
       rating: Number(r.rating),
       title: r.title,
       body: r.body,
       comment: r.body,
+      mediaUrls: typeof r.mediaUrls === 'string' ? safeJsonParse(r.mediaUrls, []) : (r.mediaUrls || []),
       status: r.status,
       reviewerDisplayName: displayName,
       userName: displayName,
@@ -4119,10 +4138,10 @@ export async function getMysqlReviewsByProduct(
   });
 
   // Calculate rating stats across all published reviews
-  const summary = await getMysqlProductReviewsSummary(cleanPid);
+  const summary = await getMysqlProductReviewsSummary(targetProductId);
 
   return {
-    productId: cleanPid,
+    productId: targetProductId,
     total: summary.total,
     matchingTotal: options.page && options.limit ? totalMatching : reviews.length,
     page: options.page ? Number(options.page) : 1,
@@ -4413,6 +4432,8 @@ export async function createMysqlReview(data: {
   rating: number;
   title?: string;
   body: string;
+  mediaUrls?: string[];
+  images?: string[];
 }) {
   const rating = Math.round(Number(data.rating));
   if (rating < 1 || rating > 5) {
@@ -4456,13 +4477,37 @@ export async function createMysqlReview(data: {
   try {
     await conn.beginTransaction();
 
-    const [insertResult]: any = await conn.query(
-      `INSERT INTO reviews (product_id, user_id, order_item_id, rating, title, body, status, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, 'published', NOW())`,
-      [productId, data.userId, orderItem.id, rating, cleanTitle, cleanBody]
+    // Enforce one review per user per product (or per order item)
+    const [existingRev]: any = await conn.query(
+      `SELECT id FROM reviews 
+       WHERE (order_item_id = ?) 
+          OR (user_id = ? AND (product_id = ? OR productId = ?)) 
+       LIMIT 1`,
+      [orderItem.id, data.userId, productId, productId]
     );
 
-    const newReviewId = insertResult.insertId;
+    if (existingRev && existingRev.length > 0) {
+      const conflictErr: any = new Error('You have already submitted a review for this product. Reviews are final once submitted.');
+      conflictErr.status = 409;
+      conflictErr.code = 'ALREADY_REVIEWED';
+      throw conflictErr;
+    }
+
+    const revId = `rev-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+    const [uRows]: any = await conn.query('SELECT username, first_name, last_name, email FROM users WHERE id = ? LIMIT 1', [data.userId]);
+    const u = uRows && uRows[0] ? uRows[0] : null;
+    const displayName = u ? (`${u.first_name || ''} ${u.last_name || ''}`.trim() || u.username || u.email) : (data.userEmail.split('@')[0] || 'Verified Customer');
+
+    const mediaList = Array.isArray(data.mediaUrls) && data.mediaUrls.length > 0
+      ? data.mediaUrls
+      : (Array.isArray(data.images) ? data.images : []);
+    const mediaUrlsJson = JSON.stringify(mediaList);
+
+    await conn.query(
+      `INSERT INTO reviews (id, product_id, productId, user_id, userName, userEmail, order_item_id, rating, title, body, comment, mediaUrls, verified, status, date, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 'published', CURDATE(), NOW(), NOW())`,
+      [revId, productId, productId, data.userId, displayName, data.userEmail, orderItem.id, rating, cleanTitle, cleanBody, cleanBody, mediaUrlsJson]
+    );
 
     // Atomically synchronize products.rating and products.reviewsCount
     const updatedStats = await syncProductRatingInTx(conn, productId);
@@ -4470,13 +4515,14 @@ export async function createMysqlReview(data: {
     await conn.commit();
 
     return {
-      id: String(newReviewId),
+      id: revId,
       productId,
       userId: data.userId,
       orderItemId: orderItem.id,
       rating,
       title: cleanTitle,
       body: cleanBody,
+      mediaUrls: mediaList,
       status: 'published',
       productRating: updatedStats.rating,
       productReviewsCount: updatedStats.reviewsCount,
@@ -4490,90 +4536,16 @@ export async function createMysqlReview(data: {
 }
 
 /**
- * Updates a review and synchronizes product rating within an atomic transaction
+ * Updates a review - BLOCKED: Reviews are final once submitted and cannot be edited
  */
 export async function updateMysqlReview(
-  reviewId: string | number,
-  userId: string,
-  updates: { rating?: number; title?: string; body?: string },
-  isAdmin = false
+  _reviewId: string | number,
+  _userId: string,
+  _updates: { rating?: number; title?: string; body?: string },
+  _isAdmin = false
 ) {
-  const pool = await getDbPool();
-  const conn = await pool.getConnection();
-
-  try {
-    await conn.beginTransaction();
-
-    const [revRows]: any = await conn.query(
-      `SELECT * FROM reviews WHERE id = ? LIMIT 1`,
-      [reviewId]
-    );
-
-    if (!revRows || revRows.length === 0) {
-      const err: any = new Error('Review not found.');
-      err.status = 404;
-      throw err;
-    }
-
-    const review = revRows[0];
-    if (!isAdmin && String(review.user_id) !== String(userId)) {
-      const err: any = new Error('Forbidden: You can only edit your own reviews.');
-      err.status = 403;
-      throw err;
-    }
-
-    const sets: string[] = ['updated_at = NOW()'];
-    const values: any[] = [];
-
-    let newRating = review.rating;
-    if (updates.rating !== undefined) {
-      newRating = Math.round(Number(updates.rating));
-      if (newRating < 1 || newRating > 5) {
-        throw new Error('Rating must be an integer between 1 and 5.');
-      }
-      sets.push('rating = ?');
-      values.push(newRating);
-    }
-
-    if (updates.title !== undefined) {
-      const cleanTitle = sanitizeReviewPlainText(updates.title).slice(0, 120);
-      sets.push('title = ?');
-      values.push(cleanTitle);
-    }
-
-    if (updates.body !== undefined) {
-      const cleanBody = sanitizeReviewPlainText(updates.body);
-      if (cleanBody.length < 10) {
-        throw new Error('Review statement must be at least 10 characters long.');
-      }
-      if (cleanBody.length > 2000) {
-        throw new Error('Review statement cannot exceed 2000 characters.');
-      }
-      sets.push('body = ?');
-      values.push(cleanBody);
-    }
-
-    values.push(reviewId);
-    await conn.query(`UPDATE reviews SET ${sets.join(', ')} WHERE id = ?`, values);
-
-    // Synchronize product rating
-    const updatedStats = await syncProductRatingInTx(conn, review.product_id);
-
-    await conn.commit();
-
-    return {
-      id: String(reviewId),
-      productId: review.product_id,
-      rating: newRating,
-      productRating: updatedStats.rating,
-      productReviewsCount: updatedStats.reviewsCount,
-    };
-  } catch (err) {
-    await conn.rollback();
-    throw err;
-  } finally {
-    conn.release();
-  }
+  const err: any = new Error('Reviews are final once submitted and cannot be edited.');
+  err.status = 405;
 }
 
 /**

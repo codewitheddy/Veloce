@@ -161,30 +161,44 @@ export default function ProductCard({
             {product.name}
           </h4>
 
-          {/* Rating line */}
-          <div className="flex items-center gap-1.5 mt-2">
-            <div className="flex items-center text-amber-400">
-              <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />
-              <span className="text-xs font-bold text-slate-700 dark:text-slate-300 ml-1 font-mono">
-                {(product.rating || 5.0).toFixed(1)}
-              </span>
-            </div>
-            <span className="text-[10.5px] text-slate-400 dark:text-slate-500 font-mono">
-              ({product.reviewsCount || product.reviews?.length || 12})
-            </span>
-          </div>
+          {/* Rating line - only verified review count to show */}
+          {(() => {
+            const count = Number(product.reviewsCount ?? (Array.isArray(product.reviews) ? product.reviews.length : 0));
+            const rating = Number(product.rating || 0);
+
+            if (count > 0 && rating > 0) {
+              return (
+                <div
+                  className="flex items-center gap-1.5 mt-2 min-h-[20px]"
+                  title={`${rating.toFixed(1)} rating (${count} verified ${count === 1 ? 'review' : 'reviews'})`}
+                >
+                  <div className="flex items-center text-amber-400">
+                    <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />
+                    <span className="text-xs font-bold text-slate-700 dark:text-slate-300 ml-1 font-mono">
+                      {rating.toFixed(1)}
+                    </span>
+                  </div>
+                  <span className="text-[10.5px] text-slate-400 dark:text-slate-500 font-mono">
+                    ({count})
+                  </span>
+                </div>
+              );
+            }
+
+            return <div className="mt-2 min-h-[20px]" aria-hidden="true" />;
+          })()}
         </div>
       </div>
 
       {/* Price & Quick Add Button */}
-      <div className="p-3.5 sm:p-4 pt-3 mt-3.5 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between gap-2">
-        <div className="flex flex-col">
+      <div className="p-2.5 sm:p-4 pt-2.5 sm:pt-3 mt-3.5 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between gap-1.5 sm:gap-2">
+        <div className="flex flex-col min-w-0 flex-1">
           {hasDiscount && origPrice && (
-            <span className="line-through text-[10.5px] sm:text-xs text-slate-400 dark:text-slate-500 font-mono leading-none mb-0.5">
+            <span className="line-through text-[9.5px] sm:text-xs text-slate-400 dark:text-slate-500 font-mono leading-none mb-0.5 whitespace-nowrap truncate">
               {formatPrice(origPrice, currency)}
             </span>
           )}
-          <span className="text-sm sm:text-base font-bold text-slate-950 dark:text-white font-mono">
+          <span className="text-[11.5px] xs:text-xs sm:text-base font-bold text-slate-950 dark:text-white font-mono whitespace-nowrap tracking-tight">
             {formatPrice(product.price, currency)}
           </span>
         </div>
@@ -193,20 +207,20 @@ export default function ProductCard({
           <button
             type="button"
             disabled
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500 cursor-not-allowed border border-slate-200/60 dark:border-slate-700/60 shadow-none whitespace-nowrap"
+            className="inline-flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl text-[10.5px] sm:text-xs font-bold bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500 cursor-not-allowed border border-slate-200/60 dark:border-slate-700/60 shadow-none shrink-0 whitespace-nowrap"
             title="This item is currently out of stock"
           >
-            <ShoppingBag className="w-3.5 h-3.5 opacity-50" />
+            <ShoppingBag className="w-3 h-3 sm:w-3.5 sm:h-3.5 opacity-50" />
             <span>Out of Stock</span>
           </button>
         ) : isAdded ? (
           <button
             type="button"
             disabled
-            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold bg-emerald-600 text-white ring-2 ring-emerald-400/50 animate-pulse shadow-xs whitespace-nowrap"
+            className="inline-flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3.5 py-1.5 rounded-xl text-[10.5px] sm:text-xs font-bold bg-emerald-600 text-white ring-2 ring-emerald-400/50 animate-pulse shadow-xs shrink-0 whitespace-nowrap"
             title="Added to cart!"
           >
-            <Check className="w-3.5 h-3.5 stroke-[2.5]" />
+            <Check className="w-3 h-3 sm:w-3.5 sm:h-3.5 stroke-[2.5]" />
             <span>Added</span>
           </button>
         ) : showViewCart && onViewCart ? (
@@ -216,30 +230,30 @@ export default function ProductCard({
               e.stopPropagation();
               onViewCart();
             }}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-700 dark:bg-emerald-500 dark:hover:bg-emerald-600 text-white ring-1 ring-emerald-400/40 shadow-xs cursor-pointer active:scale-95 transition-all whitespace-nowrap"
+            className="inline-flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl text-[10.5px] sm:text-xs font-bold bg-emerald-600 hover:bg-emerald-700 dark:bg-emerald-500 dark:hover:bg-emerald-600 text-white ring-1 ring-emerald-400/40 shadow-xs cursor-pointer active:scale-95 transition-all shrink-0 whitespace-nowrap"
             title="View item in your cart"
           >
-            <ShoppingBag className="w-3.5 h-3.5" />
+            <ShoppingBag className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
             <span>View Cart &rarr;</span>
           </button>
         ) : hasVariants ? (
           <button
             type="button"
             onClick={handleQuickAdd}
-            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all duration-200 shadow-xs cursor-pointer active:scale-95 bg-slate-900 hover:bg-indigo-600 text-white dark:bg-white dark:text-slate-900 dark:hover:bg-indigo-400 dark:hover:text-white whitespace-nowrap"
+            className="inline-flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3.5 py-1.5 rounded-xl text-[11px] sm:text-xs font-bold transition-all duration-200 shadow-xs cursor-pointer active:scale-95 bg-slate-900 hover:bg-indigo-600 text-white dark:bg-white dark:text-slate-900 dark:hover:bg-indigo-400 dark:hover:text-white shrink-0 whitespace-nowrap"
             title="Select options (sizes, colors, etc.)"
           >
-            <SlidersHorizontal className="w-3.5 h-3.5" />
+            <SlidersHorizontal className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
             <span>Select</span>
           </button>
         ) : (
           <button
             type="button"
             onClick={handleQuickAdd}
-            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all duration-200 shadow-xs cursor-pointer active:scale-95 bg-slate-900 hover:bg-indigo-600 text-white dark:bg-white dark:text-slate-900 dark:hover:bg-indigo-400 dark:hover:text-white whitespace-nowrap"
+            className="inline-flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3.5 py-1.5 rounded-xl text-[11px] sm:text-xs font-bold transition-all duration-200 shadow-xs cursor-pointer active:scale-95 bg-slate-900 hover:bg-indigo-600 text-white dark:bg-white dark:text-slate-900 dark:hover:bg-indigo-400 dark:hover:text-white shrink-0 whitespace-nowrap"
             title="Add item to cart"
           >
-            <ShoppingBag className="w-3.5 h-3.5" />
+            <ShoppingBag className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
             <span>Add</span>
           </button>
         )}
