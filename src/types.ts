@@ -297,7 +297,7 @@ export interface Order {
   phone?: string;
   trackingNumber?: string;
   notes?: string;
-  status: OrderLifecycleStatus | 'pending' | 'awaiting_delivery_quote' | 'delivery_quoted' | 'processing' | 'completed' | 'cancelled' | 'pending-cancellation' | 'shipped' | 'delivered';
+  status: OrderLifecycleStatus | 'pending' | 'processing' | 'completed' | 'cancelled' | 'pending-cancellation' | 'shipped' | 'delivered' | 'refunded';
   date: string;
   couponCode?: string;
   customNote?: string;

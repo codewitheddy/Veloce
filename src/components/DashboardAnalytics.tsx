@@ -668,7 +668,7 @@ export default function DashboardAnalytics({
   const [workflowDialog, setWorkflowDialog] = useState<{
     isOpen: boolean;
     order: Order | null;
-    actionType: 'confirm-order' | 'confirm-payment' | 'start-processing' | 'mark-shipped' | 'payment-received' | 'confirm-delivery' | 'mark-completed' | 'cancel' | 'view-timeline' | 'quote-delivery' | 'refund-claim' | null;
+    actionType: 'confirm-order' | 'confirm-payment' | 'start-processing' | 'mark-shipped' | 'payment-received' | 'confirm-delivery' | 'mark-completed' | 'cancel' | 'view-timeline' | 'refund-claim' | null;
     trackingNumber: string;
     courierName: string;
     deliveryPerson: string;
@@ -705,7 +705,7 @@ export default function DashboardAnalytics({
     error: null,
   });
 
-  const openWorkflowDialog = (order: Order, actionType: 'confirm-order' | 'confirm-payment' | 'start-processing' | 'mark-shipped' | 'payment-received' | 'confirm-delivery' | 'mark-completed' | 'cancel' | 'view-timeline' | 'quote-delivery' | 'refund-claim') => {
+  const openWorkflowDialog = (order: Order, actionType: 'confirm-order' | 'confirm-payment' | 'start-processing' | 'mark-shipped' | 'payment-received' | 'confirm-delivery' | 'mark-completed' | 'cancel' | 'view-timeline' | 'refund-claim') => {
     const defaultCourier = order.preferredCourier && order.preferredCourier !== 'any' ? order.preferredCourier : 'uber';
     const rawRef = order.paymentReference || '';
     const initialTx = rawRef && !rawRef.includes('PENDING') && !rawRef.includes('UNPAID') ? rawRef : '';
@@ -762,25 +762,6 @@ export default function DashboardAnalytics({
           notes: workflowDialog.notes || 'Order confirmed by administrator',
         });
         updated = res.order;
-      } else if (action === 'quote-delivery') {
-        const fee = parseFloat(workflowDialog.deliveryFeeInput) || 0;
-        const courier = workflowDialog.quotedCourier || 'uber';
-        const sub = ord.subtotal ?? (ord.total - (ord.shippingFee || 0));
-        const tax = ord.taxTotal ?? 0;
-        const discount = ord.discountAmount ?? 0;
-        const newTotal = sub + tax + fee - discount;
-
-        updated = await ordersApi.updateOrderStatus(ord.id, 'delivery_quoted', {
-          notes: `Delivery fee quoted: KSh ${fee.toLocaleString('en-KE')} via ${courier.toUpperCase()}. ${workflowDialog.notes ? `Note: ${workflowDialog.notes}` : ''}`,
-        });
-
-        updated.shippingFee = fee;
-        updated.quotedDeliveryFee = fee;
-        updated.quotedCourier = courier;
-        updated.deliveryFeeStatus = 'quoted';
-        updated.deliveryQuoteNotes = workflowDialog.notes || undefined;
-        updated.total = newTotal;
-        updated.status = 'delivery_quoted';
       } else if (action === 'confirm-payment') {
         if (!workflowDialog.transactionCode.trim()) {
           setWorkflowDialog(prev => ({ ...prev, isLoading: false, error: 'M-Pesa transaction code is required to verify payment.' }));
@@ -9801,7 +9782,6 @@ admin@ropenix.co.ke`;
               <div className="flex items-center gap-2.5">
                 <div className={`h-10 w-10 rounded-xl flex items-center justify-center shrink-0 ${
                   workflowDialog.actionType === 'confirm-order' ? 'bg-indigo-100 dark:bg-indigo-950/60 text-indigo-600' :
-                  workflowDialog.actionType === 'quote-delivery' ? 'bg-amber-100 dark:bg-amber-950/60 text-amber-600' :
                   workflowDialog.actionType === 'confirm-payment' ? 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-600' :
                   workflowDialog.actionType === 'start-processing' ? 'bg-purple-100 dark:bg-purple-950/60 text-purple-600' :
                   workflowDialog.actionType === 'mark-shipped' ? 'bg-indigo-100 dark:bg-indigo-950/60 text-indigo-600' :
@@ -9813,7 +9793,6 @@ admin@ropenix.co.ke`;
                   'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300'
                 }`}>
                   {workflowDialog.actionType === 'confirm-order' && <Check className="h-5 w-5" />}
-                  {workflowDialog.actionType === 'quote-delivery' && <Calculator className="h-5 w-5" />}
                   {workflowDialog.actionType === 'confirm-payment' && <CreditCard className="h-5 w-5" />}
                   {workflowDialog.actionType === 'start-processing' && <Package className="h-5 w-5" />}
                   {workflowDialog.actionType === 'mark-shipped' && <Truck className="h-5 w-5" />}
@@ -9827,7 +9806,6 @@ admin@ropenix.co.ke`;
                 <div>
                   <h3 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-wide">
                     {workflowDialog.actionType === 'confirm-order' && 'Confirm Customer Order'}
-                    {workflowDialog.actionType === 'quote-delivery' && 'Calculate & Send Courier Delivery Quote'}
                     {workflowDialog.actionType === 'confirm-payment' && 'Verify & Confirm M-Pesa Payment'}
                     {workflowDialog.actionType === 'start-processing' && 'Start Order Processing & Fulfillment'}
                     {workflowDialog.actionType === 'mark-shipped' && 'Dispatch Order (Mark as Shipped)'}

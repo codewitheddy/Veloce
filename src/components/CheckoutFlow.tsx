@@ -1243,8 +1243,8 @@ _Hello Ropenix Team, I would like to place and confirm this order!_`;
         shippingFee: 0, // Delivery fee determined post-order based on actual courier charges
         shippingTaxAmount: 0,
         discountAmount,
-        status: isDeliveryOrder ? 'awaiting_delivery_quote' : 'pending',
-        deliveryFeeStatus: isDeliveryOrder ? 'tbc' : 'waived',
+        status: 'pending',
+        deliveryFeeStatus: isDeliveryOrder ? 'confirmed' : 'waived',
         areaEstate: isDeliveryOrder ? areaEstate.trim() : undefined,
         landmark: isDeliveryOrder ? landmark.trim() : undefined,
         preferredCourier: isDeliveryOrder ? preferredCourier : undefined,
@@ -1339,13 +1339,11 @@ _Hello Ropenix Team, I would like to place and confirm this order!_`;
           </div>
 
           <span className="text-[11px] sm:text-xs font-bold uppercase tracking-widest text-emerald-600 dark:text-emerald-400 font-mono">
-            {checkedOutOrder.fulfillmentType === 'delivery' && checkedOutOrder.status === 'awaiting_delivery_quote'
-              ? 'Order Placed • Awaiting Courier Quote'
-              : isOrderPaid
+            {isOrderPaid
               ? 'Payment Verified & Order Placed'
               : isOrderUnderReview
               ? 'Payment Submitted • Verifying'
-              : 'Order Placed • Complete Payment'}
+              : 'Order Placed • Awaiting Confirmation'}
           </span>
           <h1 className="mt-1.5 text-xl sm:text-2xl md:text-3xl font-display font-bold text-gray-900 dark:text-white leading-tight">
             Thank You, {checkedOutOrder.customerName}!
