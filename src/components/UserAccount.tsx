@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useMemo, useRef, useEffect } from 'react';
+import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import {
   User,
   ShieldCheck,
@@ -67,7 +67,7 @@ import EditProfileModal from './EditProfileModal';
 import { exportSingleReceiptPDF, exportOrderHistoryPDF } from '../lib/pdfGenerator';
 import api, { authService, setAuthTokens } from '../services/api';
 import { usersApi } from '../api/users';
-import { ordersApi } from '../api/orders';
+import { ordersApi, mapBackendOrderToFrontend } from '../api/orders';
 import { useAuth } from '../context/AuthContext';
 import { useLanguage } from '../context/LanguageContext';
 
@@ -325,6 +325,39 @@ export default function UserAccount({
     }, 1000);
     return () => clearInterval(interval);
   }, [resendCooldown]);
+
+  // Real-time authoritative order synchronization with backend database
+  const [isSyncingOrders, setIsSyncingOrders] = useState(false);
+
+  const fetchCustomerAuthoritativeOrders = useCallback(async (isManualTrigger = false) => {
+    const targetEmail = (email || localStorage.getItem('veloce_login_email') || '').trim();
+    const targetPhone = (phone || localStorage.getItem('veloce_login_phone') || '').trim();
+    if (!targetEmail && !targetPhone) return;
+
+    try {
+      setIsSyncingOrders(true);
+      const res = await api.get('/orders/', {
+        params: {
+          email: targetEmail || undefined,
+          phone: targetPhone || undefined,
+        }
+      });
+      if (Array.isArray(res.data) && res.data.length > 0) {
+        const mapped = res.data.map(mapBackendOrderToFrontend);
+        window.dispatchEvent(new CustomEvent('veloce_orders_updated', { detail: mapped }));
+      }
+    } catch (err) {
+      if (isManualTrigger) {
+        console.warn('[UserAccount] Could not refresh orders from server:', err);
+      }
+    } finally {
+      setIsSyncingOrders(false);
+    }
+  }, [email, phone]);
+
+  useEffect(() => {
+    fetchCustomerAuthoritativeOrders();
+  }, [fetchCustomerAuthoritativeOrders, activeDashboardTab]);
 
   const saveTickets = (updatedTickets: any[]) => {
     setTickets(updatedTickets);
@@ -1535,6 +1568,18 @@ export default function UserAccount({
 
             {/* View Mode Toggle & Exports */}
             <div className="flex items-center gap-2 shrink-0">
+              {/* Sync Live Orders Button */}
+              <button
+                type="button"
+                onClick={() => fetchCustomerAuthoritativeOrders(true)}
+                disabled={isSyncingOrders}
+                className="inline-flex h-8.5 items-center gap-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-750 px-2.5 text-xs font-medium text-slate-700 dark:text-slate-200 transition-colors cursor-pointer disabled:opacity-50"
+                title="Sync orders with server"
+              >
+                <RefreshCw className={`h-3.5 w-3.5 text-slate-400 ${isSyncingOrders ? 'animate-spin text-indigo-600' : ''}`} />
+                <span className="hidden sm:inline">{isSyncingOrders ? 'Syncing...' : 'Sync'}</span>
+              </button>
+
               {/* List / Cards View Toggle */}
               <div className="flex items-center bg-slate-100 dark:bg-slate-800 p-0.5 rounded-lg border border-slate-200/60 dark:border-slate-700">
                 <button

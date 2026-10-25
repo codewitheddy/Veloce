@@ -737,8 +737,8 @@ export const pushOrderToBackend = async (orderData: any) => {
 };
 
 export const orderService = {
-  getOrders: async () => {
-    const response = await api.get('/orders/');
+  getOrders: async (params?: any) => {
+    const response = await api.get('/orders/', { params });
     return response.data;
   },
 

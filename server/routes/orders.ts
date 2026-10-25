@@ -183,25 +183,30 @@ router.get('/track/:orderId', trackingRateLimiter, async (req: Request, res: Res
   }
 });
 
-// 2. List Orders (Admin gets all, Authenticated customer gets their own)
+// 2. List Orders (Admin gets all, Authenticated customer or customer email gets their own)
 router.get('/', async (req: Request, res: Response) => {
   try {
     const token = getAuthTokenFromRequest(req);
-    if (!token) {
-      // Unauthenticated request returns empty array for storefront safety
-      return res.json([]);
-    }
+    const emailQuery = String(req.query.email || req.query.customerEmail || req.query.customer_email || '').trim().toLowerCase();
+    const phoneQuery = String(req.query.phone || req.query.customerPhone || req.query.customer_phone || '').trim();
 
-    const user = await extractUserFromToken(token);
-    if (!user) {
-      return res.json([]);
-    }
+    const user = token ? await extractUserFromToken(token) : null;
 
     let orders: any[] = [];
-    if (user.is_staff || user.is_superuser || user.role === 'admin') {
-      orders = await getAllSqliteOrders();
-    } else {
+    if (user && (user.is_staff || user.is_superuser || user.role === 'admin')) {
+      if (emailQuery) {
+        orders = await getSqliteOrdersByUser(emailQuery);
+      } else {
+        orders = await getAllSqliteOrders();
+      }
+    } else if (user) {
       orders = await getSqliteOrdersByUser(user.email || user.id);
+    } else if (emailQuery || phoneQuery) {
+      // Allow customer storefront to retrieve authoritative orders for their account email/phone
+      orders = await getSqliteOrdersByUser(emailQuery || phoneQuery);
+    } else {
+      // Unauthenticated request with no customer identifier returns empty array for storefront safety
+      return res.json([]);
     }
 
     // Enrich all orders with review state using single batch query (LEFT JOIN reviews)

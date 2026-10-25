@@ -687,28 +687,42 @@ export default function App() {
 
       // 2. Authoritative Orders from Backend
       try {
-        const backendOrders = await orderService.getOrders();
+        const storedEmail = safeLocalStorageGetItem('veloce_login_email', '') || safeLocalStorageGetItem('veloce_user', {} as any)?.email;
+        const storedPhone = safeLocalStorageGetItem('veloce_login_phone', '') || safeLocalStorageGetItem('veloce_user', {} as any)?.phone;
+        const params: Record<string, string> = {};
+        if (storedEmail) params.email = storedEmail;
+        if (storedPhone) params.phone = storedPhone;
+
+        const backendOrders = await orderService.getOrders(params);
         if (isMounted && Array.isArray(backendOrders) && backendOrders.length > 0) {
           const mappedOrders = backendOrders.map(mapBackendOrderToFrontend);
           setOrders((prevLocalOrders) => {
-            const localMap = new Map(prevLocalOrders.map((o) => [o.id.toLowerCase(), o]));
-            const merged = mappedOrders.map((mOrder) => {
-              const localMatch = localMap.get(mOrder.id.toLowerCase());
-              if (!localMatch) return mOrder;
+            const backendMap = new Map(mappedOrders.map((o) => [o.id.toLowerCase(), o]));
 
-              const isPaid = mOrder.paymentStatus === 'paid' || localMatch.paymentStatus === 'paid';
-              const rawStatus = String(mOrder.status || localMatch.status || 'pending').trim().toLowerCase();
+            // Update matching local orders with authoritative backend data
+            const updated = prevLocalOrders.map((localOrd) => {
+              const bOrder = backendMap.get(localOrd.id.toLowerCase());
+              if (!bOrder) return localOrd;
+
+              const isPaid = bOrder.paymentStatus === 'paid' || localOrd.paymentStatus === 'paid';
+              const rawStatus = String(bOrder.status || localOrd.status || 'pending').trim().toLowerCase();
               const cleanStatus = (rawStatus === 'awaiting_delivery_quote' || rawStatus === 'delivery_quoted' || rawStatus === 'order_received') ? 'pending' : rawStatus;
               return {
-                ...localMatch,
-                ...mOrder,
+                ...localOrd,
+                ...bOrder,
                 status: cleanStatus as any,
-                paymentStatus: isPaid ? ('paid' as const) : (mOrder.paymentStatus || localMatch.paymentStatus || 'unpaid'),
-                paidAt: mOrder.paidAt || localMatch.paidAt,
-                paymentReference: mOrder.paymentReference || localMatch.paymentReference,
-                trackingNumber: mOrder.trackingNumber || localMatch.trackingNumber,
+                paymentStatus: isPaid ? ('paid' as const) : (bOrder.paymentStatus || localOrd.paymentStatus || 'unpaid'),
+                paidAt: bOrder.paidAt || localOrd.paidAt,
+                paymentReference: bOrder.paymentReference || localOrd.paymentReference,
+                trackingNumber: bOrder.trackingNumber || localOrd.trackingNumber,
               };
             });
+
+            // Append any new backend orders not yet in local state
+            const localIdSet = new Set(prevLocalOrders.map((o) => o.id.toLowerCase()));
+            const newBackendOrders = mappedOrders.filter((b) => !localIdSet.has(b.id.toLowerCase()));
+            const merged = [...newBackendOrders, ...updated];
+
             safeLocalStorageSetItem('veloce_orders', JSON.stringify(merged));
             saveToIndexedDb('veloce_cache', 'veloce_orders', merged).catch(() => { });
             return merged;
@@ -745,11 +759,17 @@ export default function App() {
     window.addEventListener('veloce_orders_updated', handleOrdersUpdatedEvent);
     window.addEventListener('veloce_order_status_updated', handleOrdersUpdatedEvent);
 
+    const handleAuthChangedEvent = () => {
+      loadBackendData();
+    };
+    window.addEventListener('veloce_auth_changed', handleAuthChangedEvent);
+
     return () => {
       isMounted = false;
       window.removeEventListener('veloce_products_updated', handleProductsUpdated);
       window.removeEventListener('veloce_orders_updated', handleOrdersUpdatedEvent);
       window.removeEventListener('veloce_order_status_updated', handleOrdersUpdatedEvent);
+      window.removeEventListener('veloce_auth_changed', handleAuthChangedEvent);
     };
   }, []);
 
