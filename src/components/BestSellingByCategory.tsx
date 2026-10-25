@@ -7,7 +7,6 @@ import React from 'react';
 import { Product, Order } from '../types';
 import { Star, TrendingUp, ArrowRight, ShoppingBag, Award } from 'lucide-react';
 import { getProductDiscountInfo } from '../utils/productUtils';
-import { cleanDescriptionExcerpt } from '../utils/formatDescription';
 import { CurrencyType, formatPrice } from '../lib/currency';
 import LazyImage from './LazyImage';
 
@@ -28,35 +27,6 @@ export default function BestSellingByCategory({
   onSelectCategory,
   currency = 'KSh',
 }: BestSellingByCategoryProps) {
-  const [expandedDescIds, setExpandedDescIds] = React.useState<Record<string, boolean>>({});
-
-  const toggleExpandedDesc = (productId: string) => {
-    setExpandedDescIds(prev => ({
-      ...prev,
-      [productId]: !prev[productId]
-    }));
-  };
-
-  const getParagraphs = (desc: string) => {
-    if (!desc) return [];
-    const cleanDesc = cleanDescriptionExcerpt(desc);
-    const rawParas = cleanDesc
-      .split(/\n+/)
-      .map(p => p.trim())
-      .filter(Boolean);
-    if (rawParas.length <= 1 && cleanDesc.length > 90) {
-      const sentences = cleanDesc.match(/[^.!?]+[.!?]+/g) || [cleanDesc];
-      if (sentences.length > 1) {
-        const mid = Math.ceil(sentences.length / 2);
-        return [
-          sentences.slice(0, mid).join(' ').trim(),
-          sentences.slice(mid).join(' ').trim(),
-        ].slice(0, 2);
-      }
-    }
-    return rawParas.slice(0, 2);
-  };
-
   // 1. Calculate sales volume for each product
   const salesMap: Record<string, number> = {};
   orders.forEach(order => {
@@ -190,17 +160,17 @@ export default function BestSellingByCategory({
                     <div
                       key={product.id}
                       onClick={() => onProductClick(product)}
-                      className="group relative flex flex-col justify-between rounded-xl border border-slate-200/80 dark:border-slate-800 bg-[#fbfcfd]/40 dark:bg-slate-850/60 p-2.5 sm:p-4 cursor-pointer transition-all duration-300 hover:shadow-[0_8px_24px_rgba(37,44,139,0.04)] dark:hover:shadow-[0_8px_24px_rgba(0,0,0,0.4)] hover:border-indigo-200/80 dark:hover:border-indigo-500/50 hover:bg-white dark:hover:bg-slate-800"
+                      className="group relative flex flex-col justify-between overflow-hidden rounded-xl border border-slate-200/80 dark:border-slate-800 bg-[#fbfcfd]/40 dark:bg-slate-850/60 cursor-pointer transition-all duration-300 hover:shadow-[0_8px_24px_rgba(37,44,139,0.04)] dark:hover:shadow-[0_8px_24px_rgba(0,0,0,0.4)] hover:border-indigo-200/80 dark:hover:border-indigo-500/50 hover:bg-white dark:hover:bg-slate-800"
                     >
                       <div>
                         {/* Image Container with Rank Badge */}
-                        <div className="relative h-32 sm:h-44 w-full overflow-hidden rounded-lg bg-gray-50 dark:bg-slate-900 border border-slate-100 dark:border-slate-800">
+                        <div className="relative h-36 sm:h-48 w-full overflow-hidden bg-gray-50 dark:bg-slate-900 border-b border-slate-100 dark:border-slate-800">
                           <LazyImage
                             src={product.imageUrl || (Array.isArray(product.images) ? product.images[0] : (product as any).image) || ''}
                             alt={product.name}
                             width={240}
-                            height={176}
-                            aspectRatio="240/176"
+                            height={192}
+                            aspectRatio="240/192"
                             responsiveType="grid_card"
                             className="h-full w-full object-cover object-center group-hover:scale-105 transition-transform duration-500"
                           />
@@ -220,7 +190,7 @@ export default function BestSellingByCategory({
                         </div>
 
                         {/* Product Info */}
-                        <div className="mt-2 sm:mt-3.5">
+                        <div className="p-3 sm:p-3.5 pb-0">
                           <div className="flex items-center justify-between gap-1">
                             <span className="text-[8.5px] sm:text-[10px] font-bold uppercase font-mono tracking-wider text-indigo-600 dark:text-indigo-400 truncate">
                               {product.category}
@@ -238,54 +208,9 @@ export default function BestSellingByCategory({
                           <h4 className="font-display font-semibold text-[11px] sm:text-xs text-gray-900 dark:text-white mt-0.5 sm:mt-1 uppercase tracking-tight line-clamp-1 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">
                             {product.name}
                           </h4>
-                          
-                          {/* Description block with max 2 paragraphs and read more toggle */}
-                          {(() => {
-                            const isExpanded = Boolean(expandedDescIds[product.id]);
-                            const paras = getParagraphs(product.description || '');
-                            if (paras.length === 0) return null;
-
-                            return (
-                              <div className="mt-1 space-y-1">
-                                {isExpanded ? (
-                                  <div className="space-y-1.5 text-[9.5px] sm:text-[11px] text-gray-500 dark:text-slate-400 font-extralight leading-relaxed animate-in fade-in duration-200">
-                                    {paras.map((para, pIdx) => (
-                                      <p key={pIdx} className="leading-snug">{para}</p>
-                                    ))}
-                                    <button
-                                      type="button"
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        toggleExpandedDesc(product.id);
-                                      }}
-                                      className="text-[8.5px] sm:text-[9.5px] font-bold text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-300 underline block cursor-pointer pt-0.5"
-                                    >
-                                      Read less
-                                    </button>
-                                  </div>
-                                ) : (
-                                  <div className="text-[9.5px] sm:text-[11px] text-gray-500 dark:text-slate-400 font-extralight leading-snug">
-                                    <p className="line-clamp-2">{paras[0]}</p>
-                                    {(paras.length > 1 || (paras[0] && paras[0].length > 60)) && (
-                                      <button
-                                        type="button"
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          toggleExpandedDesc(product.id);
-                                        }}
-                                        className="text-[8.5px] sm:text-[9.5px] font-bold text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-300 underline inline-block mt-0.5 cursor-pointer"
-                                      >
-                                        Read more
-                                      </button>
-                                    )}
-                                  </div>
-                                )}
-                              </div>
-                            );
-                          })()}
 
                           {/* Ratings info */}
-                          <div className="mt-1.5 sm:mt-3 flex items-center gap-1">
+                          <div className="mt-1.5 sm:mt-2.5 flex items-center gap-1">
                             {product.reviewsCount > 0 && product.rating > 0 ? (
                               <>
                                 <div className="flex items-center">
@@ -311,7 +236,7 @@ export default function BestSellingByCategory({
                       </div>
 
                       {/* Pricing Footer */}
-                      <div className="mt-2.5 sm:mt-4 pt-2 sm:pt-3 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between gap-1">
+                      <div className="p-3 sm:p-3.5 pt-2 sm:pt-2.5 mt-2.5 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between gap-1">
                         <div className="flex flex-col">
                           {isSale && originalPriceVal && (
                             <span className="font-mono text-[8px] sm:text-[10px] line-through text-gray-400 dark:text-slate-500">

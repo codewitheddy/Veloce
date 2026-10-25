@@ -8,7 +8,6 @@ import { Product } from '../types';
 import { Tag, Clock, ArrowRight, Star, Flame, Sparkles, Percent, ChevronLeft, ChevronRight } from 'lucide-react';
 import CountdownTimer from './CountdownTimer';
 import { getProductDiscountInfo } from '../utils/productUtils';
-import { cleanDescriptionExcerpt } from '../utils/formatDescription';
 import { CurrencyType, formatPrice } from '../lib/currency';
 import LazyImage from './LazyImage';
 
@@ -199,25 +198,11 @@ export default function SaleProducts({
                 <div
                   key={product.id}
                   onClick={() => onProductClick(product)}
-                  className="snap-start shrink-0 w-[270px] xs:w-[300px] sm:w-[320px] md:w-[340px] lg:w-[360px] flex flex-col justify-between rounded-2xl border border-rose-100/50 dark:border-rose-950/60 bg-[#fffdfd]/80 dark:bg-slate-900 p-5 cursor-pointer transition-all duration-300 hover:shadow-[0_16px_32px_rgba(220,38,38,0.08)] dark:hover:shadow-[0_16px_32px_rgba(0,0,0,0.5)] hover:border-rose-200 dark:hover:border-rose-500/40 hover:bg-white dark:hover:bg-slate-850"
+                  className="snap-start shrink-0 w-[270px] xs:w-[300px] sm:w-[320px] md:w-[340px] lg:w-[360px] flex flex-col justify-between overflow-hidden rounded-2xl border border-rose-100/50 dark:border-rose-950/60 bg-[#fffdfd]/80 dark:bg-slate-900 cursor-pointer transition-all duration-300 hover:shadow-[0_16px_32px_rgba(220,38,38,0.08)] dark:hover:shadow-[0_16px_32px_rgba(0,0,0,0.5)] hover:border-rose-200 dark:hover:border-rose-500/40 hover:bg-white dark:hover:bg-slate-850"
                 >
                   <div>
-                    {/* Category & Custom Savings Badge */}
-                    <div className="flex items-center justify-between mb-4">
-                      <span className="inline-flex items-center rounded-md bg-gray-50 dark:bg-slate-800 px-2 py-0.5 text-[9px] font-mono font-bold text-gray-500 dark:text-slate-300 uppercase tracking-wider">
-                        {product.category}
-                      </span>
-                      <span className="inline-flex items-center gap-1 text-[10px] font-mono font-black text-rose-600 dark:text-rose-300 bg-rose-50 dark:bg-rose-950/60 px-2 py-0.5 rounded-md border border-rose-100/60 dark:border-rose-900/60">
-                        <span className="bg-rose-600 text-white text-[8px] font-sans font-black px-1.5 py-0.5 rounded uppercase tracking-wider flex items-center gap-0.5">
-                          <Sparkles className="h-2 w-2" />
-                          ON SALE
-                        </span>
-                        -{discountPercent}%
-                      </span>
-                    </div>
-
-                    {/* High Quality Render Block */}
-                    <div className="relative h-56 w-full overflow-hidden rounded-xl bg-gray-50 dark:bg-slate-950 border border-rose-50/20 dark:border-slate-800">
+                    {/* High Quality Render Block (Flush to top, left, and right) */}
+                    <div className="relative h-56 w-full overflow-hidden bg-gray-50 dark:bg-slate-950 border-b border-rose-50/20 dark:border-slate-800">
                       <LazyImage
                         src={product.imageUrl || (Array.isArray(product.images) ? product.images[0] : (product as any).image) || ''}
                         alt={product.name}
@@ -228,16 +213,30 @@ export default function SaleProducts({
                         className="h-full w-full object-cover object-center transition-transform duration-500 hover:scale-105"
                       />
                       
+                      {/* On Sale & Savings Overlay */}
+                      <div className="absolute top-3 left-3 flex flex-col gap-1 items-start z-10">
+                        <span className="inline-flex items-center gap-1 text-[10px] font-mono font-black text-rose-600 dark:text-rose-300 bg-white/95 dark:bg-rose-950/90 backdrop-blur-xs px-2 py-0.5 rounded-md border border-rose-100/60 dark:border-rose-900/60 shadow-xs">
+                          <span className="bg-rose-600 text-white text-[8px] font-sans font-black px-1.5 py-0.5 rounded uppercase tracking-wider flex items-center gap-0.5">
+                            <Sparkles className="h-2 w-2" />
+                            ON SALE
+                          </span>
+                          -{discountPercent}%
+                        </span>
+                      </div>
+
                       {/* Visual Flare badge */}
-                      <div className="absolute top-3 left-3 rounded bg-indigo-950/90 backdrop-blur-sm text-white font-mono text-[8px] font-bold px-2 py-0.5 tracking-wider uppercase flex items-center gap-1">
+                      <div className="absolute top-3 right-3 rounded bg-indigo-950/90 backdrop-blur-sm text-white font-mono text-[8px] font-bold px-2 py-0.5 tracking-wider uppercase flex items-center gap-1 shadow-xs">
                         <Sparkles className="h-2.5 w-2.5 text-amber-400" />
                         Premium Grade
                       </div>
                     </div>
 
-                    {/* Meta Descriptions */}
-                    <div className="mt-4">
+                    {/* Meta & Info Block */}
+                    <div className="p-4 sm:p-5 pb-0">
                       <div className="flex items-center justify-between gap-2">
+                        <span className="inline-flex items-center rounded-md bg-gray-50 dark:bg-slate-800 px-2 py-0.5 text-[9px] font-mono font-bold text-gray-500 dark:text-slate-300 uppercase tracking-wider">
+                          {product.category}
+                        </span>
                         <span className="font-mono text-[9px] text-gray-400 dark:text-slate-500">SKU: {product.sku}</span>
                         {product.stock !== null && (
                           <span className={`text-[10px] font-mono font-semibold ${isLowStock ? 'text-amber-600 dark:text-amber-400' : 'text-gray-400 dark:text-slate-500'}`}>
@@ -246,17 +245,13 @@ export default function SaleProducts({
                         )}
                       </div>
 
-                      <h3 className="font-display font-medium text-sm text-gray-900 dark:text-white group-hover:text-rose-600 dark:group-hover:text-rose-400 transition-colors mt-1.5">
+                      <h3 className="font-display font-medium text-sm text-gray-900 dark:text-white group-hover:text-rose-600 dark:group-hover:text-rose-400 transition-colors mt-2">
                         {product.name}
                       </h3>
-                      
-                      <p className="mt-1 text-xs text-gray-500 dark:text-slate-400 line-clamp-2 font-extralight leading-relaxed">
-                        {cleanDescriptionExcerpt(product.shortDescription || product.description, 120)}
-                      </p>
 
                       {/* Stock level visual bar */}
                       {product.stock !== null && (
-                        <div className="mt-4">
+                        <div className="mt-3.5">
                           <div className="h-1 w-full bg-rose-50 dark:bg-slate-800 rounded-full overflow-hidden">
                             <div 
                               className={`h-full rounded-full ${isLowStock ? 'bg-amber-500' : 'bg-rose-500'}`} 
@@ -289,7 +284,7 @@ export default function SaleProducts({
                   </div>
 
                   {/* Pricing Block with clear crossed-out original pricing */}
-                  <div className="mt-5 pt-4 border-t border-rose-50/50 dark:border-slate-800 flex items-center justify-between">
+                  <div className="p-4 sm:p-5 pt-3.5 mt-3.5 border-t border-rose-50/50 dark:border-slate-800 flex items-center justify-between">
                     <div className="flex flex-col">
                       {previousPrice && previousPrice > product.price && (
                         <span className="font-mono text-[10px] line-through text-gray-400 dark:text-slate-500">

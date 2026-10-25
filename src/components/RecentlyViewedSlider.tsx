@@ -294,11 +294,11 @@ export const RecentlyViewedSlider: React.FC<RecentlyViewedSliderProps> = ({
             <div
               key={product.id}
               onClick={() => onSelectProduct?.(product)}
-              className="group shrink-0 w-[260px] sm:w-[280px] bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/85 dark:border-slate-800/90 p-3.5 sm:p-4 hover:border-indigo-400 dark:hover:border-indigo-600 hover:shadow-lg hover:-translate-y-0.5 transition-all duration-300 cursor-pointer snap-start flex flex-col justify-between"
+              className="group shrink-0 w-[260px] sm:w-[280px] bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/85 dark:border-slate-800/90 overflow-hidden hover:border-indigo-400 dark:hover:border-indigo-600 hover:shadow-lg hover:-translate-y-0.5 transition-all duration-300 cursor-pointer snap-start flex flex-col justify-between"
             >
               <div>
-                {/* Product Image Box (Edge-to-Edge Square) */}
-                <div className="relative aspect-square w-full rounded-xl overflow-hidden bg-slate-50 dark:bg-slate-950/80 border border-slate-100 dark:border-slate-800/80 mb-3">
+                {/* Product Image Box (Edge-to-Edge Flush) */}
+                <div className="relative aspect-square w-full overflow-hidden bg-slate-50 dark:bg-slate-950/80 border-b border-slate-100 dark:border-slate-800/80">
                   <LazyImage
                     src={product.imageUrl || product.images?.[0] || ''}
                     alt={product.name}
@@ -328,29 +328,31 @@ export const RecentlyViewedSlider: React.FC<RecentlyViewedSliderProps> = ({
                 </div>
 
                 {/* Title & Ratings */}
-                <h4
-                  className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white line-clamp-2 leading-snug group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors"
-                  title={product.name}
-                >
-                  {product.name}
-                </h4>
+                <div className="p-3.5 sm:p-4 pb-0">
+                  <h4
+                    className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white line-clamp-2 leading-snug group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors"
+                    title={product.name}
+                  >
+                    {product.name}
+                  </h4>
 
-                {/* Rating line */}
-                <div className="flex items-center gap-1.5 mt-2">
-                  <div className="flex items-center text-amber-400">
-                    <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />
-                    <span className="text-xs font-bold text-slate-700 dark:text-slate-300 ml-1 font-mono">
-                      {(product.rating || 4.8).toFixed(1)}
+                  {/* Rating line */}
+                  <div className="flex items-center gap-1.5 mt-2">
+                    <div className="flex items-center text-amber-400">
+                      <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />
+                      <span className="text-xs font-bold text-slate-700 dark:text-slate-300 ml-1 font-mono">
+                        {(product.rating || 4.8).toFixed(1)}
+                      </span>
+                    </div>
+                    <span className="text-[10.5px] text-slate-400 dark:text-slate-500 font-mono">
+                      ({product.reviewsCount || product.reviews?.length || 12})
                     </span>
                   </div>
-                  <span className="text-[10.5px] text-slate-400 dark:text-slate-500 font-mono">
-                    ({product.reviewsCount || product.reviews?.length || 12})
-                  </span>
                 </div>
               </div>
 
               {/* Price & Quick Add Button */}
-              <div className="pt-3 mt-3.5 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between gap-2">
+              <div className="p-3.5 sm:p-4 pt-3 mt-3.5 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between gap-2">
                 <div className="flex flex-col">
                   {hasDiscount && origPrice && (
                     <span className="line-through text-[10.5px] text-slate-400 dark:text-slate-500 font-mono leading-none mb-0.5">

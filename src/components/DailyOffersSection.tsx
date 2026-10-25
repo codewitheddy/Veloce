@@ -107,11 +107,11 @@ export default function DailyOffersSection({
                 <div
                   key={item.id}
                   onClick={() => onProductClick && onProductClick(item)}
-                  className="w-[240px] sm:w-[260px] md:w-[280px] shrink-0 bg-white dark:bg-slate-900 rounded-xl border border-slate-200/80 dark:border-slate-800 hover:border-indigo-300 dark:hover:border-indigo-600 p-3 sm:p-4 flex flex-col justify-between cursor-pointer transition-all duration-300 hover:shadow-md hover:-translate-y-1 group/card select-none"
+                  className="w-[240px] sm:w-[260px] md:w-[280px] shrink-0 bg-white dark:bg-slate-900 overflow-hidden rounded-xl border border-slate-200/80 dark:border-slate-800 hover:border-indigo-300 dark:hover:border-indigo-600 flex flex-col justify-between cursor-pointer transition-all duration-300 hover:shadow-md hover:-translate-y-1 group/card select-none"
                 >
-                  {/* Top Image & Badge Box */}
+                  {/* Top Image & Badge Box (Flush to top, left, and right) */}
                   <div>
-                    <div className="relative w-full h-[180px] sm:h-[200px] bg-slate-50 dark:bg-slate-800/60 rounded-lg overflow-hidden border border-slate-100 dark:border-slate-800">
+                    <div className="relative w-full h-[180px] sm:h-[200px] bg-slate-50 dark:bg-slate-800/60 overflow-hidden">
                       {/* Discount & On Sale Badges */}
                       <div className="absolute top-2 left-2 z-10 flex flex-col gap-1">
                         <span className="bg-amber-500 text-white text-[9px] font-mono font-bold px-2 py-0.5 rounded shadow-3xs flex items-center gap-1 uppercase tracking-wider">
@@ -136,23 +136,25 @@ export default function DailyOffersSection({
                       />
                     </div>
 
-                    {/* Product Title */}
-                    <h3 className="mt-3 text-xs sm:text-sm font-semibold text-slate-900 dark:text-white line-clamp-2 leading-snug group-hover/card:text-indigo-600 dark:group-hover/card:text-indigo-400 transition-colors">
-                      {item.name}
-                    </h3>
+                    {/* Product Info Block */}
+                    <div className="p-3 sm:p-4 pb-0">
+                      <h3 className="text-xs sm:text-sm font-semibold text-slate-900 dark:text-white line-clamp-2 leading-snug group-hover/card:text-indigo-600 dark:group-hover/card:text-indigo-400 transition-colors">
+                        {item.name}
+                      </h3>
 
-                    {/* Category Pill */}
-                    {item.category && (
-                      <div className="mt-2.5">
-                        <span className="inline-block bg-indigo-50 dark:bg-indigo-950/50 text-indigo-700 dark:text-indigo-300 border border-indigo-200/60 dark:border-indigo-800 text-[10px] font-mono font-bold px-2 py-0.5 rounded-md">
-                          {item.category}
-                        </span>
-                      </div>
-                    )}
+                      {/* Category Pill */}
+                      {item.category && (
+                        <div className="mt-2">
+                          <span className="inline-block bg-indigo-50 dark:bg-indigo-950/50 text-indigo-700 dark:text-indigo-300 border border-indigo-200/60 dark:border-indigo-800 text-[10px] font-mono font-bold px-2 py-0.5 rounded-md">
+                            {item.category}
+                          </span>
+                        </div>
+                      )}
+                    </div>
                   </div>
 
                   {/* Bottom Pricing */}
-                  <div className="mt-3 pt-2.5 border-t border-slate-100 dark:border-slate-800">
+                  <div className="p-3 sm:p-4 pt-2.5 mt-2.5 border-t border-slate-100 dark:border-slate-800">
                     <div className="flex flex-col">
                       {hasDiscount && originalPriceVal && (
                         <span className="text-xs text-slate-400 dark:text-slate-500 line-through font-mono">

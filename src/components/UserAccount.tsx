@@ -2570,51 +2570,53 @@ export default function UserAccount({
                 return (
                   <div
                     key={p.id}
-                    className="rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 flex flex-col justify-between hover:border-indigo-200 dark:hover:border-indigo-900/50 transition-all shadow-xs group"
+                    className="rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 overflow-hidden flex flex-col justify-between hover:border-indigo-200 dark:hover:border-indigo-900/50 transition-all shadow-xs group"
                   >
                     <div>
-                      <div className="relative aspect-square rounded-xl bg-slate-50 dark:bg-slate-800 overflow-hidden mb-3 border border-slate-100 dark:border-slate-800">
+                      <div className="relative aspect-square w-full bg-slate-50 dark:bg-slate-800 overflow-hidden border-b border-slate-100 dark:border-slate-800">
                         <img src={p.imageUrl} alt={p.name} className="h-full w-full object-cover group-hover:scale-105 transition-transform duration-300" />
                         {hasDiscount && (
-                          <span className="absolute top-2 left-2 bg-rose-600 text-white font-mono text-[10px] font-bold px-2 py-0.5 rounded-full shadow-xs">
+                          <span className="absolute top-2.5 left-2.5 bg-rose-600 text-white font-mono text-[10px] font-bold px-2 py-0.5 rounded-full shadow-xs">
                             -{discountPercent}%
                           </span>
                         )}
                         <button
                           onClick={() => onToggleWishlist(p.id)}
-                          className="absolute top-2 right-2 p-1.5 rounded-full bg-white/90 dark:bg-slate-900/90 text-slate-400 hover:text-rose-600 hover:scale-110 transition-all cursor-pointer shadow-xs"
+                          className="absolute top-2.5 right-2.5 p-1.5 rounded-full bg-white/90 dark:bg-slate-900/90 text-slate-400 hover:text-rose-600 hover:scale-110 transition-all cursor-pointer shadow-xs"
                           title="Remove from wishlist"
                         >
                           <Trash2 className="h-3.5 w-3.5" />
                         </button>
                       </div>
 
-                      <div className="flex items-center justify-between text-[11px] text-slate-400 mb-1 font-mono">
-                        <span>{p.category}</span>
-                        {isOutOfStock ? (
-                          <span className="text-rose-500 font-semibold">Out of stock</span>
-                        ) : (
-                          <span className="text-emerald-600 font-medium">In stock</span>
-                        )}
-                      </div>
+                      <div className="p-3.5 sm:p-4 pb-0">
+                        <div className="flex items-center justify-between text-[11px] text-slate-400 mb-1 font-mono">
+                          <span>{p.category}</span>
+                          {isOutOfStock ? (
+                            <span className="text-rose-500 font-semibold">Out of stock</span>
+                          ) : (
+                            <span className="text-emerald-600 font-medium">In stock</span>
+                          )}
+                        </div>
 
-                      <h3 className="text-xs font-semibold text-slate-900 dark:text-white truncate" title={p.name}>
-                        {p.name}
-                      </h3>
+                        <h3 className="text-xs sm:text-sm font-semibold text-slate-900 dark:text-white truncate" title={p.name}>
+                          {p.name}
+                        </h3>
 
-                      <div className="mt-2 flex items-baseline gap-2 font-mono">
-                        <span className="text-sm font-bold text-slate-900 dark:text-white">
-                          {formatPrice(p.price, currency)}
-                        </span>
-                        {hasDiscount && originalPrice && (
-                          <span className="text-xs text-slate-400 line-through">
-                            {formatPrice(originalPrice, currency)}
+                        <div className="mt-2 flex items-baseline gap-2 font-mono">
+                          <span className="text-sm font-bold text-slate-900 dark:text-white">
+                            {formatPrice(p.price, currency)}
                           </span>
-                        )}
+                          {hasDiscount && originalPrice && (
+                            <span className="text-xs text-slate-400 line-through">
+                              {formatPrice(originalPrice, currency)}
+                            </span>
+                          )}
+                        </div>
                       </div>
                     </div>
 
-                    <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800/80 flex items-center gap-2">
+                    <div className="p-3.5 sm:p-4 pt-3 mt-3 border-t border-slate-100 dark:border-slate-800/80 flex items-center gap-2">
                       <button
                         onClick={() => onAddToCart(p, 1, {})}
                         disabled={isOutOfStock}

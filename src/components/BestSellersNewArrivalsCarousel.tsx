@@ -23,7 +23,6 @@ import {
 import { Product, CartItem } from '../types';
 import LazyImage from './LazyImage';
 import { getProductDiscountInfo } from '../utils/productUtils';
-import { cleanDescriptionExcerpt } from '../utils/formatDescription';
 import { CurrencyType, formatPrice } from '../lib/currency';
 
 interface BestSellersNewArrivalsCarouselProps {
@@ -310,11 +309,11 @@ export default function BestSellersNewArrivalsCarousel({
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.35, delay: Math.min(index * 0.04, 0.25) }}
                 onClick={() => onSelectProduct(p)}
-                className="snap-start shrink-0 w-[280px] sm:w-[300px] group flex flex-col justify-between rounded-xl border border-gray-150 dark:border-gray-800 bg-white dark:bg-gray-900 p-4 transition-all duration-300 hover:border-indigo-300 dark:hover:border-indigo-600 hover:shadow-[0_8px_30px_rgba(79,70,229,0.08)] cursor-pointer relative"
+                className="snap-start shrink-0 w-[280px] sm:w-[300px] group flex flex-col justify-between overflow-hidden rounded-xl border border-gray-150 dark:border-gray-800 bg-white dark:bg-gray-900 transition-all duration-300 hover:border-indigo-300 dark:hover:border-indigo-600 hover:shadow-[0_8px_30px_rgba(79,70,229,0.08)] cursor-pointer relative"
               >
                 <div>
                   {/* Top Image Box */}
-                  <div className="relative aspect-4/3 w-full overflow-hidden rounded-lg bg-gray-50 dark:bg-gray-950">
+                  <div className="relative aspect-4/3 w-full overflow-hidden bg-gray-50 dark:bg-gray-950">
                     <LazyImage
                       src={p.imageUrl || (Array.isArray(p.images) ? p.images[0] : (p as any).image) || ''}
                       alt={p.name}
@@ -368,7 +367,7 @@ export default function BestSellersNewArrivalsCarousel({
                   </div>
 
                   {/* Product Details Header */}
-                  <div className="mt-3.5">
+                  <div className="p-3.5 pb-0">
                     <div className="flex items-center justify-between">
                       <span className="text-[9px] font-bold tracking-wider text-indigo-600 dark:text-indigo-400 uppercase font-mono">
                         {p.category}
@@ -389,15 +388,11 @@ export default function BestSellersNewArrivalsCarousel({
                     <h3 className="font-display font-bold text-sm text-gray-900 dark:text-white mt-1 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors line-clamp-1">
                       {p.name}
                     </h3>
-                    
-                    <p className="mt-1 text-[11px] text-gray-500 dark:text-gray-400 line-clamp-2 leading-relaxed font-light">
-                      {cleanDescriptionExcerpt(p.shortDescription || p.description, 120)}
-                    </p>
                   </div>
                 </div>
 
                 {/* Pricing & Add To Cart Button */}
-                <div className="mt-4 pt-3 border-t border-gray-100 dark:border-gray-800 flex items-center justify-between gap-2">
+                <div className="p-3.5 pt-3 mt-3 border-t border-gray-100 dark:border-gray-800 flex items-center justify-between gap-2">
                   <div className="flex flex-col">
                     {hasDiscount && originalPriceVal && (
                       <span className="text-[10px] font-mono text-gray-400 line-through">

@@ -2959,10 +2959,10 @@ export default function ProductStore({
                       animate={{ opacity: 1, y: 0 }}
                       transition={{ duration: 0.45, delay: Math.min(index * 0.05, 0.4), ease: "easeOut" }}
                       onClick={() => handleProductSelect(product)}
-                      className="group flex flex-col justify-between rounded-xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 p-2.5 sm:p-4 cursor-pointer transition-all hover:border-indigo-300 dark:hover:border-indigo-700 hover:shadow-md"
+                      className="group flex flex-col justify-between overflow-hidden rounded-xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 cursor-pointer transition-all hover:border-indigo-300 dark:hover:border-indigo-700 hover:shadow-md"
                     >
                       <div>
-                        <div className="relative aspect-square w-full overflow-hidden rounded-lg bg-slate-100 dark:bg-slate-800/60">
+                        <div className="relative aspect-square w-full overflow-hidden bg-slate-100 dark:bg-slate-800/60">
                           <LazyImage
                             src={product.imageUrl}
                             alt={product.name}
@@ -3060,7 +3060,7 @@ export default function ProductStore({
                           )}
                         </div>
 
-                        <div className="mt-3">
+                        <div className="p-3 sm:p-3.5 pb-0">
                           <div className="flex items-center gap-1">
                             <span className="text-[9px] sm:text-[10px] font-bold tracking-wider text-indigo-600 dark:text-indigo-400 uppercase font-mono truncate max-w-[120px] sm:max-w-none">
                               {product.category}{product.subcategoryId ? ` / ${product.subcategoryId}` : ''}
@@ -3076,11 +3076,10 @@ export default function ProductStore({
                             ) : null}
                           </div>
                           <h3 className="font-display font-semibold text-xs sm:text-sm text-slate-900 dark:text-white mt-1 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors uppercase tracking-tight line-clamp-1">{product.name}</h3>
-                          <p className="mt-1 text-[11px] sm:text-xs text-slate-600 dark:text-slate-400 line-clamp-2 leading-relaxed font-normal">{cleanDescriptionExcerpt(product.shortDescription || product.description, 140)}</p>
                         </div>
                       </div>
 
-                      <div className="mt-4 border-t border-slate-100 dark:border-slate-800 pt-2.5 flex items-center justify-between gap-1.5">
+                      <div className="p-3 sm:p-3.5 pt-2.5 mt-3 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between gap-1.5">
                         {(() => {
                           const { hasDiscount, originalPrice: originalPriceVal } = getProductDiscountInfo(product);
                           return (
@@ -3225,10 +3224,6 @@ export default function ProductStore({
                           <h3 className="font-display font-semibold text-sm sm:text-base text-slate-900 dark:text-white group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors uppercase tracking-tight truncate max-w-xl">
                             {product.name}
                           </h3>
-                          
-                          <p className="text-[11px] sm:text-xs text-slate-600 dark:text-slate-400 line-clamp-3 leading-relaxed font-normal">
-                            {cleanDescriptionExcerpt(product.shortDescription || product.description, 180)}
-                          </p>
                         </div>
 
                         {/* Actions row */}
@@ -3404,11 +3399,11 @@ export default function ProductStore({
                   animate={{ opacity: 1, scale: 1 }}
                   transition={{ duration: 0.4, delay: Math.min(index * 0.05, 0.3), ease: "easeOut" }}
                   onClick={() => handleProductSelect(p)}
-                  className="snap-start shrink-0 min-w-[260px] max-w-[260px] group flex flex-col justify-between rounded-xl border border-gray-100 dark:border-gray-800/60 bg-white dark:bg-gray-900 p-4.5 cursor-pointer transition-all hover:border-indigo-150 dark:hover:border-indigo-800 hover:shadow-[0_8px_30px_rgba(43,83,193,0.03)] dark:hover:shadow-[0_8px_30px_rgba(0,0,0,0.25)]"
+                  className="snap-start shrink-0 min-w-[260px] max-w-[260px] group flex flex-col justify-between overflow-hidden rounded-xl border border-gray-100 dark:border-gray-800/60 bg-white dark:bg-gray-900 cursor-pointer transition-all hover:border-indigo-150 dark:hover:border-indigo-800 hover:shadow-[0_8px_30px_rgba(43,83,193,0.03)] dark:hover:shadow-[0_8px_30px_rgba(0,0,0,0.25)]"
                 >
                   <div>
                     {/* Image visual wrapper */}
-                    <div className="relative aspect-video w-full overflow-hidden rounded-lg bg-gray-50 dark:bg-gray-950">
+                    <div className="relative aspect-video w-full overflow-hidden bg-gray-50 dark:bg-gray-950">
                       <LazyImage
                         src={p.imageUrl}
                         alt={p.name}
@@ -3456,7 +3451,7 @@ export default function ProductStore({
                     </div>
 
                     {/* Meta info */}
-                    <div className="mt-3.5">
+                    <div className="p-3.5 pb-0">
                       <div className="flex items-center gap-1.5">
                         <span className="text-[9px] font-bold tracking-wider text-indigo-505 dark:text-indigo-455 uppercase font-mono">{p.category}</span>
                         <span className="text-gray-350 dark:text-gray-700">•</span>
@@ -3475,12 +3470,11 @@ export default function ProductStore({
                       </div>
                       
                       <h3 className="font-display font-semibold text-xs text-gray-900 dark:text-gray-100 mt-1.5 group-hover:text-indigo-650 dark:group-hover:text-indigo-455 transition-colors uppercase tracking-tight line-clamp-1">{p.name}</h3>
-                      <p className="mt-1 text-[11px] text-gray-550 dark:text-gray-400 line-clamp-2 leading-snug font-extralight">{cleanDescriptionExcerpt(p.shortDescription || p.description, 120)}</p>
                     </div>
                   </div>
 
                   {/* Pricing and Action row */}
-                  <div className="mt-4 border-t border-indigo-50/50 dark:border-gray-800/60 pt-3 flex items-center justify-between">
+                  <div className="p-3.5 pt-3 mt-3 border-t border-indigo-50/50 dark:border-gray-800/60 flex items-center justify-between">
                     {(() => {
                       const { hasDiscount, originalPrice: originalPriceVal } = getProductDiscountInfo(p);
                       return (
