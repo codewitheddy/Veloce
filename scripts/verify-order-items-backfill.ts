@@ -31,6 +31,9 @@ export interface VerificationReport {
   passed: boolean;
   itemsLinkedToProduct: number;
   itemsWithNullProductId: number;
+  matchedByIdCount: number;
+  matchedBySlugCount: number;
+  unlinkedCount: number;
   sampleLinkedItems: Array<{ orderId: string; itemName: string; productId: string }>;
   sampleUnlinkedItems: Array<{ orderId: string; itemName: string; rawPid: string }>;
   skippedOrders: Array<{ orderId: string; reason: string }>;
@@ -107,7 +110,21 @@ export async function verifyOrderItemsBackfill(customDbName?: string): Promise<V
       });
     }
 
-    // 6. Group order_items count by order_id
+    // 6. Inspect catalog and orders to audit exact resolution method (ID vs Slug vs Unlinked)
+    const [productRows]: any = await pool.query('SELECT id, slug FROM products');
+    const validProductIds = new Set<string>();
+    const slugToIdMap = new Map<string, string>();
+    for (const p of productRows || []) {
+      const pid = String(p.id).trim();
+      validProductIds.add(pid);
+      if (p.slug) slugToIdMap.set(String(p.slug).trim().toLowerCase(), pid);
+    }
+
+    let matchedByIdCount = 0;
+    let matchedBySlugCount = 0;
+    let unlinkedCount = 0;
+
+    // 7. Group order_items count by order_id
     const [itemsByOrderRows]: any = await pool.query(
       'SELECT order_id, COUNT(*) as count FROM order_items GROUP BY order_id'
     );
@@ -116,7 +133,7 @@ export async function verifyOrderItemsBackfill(customDbName?: string): Promise<V
       tableCountsByOrder.set(String(r.order_id), Number(r.count));
     }
 
-    // 7. Inspect every order in database
+    // 8. Inspect every order in database
     const [allOrders]: any = await pool.query('SELECT id, items FROM orders ORDER BY id ASC');
 
     let ordersWithItems = 0;
@@ -171,6 +188,20 @@ export async function verifyOrderItemsBackfill(customDbName?: string): Promise<V
       const jsonItemCount = parsed.length;
       totalJsonItems += jsonItemCount;
 
+      for (const it of parsed) {
+        const rawPid = String(it.productId || it.product_id || '').trim();
+        const rawId = it.id && String(it.id).startsWith('prod-') ? String(it.id).trim() : '';
+        const rawSlug = String(it.slug || it.productSlug || '').trim().toLowerCase();
+
+        if ((rawPid && validProductIds.has(rawPid)) || (rawId && validProductIds.has(rawId))) {
+          matchedByIdCount++;
+        } else if (rawSlug && slugToIdMap.has(rawSlug)) {
+          matchedBySlugCount++;
+        } else {
+          unlinkedCount++;
+        }
+      }
+
       if (jsonItemCount !== tableCount) {
         discrepancies.push({
           orderId,
@@ -189,9 +220,10 @@ export async function verifyOrderItemsBackfill(customDbName?: string): Promise<V
     console.log(`3. Total item entries parsed from JSON:     ${totalJsonItems}`);
     console.log(`4. Total rows stored in order_items table:  ${totalOrderItemsRows}`);
     console.log(`5. Total count difference:                  ${difference}`);
-    console.log(`\n--- Product Linking Breakdown ---`);
-    console.log(`  (a) Items linked to active catalog product:  ${itemsLinkedToProduct}`);
-    console.log(`  (b) Items with NULL product_id (deleted):    ${itemsWithNullProductId}`);
+    console.log(`\n--- Product Linking Resolution Breakdown ---`);
+    console.log(`  (a) Linked via direct Product ID:            ${matchedByIdCount}`);
+    console.log(`  (b) Linked via Product Slug mapping:         ${matchedBySlugCount}`);
+    console.log(`  (c) Retained with NULL product_id (deleted): ${unlinkedCount}`);
 
     if (sampleLinkedItems.length > 0) {
       console.log(`\n--- Examples of Items Linked to Catalog Products ---`);
@@ -233,6 +265,9 @@ export async function verifyOrderItemsBackfill(customDbName?: string): Promise<V
       passed,
       itemsLinkedToProduct,
       itemsWithNullProductId,
+      matchedByIdCount,
+      matchedBySlugCount,
+      unlinkedCount,
       sampleLinkedItems,
       sampleUnlinkedItems,
       skippedOrders,

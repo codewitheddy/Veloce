@@ -186,6 +186,7 @@ app.use('/api/reviews', reviewsRouter);
 app.use('/api/admin/reviews', reviewsRouter);
 app.use('/api/payments', paymentsRouter);
 app.use('/api/email', emailPreferencesRouter);
+app.use('/api/marketing', emailPreferencesRouter);
 app.use('/api/admin/email', emailDiagnosticsRouter);
 app.use('/api/upload', uploadRouter);
 app.use('/api/newsletter', newsletterRouter);

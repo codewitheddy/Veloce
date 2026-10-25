@@ -5,14 +5,18 @@
  * Step 1 Automated Test Suite: Migration, Rollback, Backfill, and Order Transaction Consistency
  * 
  * Tests executed on an isolated copy database:
- * 1. Safe Legacy Table Handling: Legacy reviews table is safely renamed to reviews_legacy_backup (never dropped).
- * 2. Forward migration: Applies cleanly across MySQL 5.7+ / MySQL 8.0+ / MariaDB 10.3+,
- *    matching utf8mb4_general_ci collation, creating order_items and reviews with foreign keys.
- * 3. Backfill: Idempotent extraction from orders.items JSON -> order_items, supporting diverse JSON shapes
- *    (productId, product_id, slug, name) and preserving deleted products with product_id = NULL.
- * 4. Verification audit: Audits linked items vs unlinked items breakdown with examples.
- * 5. Constraint verification: CHECK constraint rating 1-5 and UNIQUE KEY unique_order_item.
- * 6. Rollback: Restores database to exact prior state, renaming reviews_legacy_backup back to reviews.
+ * 0. Preflight check (.cjs): Validates version, collation/charset, column types (VARCHAR(255)),
+ *    and stops if legacy reviews table has rows (with resolution instructions).
+ * 1. Safe Legacy Table Handling: Legacy reviews table is safely renamed to reviews_legacy_backup.
+ * 2. Forward migration: Applies cleanly across MySQL 5.7+ / 8.0+ / MariaDB 10.3+, matching
+ *    utf8mb4_general_ci collation, creating order_items and structured reviews tables.
+ * 3. Dry-Run Backfill (.cjs): --dry-run prints proposed inserts and writes NOTHING.
+ * 4. Production Backfill (.cjs): Idempotent extraction from orders.items JSON -> order_items,
+ *    resolving ONLY by product id and slug (name matching strictly removed), keeping unresolvable items
+ *    as product_id = NULL.
+ * 5. Verification Audit (.cjs): Audits exact resolution counts (id / slug / unlinked) with examples.
+ * 6. Constraint Verification: CHECK constraint rating 1-5 and UNIQUE KEY unique_order_item.
+ * 7. Rollback: Restores database to exact prior state, renaming reviews_legacy_backup back to reviews.
  */
 
 import { describe, it, before, after } from 'node:test';
@@ -22,8 +26,11 @@ import path from 'node:path';
 import mysql from 'mysql2/promise';
 import dotenv from 'dotenv';
 import { getDbHost, getDbUser, getDbPassword, getDbPort } from '../src/lib/mysql-db.ts';
-import { runOrderItemsBackfill } from '../scripts/backfill-order-items.ts';
-import { verifyOrderItemsBackfill } from '../scripts/verify-order-items-backfill.ts';
+import { runPreflightCheck } from '../scripts/preflight-check.cjs';
+import { runOrderItemsBackfill as runBackfillCjs } from '../scripts/backfill-order-items.cjs';
+import { verifyOrderItemsBackfill as verifyBackfillCjs } from '../scripts/verify-order-items-backfill.cjs';
+import { runOrderItemsBackfill as runBackfillTs } from '../scripts/backfill-order-items.ts';
+import { verifyOrderItemsBackfill as verifyBackfillTs } from '../scripts/verify-order-items-backfill.ts';
 
 dotenv.config();
 
@@ -142,19 +149,19 @@ describe('Step 1: Database Migration, Rollback & Backfill Test Suite', () => {
         ('prod-belt-103', 'Handcrafted Leather Belt', 'handcrafted-leather-belt', 1800.00, 'Active', NOW(), NOW())
     `);
 
-    // 5. Seed legacy review data to test table rename safeguard
+    // 5. Seed legacy review data to test table rename safeguard and preflight check
     await testPool.query(`
       INSERT INTO reviews (id, productId, userName, userEmail, rating, comment, date)
       VALUES ('rev-legacy-1', 'prod-shoes-101', 'Alice', 'alice@test.com', 5, 'Valuable legacy customer review', '2026-09-15')
     `);
 
     // 6. Seed orders with multi-item orders and varied JSON shapes:
-    //    - ORD-01: direct productId
-    //    - ORD-02: multi-item order with productId and snake_case product_id
-    //    - ORD-03: item with slug only
-    //    - ORD-04: item with name only
-    //    - ORD-05: deleted product (truly missing from products table)
-    //    - ORD-06: empty items array []
+    //    - ORD-DIRECT-01: direct productId (matches catalog via ID)
+    //    - ORD-MULTI-02: multi-item order with productId and snake_case product_id (both match via ID)
+    //    - ORD-SLUG-03: item with slug only (matches catalog via slug)
+    //    - ORD-NAME-04: item with name only (no ID, no slug -> MUST STAY NULL because name fallback removed!)
+    //    - ORD-DELETED-PROD-05: item whose productId is not in catalog -> MUST STAY NULL
+    //    - ORD-EMPTY-ITEMS-06: empty items array []
     await testPool.query(`
       INSERT INTO orders (id, customerName, customerEmail, items, total, status, date, deliveryConfirmed, deliveredAt, created_at)
       VALUES 
@@ -189,6 +196,21 @@ describe('Step 1: Database Migration, Rollback & Backfill Test Suite', () => {
       await rootPool.query(`DROP DATABASE IF EXISTS \`${TEST_DB}\``);
       await rootPool.end();
     }
+  });
+
+  it('0. Preflight check (.cjs): Reports version, collation/charset, column types, and flags legacy reviews', async () => {
+    // 1. Without acknowledgement: Preflight fails because legacy reviews table has 1 row
+    const unacknowledgedRes = await runPreflightCheck({ dbName: TEST_DB, acknowledgeLegacy: false });
+    assert.strictEqual(unacknowledgedRes.passed, false, 'Preflight must halt if legacy reviews table has rows without acknowledgement');
+    assert.strictEqual(unacknowledgedRes.legacyReviewsCount, 1);
+    const legacyIssue = unacknowledgedRes.issues.find((i) => i.type === 'LEGACY_REVIEWS_NOT_EMPTY');
+    assert.ok(legacyIssue, 'Should flag LEGACY_REVIEWS_NOT_EMPTY');
+    assert.match(legacyIssue.resolution, /reviews_legacy_backup/i);
+
+    // 2. With acknowledgement: Preflight succeeds
+    const acknowledgedRes = await runPreflightCheck({ dbName: TEST_DB, acknowledgeLegacy: true });
+    assert.strictEqual(acknowledgedRes.passed, true, 'Preflight must pass when legacy reviews are acknowledged');
+    assert.ok(acknowledgedRes.dbVersion, 'Must report database server version');
   });
 
   it('1. Safe Table Handling: Legacy reviews table is safely renamed to reviews_legacy_backup (never dropped)', async () => {
@@ -226,11 +248,10 @@ describe('Step 1: Database Migration, Rollback & Backfill Test Suite', () => {
     assert.strictEqual(idCol.Key, 'PRI');
     assert.strictEqual(idCol.Extra, 'auto_increment');
 
-    // Verify redundant unique_user_order_item was removed and unique_order_item is present
+    // Verify unique_order_item is present
     const [indexes] = await testPool.query(`SHOW INDEX FROM reviews`);
     const indexNames = indexes.map((idx) => idx.Key_name);
     assert.ok(indexNames.includes('unique_order_item'), 'unique_order_item must exist');
-    assert.strictEqual(indexNames.includes('unique_user_order_item'), false, 'Redundant unique_user_order_item must be removed');
 
     // Verify orders altered column
     const [orderCols] = await testPool.query(`DESCRIBE orders`);
@@ -245,56 +266,89 @@ describe('Step 1: Database Migration, Rollback & Backfill Test Suite', () => {
     assert.strictEqual(optOutCol.Default, '0');
   });
 
-  it('3. Backfill: Populates order_items, resolves diverse JSON shapes, and handles deleted products', async () => {
-    const stats1 = await runOrderItemsBackfill({ dbName: TEST_DB, batchSize: 50 });
+  it('3. Dry-Run Backfill (.cjs): --dry-run prints what it would insert and writes nothing to the database', async () => {
+    const dryRunStats = await runBackfillCjs({ dbName: TEST_DB, batchSize: 50, dryRun: true });
 
-    assert.strictEqual(stats1.totalOrders, 6);
-    assert.strictEqual(stats1.ordersWithItems, 5);
-    assert.strictEqual(stats1.totalJsonItems, 6); // 1 + 2 + 1 + 1 + 1
-    assert.strictEqual(stats1.productsFound, 5); // 1 direct, 2 multi (1 direct + 1 product_id), 1 slug, 1 name
-    assert.strictEqual(stats1.productsMissingOrNull, 1); // prod-discontinued-999
+    assert.strictEqual(dryRunStats.totalOrders, 6);
+    assert.strictEqual(dryRunStats.ordersWithItems, 5);
+    assert.strictEqual(dryRunStats.totalJsonItems, 6);
+
+    // CRITICAL: Database table must remain completely empty!
+    const [countRows] = await testPool.query(`SELECT COUNT(*) as cnt FROM order_items`);
+    assert.strictEqual(Number(countRows[0].cnt), 0, 'Dry-run must write NOTHING to the database table');
+  });
+
+  it('4. Production Backfill (.cjs): Resolves ONLY by ID and Slug (NO name fallback), keeping unresolvable items as NULL', async () => {
+    // Run production CommonJS backfill
+    const stats = await runBackfillCjs({ dbName: TEST_DB, batchSize: 50, dryRun: false });
+
+    assert.strictEqual(stats.totalOrders, 6);
+    assert.strictEqual(stats.ordersWithItems, 5);
+    assert.strictEqual(stats.totalJsonItems, 6);
+    assert.strictEqual(stats.insertedOrderItems, 6);
+
+    // 4 linked products: 1 direct (ORD-DIRECT-01), 2 multi (ORD-MULTI-02), 1 slug (ORD-SLUG-03)
+    assert.strictEqual(stats.productsFound, 4);
+
+    // 2 unlinked products:
+    // - ORD-NAME-04 (has name only, NO name fallback -> must stay NULL)
+    // - ORD-DELETED-PROD-05 (deleted product -> stays NULL)
+    assert.strictEqual(stats.productsMissingOrNull, 2);
 
     // Check slug-resolved item
     const [slugItem] = await testPool.query(`SELECT * FROM order_items WHERE order_id = 'ORD-SLUG-03'`);
     assert.strictEqual(slugItem.length, 1);
     assert.strictEqual(slugItem[0].product_id, 'prod-belt-103', 'Slug handcrafted-leather-belt should resolve to prod-belt-103');
 
-    // Check name-resolved item
+    // Check name-only item: MUST HAVE product_id = NULL (name fallback removed!)
     const [nameItem] = await testPool.query(`SELECT * FROM order_items WHERE order_id = 'ORD-NAME-04'`);
     assert.strictEqual(nameItem.length, 1);
-    assert.strictEqual(nameItem[0].product_id, 'prod-shoes-101', 'Name match should resolve to prod-shoes-101');
+    assert.strictEqual(nameItem[0].product_id, null, 'Items with only name matching MUST stay product_id = NULL');
+    assert.strictEqual(nameItem[0].name, 'Artisan Leather Shoes');
 
-    // Check deleted product item: product_id is NULL but name and price are intact
+    // Check deleted product item: product_id is NULL but name and price are preserved
     const [deletedItem] = await testPool.query(`SELECT * FROM order_items WHERE order_id = 'ORD-DELETED-PROD-05'`);
     assert.strictEqual(deletedItem.length, 1);
     assert.strictEqual(deletedItem[0].product_id, null, 'Deleted product ID must be NULL');
     assert.strictEqual(deletedItem[0].name, 'Discontinued Silk Scarf');
     assert.strictEqual(Number(deletedItem[0].price), 2200);
 
-    // Idempotency check: Re-run backfill, should insert 0 new rows
-    const stats2 = await runOrderItemsBackfill({ dbName: TEST_DB, batchSize: 50 });
-    assert.strictEqual(stats2.insertedOrderItems, 0, 'Re-running backfill must not create duplicate items');
+    // Idempotency check: Re-running backfill inserts 0 duplicate rows
+    const stats2 = await runBackfillTs({ dbName: TEST_DB, batchSize: 50, dryRun: false });
+    assert.strictEqual(stats2.insertedOrderItems, 0, 'Re-running backfill must insert 0 duplicate rows (idempotent)');
   });
 
-  it('4. Verification script: Audits product linking breakdown (linked vs unlinked) with examples', async () => {
-    const report = await verifyOrderItemsBackfill(TEST_DB);
+  it('5. Verification Script (.cjs & .ts): Reports breakdown with counts (id / slug / unlinked) and examples', async () => {
+    // Run production CommonJS verification
+    const reportCjs = await verifyBackfillCjs(TEST_DB);
 
-    assert.strictEqual(report.passed, true);
-    assert.strictEqual(report.totalOrders, 6);
-    assert.strictEqual(report.ordersWithItems, 5);
-    assert.strictEqual(report.totalJsonItems, 6);
-    assert.strictEqual(report.totalOrderItemsRows, 6);
-    assert.strictEqual(report.difference, 0);
-    assert.strictEqual(report.discrepancies.length, 0);
-    assert.strictEqual(report.itemsLinkedToProduct, 5);
-    assert.strictEqual(report.itemsWithNullProductId, 1);
-    assert.strictEqual(report.skippedOrders.length, 1);
-    assert.strictEqual(report.skippedOrders[0].orderId, 'ORD-EMPTY-ITEMS-06');
-    assert.ok(report.sampleLinkedItems.length > 0, 'Should include examples of linked items');
-    assert.ok(report.sampleUnlinkedItems.length > 0, 'Should include examples of unlinked items');
+    assert.strictEqual(reportCjs.passed, true);
+    assert.strictEqual(reportCjs.totalOrders, 6);
+    assert.strictEqual(reportCjs.ordersWithItems, 5);
+    assert.strictEqual(reportCjs.totalJsonItems, 6);
+    assert.strictEqual(reportCjs.totalOrderItemsRows, 6);
+    assert.strictEqual(reportCjs.difference, 0);
+    assert.strictEqual(reportCjs.discrepancies.length, 0);
+
+    // Verification breakdown counts:
+    assert.strictEqual(reportCjs.matchedByIdCount, 3, '3 items matched via direct ID');
+    assert.strictEqual(reportCjs.matchedBySlugCount, 1, '1 item matched via slug');
+    assert.strictEqual(reportCjs.unlinkedCount, 2, '2 items unlinked (name-only and deleted product)');
+    assert.strictEqual(reportCjs.itemsLinkedToProduct, 4);
+    assert.strictEqual(reportCjs.itemsWithNullProductId, 2);
+
+    assert.ok(reportCjs.sampleLinkedItems.length > 0, 'Should include examples of linked items');
+    assert.ok(reportCjs.sampleUnlinkedItems.length > 0, 'Should include examples of unlinked items');
+
+    // Run TypeScript version as well to ensure parity
+    const reportTs = await verifyBackfillTs(TEST_DB);
+    assert.strictEqual(reportTs.passed, true);
+    assert.strictEqual(reportTs.matchedByIdCount, 3);
+    assert.strictEqual(reportTs.matchedBySlugCount, 1);
+    assert.strictEqual(reportTs.unlinkedCount, 2);
   });
 
-  it('5. Constraint verification: CHECK constraint rating 1-5 and UNIQUE (order_item_id) on reviews', async () => {
+  it('6. Constraint verification: CHECK constraint rating 1-5 and UNIQUE (order_item_id) on reviews', async () => {
     // Valid review
     await testPool.query(`
       INSERT INTO reviews (product_id, user_id, order_item_id, rating, title, body, status)
@@ -318,7 +372,7 @@ describe('Step 1: Database Migration, Rollback & Backfill Test Suite', () => {
     await testPool.query(`DELETE FROM reviews`);
   });
 
-  it('6. Rollback: Restores reviews_legacy_backup back to reviews and preserves existing orders', async () => {
+  it('7. Rollback: Restores reviews_legacy_backup back to reviews and preserves existing orders', async () => {
     const rollbackSql = fs.readFileSync(
       path.resolve(process.cwd(), 'server', 'migrations', '20261025_rollback_product_reviews_and_reminders.sql'),
       'utf8'

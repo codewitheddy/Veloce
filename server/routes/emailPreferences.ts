@@ -7,7 +7,13 @@ import { Router, Request, Response } from 'express';
 import { getEmailConfig } from '../email/config';
 import { sendEmail, getMailTransporter } from '../email/transporter';
 import { isRecipientOptedOut } from '../email/db';
-import { getDbPool } from '../../src/lib/mysql-db';
+import { 
+  getDbPool, 
+  setMysqlMarketingEmailOptOut, 
+  setMysqlMarketingEmailOptOutByUserId, 
+  isMysqlUserOptedOutOfMarketing 
+} from '../../src/lib/mysql-db';
+import { requireAuth } from '../middleware/auth';
 
 const router = Router();
 
@@ -122,6 +128,9 @@ router.get(['/unsubscribe', '/unsubscribe/'], async (req: Request, res: Response
       [id, email, nowIso]
     );
 
+    // Synchronize users.marketing_emails_opt_out in users table
+    await setMysqlMarketingEmailOptOut(email, true).catch(() => {});
+
     return res.send(`
       <!DOCTYPE html>
       <html>
@@ -178,6 +187,9 @@ router.post(['/unsubscribe', '/unsubscribe/'], async (req: Request, res: Respons
       [id, email, nowIso]
     );
 
+    // Synchronize users.marketing_emails_opt_out in users table
+    await setMysqlMarketingEmailOptOut(email, true).catch(() => {});
+
     return res.json({
       success: true,
       email,
@@ -186,6 +198,44 @@ router.post(['/unsubscribe', '/unsubscribe/'], async (req: Request, res: Respons
     });
   } catch (err: any) {
     return res.status(500).json({ success: false, error: err?.message || 'Failed to unsubscribe.' });
+  }
+});
+
+/**
+ * GET /api/email/opt-out (Authenticated Customer Account Setting)
+ */
+router.get('/opt-out', requireAuth, async (req: Request, res: Response) => {
+  try {
+    const user = req.user!;
+    const optedOut = await isMysqlUserOptedOutOfMarketing(user.email);
+    res.json({
+      success: true,
+      email: user.email,
+      marketing_emails_opt_out: optedOut,
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err?.message || 'Failed to check opt-out status.' });
+  }
+});
+
+/**
+ * POST /api/email/opt-out (Authenticated Customer Account Toggle)
+ */
+router.post('/opt-out', requireAuth, async (req: Request, res: Response) => {
+  try {
+    const user = req.user!;
+    const optOut = Boolean(req.body.optOut ?? req.body.marketing_emails_opt_out);
+    await setMysqlMarketingEmailOptOutByUserId(user.id, optOut);
+    res.json({
+      success: true,
+      email: user.email,
+      marketing_emails_opt_out: optOut,
+      message: optOut 
+        ? 'You have opted out of marketing emails and review requests.'
+        : 'You are subscribed to marketing emails and review requests.',
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err?.message || 'Failed to update opt-out status.' });
   }
 });
 

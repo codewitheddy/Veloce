@@ -87,16 +87,14 @@ async function runOrderItemsBackfill(options = {}) {
       return stats;
     }
 
-    const [productRows] = await pool.query('SELECT id, slug, name FROM products');
+    const [productRows] = await pool.query('SELECT id, slug FROM products');
     const validProductIds = new Set();
     const slugToIdMap = new Map();
-    const nameToIdMap = new Map();
 
     for (const p of productRows || []) {
       const pid = String(p.id).trim();
       validProductIds.add(pid);
       if (p.slug) slugToIdMap.set(String(p.slug).trim().toLowerCase(), pid);
-      if (p.name) nameToIdMap.set(String(p.name).trim().toLowerCase(), pid);
     }
 
     console.log(`[Backfill] Catalog indexed: ${validProductIds.size} products available for linking.`);
@@ -152,7 +150,6 @@ async function runOrderItemsBackfill(options = {}) {
           const rawPidCandidate = String(item.productId || item.product_id || item.product || '').trim();
           const rawIdCandidate = item.id && String(item.id).startsWith('prod-') ? String(item.id).trim() : '';
           const rawSlugCandidate = String(item.slug || item.productSlug || '').trim().toLowerCase();
-          const normalizedName = itemName.toLowerCase();
 
           let matchedProductId = null;
           let matchMethod = 'none';
@@ -166,9 +163,6 @@ async function runOrderItemsBackfill(options = {}) {
           } else if (rawSlugCandidate && slugToIdMap.has(rawSlugCandidate)) {
             matchedProductId = slugToIdMap.get(rawSlugCandidate) || null;
             matchMethod = 'slug_mapping';
-          } else if (normalizedName && nameToIdMap.has(normalizedName)) {
-            matchedProductId = nameToIdMap.get(normalizedName) || null;
-            matchMethod = 'name_exact_match';
           }
 
           if (matchedProductId) {
@@ -220,6 +214,10 @@ async function runOrderItemsBackfill(options = {}) {
         stats.insertedOrderItems += (insertRes ? insertRes.affectedRows : 0) || 0;
       } else if (itemsToInsert.length > 0 && dryRun) {
         stats.insertedOrderItems += itemsToInsert.length;
+        console.log(`[Backfill --dry-run] Would insert ${itemsToInsert.length} order_items row(s):`);
+        itemsToInsert.forEach((row) => {
+          console.log(`    -> [ID: ${row[0]}] Order: ${row[1]} | Product: ${row[2] || 'NULL (unlinked)'} | "${row[3]}" | $${row[4]} x ${row[5]}`);
+        });
       }
 
       offset += batchSize;

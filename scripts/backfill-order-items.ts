@@ -94,16 +94,14 @@ export async function runOrderItemsBackfill(options: BackfillOptions = {}): Prom
     }
 
     // 3. Cache product catalog in memory for flexible resolution (ID, slug, and name)
-    const [productRows]: any = await pool.query('SELECT id, slug, name FROM products');
+    const [productRows]: any = await pool.query('SELECT id, slug FROM products');
     const validProductIds = new Set<string>();
     const slugToIdMap = new Map<string, string>();
-    const nameToIdMap = new Map<string, string>();
 
     for (const p of productRows || []) {
       const pid = String(p.id).trim();
       validProductIds.add(pid);
       if (p.slug) slugToIdMap.set(String(p.slug).trim().toLowerCase(), pid);
-      if (p.name) nameToIdMap.set(String(p.name).trim().toLowerCase(), pid);
     }
 
     console.log(`[Backfill] Catalog indexed: ${validProductIds.size} products available for linking.`);
@@ -175,9 +173,6 @@ export async function runOrderItemsBackfill(options: BackfillOptions = {}): Prom
           } else if (rawSlugCandidate && slugToIdMap.has(rawSlugCandidate)) {
             matchedProductId = slugToIdMap.get(rawSlugCandidate) || null;
             matchMethod = 'slug_mapping';
-          } else if (normalizedName && nameToIdMap.has(normalizedName)) {
-            matchedProductId = nameToIdMap.get(normalizedName) || null;
-            matchMethod = 'name_exact_match';
           }
 
           if (matchedProductId) {
@@ -219,7 +214,6 @@ export async function runOrderItemsBackfill(options: BackfillOptions = {}): Prom
         });
       }
 
-      // Batch insert with INSERT IGNORE to guarantee idempotency
       if (itemsToInsert.length > 0 && !dryRun) {
         const insertSql = `
           INSERT IGNORE INTO order_items 
@@ -230,6 +224,10 @@ export async function runOrderItemsBackfill(options: BackfillOptions = {}): Prom
         stats.insertedOrderItems += insertRes.affectedRows || 0;
       } else if (itemsToInsert.length > 0 && dryRun) {
         stats.insertedOrderItems += itemsToInsert.length;
+        console.log(`[Backfill --dry-run] Would insert ${itemsToInsert.length} order_items row(s):`);
+        itemsToInsert.forEach((row) => {
+          console.log(`    -> [ID: ${row[0]}] Order: ${row[1]} | Product: ${row[2] || 'NULL (unlinked)'} | "${row[3]}" | $${row[4]} x ${row[5]}`);
+        });
       }
 
       offset += batchSize;

@@ -4,6 +4,7 @@
  */
 
 import { Router, Request, Response } from 'express';
+import crypto from 'crypto';
 import { 
   getDbStatus, 
   pushSyncData, 
@@ -11,6 +12,7 @@ import {
   purgeAllMysqlData 
 } from '../../src/lib/mysql-db';
 import { performExpiryBackgroundCheck } from '../services/expiryChecker';
+import { processReviewReminders } from '../services/reviewReminderService';
 import { requireAdmin, optionalAuth } from '../middleware/auth';
 import { loadProductsCache } from './products';
 
@@ -163,6 +165,76 @@ router.get('/courier/track', (req: Request, res: Response) => {
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Tracking lookup error';
     res.status(500).json({ success: false, error: message });
+  }
+});
+
+// ============================================================================
+// 4. Internal Secured Review Reminders Endpoint (for External Cron / cPanel)
+// ============================================================================
+export function verifyInternalCronToken(req: Request): boolean {
+  const configuredToken = (
+    process.env.REMINDER_CRON_TOKEN ||
+    process.env.INTERNAL_API_SECRET ||
+    process.env.CRON_SECRET ||
+    process.env.JWT_SECRET ||
+    ''
+  ).trim();
+
+  if (!configuredToken) return false;
+
+  let providedToken = (
+    req.headers['x-cron-token'] ||
+    req.headers['x-internal-secret'] ||
+    req.headers['x-api-key'] ||
+    ''
+  ).toString().trim();
+
+  if (!providedToken && req.headers.authorization) {
+    const parts = req.headers.authorization.split(' ');
+    if (parts.length === 2 && parts[0].toLowerCase() === 'bearer') {
+      providedToken = parts[1].trim();
+    }
+  }
+
+  if (!providedToken) return false;
+
+  const bufProvided = Buffer.from(providedToken);
+  const bufConfigured = Buffer.from(configuredToken);
+
+  if (bufProvided.length !== bufConfigured.length) {
+    return false;
+  }
+
+  return crypto.timingSafeEqual(bufProvided, bufConfigured);
+}
+
+router.post(['/internal/send-review-reminders', '/internal/send-review-reminders/'], async (req: Request, res: Response) => {
+  if (!verifyInternalCronToken(req)) {
+    return res.status(401).json({
+      success: false,
+      error: 'Unauthorized: Invalid or missing cron security token in header (x-cron-token or Bearer token required).',
+    });
+  }
+
+  try {
+    const { days, batchSize, delayMs, dryRun } = req.body || {};
+    const stats = await processReviewReminders({
+      days: days ? Number(days) : undefined,
+      batchSize: batchSize ? Number(batchSize) : undefined,
+      delayMs: delayMs !== undefined ? Number(delayMs) : undefined,
+      dryRun: Boolean(dryRun || req.query.dryRun === 'true'),
+    });
+
+    return res.json({
+      success: true,
+      message: 'Review reminder execution finished successfully.',
+      stats,
+    });
+  } catch (err: any) {
+    return res.status(500).json({
+      success: false,
+      error: err?.message || 'Failed to execute review reminders',
+    });
   }
 });
 

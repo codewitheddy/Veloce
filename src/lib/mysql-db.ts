@@ -2144,7 +2144,7 @@ export async function saveMysqlReview(r: any): Promise<any> {
   return rows[0];
 }
 
-export async function deleteMysqlReview(id: string): Promise<boolean> {
+export async function legacyDeleteMysqlReview(id: string): Promise<boolean> {
   const pool = await getDbPool();
   const [res]: any = await pool.query('DELETE FROM reviews WHERE id = ?', [id]);
   return res.affectedRows > 0;
@@ -3631,7 +3631,7 @@ export const saveSqliteHeroBanners = saveMysqlHeroBanners;
 export const getAllSqliteReviews = getMysqlReviews;
 export const getSqliteReviews = getMysqlReviews;
 export const saveSqliteReview = saveMysqlReview;
-export const deleteSqliteReview = deleteMysqlReview;
+export const deleteSqliteReview = legacyDeleteMysqlReview;
 
 export async function getSqliteReviewsByProduct(productId: string): Promise<any[]> {
   const pool = await getDbPool();
@@ -3934,4 +3934,626 @@ export const getSqliteRefundClaimByOrderId = getMysqlRefundClaimByOrderId;
 export const getAllSqliteRefundClaims = getAllMysqlRefundClaims;
 export const getSqliteRefundClaimById = getMysqlRefundClaimById;
 export const updateSqliteRefundClaim = updateMysqlRefundClaim;
+
+// ============================================================================
+// PRODUCT REVIEWS & RATING SYNCHRONIZATION (STEP 2)
+// ============================================================================
+
+export function sanitizeReviewPlainText(input: string | undefined | null): string {
+  if (!input) return '';
+  return String(input)
+    .replace(/<[^>]*>?/gm, '') // Strip HTML tags
+    .replace(/[\r\n]{3,}/g, '\n\n') // Normalize multiple line breaks
+    .trim();
+}
+
+export interface MysqlReviewRecord {
+  id: number | string;
+  product_id: string;
+  user_id: string;
+  order_item_id: string;
+  rating: number;
+  title: string;
+  body: string;
+  status: 'published' | 'hidden';
+  created_at: string;
+  updated_at: string;
+  userName?: string;
+  productName?: string;
+}
+
+/**
+ * Recomputes and synchronizes products.rating and products.reviewsCount
+ * within an existing database transaction connection.
+ */
+export async function syncProductRatingInTx(conn: any, productId: string): Promise<{ rating: number; reviewsCount: number }> {
+  const [stats]: any = await conn.query(
+    `SELECT COUNT(*) as count, COALESCE(ROUND(AVG(rating), 2), 0) as avg_rating
+     FROM reviews 
+     WHERE product_id = ? AND status = 'published'`,
+    [productId]
+  );
+
+  const reviewsCount = Number(stats[0]?.count || 0);
+  const rating = Number(stats[0]?.avg_rating || 0);
+
+  await conn.query(
+    `UPDATE products 
+     SET rating = ?, reviewsCount = ?, updated_at = NOW() 
+     WHERE id = ?`,
+    [rating, reviewsCount, productId]
+  );
+
+  return { rating, reviewsCount };
+}
+
+/**
+ * Retrieves public published reviews for a product with rating breakdown
+ */
+export async function getMysqlReviewsByProduct(productId: string, options: { rating?: number; sort?: string } = {}) {
+  const pool = await getDbPool();
+  const cleanPid = String(productId).trim();
+
+  let query = `
+    SELECT r.id, r.product_id, r.user_id, r.order_item_id, r.rating, r.title, r.body, r.status, r.created_at, r.updated_at,
+           u.first_name, u.last_name, u.username
+    FROM reviews r
+    LEFT JOIN users u ON u.id = r.user_id
+    WHERE r.product_id = ? AND r.status = 'published'
+  `;
+  const params: any[] = [cleanPid];
+
+  if (options.rating && options.rating >= 1 && options.rating <= 5) {
+    query += ` AND r.rating = ?`;
+    params.push(Math.round(options.rating));
+  }
+
+  if (options.sort === 'highest') {
+    query += ` ORDER BY r.rating DESC, r.created_at DESC`;
+  } else if (options.sort === 'lowest') {
+    query += ` ORDER BY r.rating ASC, r.created_at DESC`;
+  } else {
+    query += ` ORDER BY r.created_at DESC`;
+  }
+
+  const [rows]: any = await pool.query(query, params);
+
+  const reviews = (rows || []).map((r: any) => {
+    const fullName = `${r.first_name || ''} ${r.last_name || ''}`.trim();
+    const displayName = fullName || r.username || 'Verified Customer';
+    return {
+      id: String(r.id),
+      productId: r.product_id,
+      userId: r.user_id,
+      orderItemId: r.order_item_id,
+      rating: Number(r.rating),
+      title: r.title,
+      body: r.body,
+      comment: r.body,
+      status: r.status,
+      reviewerDisplayName: displayName,
+      userName: displayName,
+      createdAt: r.created_at,
+      updatedAt: r.updated_at,
+    };
+  });
+
+  // Calculate rating stats
+  const total = reviews.length;
+  const ratingDistribution: Record<number, number> = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
+  let sum = 0;
+
+  for (const rev of reviews) {
+    const star = Math.min(5, Math.max(1, Math.round(rev.rating)));
+    ratingDistribution[star] = (ratingDistribution[star] || 0) + 1;
+    sum += rev.rating;
+  }
+
+  const averageRating = total > 0 ? Math.round((sum / total) * 10) / 10 : 0;
+
+  return {
+    productId: cleanPid,
+    total,
+    averageRating,
+    ratingDistribution,
+    reviews,
+  };
+}
+
+/**
+ * Checks if a customer is eligible to review an order item
+ */
+export async function checkMysqlReviewEligibility(user: { id: string; email: string }, orderItemId: string) {
+  const pool = await getDbPool();
+  const cleanItemId = String(orderItemId).trim();
+
+  // 1. Fetch order item
+  const [oiRows]: any = await pool.query(
+    `SELECT oi.*, p.name as catalogProductName
+     FROM order_items oi
+     LEFT JOIN products p ON p.id = oi.product_id
+     WHERE oi.id = ? LIMIT 1`,
+    [cleanItemId]
+  );
+
+  if (!oiRows || oiRows.length === 0) {
+    return {
+      eligible: false,
+      reason: 'ITEM_NOT_FOUND',
+      message: 'Order item does not exist.',
+    };
+  }
+
+  const orderItem = oiRows[0];
+  const orderId = orderItem.order_id;
+
+  // 2. Fetch order
+  const [orderRows]: any = await pool.query(
+    `SELECT id, customerEmail, customerName, status, deliveryConfirmed, deliveredAt
+     FROM orders 
+     WHERE id = ? LIMIT 1`,
+    [orderId]
+  );
+
+  if (!orderRows || orderRows.length === 0) {
+    return {
+      eligible: false,
+      reason: 'ORDER_NOT_FOUND',
+      message: 'Parent order not found.',
+    };
+  }
+
+  const order = orderRows[0];
+  const orderEmail = (order.customerEmail || '').trim().toLowerCase();
+  const userEmail = (user.email || '').trim().toLowerCase();
+
+  // 3. Ownership Verification
+  if (orderEmail !== userEmail) {
+    return {
+      eligible: false,
+      reason: 'FORBIDDEN_NOT_OWNER',
+      message: 'Forbidden: You can only review items from your own orders.',
+    };
+  }
+
+  // 4. Ineligible status precedence: cancelled, canceled, refunded take precedence over delivery
+  const status = String(order.status || '').toLowerCase();
+  if (status === 'cancelled' || status === 'canceled' || status === 'refunded') {
+    return {
+      eligible: false,
+      reason: 'ORDER_INELIGIBLE_STATUS',
+      message: `Orders with status '${order.status}' are not eligible for review.`,
+    };
+  }
+
+  // 5. Must be delivered/completed
+  const isDelivered = status === 'completed' || Boolean(order.deliveryConfirmed) || Boolean(order.deliveredAt);
+  if (!isDelivered) {
+    return {
+      eligible: false,
+      reason: 'ORDER_NOT_DELIVERED',
+      message: 'You can review this product once your order has been delivered.',
+    };
+  }
+
+  // 6. Check if already reviewed
+  const [revRows]: any = await pool.query(
+    `SELECT id, rating, title, body, status, created_at FROM reviews WHERE order_item_id = ? LIMIT 1`,
+    [cleanItemId]
+  );
+
+  if (revRows && revRows.length > 0) {
+    return {
+      eligible: false,
+      reason: 'ALREADY_REVIEWED',
+      message: 'You have already reviewed this item.',
+      existingReview: revRows[0],
+      orderItem,
+    };
+  }
+
+  return {
+    eligible: true,
+    reason: 'ELIGIBLE',
+    message: 'Eligible to review this item.',
+    orderItem,
+    order,
+  };
+}
+
+/**
+ * Creates a verified review and synchronizes product rating within an atomic transaction
+ */
+export async function createMysqlReview(data: {
+  userId: string;
+  userEmail: string;
+  orderItemId: string;
+  rating: number;
+  title?: string;
+  body: string;
+}) {
+  const rating = Math.round(Number(data.rating));
+  if (rating < 1 || rating > 5) {
+    throw new Error('Rating must be an integer between 1 and 5.');
+  }
+
+  const cleanTitle = sanitizeReviewPlainText(data.title || '').slice(0, 120);
+  const cleanBody = sanitizeReviewPlainText(data.body || '');
+
+  if (cleanBody.length < 10) {
+    throw new Error('Review statement must be at least 10 characters long.');
+  }
+  if (cleanBody.length > 2000) {
+    throw new Error('Review statement cannot exceed 2000 characters.');
+  }
+
+  // Check eligibility
+  const eligibility = await checkMysqlReviewEligibility(
+    { id: data.userId, email: data.userEmail },
+    data.orderItemId
+  );
+
+  if (!eligibility.eligible) {
+    const error: any = new Error(eligibility.message);
+    error.code = eligibility.reason;
+    error.status = eligibility.reason === 'FORBIDDEN_NOT_OWNER' ? 403 : 400;
+    throw error;
+  }
+
+  const orderItem = eligibility.orderItem;
+  const productId = orderItem.product_id;
+
+  if (!productId) {
+    throw new Error('Cannot review an item whose product is no longer in the catalog.');
+  }
+
+  const pool = await getDbPool();
+  const conn = await pool.getConnection();
+
+  try {
+    await conn.beginTransaction();
+
+    const [insertResult]: any = await conn.query(
+      `INSERT INTO reviews (product_id, user_id, order_item_id, rating, title, body, status, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, 'published', NOW())`,
+      [productId, data.userId, data.orderItemId, rating, cleanTitle, cleanBody]
+    );
+
+    const newReviewId = insertResult.insertId;
+
+    // Atomically synchronize products.rating and products.reviewsCount
+    const updatedStats = await syncProductRatingInTx(conn, productId);
+
+    await conn.commit();
+
+    return {
+      id: String(newReviewId),
+      productId,
+      userId: data.userId,
+      orderItemId: data.orderItemId,
+      rating,
+      title: cleanTitle,
+      body: cleanBody,
+      status: 'published',
+      productRating: updatedStats.rating,
+      productReviewsCount: updatedStats.reviewsCount,
+    };
+  } catch (err) {
+    await conn.rollback();
+    throw err;
+  } finally {
+    conn.release();
+  }
+}
+
+/**
+ * Updates a review and synchronizes product rating within an atomic transaction
+ */
+export async function updateMysqlReview(
+  reviewId: string | number,
+  userId: string,
+  updates: { rating?: number; title?: string; body?: string },
+  isAdmin = false
+) {
+  const pool = await getDbPool();
+  const conn = await pool.getConnection();
+
+  try {
+    await conn.beginTransaction();
+
+    const [revRows]: any = await conn.query(
+      `SELECT * FROM reviews WHERE id = ? LIMIT 1`,
+      [reviewId]
+    );
+
+    if (!revRows || revRows.length === 0) {
+      const err: any = new Error('Review not found.');
+      err.status = 404;
+      throw err;
+    }
+
+    const review = revRows[0];
+    if (!isAdmin && String(review.user_id) !== String(userId)) {
+      const err: any = new Error('Forbidden: You can only edit your own reviews.');
+      err.status = 403;
+      throw err;
+    }
+
+    const sets: string[] = ['updated_at = NOW()'];
+    const values: any[] = [];
+
+    let newRating = review.rating;
+    if (updates.rating !== undefined) {
+      newRating = Math.round(Number(updates.rating));
+      if (newRating < 1 || newRating > 5) {
+        throw new Error('Rating must be an integer between 1 and 5.');
+      }
+      sets.push('rating = ?');
+      values.push(newRating);
+    }
+
+    if (updates.title !== undefined) {
+      const cleanTitle = sanitizeReviewPlainText(updates.title).slice(0, 120);
+      sets.push('title = ?');
+      values.push(cleanTitle);
+    }
+
+    if (updates.body !== undefined) {
+      const cleanBody = sanitizeReviewPlainText(updates.body);
+      if (cleanBody.length < 10) {
+        throw new Error('Review statement must be at least 10 characters long.');
+      }
+      if (cleanBody.length > 2000) {
+        throw new Error('Review statement cannot exceed 2000 characters.');
+      }
+      sets.push('body = ?');
+      values.push(cleanBody);
+    }
+
+    values.push(reviewId);
+    await conn.query(`UPDATE reviews SET ${sets.join(', ')} WHERE id = ?`, values);
+
+    // Synchronize product rating
+    const updatedStats = await syncProductRatingInTx(conn, review.product_id);
+
+    await conn.commit();
+
+    return {
+      id: String(reviewId),
+      productId: review.product_id,
+      rating: newRating,
+      productRating: updatedStats.rating,
+      productReviewsCount: updatedStats.reviewsCount,
+    };
+  } catch (err) {
+    await conn.rollback();
+    throw err;
+  } finally {
+    conn.release();
+  }
+}
+
+/**
+ * Deletes a review and synchronizes product rating within an atomic transaction
+ */
+export async function deleteMysqlReview(reviewId: string | number, userId: string, isAdmin = false) {
+  const pool = await getDbPool();
+  const conn = await pool.getConnection();
+
+  try {
+    await conn.beginTransaction();
+
+    const [revRows]: any = await conn.query(
+      `SELECT * FROM reviews WHERE id = ? LIMIT 1`,
+      [reviewId]
+    );
+
+    if (!revRows || revRows.length === 0) {
+      const err: any = new Error('Review not found.');
+      err.status = 404;
+      throw err;
+    }
+
+    const review = revRows[0];
+    if (!isAdmin && String(review.user_id) !== String(userId)) {
+      const err: any = new Error('Forbidden: You can only delete your own reviews.');
+      err.status = 403;
+      throw err;
+    }
+
+    await conn.query(`DELETE FROM reviews WHERE id = ?`, [reviewId]);
+
+    // Synchronize product rating
+    const updatedStats = await syncProductRatingInTx(conn, review.product_id);
+
+    await conn.commit();
+
+    return {
+      success: true,
+      deletedId: String(reviewId),
+      productId: review.product_id,
+      productRating: updatedStats.rating,
+      productReviewsCount: updatedStats.reviewsCount,
+    };
+  } catch (err) {
+    await conn.rollback();
+    throw err;
+  } finally {
+    conn.release();
+  }
+}
+
+/**
+ * Admin action to hide or publish a review, updating product rating atomically
+ */
+export async function adminUpdateMysqlReviewStatus(reviewId: string | number, status: 'published' | 'hidden') {
+  if (status !== 'published' && status !== 'hidden') {
+    throw new Error("Status must be either 'published' or 'hidden'.");
+  }
+
+  const pool = await getDbPool();
+  const conn = await pool.getConnection();
+
+  try {
+    await conn.beginTransaction();
+
+    const [revRows]: any = await conn.query(
+      `SELECT * FROM reviews WHERE id = ? LIMIT 1`,
+      [reviewId]
+    );
+
+    if (!revRows || revRows.length === 0) {
+      const err: any = new Error('Review not found.');
+      err.status = 404;
+      throw err;
+    }
+
+    const review = revRows[0];
+    await conn.query(
+      `UPDATE reviews SET status = ?, updated_at = NOW() WHERE id = ?`,
+      [status, reviewId]
+    );
+
+    // Synchronize product rating (only published reviews count)
+    const updatedStats = await syncProductRatingInTx(conn, review.product_id);
+
+    await conn.commit();
+
+    return {
+      success: true,
+      reviewId: String(reviewId),
+      status,
+      productId: review.product_id,
+      productRating: updatedStats.rating,
+      productReviewsCount: updatedStats.reviewsCount,
+    };
+  } catch (err) {
+    await conn.rollback();
+    throw err;
+  } finally {
+    conn.release();
+  }
+}
+
+/**
+ * Admin listing of all reviews (published & hidden) with pagination
+ */
+export async function getMysqlAllReviewsForAdmin(options: { status?: string; limit?: number; offset?: number } = {}) {
+  const pool = await getDbPool();
+  const limit = Math.max(1, Math.min(100, options.limit || 50));
+  const offset = Math.max(0, options.offset || 0);
+
+  let query = `
+    SELECT r.*, p.name as productName, u.email as userEmail, u.first_name, u.last_name, u.username
+    FROM reviews r
+    LEFT JOIN products p ON p.id = r.product_id
+    LEFT JOIN users u ON u.id = r.user_id
+  `;
+  const params: any[] = [];
+
+  if (options.status) {
+    query += ` WHERE r.status = ?`;
+    params.push(options.status);
+  }
+
+  query += ` ORDER BY r.created_at DESC LIMIT ? OFFSET ?`;
+  params.push(limit, offset);
+
+  const [rows]: any = await pool.query(query, params);
+  const [cntRes]: any = await pool.query(`SELECT COUNT(*) as total FROM reviews`);
+
+  return {
+    total: Number(cntRes[0]?.total || 0),
+    reviews: rows || [],
+  };
+}
+
+/**
+ * Fetch per-item review status for orders list using a 2nd query (merged in code)
+ * Prevents multiplying order rows in queries (Requirement 12).
+ */
+export async function getMysqlOrderItemsWithReviews(orderIds: string[]): Promise<Map<string, any[]>> {
+  const map = new Map<string, any[]>();
+  if (!orderIds || orderIds.length === 0) return map;
+
+  const pool = await getDbPool();
+
+  // Query 1: Get order_items
+  const [items]: any = await pool.query(
+    `SELECT * FROM order_items WHERE order_id IN (?) ORDER BY order_id, id ASC`,
+    [orderIds]
+  );
+
+  if (!items || items.length === 0) return map;
+
+  const itemIds = items.map((it: any) => it.id);
+
+  // Query 2: Get reviews for these item IDs
+  const [reviews]: any = await pool.query(
+    `SELECT id, product_id, order_item_id, rating, title, status, created_at 
+     FROM reviews 
+     WHERE order_item_id IN (?)`,
+    [itemIds]
+  );
+
+  const reviewsByItemId = new Map<string, any>();
+  for (const rev of reviews || []) {
+    reviewsByItemId.set(String(rev.order_item_id), rev);
+  }
+
+  // Merge in memory
+  for (const it of items) {
+    const oid = String(it.order_id);
+    const existing = map.get(oid) || [];
+    const rev = reviewsByItemId.get(String(it.id));
+    existing.push({
+      ...it,
+      hasReview: Boolean(rev),
+      review: rev || null,
+    });
+    map.set(oid, existing);
+  }
+
+  return map;
+}
+
+/**
+ * Updates marketing email opt-out status for a user by email
+ */
+export async function setMysqlMarketingEmailOptOut(email: string, optOut: boolean): Promise<boolean> {
+  const pool = await getDbPool();
+  const cleanEmail = (email || '').trim().toLowerCase();
+  const [result]: any = await pool.query(
+    `UPDATE users SET marketing_emails_opt_out = ?, updated_at = NOW() WHERE LOWER(email) = ?`,
+    [optOut ? 1 : 0, cleanEmail]
+  );
+  return (result?.affectedRows || 0) > 0;
+}
+
+/**
+ * Updates marketing email opt-out status for a user by user ID
+ */
+export async function setMysqlMarketingEmailOptOutByUserId(userId: string, optOut: boolean): Promise<boolean> {
+  const pool = await getDbPool();
+  const [result]: any = await pool.query(
+    `UPDATE users SET marketing_emails_opt_out = ?, updated_at = NOW() WHERE id = ?`,
+    [optOut ? 1 : 0, userId]
+  );
+  return (result?.affectedRows || 0) > 0;
+}
+
+/**
+ * Checks if a user has opted out of marketing emails
+ */
+export async function isMysqlUserOptedOutOfMarketing(email: string): Promise<boolean> {
+  const pool = await getDbPool();
+  const cleanEmail = (email || '').trim().toLowerCase();
+  const [rows]: any = await pool.query(
+    `SELECT marketing_emails_opt_out FROM users WHERE LOWER(email) = ? LIMIT 1`,
+    [cleanEmail]
+  );
+  if (!rows || rows.length === 0) return false;
+  return Boolean(rows[0].marketing_emails_opt_out);
+}
+
 

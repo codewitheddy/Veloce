@@ -106,6 +106,20 @@ async function verifyOrderItemsBackfill(customDbName) {
       tableCountsByOrder.set(String(r.order_id), Number(r.count));
     }
 
+    // 6. Inspect catalog to audit exact resolution method (ID vs Slug vs Unlinked)
+    const [productRows] = await pool.query('SELECT id, slug FROM products');
+    const validProductIds = new Set();
+    const slugToIdMap = new Map();
+    for (const p of productRows || []) {
+      const pid = String(p.id).trim();
+      validProductIds.add(pid);
+      if (p.slug) slugToIdMap.set(String(p.slug).trim().toLowerCase(), pid);
+    }
+
+    let matchedByIdCount = 0;
+    let matchedBySlugCount = 0;
+    let unlinkedCount = 0;
+
     const [allOrders] = await pool.query('SELECT id, items FROM orders ORDER BY id ASC');
 
     let ordersWithItems = 0;
@@ -160,6 +174,20 @@ async function verifyOrderItemsBackfill(customDbName) {
       const jsonItemCount = parsed.length;
       totalJsonItems += jsonItemCount;
 
+      for (const it of parsed) {
+        const rawPid = String(it.productId || it.product_id || '').trim();
+        const rawId = it.id && String(it.id).startsWith('prod-') ? String(it.id).trim() : '';
+        const rawSlug = String(it.slug || it.productSlug || '').trim().toLowerCase();
+
+        if ((rawPid && validProductIds.has(rawPid)) || (rawId && validProductIds.has(rawId))) {
+          matchedByIdCount++;
+        } else if (rawSlug && slugToIdMap.has(rawSlug)) {
+          matchedBySlugCount++;
+        } else {
+          unlinkedCount++;
+        }
+      }
+
       if (jsonItemCount !== tableCount) {
         discrepancies.push({
           orderId,
@@ -178,9 +206,10 @@ async function verifyOrderItemsBackfill(customDbName) {
     console.log(`3. Total item entries parsed from JSON:     ${totalJsonItems}`);
     console.log(`4. Total rows stored in order_items table:  ${totalOrderItemsRows}`);
     console.log(`5. Total count difference:                  ${difference}`);
-    console.log(`\n--- Product Linking Breakdown ---`);
-    console.log(`  (a) Items linked to active catalog product:  ${itemsLinkedToProduct}`);
-    console.log(`  (b) Items with NULL product_id (deleted):    ${itemsWithNullProductId}`);
+    console.log(`\n--- Product Linking Resolution Breakdown ---`);
+    console.log(`  (a) Linked via direct Product ID:            ${matchedByIdCount}`);
+    console.log(`  (b) Linked via Product Slug mapping:         ${matchedBySlugCount}`);
+    console.log(`  (c) Retained with NULL product_id (deleted): ${unlinkedCount}`);
 
     if (sampleLinkedItems.length > 0) {
       console.log(`\n--- Examples of Items Linked to Catalog Products ---`);
@@ -222,6 +251,9 @@ async function verifyOrderItemsBackfill(customDbName) {
       passed,
       itemsLinkedToProduct,
       itemsWithNullProductId,
+      matchedByIdCount,
+      matchedBySlugCount,
+      unlinkedCount,
       sampleLinkedItems,
       sampleUnlinkedItems,
       skippedOrders,
