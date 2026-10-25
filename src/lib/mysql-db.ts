@@ -123,6 +123,18 @@ export async function getDbPool(): Promise<mysql.Pool> {
   }
 }
 
+// Gracefully close MySQL connection pool (used in CLI scripts & tests)
+export async function closeDbPool(): Promise<void> {
+  if (dbPool) {
+    try {
+      await dbPool.end();
+    } catch (_) {}
+    dbPool = null;
+    isInitialized = false;
+    isInitializing = false;
+  }
+}
+
 // Initialize all database schemas
 export async function initializeDatabaseSchema(): Promise<void> {
   if (isInitialized) return;
@@ -785,7 +797,26 @@ export async function initializeDatabaseSchema(): Promise<void> {
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
     `);
 
-    // 35. Automatic Column Migrations for Existing MySQL Tables
+    // 35. Order Items Table
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS order_items (
+        id VARCHAR(255) PRIMARY KEY,
+        order_id VARCHAR(255) NOT NULL,
+        product_id VARCHAR(255) NULL,
+        name VARCHAR(255) NOT NULL,
+        price DECIMAL(15, 2) NOT NULL,
+        quantity INT NOT NULL DEFAULT 1,
+        selected_variations TEXT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        INDEX idx_oi_order (order_id),
+        INDEX idx_oi_product (product_id),
+        CONSTRAINT fk_oi_order FOREIGN KEY (order_id) REFERENCES orders (id) ON DELETE CASCADE,
+        CONSTRAINT fk_oi_product FOREIGN KEY (product_id) REFERENCES products (id) ON DELETE SET NULL
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    `);
+
+    // 36. Automatic Column Migrations for Existing MySQL Tables
     const safeAddCol = async (table: string, col: string, def: string) => {
       try {
         await pool.query(`ALTER TABLE \`${table}\` ADD COLUMN \`${col}\` ${def};`);
@@ -814,6 +845,12 @@ export async function initializeDatabaseSchema(): Promise<void> {
     await safeAddCol('payment_submissions', 'amount_claimed', 'DECIMAL(15, 2) NULL');
     await safeAddCol('payment_submissions', 'payment_method', "VARCHAR(50) DEFAULT 'mpesa_paybill'");
     await safeAddCol('payment_submissions', 'admin_notes', 'TEXT NULL');
+    await safeAddCol('orders', 'review_reminder_sent_at', 'DATETIME NULL');
+    await safeAddCol('users', 'marketing_emails_opt_out', 'TINYINT(1) NOT NULL DEFAULT 0');
+
+    try {
+      await pool.query('CREATE INDEX `idx_orders_review_reminder` ON `orders` (`review_reminder_sent_at`);');
+    } catch (_) {}
 
     const safeModifyCol = async (table: string, col: string, def: string) => {
       try {
@@ -1208,141 +1245,235 @@ export async function saveMysqlOrder(order: any): Promise<any> {
     safeStatus = order.deliveryConfirmed ? 'delivered' : (order.trackingNumber ? 'shipped' : (order.isPaid || order.paymentStatus === 'paid' ? 'processing' : 'pending'));
   }
 
-  await pool.query(
-    `INSERT INTO orders (
-      id, customerName, customerEmail, customerPhone, items, total, status, date, couponCode,
-      customNote, shippingAddress, notesHistory, statusHistory, isGuest, paymentMethod, checkoutChannel,
-      paymentStatus, paymentReference, mpesaPhone, isPaid, paidAt, mpesaReceiptNumber, deliveryConfirmed, deliveredAt, deliveryPerson,
-      deliveryNote, trackingNumber, deliveryFee, tax, discount, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    ON DUPLICATE KEY UPDATE
-      customerName = VALUES(customerName),
-      customerEmail = VALUES(customerEmail),
-      customerPhone = VALUES(customerPhone),
-      items = VALUES(items),
-      total = VALUES(total),
-      status = VALUES(status),
-      couponCode = VALUES(couponCode),
-      customNote = VALUES(customNote),
-      shippingAddress = VALUES(shippingAddress),
-      notesHistory = VALUES(notesHistory),
-      statusHistory = VALUES(statusHistory),
-      isGuest = VALUES(isGuest),
-      paymentMethod = VALUES(paymentMethod),
-      checkoutChannel = VALUES(checkoutChannel),
-      paymentStatus = VALUES(paymentStatus),
-      paymentReference = VALUES(paymentReference),
-      mpesaPhone = VALUES(mpesaPhone),
-      isPaid = VALUES(isPaid),
-      paidAt = VALUES(paidAt),
-      mpesaReceiptNumber = VALUES(mpesaReceiptNumber),
-      deliveryConfirmed = VALUES(deliveryConfirmed),
-      deliveredAt = VALUES(deliveredAt),
-      deliveryPerson = VALUES(deliveryPerson),
-      deliveryNote = VALUES(deliveryNote),
-      trackingNumber = VALUES(trackingNumber),
-      deliveryFee = VALUES(deliveryFee),
-      tax = VALUES(tax),
-      discount = VALUES(discount),
-      updated_at = VALUES(updated_at)`,
-    [
-      id,
-      order.customerName || 'Customer',
-      (order.customerEmail || '').trim().toLowerCase(),
-      order.customerPhone || order.phone || '',
-      JSON.stringify(Array.isArray(order.items) ? order.items : []),
-      Number(order.total || 0),
-      safeStatus,
-      order.date || now,
-      order.couponCode || null,
-      order.customNote || null,
-      typeof order.shippingAddress === 'object' ? JSON.stringify(order.shippingAddress) : order.shippingAddress || null,
-      JSON.stringify(Array.isArray(order.notesHistory) ? order.notesHistory : []),
-      JSON.stringify(Array.isArray(order.statusHistory) ? order.statusHistory : []),
-      order.isGuest ? 1 : 0,
-      order.paymentMethod || 'cod',
-      order.checkoutChannel || 'web',
-      order.paymentStatus || (refCode ? 'pending_verification' : 'pending'),
-      refCode,
-      phone,
-      order.isPaid ? 1 : 0,
-      order.paidAt || null,
-      refCode,
-      order.deliveryConfirmed ? 1 : 0,
-      order.deliveredAt || null,
-      order.deliveryPerson || null,
-      order.deliveryNote || null,
-      order.trackingNumber || null,
-      Number(order.deliveryFee || 0),
-      Number(order.tax || 0),
-      Number(order.discount || 0),
-      order.created_at || now,
-      now,
-    ]
-  );
-
-  // Sync to customer_orders table
+  const conn = await pool.getConnection();
   try {
-    await pool.query(
-      `INSERT INTO customer_orders (
-        id, customer_name, customer_email, customer_phone, total, status,
-        payment_status, payment_reference, payment_amount, created_at, placed_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    await conn.beginTransaction();
+
+    await conn.query(
+      `INSERT INTO orders (
+        id, customerName, customerEmail, customerPhone, items, total, status, date, couponCode,
+        customNote, shippingAddress, notesHistory, statusHistory, isGuest, paymentMethod, checkoutChannel,
+        paymentStatus, paymentReference, mpesaPhone, isPaid, paidAt, mpesaReceiptNumber, deliveryConfirmed, deliveredAt, deliveryPerson,
+        deliveryNote, trackingNumber, deliveryFee, tax, discount, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON DUPLICATE KEY UPDATE
-        customer_name = VALUES(customer_name),
-        customer_email = VALUES(customer_email),
-        customer_phone = VALUES(customer_phone),
+        customerName = VALUES(customerName),
+        customerEmail = VALUES(customerEmail),
+        customerPhone = VALUES(customerPhone),
+        items = VALUES(items),
         total = VALUES(total),
         status = VALUES(status),
-        payment_status = VALUES(payment_status),
-        payment_reference = VALUES(payment_reference),
-        payment_amount = VALUES(payment_amount),
+        couponCode = VALUES(couponCode),
+        customNote = VALUES(customNote),
+        shippingAddress = VALUES(shippingAddress),
+        notesHistory = VALUES(notesHistory),
+        statusHistory = VALUES(statusHistory),
+        isGuest = VALUES(isGuest),
+        paymentMethod = VALUES(paymentMethod),
+        checkoutChannel = VALUES(checkoutChannel),
+        paymentStatus = VALUES(paymentStatus),
+        paymentReference = VALUES(paymentReference),
+        mpesaPhone = VALUES(mpesaPhone),
+        isPaid = VALUES(isPaid),
+        paidAt = VALUES(paidAt),
+        mpesaReceiptNumber = VALUES(mpesaReceiptNumber),
+        deliveryConfirmed = VALUES(deliveryConfirmed),
+        deliveredAt = VALUES(deliveredAt),
+        deliveryPerson = VALUES(deliveryPerson),
+        deliveryNote = VALUES(deliveryNote),
+        trackingNumber = VALUES(trackingNumber),
+        deliveryFee = VALUES(deliveryFee),
+        tax = VALUES(tax),
+        discount = VALUES(discount),
         updated_at = VALUES(updated_at)`,
       [
         id,
         order.customerName || 'Customer',
         (order.customerEmail || '').trim().toLowerCase(),
         order.customerPhone || order.phone || '',
+        JSON.stringify(Array.isArray(order.items) ? order.items : []),
         Number(order.total || 0),
-        order.status || 'Pending',
-        order.paymentStatus || (refCode ? 'pending_verification' : 'unpaid'),
-        refCode,
-        order.total || null,
-        order.created_at || now,
+        safeStatus,
         order.date || now,
+        order.couponCode || null,
+        order.customNote || null,
+        typeof order.shippingAddress === 'object' ? JSON.stringify(order.shippingAddress) : order.shippingAddress || null,
+        JSON.stringify(Array.isArray(order.notesHistory) ? order.notesHistory : []),
+        JSON.stringify(Array.isArray(order.statusHistory) ? order.statusHistory : []),
+        order.isGuest ? 1 : 0,
+        order.paymentMethod || 'cod',
+        order.checkoutChannel || 'web',
+        order.paymentStatus || (refCode ? 'pending_verification' : 'pending'),
+        refCode,
+        phone,
+        order.isPaid ? 1 : 0,
+        order.paidAt || null,
+        refCode,
+        order.deliveryConfirmed ? 1 : 0,
+        order.deliveredAt || null,
+        order.deliveryPerson || null,
+        order.deliveryNote || null,
+        order.trackingNumber || null,
+        Number(order.deliveryFee || 0),
+        Number(order.tax || 0),
+        Number(order.discount || 0),
+        order.created_at || now,
         now,
       ]
     );
-  } catch (_) {}
 
-  // If customer provided an M-Pesa transaction code at checkout, record in payment_submissions
-  if (refCode && refCode.trim().length >= 8) {
+    // Synchronize order_items in the same atomic transaction
+    const orderItems = Array.isArray(order.items) ? order.items : [];
+    if (orderItems.length > 0) {
+      const [tableCheck]: any = await conn.query(
+        `SELECT COUNT(*) as cnt FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = 'order_items'`
+      );
+
+      if (tableCheck[0]?.cnt > 0) {
+        const activeItemIds: string[] = [];
+
+        for (let idx = 0; idx < orderItems.length; idx++) {
+          const it = orderItems[idx];
+          const rawItemId = it.id ? String(it.id).trim() : '';
+          const deterministicId = rawItemId && rawItemId !== 'undefined' && rawItemId !== '[object Object]'
+            ? (rawItemId.startsWith('oi_') ? rawItemId : `oi_${id}_${rawItemId}`)
+            : `oi_${id}_${idx}`;
+          activeItemIds.push(deterministicId);
+
+          const rawProductId = String(it.productId || it.product_id || it.product || it.id || '').trim();
+          let matchedProductId: string | null = null;
+          if (rawProductId) {
+            const [pRow]: any = await conn.query('SELECT id FROM products WHERE id = ? LIMIT 1', [rawProductId]);
+            if (pRow && pRow.length > 0) {
+              matchedProductId = pRow[0].id;
+            }
+          }
+
+          const itemName = String(it.name || it.product_name || it.title || 'Item').trim();
+          const itemPrice = typeof it.price === 'number'
+            ? it.price
+            : parseFloat(it.unit_price || it.price || '0') || 0;
+          const itemQty = Math.max(1, parseInt(String(it.quantity || 1), 10) || 1);
+          const variations = it.selectedVariations || it.selected_variations
+            ? JSON.stringify(it.selectedVariations || it.selected_variations)
+            : null;
+
+          await conn.query(
+            `INSERT INTO order_items (id, order_id, product_id, name, price, quantity, selected_variations, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+             ON DUPLICATE KEY UPDATE
+               product_id = VALUES(product_id),
+               name = VALUES(name),
+               price = VALUES(price),
+               quantity = VALUES(quantity),
+               selected_variations = VALUES(selected_variations),
+               updated_at = VALUES(updated_at)`,
+            [
+              deterministicId,
+              id,
+              matchedProductId,
+              itemName,
+              itemPrice,
+              itemQty,
+              variations,
+              order.created_at || now,
+              now
+            ]
+          );
+        }
+
+        if (activeItemIds.length > 0) {
+          await conn.query(
+            `DELETE FROM order_items WHERE order_id = ? AND id NOT IN (?)`,
+            [id, activeItemIds]
+          );
+        }
+      }
+    }
+
+    // Sync to customer_orders table
     try {
-      const claimId = `sub-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
-      await pool.query(
-        `INSERT INTO payment_submissions (
-          id, order_id, mpesa_receipt_code, phone_number, amount_claimed, payment_method, status, admin_notes, submitted_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      await conn.query(
+        `INSERT INTO customer_orders (
+          id, customer_name, customer_email, customer_phone, total, status,
+          payment_status, payment_reference, payment_amount, created_at, placed_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON DUPLICATE KEY UPDATE
-          phone_number = VALUES(phone_number),
-          amount_claimed = VALUES(amount_claimed),
-          submitted_at = VALUES(submitted_at)`,
+          customer_name = VALUES(customer_name),
+          customer_email = VALUES(customer_email),
+          customer_phone = VALUES(customer_phone),
+          total = VALUES(total),
+          status = VALUES(status),
+          payment_status = VALUES(payment_status),
+          payment_reference = VALUES(payment_reference),
+          payment_amount = VALUES(payment_amount),
+          updated_at = VALUES(updated_at)`,
         [
-          claimId,
           id,
-          refCode.trim().toUpperCase(),
-          phone || '254700000000',
+          order.customerName || 'Customer',
+          (order.customerEmail || '').trim().toLowerCase(),
+          order.customerPhone || order.phone || '',
           Number(order.total || 0),
-          order.paymentMethod || 'mpesa_paybill',
-          'pending_verification',
-          'Submitted directly during checkout placement',
+          order.status || 'Pending',
+          order.paymentStatus || (refCode ? 'pending_verification' : 'unpaid'),
+          refCode,
+          order.total || null,
+          order.created_at || now,
+          order.date || now,
           now,
         ]
       );
     } catch (_) {}
+
+    // If customer provided an M-Pesa transaction code at checkout, record in payment_submissions
+    if (refCode && refCode.trim().length >= 8) {
+      try {
+        const claimId = `sub-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+        await conn.query(
+          `INSERT INTO payment_submissions (
+            id, order_id, mpesa_receipt_code, phone_number, amount_claimed, payment_method, status, admin_notes, submitted_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ON DUPLICATE KEY UPDATE
+            phone_number = VALUES(phone_number),
+            amount_claimed = VALUES(amount_claimed),
+            submitted_at = VALUES(submitted_at)`,
+          [
+            claimId,
+            id,
+            refCode.trim().toUpperCase(),
+            phone || '254700000000',
+            Number(order.total || 0),
+            order.paymentMethod || 'mpesa_paybill',
+            'pending_verification',
+            'Submitted directly during checkout placement',
+            now,
+          ]
+        );
+      } catch (_) {}
+    }
+
+    await conn.commit();
+  } catch (txErr) {
+    await conn.rollback();
+    throw txErr;
+  } finally {
+    conn.release();
   }
 
   return getMysqlOrderById(id);
+}
+
+export async function getMysqlOrderItemsByOrderId(orderId: string): Promise<any[]> {
+  const pool = await getDbPool();
+  const [rows]: any = await pool.query('SELECT * FROM order_items WHERE order_id = ? ORDER BY id ASC', [orderId]);
+  return rows || [];
+}
+
+export async function getMysqlOrderItemsByOrderIds(orderIds: string[]): Promise<any[]> {
+  if (!orderIds || orderIds.length === 0) return [];
+  const pool = await getDbPool();
+  const [rows]: any = await pool.query('SELECT * FROM order_items WHERE order_id IN (?) ORDER BY order_id, id ASC', [orderIds]);
+  return rows || [];
 }
 
 export async function updateMysqlOrderStatus(
