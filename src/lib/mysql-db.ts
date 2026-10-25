@@ -3417,10 +3417,7 @@ export async function getSqliteOrdersByUser(userIdOrEmail: string): Promise<any[
     'SELECT * FROM orders WHERE customerEmail = ? OR customerEmail = (SELECT email FROM users WHERE id = ? LIMIT 1) ORDER BY date DESC',
     [userIdOrEmail, userIdOrEmail]
   );
-  return (rows || []).map((r: any) => ({
-    ...r,
-    items: typeof r.items === 'string' ? JSON.parse(r.items) : r.items,
-  }));
+  return (rows || []).map(parseOrderRow);
 }
 
 export async function syncSqliteOrders(orders: any[]): Promise<void> {

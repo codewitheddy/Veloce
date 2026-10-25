@@ -697,10 +697,12 @@ export default function App() {
               if (!localMatch) return mOrder;
 
               const isPaid = mOrder.paymentStatus === 'paid' || localMatch.paymentStatus === 'paid';
+              const rawStatus = String(mOrder.status || localMatch.status || 'pending').trim().toLowerCase();
+              const cleanStatus = (rawStatus === 'awaiting_delivery_quote' || rawStatus === 'delivery_quoted' || rawStatus === 'order_received') ? 'pending' : rawStatus;
               return {
                 ...localMatch,
                 ...mOrder,
-                status: mOrder.status || localMatch.status,
+                status: cleanStatus as any,
                 paymentStatus: isPaid ? ('paid' as const) : (mOrder.paymentStatus || localMatch.paymentStatus || 'unpaid'),
                 paidAt: mOrder.paidAt || localMatch.paidAt,
                 paymentReference: mOrder.paymentReference || localMatch.paymentReference,
@@ -728,7 +730,14 @@ export default function App() {
 
     const handleOrdersUpdatedEvent = (e: any) => {
       if (e.detail && Array.isArray(e.detail)) {
-        setOrders(e.detail);
+        const sanitized = e.detail.map((o: any) => {
+          const s = String(o?.status || '').trim().toLowerCase();
+          if (s === 'awaiting_delivery_quote' || s === 'delivery_quoted' || s === 'order_received') {
+            return { ...o, status: 'pending' };
+          }
+          return o;
+        });
+        setOrders(sanitized);
       } else {
         loadBackendData();
       }
@@ -747,7 +756,14 @@ export default function App() {
 
 
   const [orders, setOrders] = useState<Order[]>(() => {
-    return safeLocalStorageGetItem('veloce_orders', isClearedData() ? [] : INITIAL_ORDERS);
+    const raw = safeLocalStorageGetItem('veloce_orders', isClearedData() ? [] : INITIAL_ORDERS);
+    return (raw || []).map((o: any) => {
+      const s = String(o.status || '').trim().toLowerCase();
+      if (s === 'awaiting_delivery_quote' || s === 'delivery_quoted' || s === 'order_received') {
+        return { ...o, status: 'pending' as const };
+      }
+      return o;
+    });
   });
 
   // Auto-persist orders to localStorage and IndexedDB whenever state updates

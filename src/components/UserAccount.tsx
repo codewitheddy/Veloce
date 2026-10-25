@@ -100,6 +100,22 @@ interface UserAccountProps {
   onUpdateReturnRequestStatus?: (requestId: string, status: ReturnRequest['status'], adminNote?: string, trackingNumber?: string) => void;
 }
 
+export const getDisplayOrderStatus = (rawStatus: string | undefined): { label: string; styleKey: string } => {
+  const s = String(rawStatus || 'pending').trim().toLowerCase();
+  if (s === 'awaiting_delivery_quote' || s === 'delivery_quoted' || s === 'order_received' || s === 'pending') {
+    return { label: 'Pending', styleKey: 'pending' };
+  }
+  if (s === 'confirmed') return { label: 'Confirmed', styleKey: 'confirmed' };
+  if (s === 'payment_confirmed') return { label: 'Payment Confirmed', styleKey: 'payment_confirmed' };
+  if (s === 'processing') return { label: 'Processing', styleKey: 'processing' };
+  if (s === 'shipped') return { label: 'Shipped', styleKey: 'shipped' };
+  if (s === 'payment_received') return { label: 'Payment Received', styleKey: 'payment_received' };
+  if (s === 'completed' || s === 'delivered') return { label: 'Completed', styleKey: 'completed' };
+  if (s === 'cancelled') return { label: 'Cancelled', styleKey: 'cancelled' };
+  if (s === 'pending-cancellation') return { label: 'Pending Cancellation', styleKey: 'pending-cancellation' };
+  return { label: s.replace(/_/g, ' '), styleKey: s };
+};
+
 export default function UserAccount({
   orders = [],
   products = [],
@@ -666,6 +682,12 @@ export default function UserAccount({
       const matchesPhone = Boolean(normalizedPhone && orderPhone && orderPhone.length >= 9 && orderPhone === normalizedPhone);
 
       return matchesEmail || matchesPhone;
+    }).map((order) => {
+      const raw = String(order.status || '').trim().toLowerCase();
+      if (raw === 'awaiting_delivery_quote' || raw === 'delivery_quoted' || raw === 'order_received') {
+        return { ...order, status: 'pending' as const };
+      }
+      return order;
     });
   }, [orders, email, phone]);
 
@@ -1617,8 +1639,6 @@ export default function UserAccount({
                   shipped: 'bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-400 border-blue-200/60 dark:border-blue-900/40',
                   pending: 'bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400 border-amber-200/60 dark:border-amber-900/40',
                   confirmed: 'bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-400 border-indigo-200/60 dark:border-indigo-900/40',
-                  awaiting_delivery_quote: 'bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400 border-amber-200/60 dark:border-amber-900/40',
-                  delivery_quoted: 'bg-sky-50 dark:bg-sky-950/40 text-sky-700 dark:text-sky-400 border-sky-200/60 dark:border-sky-900/40',
                   'pending-cancellation': 'bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-400 border-rose-200/60 dark:border-rose-900/40',
                   cancelled: 'bg-rose-100 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 border-rose-300 dark:border-rose-800'
                 };
@@ -1703,10 +1723,15 @@ export default function UserAccount({
                       <div className="flex flex-wrap items-center justify-between sm:justify-end gap-3 sm:gap-4 shrink-0 pt-2.5 xl:pt-0 border-t xl:border-t-0 border-slate-100 dark:border-slate-800/80">
                         {/* Status & Payment Badges */}
                         <div className="flex flex-wrap items-center gap-1.5 shrink-0">
-                          <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[10px] font-semibold capitalize border ${statusStyles[order.status] || statusStyles.pending}`}>
-                            <span className="h-1.5 w-1.5 rounded-full bg-current" />
-                            {order.status.replace('_', ' ')}
-                          </span>
+                          {(() => {
+                            const disp = getDisplayOrderStatus(order.status);
+                            return (
+                              <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[10px] font-semibold capitalize border ${statusStyles[disp.styleKey] || statusStyles.pending}`}>
+                                <span className="h-1.5 w-1.5 rounded-full bg-current" />
+                                {disp.label}
+                              </span>
+                            );
+                          })()}
 
                           <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium border ${
                             order.paymentStatus === 'paid'
@@ -2108,6 +2133,7 @@ export default function UserAccount({
                   shipped: 'bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-400 border-blue-200/60 dark:border-blue-900/40',
                   processing: 'bg-purple-50 dark:bg-purple-950/40 text-purple-700 dark:text-purple-400 border-purple-200/60 dark:border-purple-900/40',
                   pending: 'bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400 border-amber-200/60 dark:border-amber-900/40',
+                  confirmed: 'bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-400 border-indigo-200/60 dark:border-indigo-900/40',
                   'pending-cancellation': 'bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-400 border-rose-200/60 dark:border-rose-900/40',
                   cancelled: 'bg-rose-100 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 border-rose-300 dark:border-rose-800'
                 };
@@ -2134,10 +2160,15 @@ export default function UserAccount({
                             {order.date}
                           </span>
 
-                          <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] font-semibold capitalize border ${statusStyles[order.status] || statusStyles.pending}`}>
-                            <span className="h-1.5 w-1.5 rounded-full bg-current" />
-                            {order.status.replace('_', ' ')}
-                          </span>
+                          {(() => {
+                            const disp = getDisplayOrderStatus(order.status);
+                            return (
+                              <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] font-semibold capitalize border ${statusStyles[disp.styleKey] || statusStyles.pending}`}>
+                                <span className="h-1.5 w-1.5 rounded-full bg-current" />
+                                {disp.label}
+                              </span>
+                            );
+                          })()}
 
                           <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] font-medium border ${
                             order.paymentStatus === 'paid'

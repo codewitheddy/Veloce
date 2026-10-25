@@ -132,6 +132,11 @@ export default function OrderTrackingPage({
 
       if (serverData && serverData.success) {
         const isPaidOrder = serverData.paymentStatus === 'paid' || serverData.status === 'completed' || serverData.status === 'payment_confirmed' || serverData.status === 'payment_received' || Boolean(serverData.isPaid);
+        const rawStatus = String(serverData.status || localMatch?.status || 'pending').trim().toLowerCase();
+        const cleanStatus = (rawStatus === 'awaiting_delivery_quote' || rawStatus === 'delivery_quoted' || rawStatus === 'order_received')
+          ? 'pending'
+          : (serverData.status || localMatch?.status || 'pending');
+
         const normalized: Order = {
           id: serverData.id || serverData.orderId || trimmedId,
           customerName: serverData.customerName || localMatch?.customerName || 'Valued Customer',
@@ -142,7 +147,7 @@ export default function OrderTrackingPage({
             : localMatch?.items || [],
           total: Number(serverData.total !== undefined ? serverData.total : localMatch?.total || 0),
           subtotal: Number(serverData.subtotal !== undefined ? serverData.subtotal : localMatch?.subtotal || serverData.total || 0),
-          status: serverData.status || localMatch?.status || 'order_received',
+          status: cleanStatus as any,
           paymentStatus: isPaidOrder ? 'paid' : (serverData.paymentStatus || localMatch?.paymentStatus || 'unpaid'),
           isPaid: isPaidOrder,
           paymentMethod: serverData.paymentMethod || localMatch?.paymentMethod || 'mpesa',
@@ -166,7 +171,11 @@ export default function OrderTrackingPage({
         setTrackedOrder(normalized);
         setErrorMsg('');
       } else if (localMatch) {
-        setTrackedOrder(localMatch);
+        const rawStatus = String(localMatch.status || 'pending').trim().toLowerCase();
+        const cleanStatus = (rawStatus === 'awaiting_delivery_quote' || rawStatus === 'delivery_quoted' || rawStatus === 'order_received')
+          ? 'pending'
+          : (localMatch.status || 'pending');
+        setTrackedOrder({ ...localMatch, status: cleanStatus as any });
         setErrorMsg('');
       } else {
         setTrackedOrder(null);
