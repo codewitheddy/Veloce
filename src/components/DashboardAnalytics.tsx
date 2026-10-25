@@ -5,7 +5,7 @@
 
 import React, { useState, useEffect, useRef, Suspense, lazy } from 'react';
 import DOMPurify from 'dompurify';
-import { LineChart, TrendingUp, TrendingDown, DollarSign, MousePointer, Activity, Settings, UserCheck, Inbox, Plus, Check, Trash2, X, AlertCircle, Tag, Percent, Sparkles, AlertTriangle, Edit2, Search, QrCode, Printer, Download, ArrowLeft, PackagePlus, Image as ImageIcon, Layers, Mail, Calendar, Shield, Database, Upload, Lock, Unlock, RotateCcw, FileJson, HardDrive, RefreshCw, CheckCircle2, Eye, EyeOff, ShieldCheck, ShieldAlert, AlertOctagon, Truck, MapPin, History, User, Copy, ExternalLink, FileText, CheckCircle, ShoppingBag, Navigation, ChevronDown, ChevronLeft, ChevronRight, ArrowUpDown, ArrowUp, ArrowDown, Package, Loader2, Archive, BarChart3, FolderTree, CreditCard, Users, Zap, Scissors, Menu, SlidersHorizontal, Type, Edit3, LogOut, Send, Clock, Calculator } from 'lucide-react';
+import { LineChart, TrendingUp, TrendingDown, DollarSign, MousePointer, Activity, Settings, UserCheck, Inbox, Plus, Check, Trash2, X, AlertCircle, Tag, Percent, Sparkles, AlertTriangle, Edit2, Search, QrCode, Printer, Download, ArrowLeft, PackagePlus, Image as ImageIcon, Layers, Mail, Calendar, Shield, Database, Upload, Lock, Unlock, RotateCcw, FileJson, HardDrive, RefreshCw, CheckCircle2, Eye, EyeOff, ShieldCheck, ShieldAlert, AlertOctagon, Truck, MapPin, History, User, Copy, ExternalLink, FileText, CheckCircle, ShoppingBag, Navigation, ChevronDown, ChevronLeft, ChevronRight, ArrowUpDown, ArrowUp, ArrowDown, Package, Loader2, Archive, BarChart3, FolderTree, CreditCard, Users, Zap, Scissors, Menu, SlidersHorizontal, Type, Edit3, LogOut, Send, Clock, Calculator, Phone } from 'lucide-react';
 import {
   ResponsiveContainer as RechartsResponsiveContainer,
   AreaChart as RechartsAreaChart,
@@ -1215,7 +1215,7 @@ export default function DashboardAnalytics({
   const [bannerActive, setBannerActive] = useState(promoBanner?.active || false);
   const [promoToast, setPromoToast] = useState('');
   const [orderSearchQuery, setOrderSearchQuery] = useState('');
-  const [orderStatusFilter, setOrderStatusFilter] = useState<'all' | 'pending' | 'processing' | 'shipped' | 'completed' | 'cancelled' | 'pending-cancellation'>('all');
+  const [orderStatusFilter, setOrderStatusFilter] = useState<'all' | 'pending' | 'confirmed' | 'payment_confirmed' | 'processing' | 'shipped' | 'completed' | 'cancelled' | 'pending-cancellation'>('all');
   const [orderChannelFilter, setOrderChannelFilter] = useState<'all' | 'whatsapp' | 'web'>('all');
   const [orderPaymentFilter, setOrderPaymentFilter] = useState<'all' | 'mpesa' | 'cod'>('all');
   const [orderSettlementFilter, setOrderSettlementFilter] = useState<'all' | 'unpaid' | 'paid'>('all');
@@ -6136,7 +6136,9 @@ admin@ropenix.co.ke`;
         const filteredOrders = effectiveOrders.filter((ord) => {
           const matchesStatus = orderStatusFilter === 'all' || 
             ord.status === orderStatusFilter ||
-            (orderStatusFilter === 'pending' && (ord.status === 'pending' || ord.status === 'order_received'));
+            (orderStatusFilter === 'pending' && (ord.status === 'pending' || ord.status === 'order_received')) ||
+            (orderStatusFilter === 'confirmed' && ord.status === 'confirmed') ||
+            (orderStatusFilter === 'payment_confirmed' && ord.status === 'payment_confirmed');
           if (!matchesStatus) return false;
 
           const isWhatsAppChannel = ord.checkoutChannel === 'whatsapp' || ord.checkoutMode === 'whatsapp' || ord.orderSource === 'whatsapp' || ord.paymentMethod === 'whatsapp';
@@ -6154,9 +6156,13 @@ admin@ropenix.co.ke`;
 
           if (!orderSearchQuery.trim()) return true;
           const q = orderSearchQuery.toLowerCase();
+          const custPhone = ord.phone || ord.mpesaPhone || (ord as any).customerPhone || '';
+          const fulfillmentArea = ord.areaEstate || ord.shippingAddress || ord.pickupLocation || '';
           return (
             ord.customerName.toLowerCase().includes(q) ||
             (ord.customerEmail && ord.customerEmail.toLowerCase().includes(q)) ||
+            (custPhone && custPhone.toLowerCase().includes(q)) ||
+            (fulfillmentArea && fulfillmentArea.toLowerCase().includes(q)) ||
             ord.id.toLowerCase().includes(q) ||
             ord.status.toLowerCase().includes(q) ||
             (isWhatsAppChannel && 'whatsapp'.includes(q)) ||
@@ -6301,6 +6307,7 @@ admin@ropenix.co.ke`;
                       <option value="all">All</option>
                       <option value="pending">Pending</option>
                       <option value="confirmed">Confirmed</option>
+                      <option value="payment_confirmed">Payment Confirmed</option>
                       <option value="processing">Processing</option>
                       <option value="shipped">Shipped</option>
                       <option value="completed">Completed</option>
@@ -6777,8 +6784,47 @@ admin@ropenix.co.ke`;
                               </td>
                               <td className="py-3 font-mono font-bold text-gray-800 uppercase">{ord.id}</td>
                               <td className="py-3">
-                                <span className="block font-semibold text-gray-950">{ord.customerName}</span>
-                                <span className="block font-mono text-[9px] text-gray-400">{ord.customerEmail}</span>
+                                <div className="space-y-1">
+                                  <div className="flex items-center gap-1.5 flex-wrap">
+                                    <span className="font-semibold text-gray-950 dark:text-gray-100">{ord.customerName}</span>
+                                    {ord.fulfillmentType === 'pickup' ? (
+                                      <span
+                                        className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800"
+                                        title={ord.pickupLocation || 'Store Pickup'}
+                                      >
+                                        🏬 Pickup
+                                      </span>
+                                    ) : (
+                                      <span
+                                        className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-bold bg-sky-50 dark:bg-sky-950/60 text-sky-700 dark:text-sky-300 border border-sky-200 dark:border-sky-800"
+                                        title={ord.landmark ? `${ord.areaEstate || 'Delivery'} (Near: ${ord.landmark})` : (ord.shippingAddress || ord.areaEstate || 'Doorstep Delivery')}
+                                      >
+                                        🚚 {ord.areaEstate || 'Delivery'}
+                                      </span>
+                                    )}
+                                  </div>
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    {(() => {
+                                      const custPhone = ord.phone || ord.mpesaPhone || (ord as any).customerPhone;
+                                      if (!custPhone) return null;
+                                      return (
+                                        <a
+                                          href={`tel:${custPhone}`}
+                                          className="inline-flex items-center gap-1 text-[10px] font-mono font-medium text-emerald-600 dark:text-emerald-400 hover:underline"
+                                          title="Call customer to inform them of delivery cost or arrange shipping means"
+                                        >
+                                          <Phone className="w-2.5 h-2.5" />
+                                          <span>{custPhone}</span>
+                                        </a>
+                                      );
+                                    })()}
+                                    {ord.customerEmail && (
+                                      <span className="font-mono text-[9px] text-gray-400 dark:text-gray-500 truncate max-w-[140px] block" title={ord.customerEmail}>
+                                        {ord.customerEmail}
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
                               </td>
                               <td className="py-3 font-mono text-[10px]">{ord.date}</td>
                               <td className="py-3 font-mono font-bold text-indigo-650">KSh {ord.total.toLocaleString('en-KE')}</td>
