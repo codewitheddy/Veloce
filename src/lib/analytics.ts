@@ -16,14 +16,42 @@ declare global {
   interface Window {
     dataLayer?: any[];
     gtag?: (...args: any[]) => void;
+    fbq?: (...args: any[]) => void;
+    _fbq?: any;
   }
 }
 
 export const GA_MEASUREMENT_ID = 'G-XY15BE6DS1';
+export const META_PIXEL_ID = '1146121417764208';
 export const GA_CURRENCY = 'KES';
 
 /**
- * Generic safe event dispatcher.
+ * Generic safe Meta Pixel event dispatcher.
+ * Checks window.fbq exists before invocation.
+ */
+export function trackMetaEvent(name: string, params?: Record<string, any>): void {
+  if (typeof window === 'undefined') return;
+
+  // Safeguard: Never track administrative operations or console paths
+  if (window.location.pathname.startsWith('/admin')) {
+    return;
+  }
+
+  if (typeof window.fbq === 'function') {
+    try {
+      if (params && Object.keys(params).length > 0) {
+        window.fbq('track', name, params);
+      } else {
+        window.fbq('track', name);
+      }
+    } catch (err) {
+      console.warn('[Meta Pixel] Event dispatch notice:', name, err);
+    }
+  }
+}
+
+/**
+ * Generic safe event dispatcher for Google Analytics.
  * Checks window.gtag exists before invocation.
  */
 export function trackEvent(name: string, params: Record<string, any> = {}): void {
@@ -63,6 +91,9 @@ export function trackPageView(page_path?: string, page_title?: string, page_loca
     page_location: location,
     page_title: title,
   });
+
+  // Track Meta Pixel standard PageView event
+  trackMetaEvent('PageView');
 }
 
 export interface GA4Item {
@@ -143,10 +174,22 @@ export function trackViewItem(
   if (!product) return;
 
   const price = Number(product.price) || 0;
+  const prodId = String(product.id ?? product.productId ?? 'item');
+
   trackEvent('view_item', {
     currency: GA_CURRENCY,
     value: price,
     items: [formatProductToGA4Item(product, 1, selectedVars)],
+  });
+
+  // Meta Pixel ViewContent
+  trackMetaEvent('ViewContent', {
+    content_name: product.name ?? product.title ?? 'Product',
+    content_category: product.category,
+    content_ids: [prodId],
+    content_type: 'product',
+    value: price,
+    currency: GA_CURRENCY,
   });
 }
 
@@ -162,10 +205,22 @@ export function trackAddToCart(
 
   const qty = quantity > 0 ? quantity : 1;
   const price = Number(product.price) || 0;
+  const prodId = String(product.id ?? product.productId ?? 'item');
+
   trackEvent('add_to_cart', {
     currency: GA_CURRENCY,
     value: price * qty,
     items: [formatProductToGA4Item(product, qty, selectedVars)],
+  });
+
+  // Meta Pixel AddToCart
+  trackMetaEvent('AddToCart', {
+    content_name: product.name ?? product.title ?? 'Product',
+    content_category: product.category,
+    content_ids: [prodId],
+    content_type: 'product',
+    value: price * qty,
+    currency: GA_CURRENCY,
   });
 }
 
@@ -242,6 +297,18 @@ export function trackBeginCheckout(
     value: totalValue !== undefined ? Number(totalValue) : calculatedTotal,
     items,
   });
+
+  // Meta Pixel InitiateCheckout
+  const itemIds = cartItems
+    .filter(Boolean)
+    .map((ci) => String((ci.product || ci)?.id ?? (ci.product || ci)?.productId ?? 'item'));
+  trackMetaEvent('InitiateCheckout', {
+    content_ids: itemIds,
+    content_type: 'product',
+    num_items: cartItems.length,
+    value: totalValue !== undefined ? Number(totalValue) : calculatedTotal,
+    currency: GA_CURRENCY,
+  });
 }
 
 /**
@@ -265,6 +332,17 @@ export function trackAddPaymentInfo(
     value: Number(totalValue) || 0,
     payment_type: paymentType,
     items,
+  });
+
+  // Meta Pixel AddPaymentInfo
+  const itemIds = (cartItems || [])
+    .filter(Boolean)
+    .map((ci) => String((ci.product || ci)?.id ?? (ci.product || ci)?.productId ?? 'item'));
+  trackMetaEvent('AddPaymentInfo', {
+    content_ids: itemIds,
+    content_type: 'product',
+    value: Number(totalValue) || 0,
+    currency: GA_CURRENCY,
   });
 }
 
@@ -358,6 +436,16 @@ export function trackPurchase(order: any): boolean {
     shipping,
     coupon,
     items,
+  });
+
+  // Meta Pixel Purchase
+  const itemIds = items.map((i) => i.item_id);
+  trackMetaEvent('Purchase', {
+    content_ids: itemIds,
+    content_type: 'product',
+    num_items: items.length,
+    value: orderTotal,
+    currency: GA_CURRENCY,
   });
 
   recordPurchaseTracked(orderIdStr);

@@ -15674,15 +15674,15 @@ app.use((_req, res, next) => {
   res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
   const cspDirectives = [
     "default-src 'self' https: http: data: blob:",
-    "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://translate.google.com https://translate.googleapis.com https://translate-pa.googleapis.com https://*.googleapis.com https://*.google.com https://*.gstatic.com https://www.gstatic.com http://translate.google.com http://translate.googleapis.com",
-    "script-src-elem 'self' 'unsafe-inline' 'unsafe-eval' https://translate.google.com https://translate.googleapis.com https://translate-pa.googleapis.com https://*.googleapis.com https://*.google.com https://*.gstatic.com https://www.gstatic.com http://translate.google.com http://translate.googleapis.com",
+    "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://connect.facebook.net https://translate.google.com https://translate.googleapis.com https://translate-pa.googleapis.com https://*.googleapis.com https://*.google.com https://*.gstatic.com https://www.gstatic.com http://translate.google.com http://translate.googleapis.com",
+    "script-src-elem 'self' 'unsafe-inline' 'unsafe-eval' https://connect.facebook.net https://translate.google.com https://translate.googleapis.com https://translate-pa.googleapis.com https://*.googleapis.com https://*.google.com https://*.gstatic.com https://www.gstatic.com http://translate.google.com http://translate.googleapis.com",
     "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://translate.googleapis.com https://*.googleapis.com https://www.gstatic.com https://*.gstatic.com http://translate.googleapis.com",
     "style-src-elem 'self' 'unsafe-inline' https://fonts.googleapis.com https://translate.googleapis.com https://*.googleapis.com https://www.gstatic.com https://*.gstatic.com http://translate.googleapis.com",
     "font-src 'self' https://fonts.gstatic.com https://*.gstatic.com data:",
-    "img-src 'self' data: blob: https: http: res.cloudinary.com https://images.unsplash.com https://translate.google.com https://www.google.com https://*.google.com https://*.gstatic.com https://www.gstatic.com",
-    "connect-src 'self' https: http: ws: wss: https://*.googleapis.com https://translate-pa.googleapis.com https://*.google.com https://*.gstatic.com",
-    "frame-src 'self' https://translate.google.com https://*.google.com https://*.googleapis.com",
-    "child-src 'self' https://translate.google.com https://*.google.com https://*.googleapis.com",
+    "img-src 'self' data: blob: https: http: https://www.facebook.com https://*.facebook.com res.cloudinary.com https://images.unsplash.com https://translate.google.com https://www.google.com https://*.google.com https://*.gstatic.com https://www.gstatic.com",
+    "connect-src 'self' https: http: ws: wss: https://www.facebook.com https://*.facebook.com https://connect.facebook.net https://*.googleapis.com https://translate-pa.googleapis.com https://*.google.com https://*.gstatic.com",
+    "frame-src 'self' https://www.facebook.com https://translate.google.com https://*.google.com https://*.googleapis.com",
+    "child-src 'self' https://www.facebook.com https://translate.google.com https://*.google.com https://*.googleapis.com",
     "media-src 'self' data: blob: https: res.cloudinary.com",
     "frame-ancestors 'self'"
   ];

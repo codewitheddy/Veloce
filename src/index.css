@@ -544,3 +544,55 @@ html, body {
   }
 }
 
+/* Rich Description & Specifications Table Polish */
+.prose table,
+table.rich-description-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 1.25rem;
+  margin-bottom: 1.25rem;
+}
+
+.prose thead th,
+table.rich-description-table thead th {
+  padding: 0.75rem 1rem;
+  background-color: #f8fafc;
+  font-weight: 700;
+  text-transform: uppercase;
+  font-size: 0.75rem;
+  letter-spacing: 0.05em;
+  border-bottom: 1px solid #e2e8f0;
+  color: #0f172a;
+}
+
+.dark .prose thead th,
+.dark table.rich-description-table thead th {
+  background-color: #1e293b;
+  border-bottom-color: #334155;
+  color: #f8fafc;
+}
+
+.prose tbody td,
+table.rich-description-table tbody td {
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid #f1f5f9;
+  font-size: 0.8125rem;
+  color: #334155;
+}
+
+.dark .prose tbody td,
+.dark table.rich-description-table tbody td {
+  border-bottom-color: #1e293b;
+  color: #cbd5e1;
+}
+
+.prose tbody tr:hover,
+table.rich-description-table tbody tr:hover {
+  background-color: rgba(248, 250, 252, 0.8);
+}
+
+.dark .prose tbody tr:hover,
+.dark table.rich-description-table tbody tr:hover {
+  background-color: rgba(30, 41, 59, 0.4);
+}
+

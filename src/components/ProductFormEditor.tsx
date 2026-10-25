@@ -47,6 +47,13 @@ import {
   Italic,
   Underline,
   Strikethrough,
+  AlignLeft,
+  AlignCenter,
+  AlignRight,
+  AlignJustify,
+  Ban,
+  Indent,
+  Outdent,
   Heading2,
   Heading3,
   List,
@@ -103,7 +110,7 @@ import {
 } from '../lib/cloudinary';
 import { ProductVariantManager } from './ProductVariantManager';
 import { ProductOption, OptionValueImage } from '../types';
-import { cleanDescriptionExcerpt } from '../utils/formatDescription';
+import { formatRichDescription, cleanDescriptionExcerpt } from '../utils/formatDescription';
 
 export type UserRole = 'super_admin' | 'store_manager' | 'catalog_editor';
 
@@ -736,6 +743,132 @@ export function ProductFormEditor({
   const [imageInsertLayout, setImageInsertLayout] = useState<'full' | 'split-left' | 'split-right' | 'center'>('full');
   const [showSpecPresetModal, setShowSpecPresetModal] = useState(false);
   const [specSearchTerm, setSpecSearchTerm] = useState('');
+  const [activeToolbarDropdown, setActiveToolbarDropdown] = useState<'paragraph' | 'color' | 'align' | 'table' | 'ai' | null>(null);
+  const [activeHeadingLabel, setActiveHeadingLabel] = useState<string>('Paragraph');
+  const [isHtmlCodeMode, setIsHtmlCodeMode] = useState<boolean>(false);
+
+  const handleClearFormatting = () => {
+    const textarea = descriptionTextareaRef.current;
+    if (!textarea) return;
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    const currentText = description;
+    const selectedText = currentText.substring(start, end);
+    if (!selectedText) return;
+    const cleaned = selectedText
+      .replace(/<[^>]*>/g, '')
+      .replace(/(\*\*|\*|<u>|<\/u>|~~|#+|>|`)/g, '');
+    const newText = currentText.substring(0, start) + cleaned + currentText.substring(end);
+    setDescription(newText);
+    setTimeout(() => {
+      textarea.focus();
+      textarea.setSelectionRange(start, start + cleaned.length);
+    }, 10);
+  };
+
+  const handleIndent = (direction: 'in' | 'out') => {
+    const textarea = descriptionTextareaRef.current;
+    if (!textarea) return;
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    const currentText = description;
+    const selectedText = currentText.substring(start, end) || '';
+    if (direction === 'in') {
+      insertIntoDescription('  ', '', 'indented text');
+    } else {
+      if (selectedText.startsWith('  ')) {
+        const newText = currentText.substring(0, start) + selectedText.slice(2) + currentText.substring(end);
+        setDescription(newText);
+      } else if (selectedText.startsWith('> ')) {
+        const newText = currentText.substring(0, start) + selectedText.slice(2) + currentText.substring(end);
+        setDescription(newText);
+      }
+    }
+  };
+
+  const handleInsertVideo = () => {
+    const url = window.prompt('Enter YouTube, Vimeo, or MP4 video URL:');
+    if (!url || !url.trim()) return;
+    const trimmed = url.trim();
+    let videoEmbed = '';
+    if (trimmed.includes('youtube.com/watch?v=') || trimmed.includes('youtu.be/')) {
+      const videoId = trimmed.includes('youtu.be/') ? trimmed.split('youtu.be/')[1].split('?')[0] : new URL(trimmed).searchParams.get('v');
+      videoEmbed = `\n<div class="my-6 aspect-video rounded-2xl overflow-hidden shadow-lg border border-slate-200">\n  <iframe class="w-full h-full" src="https://www.youtube.com/embed/${videoId}" title="Product Video" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>\n</div>\n`;
+    } else if (trimmed.includes('vimeo.com/')) {
+      const vimeoId = trimmed.split('vimeo.com/')[1].split('?')[0];
+      videoEmbed = `\n<div class="my-6 aspect-video rounded-2xl overflow-hidden shadow-lg border border-slate-200">\n  <iframe class="w-full h-full" src="https://player.vimeo.com/video/${vimeoId}" frameborder="0" allow="autoplay; fullscreen; picture-in-picture" allowfullscreen></iframe>\n</div>\n`;
+    } else {
+      videoEmbed = `\n<div class="my-6 aspect-video rounded-2xl overflow-hidden shadow-lg border border-slate-200">\n  <video controls class="w-full h-full object-cover">\n    <source src="${trimmed}" type="video/mp4">\n    Your browser does not support the video tag.\n  </video>\n</div>\n`;
+    }
+    insertIntoDescription(videoEmbed, '', '');
+  };
+
+  const handleAIGenerate = (type: 'overview' | 'features' | 'luxury' | 'specs') => {
+    setActiveToolbarDropdown(null);
+    const prodTitle = title.trim() || 'This premium item';
+    const prodBrand = brand.trim() || 'Ropenix Collections';
+
+    let generatedText = '';
+    if (type === 'overview') {
+      generatedText = `\n### Elevate Your Everyday Style\nDesigned with meticulous attention to detail, **${prodTitle}** embodies modern sophistication and enduring craftsmanship by ${prodBrand}. Ideal for versatile styling across both casual settings and elevated occasions.\n`;
+    } else if (type === 'features') {
+      generatedText = `\n### Key Features & Benefits\n- **Premium Construction**: Engineered from select high-grade materials for optimal durability.\n- **Precision Tailoring**: Cut for a flattering silhouette that provides ease of movement and structured drape.\n- **Signature Detailing**: Custom hardware accents and clean stitch lines reflective of ${prodBrand}'s dedication to quality.\n- **Care Instructions**: Dry clean or gentle machine wash inside out to maintain color vibrance.\n`;
+    } else if (type === 'luxury') {
+      generatedText = `\n### The Craftsmanship Story\nEvery stitch of the **${prodTitle}** tells a story of refined East African heritage meeting contemporary global aesthetics. Sourced responsibly and finished by master artisans, this piece promises both tactile luxury and a distinctive wardrobe statement.\n`;
+    } else if (type === 'specs') {
+      generatedText = `\n### Technical Specifications\n| Specification | Details |\n| :--- | :--- |\n| **Model** | ${prodTitle} |\n| **Brand / Origin** | ${prodBrand} (Nairobi, Kenya) |\n| **Material** | 100% Breathable Structured Cotton / Silk Blend |\n| **Fit Profile** | Modern Tailored Fit |\n| **Care** | Machine wash cold / Tumble dry low |\n| **Warranty** | 30-Day Authentic Merchant Guarantee |\n`;
+    }
+    insertIntoDescription(generatedText, '', '');
+  };
+
+  const handleInsertTable = (type: 'standard' | 'specs' | 'sizing') => {
+    setActiveToolbarDropdown(null);
+    let tableMd = '';
+    if (type === 'standard') {
+      tableMd = `\n| Feature | Description | Specifications |\n| :--- | :--- | :--- |\n| Primary Material | 100% Structured Twill | Durable & Breathable |\n| Hardware | YKK Antique Brass | Reinforced Construction |\n\n`;
+    } else if (type === 'specs') {
+      tableMd = `\n| Technical Attribute | Specification |\n| :--- | :--- |\n| **Material Composition** | Premium Cotton / Polyester Blend |\n| **Weight** | 320 GSM |\n| **Country of Origin** | Kenya |\n| **Closure Type** | YKK Antique Brass Zipper |\n\n`;
+    } else if (type === 'sizing') {
+      tableMd = `\n| Size | Chest (in) | Waist (in) | Length (in) |\n| :--- | :--- | :--- | :--- |\n| **S** | 36 - 38 | 30 - 32 | 27 |\n| **M** | 39 - 41 | 33 - 35 | 28 |\n| **L** | 42 - 44 | 36 - 38 | 29 |\n| **XL** | 45 - 47 | 39 - 41 | 30 |\n\n`;
+    }
+    insertIntoDescription(tableMd, '', '');
+  };
+
+  const handleFormatHeading = (prefix: string, label: string) => {
+    setActiveToolbarDropdown(null);
+    setActiveHeadingLabel(label);
+    if (!prefix) {
+      const textarea = descriptionTextareaRef.current;
+      if (!textarea) return;
+      const start = textarea.selectionStart;
+      const end = textarea.selectionEnd;
+      const currentText = description;
+      const selectedText = currentText.substring(start, end);
+      const cleaned = selectedText.replace(/^(#+\s*|> )/gm, '');
+      const newText = currentText.substring(0, start) + cleaned + currentText.substring(end);
+      setDescription(newText);
+      return;
+    }
+    insertIntoDescription(`\n${prefix}`, '\n', 'Heading text');
+  };
+
+  const handleAlignment = (align: 'left' | 'center' | 'right' | 'justify') => {
+    setActiveToolbarDropdown(null);
+    insertIntoDescription(`\n<div class="text-${align}">\n`, '\n</div>\n', 'Aligned content');
+  };
+
+  const handleColorStyle = (style: 'indigo' | 'emerald' | 'amber-callout' | 'strikethrough') => {
+    setActiveToolbarDropdown(null);
+    if (style === 'strikethrough') {
+      insertIntoDescription('~~', '~~', 'strikethrough text');
+    } else if (style === 'indigo') {
+      insertIntoDescription('<span class="text-indigo-600 font-semibold">', '</span>', 'colored text');
+    } else if (style === 'emerald') {
+      insertIntoDescription('<span class="text-emerald-600 font-semibold">', '</span>', 'accent text');
+    } else if (style === 'amber-callout') {
+      insertIntoDescription('\n<div class="p-4 bg-amber-50 border-l-4 border-amber-500 rounded-r-xl my-3 text-amber-950 font-medium">\n💡 ', '\n</div>\n', 'Important note or highlight');
+    }
+  };
 
   const insertIntoDescription = (before: string, after: string = '', defaultText: string = '') => {
     const textarea = descriptionTextareaRef.current;
@@ -991,25 +1124,7 @@ export function ProductFormEditor({
     if (!text || !text.trim()) {
       return '<p class="text-slate-400 italic text-center py-8">No description copy entered yet. Use the editor toolbar or template blocks to compose long-form product details.</p>';
     }
-    let html = text;
-    // Headings
-    html = html.replace(/^### (.*$)/gim, '<h3 class="text-base font-bold text-slate-900 dark:text-white mt-4 mb-2">$1</h3>');
-    html = html.replace(/^## (.*$)/gim, '<h2 class="text-lg font-bold text-slate-900 dark:text-white mt-5 mb-2.5 border-b border-slate-100 dark:border-slate-800 pb-1">$1</h2>');
-    html = html.replace(/^# (.*$)/gim, '<h1 class="text-xl font-extrabold text-slate-900 dark:text-white mt-6 mb-3">$1</h1>');
-    // Formatting
-    html = html.replace(/\*\*(.*?)\*\*/gim, '<strong>$1</strong>');
-    html = html.replace(/\*(.*?)\*/gim, '<em>$1</em>');
-    html = html.replace(/~~(.*?)~~/gim, '<del>$1</del>');
-    // Images
-    html = html.replace(/!\[(.*?)\]\((.*?)\)/gim, '<div class="my-4 rounded-xl overflow-hidden shadow-xs border border-slate-200"><img src="$2" alt="$1" class="w-full max-h-80 object-cover" /><p class="text-[11px] text-center text-slate-400 py-1.5 bg-slate-50">$1</p></div>');
-    // Links
-    html = html.replace(/\[(.*?)\]\((.*?)\)/gim, '<a href="$2" target="_blank" rel="noopener noreferrer" class="text-indigo-600 font-semibold underline hover:text-indigo-800">$1</a>');
-    // Blockquote
-    html = html.replace(/^\> (.*$)/gim, '<blockquote class="border-l-4 border-indigo-500 pl-4 py-2 my-3 bg-indigo-50/40 dark:bg-indigo-950/30 text-xs italic text-slate-700 dark:text-slate-300 rounded-r-lg">$1</blockquote>');
-    // Lists
-    html = html.replace(/^- (.*$)/gim, '<li class="ml-4 list-disc text-slate-700 dark:text-slate-300 my-0.5 text-xs">$1</li>');
-    html = html.replace(/^\* (.*$)/gim, '<li class="ml-4 list-disc text-slate-700 dark:text-slate-300 my-0.5 text-xs">$1</li>');
-    return html;
+    return formatRichDescription(text);
   };
   const [whatsInTheBox, setWhatsInTheBox] = useState(
     initialProduct?.whatsInTheBox || '1x Main Unit, 1x Charging/Connect Cable, 1x Quick Start Guide, 1x Warranty Card'
@@ -2746,210 +2861,495 @@ export function ProductFormEditor({
             )}
           </div>
 
-          {/* Detailed Rich Description */}
+          {/* Detailed Rich Description - Shopify Polaris Style */}
           <div className="space-y-6 pt-2">
-            {/* Header with Stats and View Mode Toggle */}
-            <div className="border-b border-slate-100 pb-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+            <div className="space-y-2">
+              {/* Header: Description Label and View Mode Switcher */}
+            <div className="flex items-center justify-between gap-3">
               <div>
-                <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
-                  <Zap className="h-5 w-5 text-indigo-600" /> Rich Description & Specifications Table
-                </h3>
-                <p className="text-xs text-slate-500 mt-0.5">
+                <label className="block text-sm font-semibold text-slate-900 dark:text-slate-100">
+                  Description
+                </label>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 hidden sm:block">
                   Format long-form copy, upload images, insert structured layout blocks, and manage technical specifications.
                 </p>
               </div>
 
               {/* View Mode Switcher */}
-              <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200 self-start sm:self-auto">
+              <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-xl border border-slate-200 dark:border-slate-700">
                 <button
                   type="button"
                   onClick={() => setDescViewMode('edit')}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
+                  className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition flex items-center gap-1.5 cursor-pointer ${
                     descViewMode === 'edit'
-                      ? 'bg-white text-indigo-700 shadow-xs'
-                      : 'text-slate-600 hover:text-slate-900'
+                      ? 'bg-white dark:bg-slate-700 text-indigo-700 dark:text-indigo-300 shadow-2xs'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
                   }`}
+                  title="Rich Editor"
                 >
                   <Edit2 className="h-3.5 w-3.5" /> Editor
                 </button>
                 <button
                   type="button"
                   onClick={() => setDescViewMode('preview')}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
+                  className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition flex items-center gap-1.5 cursor-pointer ${
                     descViewMode === 'preview'
-                      ? 'bg-white text-indigo-700 shadow-xs'
-                      : 'text-slate-600 hover:text-slate-900'
+                      ? 'bg-white dark:bg-slate-700 text-indigo-700 dark:text-indigo-300 shadow-2xs'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
                   }`}
+                  title="Live Preview"
                 >
-                  <Eye className="h-3.5 w-3.5" /> Live Preview
+                  <Eye className="h-3.5 w-3.5" /> Preview
                 </button>
                 <button
                   type="button"
                   onClick={() => setDescViewMode('split')}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
+                  className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition flex items-center gap-1.5 cursor-pointer ${
                     descViewMode === 'split'
-                      ? 'bg-white text-indigo-700 shadow-xs'
-                      : 'text-slate-600 hover:text-slate-900'
+                      ? 'bg-white dark:bg-slate-700 text-indigo-700 dark:text-indigo-300 shadow-2xs'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
                   }`}
+                  title="Split View"
                 >
-                  <Split className="h-3.5 w-3.5" /> Split View
+                  <Split className="h-3.5 w-3.5" /> Split
                 </button>
               </div>
             </div>
 
-            {/* Rich Text Toolbar */}
-            <div className="space-y-2">
-              <div className="flex flex-wrap items-center justify-between gap-2 bg-slate-100/90 p-2 rounded-t-xl border border-slate-300">
-                {/* Formatting Tools */}
-                <div className="flex flex-wrap items-center gap-1">
-                  <button
-                    type="button"
-                    onClick={() => insertIntoDescription('**', '**', 'bold text')}
-                    className="p-1.5 px-2 bg-white hover:bg-slate-50 text-slate-700 rounded border border-slate-200 text-xs font-black shadow-3xs cursor-pointer"
-                    title="Bold (**text**)"
-                  >
-                    <Bold className="h-3.5 w-3.5" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => insertIntoDescription('*', '*', 'italic text')}
-                    className="p-1.5 px-2 bg-white hover:bg-slate-50 text-slate-700 rounded border border-slate-200 text-xs italic shadow-3xs cursor-pointer"
-                    title="Italic (*text*)"
-                  >
-                    <Italic className="h-3.5 w-3.5" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => insertIntoDescription('<u>', '</u>', 'underlined text')}
-                    className="p-1.5 px-2 bg-white hover:bg-slate-50 text-slate-700 rounded border border-slate-200 text-xs underline shadow-3xs cursor-pointer"
-                    title="Underline (<u>text</u>)"
-                  >
-                    <Underline className="h-3.5 w-3.5" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => insertIntoDescription('~~', '~~', 'strikethrough text')}
-                    className="p-1.5 px-2 bg-white hover:bg-slate-50 text-slate-700 rounded border border-slate-200 text-xs line-through shadow-3xs cursor-pointer"
-                    title="Strikethrough (~~text~~)"
-                  >
-                    <Strikethrough className="h-3.5 w-3.5" />
-                  </button>
+            {/* Shopify-Styled Editor Card Container */}
+            <div className="rounded-2xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-2xs transition focus-within:border-slate-400 focus-within:ring-2 focus-within:ring-indigo-500/20">
+              {/* Shopify Polaris Top Toolbar */}
+              <div className="bg-[#f8f9fa] dark:bg-slate-800/80 border-b border-slate-200 dark:border-slate-700 px-3 py-1.5 flex items-center justify-between flex-wrap gap-y-1.5 gap-x-1 rounded-t-2xl relative select-none">
+                {/* Left Controls: Formats, Styles, Media, Lists */}
+                <div className="flex items-center flex-wrap gap-y-1 gap-x-0.5">
+                  {/* 1. ✨ Shopify Magic / AI Copy Assistant */}
+                  <div className="relative">
+                    <button
+                      type="button"
+                      onClick={() => setActiveToolbarDropdown(activeToolbarDropdown === 'ai' ? null : 'ai')}
+                      className={`p-1.5 rounded-lg transition-colors cursor-pointer text-slate-700 dark:text-slate-200 hover:bg-slate-200/70 dark:hover:bg-slate-700 flex items-center justify-center ${
+                        activeToolbarDropdown === 'ai' ? 'bg-indigo-100 text-indigo-700 dark:bg-slate-700' : ''
+                      }`}
+                      title="Shopify Magic / AI Assistant"
+                    >
+                      <Sparkles className="h-4 w-4 text-purple-600 dark:text-purple-400" />
+                    </button>
+                    {activeToolbarDropdown === 'ai' && (
+                      <>
+                        <div className="fixed inset-0 z-30" onClick={() => setActiveToolbarDropdown(null)} />
+                        <div className="absolute left-0 top-full mt-1.5 z-40 w-64 bg-white dark:bg-slate-800 rounded-xl shadow-xl border border-slate-200 dark:border-slate-700 py-1.5 animate-in fade-in zoom-in-95 duration-100">
+                          <div className="px-3 py-1 text-[10px] uppercase font-bold text-slate-400 tracking-wider">AI Copy Assistant</div>
+                          <button
+                            type="button"
+                            onClick={() => handleAIGenerate('overview')}
+                            className="w-full text-left px-3 py-2 text-xs text-slate-700 dark:text-slate-200 hover:bg-indigo-50 dark:hover:bg-slate-700/60 flex items-center gap-2 cursor-pointer"
+                          >
+                            <Sparkles className="h-3.5 w-3.5 text-purple-600" /> Elevate Everyday Style (Overview)
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleAIGenerate('features')}
+                            className="w-full text-left px-3 py-2 text-xs text-slate-700 dark:text-slate-200 hover:bg-indigo-50 dark:hover:bg-slate-700/60 flex items-center gap-2 cursor-pointer"
+                          >
+                            <Zap className="h-3.5 w-3.5 text-indigo-600" /> Key Features & Care Bullets
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleAIGenerate('luxury')}
+                            className="w-full text-left px-3 py-2 text-xs text-slate-700 dark:text-slate-200 hover:bg-indigo-50 dark:hover:bg-slate-700/60 flex items-center gap-2 cursor-pointer"
+                          >
+                            <Tag className="h-3.5 w-3.5 text-amber-600" /> Luxury Craftsmanship Story
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleAIGenerate('specs')}
+                            className="w-full text-left px-3 py-2 text-xs text-slate-700 dark:text-slate-200 hover:bg-indigo-50 dark:hover:bg-slate-700/60 flex items-center gap-2 cursor-pointer"
+                          >
+                            <Table className="h-3.5 w-3.5 text-emerald-600" /> Auto-Generated Specs Table
+                          </button>
+                        </div>
+                      </>
+                    )}
+                  </div>
 
-                  <span className="h-4 w-px bg-slate-300 mx-1"></span>
+                  {/* Divider */}
+                  <div className="h-4 w-px bg-slate-300 dark:bg-slate-600 mx-1 self-center" />
 
-                  <button
-                    type="button"
-                    onClick={() => insertIntoDescription('## ', '\n', 'Section Title')}
-                    className="px-2 py-1 bg-white hover:bg-slate-50 text-slate-800 rounded border border-slate-200 text-xs font-bold shadow-3xs cursor-pointer"
-                    title="Heading 2 (## Title)"
-                  >
-                    H2
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => insertIntoDescription('### ', '\n', 'Subheading Title')}
-                    className="px-2 py-1 bg-white hover:bg-slate-50 text-slate-800 rounded border border-slate-200 text-xs font-bold shadow-3xs cursor-pointer"
-                    title="Heading 3 (### Subheading)"
-                  >
-                    H3
-                  </button>
+                  {/* 2. Format Dropdown (Paragraph ⌄) */}
+                  <div className="relative">
+                    <button
+                      type="button"
+                      onClick={() => setActiveToolbarDropdown(activeToolbarDropdown === 'paragraph' ? null : 'paragraph')}
+                      className={`px-2 py-1.5 rounded-lg text-xs font-medium transition-colors cursor-pointer text-slate-700 dark:text-slate-200 hover:bg-slate-200/70 dark:hover:bg-slate-700 flex items-center gap-1.5 ${
+                        activeToolbarDropdown === 'paragraph' ? 'bg-slate-200 dark:bg-slate-700' : ''
+                      }`}
+                      title="Formatting Paragraph / Headings"
+                    >
+                      <span>{activeHeadingLabel}</span>
+                      <ChevronDown className="h-3 w-3 text-slate-500" />
+                    </button>
+                    {activeToolbarDropdown === 'paragraph' && (
+                      <>
+                        <div className="fixed inset-0 z-30" onClick={() => setActiveToolbarDropdown(null)} />
+                        <div className="absolute left-0 top-full mt-1.5 z-40 w-44 bg-white dark:bg-slate-800 rounded-xl shadow-xl border border-slate-200 dark:border-slate-700 py-1.5 animate-in fade-in zoom-in-95 duration-100">
+                          <button
+                            type="button"
+                            onClick={() => handleFormatHeading('', 'Paragraph')}
+                            className="w-full text-left px-3 py-1.5 text-xs text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700/60 cursor-pointer"
+                          >
+                            Paragraph
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleFormatHeading('# ', 'Heading 1')}
+                            className="w-full text-left px-3 py-1.5 text-sm font-bold text-slate-900 dark:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-700/60 cursor-pointer"
+                          >
+                            Heading 1
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleFormatHeading('## ', 'Heading 2')}
+                            className="w-full text-left px-3 py-1.5 text-xs font-bold text-slate-900 dark:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-700/60 cursor-pointer"
+                          >
+                            Heading 2
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleFormatHeading('### ', 'Heading 3')}
+                            className="w-full text-left px-3 py-1.5 text-xs font-semibold text-slate-900 dark:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-700/60 cursor-pointer"
+                          >
+                            Heading 3
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleFormatHeading('#### ', 'Heading 4')}
+                            className="w-full text-left px-3 py-1.5 text-xs font-medium text-slate-900 dark:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-700/60 cursor-pointer"
+                          >
+                            Heading 4
+                          </button>
+                          <div className="my-1 border-t border-slate-100 dark:border-slate-700" />
+                          <button
+                            type="button"
+                            onClick={() => handleFormatHeading('> ', 'Blockquote')}
+                            className="w-full text-left px-3 py-1.5 text-xs italic text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700/60 cursor-pointer"
+                          >
+                            Blockquote
+                          </button>
+                        </div>
+                      </>
+                    )}
+                  </div>
 
-                  <span className="h-4 w-px bg-slate-300 mx-1"></span>
+                  {/* Divider */}
+                  <div className="h-4 w-px bg-slate-300 dark:bg-slate-600 mx-1 self-center" />
 
+                  {/* 3. Text Styling: B, I, U, A ⌄ */}
+                  <div className="flex items-center gap-0.5">
+                    <button
+                      type="button"
+                      onClick={() => insertIntoDescription('**', '**', 'bold text')}
+                      className="w-7 h-7 rounded-md hover:bg-slate-200/70 dark:hover:bg-slate-700 flex items-center justify-center text-slate-800 dark:text-slate-200 font-serif font-black text-sm cursor-pointer transition-colors"
+                      title="Bold (Ctrl+B)"
+                    >
+                      B
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => insertIntoDescription('*', '*', 'italic text')}
+                      className="w-7 h-7 rounded-md hover:bg-slate-200/70 dark:hover:bg-slate-700 flex items-center justify-center text-slate-800 dark:text-slate-200 font-serif italic font-bold text-sm cursor-pointer transition-colors"
+                      title="Italic (Ctrl+I)"
+                    >
+                      I
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => insertIntoDescription('<u>', '</u>', 'underlined text')}
+                      className="w-7 h-7 rounded-md hover:bg-slate-200/70 dark:hover:bg-slate-700 flex items-center justify-center text-slate-800 dark:text-slate-200 font-serif underline font-bold text-sm cursor-pointer transition-colors"
+                      title="Underline (<u>text</u>)"
+                    >
+                      U
+                    </button>
+
+                    {/* Color / Highlight / Strikethrough Dropdown */}
+                    <div className="relative">
+                      <button
+                        type="button"
+                        onClick={() => setActiveToolbarDropdown(activeToolbarDropdown === 'color' ? null : 'color')}
+                        className={`px-1.5 h-7 rounded-md hover:bg-slate-200/70 dark:hover:bg-slate-700 flex items-center gap-0.5 text-slate-800 dark:text-slate-200 font-serif font-bold text-sm cursor-pointer transition-colors ${
+                          activeToolbarDropdown === 'color' ? 'bg-slate-200 dark:bg-slate-700' : ''
+                        }`}
+                        title="Text Color & Highlights"
+                      >
+                        <span className="underline decoration-indigo-600 decoration-2">A</span>
+                        <ChevronDown className="h-3 w-3 text-slate-500" />
+                      </button>
+                      {activeToolbarDropdown === 'color' && (
+                        <>
+                          <div className="fixed inset-0 z-30" onClick={() => setActiveToolbarDropdown(null)} />
+                          <div className="absolute left-0 top-full mt-1.5 z-40 w-48 bg-white dark:bg-slate-800 rounded-xl shadow-xl border border-slate-200 dark:border-slate-700 py-1.5 animate-in fade-in zoom-in-95 duration-100">
+                            <button
+                              type="button"
+                              onClick={() => handleColorStyle('indigo')}
+                              className="w-full text-left px-3 py-1.5 text-xs text-indigo-600 font-semibold hover:bg-indigo-50 dark:hover:bg-slate-700/60 flex items-center gap-2 cursor-pointer"
+                            >
+                              <span className="w-3 h-3 rounded-full bg-indigo-600" /> Indigo Highlight
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleColorStyle('emerald')}
+                              className="w-full text-left px-3 py-1.5 text-xs text-emerald-600 font-semibold hover:bg-emerald-50 dark:hover:bg-slate-700/60 flex items-center gap-2 cursor-pointer"
+                            >
+                              <span className="w-3 h-3 rounded-full bg-emerald-600" /> Emerald Highlight
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleColorStyle('amber-callout')}
+                              className="w-full text-left px-3 py-1.5 text-xs text-amber-700 font-medium hover:bg-amber-50 dark:hover:bg-slate-700/60 flex items-center gap-2 cursor-pointer"
+                            >
+                              <span className="w-3 h-3 rounded-full bg-amber-500" /> Callout Alert Box
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleColorStyle('strikethrough')}
+                              className="w-full text-left px-3 py-1.5 text-xs text-slate-600 line-through hover:bg-slate-100 dark:hover:bg-slate-700/60 flex items-center gap-2 cursor-pointer"
+                            >
+                              <span className="w-3 h-3 rounded-full bg-slate-400" /> Strikethrough
+                            </button>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Divider */}
+                  <div className="h-4 w-px bg-slate-300 dark:bg-slate-600 mx-1 self-center" />
+
+                  {/* 4. Text Alignment: ≡ ⌄ */}
+                  <div className="relative">
+                    <button
+                      type="button"
+                      onClick={() => setActiveToolbarDropdown(activeToolbarDropdown === 'align' ? null : 'align')}
+                      className={`px-1.5 h-7 rounded-md hover:bg-slate-200/70 dark:hover:bg-slate-700 flex items-center gap-0.5 text-slate-700 dark:text-slate-300 cursor-pointer transition-colors ${
+                        activeToolbarDropdown === 'align' ? 'bg-slate-200 dark:bg-slate-700' : ''
+                      }`}
+                      title="Text Alignment"
+                    >
+                      <AlignLeft className="h-4 w-4" />
+                      <ChevronDown className="h-3 w-3 text-slate-500" />
+                    </button>
+                    {activeToolbarDropdown === 'align' && (
+                      <>
+                        <div className="fixed inset-0 z-30" onClick={() => setActiveToolbarDropdown(null)} />
+                        <div className="absolute left-0 top-full mt-1.5 z-40 w-36 bg-white dark:bg-slate-800 rounded-xl shadow-xl border border-slate-200 dark:border-slate-700 py-1.5 animate-in fade-in zoom-in-95 duration-100">
+                          <button
+                            type="button"
+                            onClick={() => handleAlignment('left')}
+                            className="w-full text-left px-3 py-1.5 text-xs text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700/60 flex items-center gap-2 cursor-pointer"
+                          >
+                            <AlignLeft className="h-3.5 w-3.5" /> Left
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleAlignment('center')}
+                            className="w-full text-left px-3 py-1.5 text-xs text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700/60 flex items-center gap-2 cursor-pointer"
+                          >
+                            <AlignCenter className="h-3.5 w-3.5" /> Center
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleAlignment('right')}
+                            className="w-full text-left px-3 py-1.5 text-xs text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700/60 flex items-center gap-2 cursor-pointer"
+                          >
+                            <AlignRight className="h-3.5 w-3.5" /> Right
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleAlignment('justify')}
+                            className="w-full text-left px-3 py-1.5 text-xs text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700/60 flex items-center gap-2 cursor-pointer"
+                          >
+                            <AlignJustify className="h-3.5 w-3.5" /> Justify
+                          </button>
+                        </div>
+                      </>
+                    )}
+                  </div>
+
+                  {/* Divider */}
+                  <div className="h-4 w-px bg-slate-300 dark:bg-slate-600 mx-1 self-center" />
+
+                  {/* 5. Media & Tables: Link, Image, Video, Table ⌄ */}
+                  <div className="flex items-center gap-0.5">
+                    <button
+                      type="button"
+                      onClick={() => setShowLinkModal(true)}
+                      className="w-7 h-7 rounded-md hover:bg-slate-200/70 dark:hover:bg-slate-700 flex items-center justify-center text-slate-700 dark:text-slate-300 cursor-pointer transition-colors"
+                      title="Insert Hyperlink"
+                    >
+                      <LinkIcon className="h-4 w-4" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setShowImageInsertModal(true)}
+                      className="w-7 h-7 rounded-md hover:bg-slate-200/70 dark:hover:bg-slate-700 flex items-center justify-center text-slate-700 dark:text-slate-300 cursor-pointer transition-colors"
+                      title="Insert Image (Upload or Gallery)"
+                    >
+                      <ImageIcon className="h-4 w-4" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleInsertVideo}
+                      className="w-7 h-7 rounded-md hover:bg-slate-200/70 dark:hover:bg-slate-700 flex items-center justify-center text-slate-700 dark:text-slate-300 cursor-pointer transition-colors"
+                      title="Insert Video (YouTube, Vimeo, MP4)"
+                    >
+                      <div className="w-4 h-4 rounded-full border border-slate-700 dark:border-slate-300 flex items-center justify-center">
+                        <Play className="h-2 w-2 fill-current ml-0.5" />
+                      </div>
+                    </button>
+
+                    {/* Table Dropdown */}
+                    <div className="relative">
+                      <button
+                        type="button"
+                        onClick={() => setActiveToolbarDropdown(activeToolbarDropdown === 'table' ? null : 'table')}
+                        className={`px-1.5 h-7 rounded-md hover:bg-slate-200/70 dark:hover:bg-slate-700 flex items-center gap-0.5 text-slate-700 dark:text-slate-300 cursor-pointer transition-colors ${
+                          activeToolbarDropdown === 'table' ? 'bg-slate-200 dark:bg-slate-700' : ''
+                        }`}
+                        title="Insert Structured Table"
+                      >
+                        <Table className="h-4 w-4" />
+                        <ChevronDown className="h-3 w-3 text-slate-500" />
+                      </button>
+                      {activeToolbarDropdown === 'table' && (
+                        <>
+                          <div className="fixed inset-0 z-30" onClick={() => setActiveToolbarDropdown(null)} />
+                          <div className="absolute left-0 top-full mt-1.5 z-40 w-52 bg-white dark:bg-slate-800 rounded-xl shadow-xl border border-slate-200 dark:border-slate-700 py-1.5 animate-in fade-in zoom-in-95 duration-100">
+                            <button
+                              type="button"
+                              onClick={() => handleInsertTable('standard')}
+                              className="w-full text-left px-3 py-2 text-xs text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700/60 flex items-center gap-2 cursor-pointer"
+                            >
+                              <Table className="h-3.5 w-3.5 text-indigo-600" /> Standard 3x2 Table
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleInsertTable('specs')}
+                              className="w-full text-left px-3 py-2 text-xs text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700/60 flex items-center gap-2 cursor-pointer"
+                            >
+                              <FileSpreadsheet className="h-3.5 w-3.5 text-emerald-600" /> Technical Specs Table
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleInsertTable('sizing')}
+                              className="w-full text-left px-3 py-2 text-xs text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700/60 flex items-center gap-2 cursor-pointer"
+                            >
+                              <Columns className="h-3.5 w-3.5 text-amber-600" /> Sizing & Fit Chart
+                            </button>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Divider */}
+                  <div className="h-4 w-px bg-slate-300 dark:bg-slate-600 mx-1 self-center" />
+
+                  {/* 6. Lists & Indentation: Bullet, Numbered, Outdent, Indent */}
+                  <div className="flex items-center gap-0.5">
+                    <button
+                      type="button"
+                      onClick={() => insertIntoDescription('- ', '\n', 'Bullet item')}
+                      className="w-7 h-7 rounded-md hover:bg-slate-200/70 dark:hover:bg-slate-700 flex items-center justify-center text-slate-700 dark:text-slate-300 cursor-pointer transition-colors"
+                      title="Bulleted List"
+                    >
+                      <List className="h-4 w-4" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => insertIntoDescription('1. ', '\n', 'Numbered step')}
+                      className="w-7 h-7 rounded-md hover:bg-slate-200/70 dark:hover:bg-slate-700 flex items-center justify-center text-slate-700 dark:text-slate-300 cursor-pointer transition-colors"
+                      title="Numbered List"
+                    >
+                      <ListOrdered className="h-4 w-4" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleIndent('out')}
+                      className="w-7 h-7 rounded-md hover:bg-slate-200/70 dark:hover:bg-slate-700 flex items-center justify-center text-slate-700 dark:text-slate-300 cursor-pointer transition-colors"
+                      title="Decrease Indent"
+                    >
+                      <Outdent className="h-4 w-4" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleIndent('in')}
+                      className="w-7 h-7 rounded-md hover:bg-slate-200/70 dark:hover:bg-slate-700 flex items-center justify-center text-slate-700 dark:text-slate-300 cursor-pointer transition-colors"
+                      title="Increase Indent"
+                    >
+                      <Indent className="h-4 w-4" />
+                    </button>
+                  </div>
+
+                  {/* Divider */}
+                  <div className="h-4 w-px bg-slate-300 dark:bg-slate-600 mx-1 self-center" />
+
+                  {/* 7. Clear Formatting (⃠) */}
                   <button
                     type="button"
-                    onClick={() => insertIntoDescription('- ', '\n', 'Bullet point item')}
-                    className="p-1.5 px-2 bg-white hover:bg-slate-50 text-slate-700 rounded border border-slate-200 text-xs shadow-3xs cursor-pointer flex items-center gap-1"
-                    title="Bulleted List"
+                    onClick={handleClearFormatting}
+                    className="w-7 h-7 rounded-md hover:bg-slate-200/70 dark:hover:bg-slate-700 flex items-center justify-center text-slate-700 dark:text-slate-300 cursor-pointer transition-colors"
+                    title="Clear Formatting"
                   >
-                    <List className="h-3.5 w-3.5" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => insertIntoDescription('1. ', '\n', 'Numbered list step')}
-                    className="p-1.5 px-2 bg-white hover:bg-slate-50 text-slate-700 rounded border border-slate-200 text-xs shadow-3xs cursor-pointer flex items-center gap-1"
-                    title="Numbered List"
-                  >
-                    <ListOrdered className="h-3.5 w-3.5" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => insertIntoDescription('> ', '\n', 'Key insight or customer testimonial quote')}
-                    className="p-1.5 px-2 bg-white hover:bg-slate-50 text-slate-700 rounded border border-slate-200 text-xs shadow-3xs cursor-pointer flex items-center gap-1"
-                    title="Blockquote (> Quote)"
-                  >
-                    <Quote className="h-3.5 w-3.5" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => insertIntoDescription('\n<div class="p-4 bg-indigo-50 border-l-4 border-indigo-600 rounded-r-xl my-3"><p class="text-xs font-semibold text-indigo-950">💡 Highlight: ', '</p></div>\n', 'Important product characteristic or special advisory.')}
-                    className="px-2 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-800 rounded border border-indigo-200 text-xs font-bold shadow-3xs cursor-pointer flex items-center gap-1"
-                    title="Insert Highlight Callout Box"
-                  >
-                    <Sparkles className="h-3.5 w-3.5 text-indigo-600" /> Callout
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => insertIntoDescription('\n| Feature | Specification |\n| :--- | :--- |\n| Material | Aerospace Aluminum |\n| Weight | 185g |\n\n', '', '')}
-                    className="p-1.5 px-2 bg-white hover:bg-slate-50 text-slate-700 rounded border border-slate-200 text-xs shadow-3xs cursor-pointer flex items-center gap-1"
-                    title="Insert Markdown Table"
-                  >
-                    <Table className="h-3.5 w-3.5" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setShowLinkModal(true)}
-                    className="p-1.5 px-2 bg-white hover:bg-slate-50 text-slate-700 rounded border border-slate-200 text-xs shadow-3xs cursor-pointer flex items-center gap-1"
-                    title="Insert Hyperlink"
-                  >
-                    <LinkIcon className="h-3.5 w-3.5" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => insertIntoDescription('\n---\n\n', '', '')}
-                    className="px-2 py-1 bg-white hover:bg-slate-50 text-slate-700 rounded border border-slate-200 text-xs font-mono shadow-3xs cursor-pointer"
-                    title="Insert Horizontal Divider (---)"
-                  >
-                    ⎯ Line
+                    <Ban className="h-4 w-4 text-slate-700 dark:text-slate-300" />
                   </button>
                 </div>
 
-                {/* Media & Template Inserters */}
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setShowImageInsertModal(true)}
-                    className="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-lg transition shadow-xs flex items-center gap-1.5 cursor-pointer"
-                  >
-                    <ImagePlus className="h-3.5 w-3.5" /> Upload / Insert Image
-                  </button>
+                {/* Right Controls: Design Blocks & HTML Code Toggle (</>) */}
+                <div className="flex items-center gap-1.5 ml-auto">
                   <button
                     type="button"
                     onClick={() => setShowLayoutTemplateModal(true)}
-                    className="px-2.5 py-1 bg-slate-800 hover:bg-slate-900 text-white font-bold text-xs rounded-lg transition shadow-xs flex items-center gap-1.5 cursor-pointer"
+                    className="px-2.5 py-1 text-xs font-semibold text-slate-700 dark:text-slate-300 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 hover:bg-slate-50 rounded-lg flex items-center gap-1.5 cursor-pointer shadow-3xs"
+                    title="Insert Pre-styled Design Blocks"
                   >
-                    <LayoutTemplate className="h-3.5 w-3.5" /> Design Blocks
+                    <LayoutTemplate className="h-3.5 w-3.5 text-indigo-600 dark:text-indigo-400" />
+                    <span className="hidden sm:inline">Blocks</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setIsHtmlCodeMode(!isHtmlCodeMode)}
+                    className={`p-1.5 rounded-lg text-xs transition cursor-pointer flex items-center gap-1 ${
+                      isHtmlCodeMode
+                        ? 'bg-slate-900 text-white dark:bg-indigo-600'
+                        : 'text-slate-700 dark:text-slate-300 hover:bg-slate-200/70 dark:hover:bg-slate-700'
+                    }`}
+                    title="Show HTML / Markdown Code (</>)"
+                  >
+                    <Code className="h-4 w-4" />
                   </button>
                 </div>
               </div>
 
-              {/* Editor / Live Preview Display Area */}
+              {/* Editor / Live Preview Canvas */}
               {descViewMode === 'edit' && (
-                <div>
+                <div className="relative">
                   <textarea
                     ref={descriptionTextareaRef}
                     rows={12}
                     value={description}
                     onChange={(e) => setDescription(e.target.value)}
-                    placeholder="Full technical overview, manufacturing origin, craftsmanship story, feature highlights, and warranty details..."
-                    className="w-full p-4 rounded-b-xl border-x border-b border-slate-300 text-xs font-mono leading-relaxed focus:ring-2 focus:ring-indigo-500 bg-white"
+                    placeholder="Enter product description, key highlights, materials, and care instructions..."
+                    className={`w-full p-4 rounded-b-2xl border-0 focus:ring-0 focus:outline-hidden min-h-[260px] resize-y ${
+                      isHtmlCodeMode
+                        ? 'bg-slate-950 text-slate-100 font-mono text-xs leading-relaxed'
+                        : 'bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 text-sm leading-relaxed'
+                    }`}
                   />
                 </div>
               )}
 
               {descViewMode === 'preview' && (
-                <div className="p-6 rounded-b-xl border-x border-b border-slate-300 bg-white min-h-[300px]">
-                  <div className="prose prose-sm max-w-none prose-slate">
+                <div className="p-6 rounded-b-2xl bg-white dark:bg-slate-900 min-h-[260px]">
+                  <div className="prose prose-sm max-w-none dark:prose-invert">
                     <div
                       dangerouslySetInnerHTML={{
                         __html: DOMPurify.sanitize(renderDescriptionPreview(description))
@@ -2960,23 +3360,23 @@ export function ProductFormEditor({
               )}
 
               {descViewMode === 'split' && (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-0 border-x border-b border-slate-300 rounded-b-xl overflow-hidden">
-                  <div className="border-r border-slate-200">
+                <div className="grid grid-cols-1 md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-slate-200 dark:divide-slate-800 rounded-b-2xl overflow-hidden bg-white dark:bg-slate-900">
+                  <div className="relative">
                     <textarea
                       ref={descriptionTextareaRef}
                       rows={12}
                       value={description}
                       onChange={(e) => setDescription(e.target.value)}
                       placeholder="Type markdown or HTML copy here..."
-                      className="w-full h-full p-4 text-xs font-mono leading-relaxed focus:outline-hidden focus:ring-1 focus:ring-indigo-500 bg-slate-50/30 resize-none"
+                      className="w-full h-full p-4 text-xs font-mono leading-relaxed border-0 focus:ring-0 focus:outline-hidden bg-slate-50/50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 resize-none min-h-[300px]"
                     />
                   </div>
-                  <div className="p-5 bg-white overflow-y-auto max-h-[360px]">
-                    <div className="text-[10px] uppercase font-mono font-bold text-slate-400 mb-2 border-b border-slate-100 pb-1 flex items-center gap-1">
+                  <div className="p-5 overflow-y-auto max-h-[380px] bg-white dark:bg-slate-900">
+                    <div className="text-[10px] uppercase font-mono font-bold text-slate-400 mb-2 border-b border-slate-100 dark:border-slate-800 pb-1 flex items-center gap-1">
                       <Eye className="h-3 w-3" /> Live Customer Presentation Preview
                     </div>
                     <div
-                      className="prose prose-xs max-w-none text-slate-700"
+                      className="prose prose-xs max-w-none text-slate-700 dark:text-slate-300 dark:prose-invert"
                       dangerouslySetInnerHTML={{
                         __html: DOMPurify.sanitize(renderDescriptionPreview(description))
                       }}
@@ -2984,27 +3384,28 @@ export function ProductFormEditor({
                   </div>
                 </div>
               )}
+            </div>
 
-              {/* Description Stats Bar */}
-              <div className="flex flex-wrap items-center justify-between text-[11px] font-mono text-slate-500 px-1 pt-1">
-                <div className="flex items-center gap-4">
-                  <span>
-                    <strong>{description.trim() ? description.trim().split(/\s+/).length : 0}</strong> Words
-                  </span>
-                  <span>
-                    <strong>{description.length}</strong> Characters
-                  </span>
-                  <span>
-                    <strong>~{Math.max(1, Math.ceil((description.trim() ? description.trim().split(/\s+/).length : 0) / 200))} min</strong> Read Time
-                  </span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="text-emerald-600 font-bold flex items-center gap-1">
-                    <CheckCircle2 className="h-3 w-3" /> Markdown & HTML Enabled
-                  </span>
-                </div>
+            {/* Description Stats Bar */}
+            <div className="flex flex-wrap items-center justify-between text-[11px] font-mono text-slate-500 dark:text-slate-400 px-1 pt-0.5">
+              <div className="flex items-center gap-4">
+                <span>
+                  <strong>{description.trim() ? description.trim().split(/\s+/).length : 0}</strong> Words
+                </span>
+                <span>
+                  <strong>{description.length}</strong> Characters
+                </span>
+                <span>
+                  <strong>~{Math.max(1, Math.ceil((description.trim() ? description.trim().split(/\s+/).length : 0) / 200))} min</strong> Read Time
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-emerald-600 dark:text-emerald-400 font-bold flex items-center gap-1">
+                  <CheckCircle2 className="h-3 w-3" /> Shopify Rich Text & Markdown Active
+                </span>
               </div>
             </div>
+          </div>
 
             {/* Technical Specs Key-Value Table */}
             <div className="mt-8 pt-6 border-t border-slate-200">
