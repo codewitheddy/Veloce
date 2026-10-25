@@ -347,19 +347,24 @@ export interface Order {
   payment_confirmed_at?: string;
   paymentAmount?: number;
   payment_amount?: number;
+  mpesaReceiptNumber?: string;
+  canCancel?: boolean;
   refundClaim?: RefundClaim | null;
   review_request_sent_at?: string | null;
   review_request_status?: 'pending_delay' | 'sent' | 'opted_out' | 'already_reviewed' | 'cancelled';
 }
 
 export type OrderLifecycleStatus =
+  | 'pending'
   | 'order_received'
+  | 'confirmed'
   | 'payment_confirmed'
   | 'processing'
   | 'shipped'
   | 'payment_received'
   | 'completed'
-  | 'cancelled';
+  | 'cancelled'
+  | 'refunded';
 
 export interface RefundClaim {
   id: string;
@@ -367,11 +372,18 @@ export interface RefundClaim {
   amount: number;
   reason: string;
   payment_reference?: string;
-  status: 'refund_requested' | 'refund_approved' | 'refund_paid' | 'refund_rejected';
+  paymentReference?: string;
+  status: 'refund_requested' | 'refund_approved' | 'refund_paid' | 'refund_rejected' | string;
   customer_name?: string;
+  customerName?: string;
   customer_email?: string;
+  customerEmail?: string;
   customer_phone?: string;
+  customerPhone?: string;
   refund_payment_reference?: string;
+  refundPaymentReference?: string;
+  payout_reference?: string;
+  payoutReference?: string;
   approved_by?: string;
   approved_at?: string;
   refunded_by?: string;
@@ -379,6 +391,9 @@ export interface RefundClaim {
   rejected_by?: string;
   rejected_at?: string;
   rejection_reason?: string;
+  rejectionReason?: string;
+  adminNotes?: string;
+  admin_notes?: string;
   created_at: string;
   updated_at: string;
 }

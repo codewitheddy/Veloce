@@ -32,9 +32,9 @@ export const mapBackendOrderToFrontend = (ord: any): Order => {
   const paymentMethod: 'cod' | 'mpesa' = (rawMethod === 'cod' || rawMethod.includes('cash') || rawMethod.includes('delivery')) ? 'cod' : 'mpesa';
 
   // Normalize status
-  let status = String(ord.status || 'order_received').toLowerCase();
-  if (status === 'pending') {
-    status = 'order_received';
+  let status = String(ord.status || 'pending').toLowerCase();
+  if (status === 'order_received') {
+    status = 'pending';
   } else if (status === 'delivered') {
     status = paymentMethod === 'cod' ? 'payment_received' : 'shipped';
   }
@@ -159,7 +159,7 @@ export const ordersApi = {
       shipping_fee: orderData.shippingFee || 0,
       tax_amount: orderData.tax || 0,
       total: orderData.total,
-      status: 'order_received',
+      status: orderData.status || 'pending',
       payment_method: orderData.paymentMethod === 'cod' ? 'Cash on Delivery' : 'M-PESA',
       shipping_address: orderData.shippingAddress || '',
       affiliate_code: orderData.couponCode || '',
@@ -176,6 +176,15 @@ export const ordersApi = {
 
     const response = await api.post('/orders/', payload);
     return mapBackendOrderToFrontend(response.data);
+  },
+
+  /**
+   * Confirms order reception & details (moves pending -> confirmed)
+   */
+  confirmOrder: async (orderId: string, notes?: string): Promise<{ order: Order; refundClaim?: any }> => {
+    return ordersApi.transitionOrderStatus(orderId, 'confirmed', {
+      notes: notes || 'Order confirmed by administrator',
+    });
   },
 
   /**

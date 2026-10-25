@@ -14,10 +14,12 @@ import { renderBaseEmailLayout, renderEmailButton, escapeHtml } from '../email/t
 import { buildTrackUrl, formatKES, formatEATDate } from '../email/urlHelper';
 
 // Strict M-Pesa Prepaid Lifecycle:
-// order_received -> payment_confirmed -> processing -> shipped -> completed
+// pending / order_received -> confirmed -> payment_confirmed -> processing -> shipped -> completed
 export const MPESA_TRANSITION_MAP: Record<string, string[]> = {
-  order_received: ['payment_confirmed', 'cancelled'],
-  payment_confirmed: ['processing', 'cancelled'],
+  pending: ['confirmed', 'payment_confirmed', 'processing', 'cancelled'],
+  order_received: ['confirmed', 'payment_confirmed', 'processing', 'cancelled'],
+  confirmed: ['payment_confirmed', 'processing', 'cancelled'],
+  payment_confirmed: ['confirmed', 'processing', 'cancelled'],
   processing: ['shipped', 'cancelled'],
   shipped: ['completed', 'cancelled'],
   completed: [], // Terminal
@@ -25,11 +27,13 @@ export const MPESA_TRANSITION_MAP: Record<string, string[]> = {
 };
 
 // Strict Cash on Delivery Lifecycle:
-// order_received -> processing -> shipped -> payment_received -> completed
+// pending / order_received -> confirmed -> processing -> shipped -> payment_received -> completed
 export const COD_TRANSITION_MAP: Record<string, string[]> = {
-  order_received: ['processing', 'cancelled'],
+  pending: ['confirmed', 'processing', 'cancelled'],
+  order_received: ['confirmed', 'processing', 'cancelled'],
+  confirmed: ['processing', 'cancelled'],
   processing: ['shipped', 'cancelled'],
-  shipped: ['payment_received', 'cancelled'],
+  shipped: ['payment_received', 'completed', 'cancelled'],
   payment_received: ['completed', 'cancelled'],
   completed: [], // Terminal
   cancelled: [], // Terminal
@@ -51,8 +55,8 @@ export function normalizePaymentMethod(method?: string): 'mpesa' | 'cod' {
  */
 export function normalizeOrderStatus(status: string | undefined, paymentMethod: 'mpesa' | 'cod'): string {
   const s = (status || '').toLowerCase().trim();
-  if (!s || s === 'pending' || s === 'awaiting_delivery_quote' || s === 'delivery_quoted') {
-    return 'order_received';
+  if (!s || s === 'awaiting_delivery_quote' || s === 'delivery_quoted') {
+    return 'pending';
   }
   if (s === 'delivered') {
     return paymentMethod === 'cod' ? 'payment_received' : 'shipped';
@@ -173,14 +177,21 @@ export function validateWorkflowTransition(
         };
       }
     }
-    if (toStatus === 'processing' && fromStatus === 'order_received') {
-      return {
-        valid: false,
-        error: `M-Pesa payment must be confirmed before order #${order.id} can move to processing.`,
-        fromStatus,
-        toStatus,
-        paymentMethod,
-      };
+    if (toStatus === 'processing' && (fromStatus === 'order_received' || fromStatus === 'pending')) {
+      const isPaid = Boolean(
+        order.isPaid ||
+        order.paymentStatus === 'paid' ||
+        (order.paymentReference && !order.paymentReference.toUpperCase().includes('PENDING') && !order.paymentReference.toUpperCase().includes('UNPAID'))
+      );
+      if (!isPaid) {
+        return {
+          valid: false,
+          error: `M-Pesa payment must be verified or order confirmed before order #${order.id} can move to processing.`,
+          fromStatus,
+          toStatus,
+          paymentMethod,
+        };
+      }
     }
   } else if (paymentMethod === 'cod') {
     if (toStatus === 'payment_received') {
@@ -275,7 +286,12 @@ export async function executeOrderTransition(
     const updateVals: any[] = [toStatus, nowIso];
 
     // Status-specific state updates
-    if (toStatus === 'payment_confirmed') {
+    if (toStatus === 'confirmed') {
+      if (options?.transactionCode) {
+        updateSets.push('paymentReference = ?');
+        updateVals.push(options.transactionCode.trim().toUpperCase());
+      }
+    } else if (toStatus === 'payment_confirmed') {
       const txCode = (options?.transactionCode || currentOrder.paymentReference || 'MANUAL-ADMIN').trim().toUpperCase();
       const phone = options?.phone || currentOrder.mpesaPhone || currentOrder.customerPhone || '';
       const amount = options?.amount !== undefined ? Number(options.amount) : Number(currentOrder.total);
@@ -361,11 +377,14 @@ export async function executeOrderTransition(
 
       // CONDITIONAL REFUND CLAIM CREATION:
       // If the order was already paid (M-Pesa after payment_confirmed, or COD after payment_received)
+      const rawRef = String(currentOrder.paymentReference || currentOrder.mpesaReceiptNumber || '').trim();
+      const hasValidRef = rawRef !== '' && !rawRef.toUpperCase().includes('PENDING') && !rawRef.toUpperCase().includes('UNPAID');
       const isPaidOrder = Boolean(
         currentOrder.isPaid === 1 ||
         currentOrder.paymentStatus === 'paid' ||
+        hasValidRef ||
         fromStatus === 'payment_confirmed' ||
-        (paymentMethod === 'mpesa' && ['processing', 'shipped'].includes(fromStatus)) ||
+        (paymentMethod === 'mpesa' && ['confirmed', 'processing', 'shipped'].includes(fromStatus) && (currentOrder.isPaid || currentOrder.paymentStatus === 'paid' || hasValidRef)) ||
         fromStatus === 'payment_received'
       );
 
@@ -420,7 +439,9 @@ export async function executeOrderTransition(
     // 3. Log status change in order_status_history
     const historyId = `osh-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
     const historyNote = options?.note || (
-      toStatus === 'payment_confirmed'
+      toStatus === 'confirmed'
+        ? `Order confirmed by ${changedBy}. Ready for payment verification & processing.`
+        : toStatus === 'payment_confirmed'
         ? `M-Pesa payment confirmed. Ref: ${options?.transactionCode || currentOrder.paymentReference}`
         : toStatus === 'payment_received'
         ? `Cash collected by ${options?.collectedBy || changedBy}. Amount: KES ${options?.amount || currentOrder.total}`
@@ -533,8 +554,8 @@ export async function customerCancelOrder(
   const paymentMethod = normalizePaymentMethod(order.paymentMethod);
   const currentStatus = normalizeOrderStatus(order.status, paymentMethod);
 
-  // Hard Rule: Storefront cancellation allowed only when order_received or processing
-  if (currentStatus !== 'order_received' && currentStatus !== 'processing' && currentStatus !== 'payment_confirmed') {
+  // Hard Rule: Storefront cancellation allowed only when pending, order_received, confirmed, or processing
+  if (currentStatus !== 'order_received' && currentStatus !== 'pending' && currentStatus !== 'confirmed' && currentStatus !== 'processing' && currentStatus !== 'payment_confirmed') {
     return {
       success: false,
       error: `Cancellation not allowed: Order #${orderId} is currently '${currentStatus}'. Orders that are already shipped or completed cannot be cancelled directly.`,
@@ -644,7 +665,12 @@ async function sendWorkflowStatusEmail(
   let badgeColor: 'indigo' | 'emerald' | 'amber' | 'rose' = 'indigo';
   let message = `Your order status has been updated to <strong>${escapeHtml(status.replace(/_/g, ' '))}</strong>.`;
 
-  if (status === 'payment_confirmed') {
+  if (status === 'confirmed') {
+    badgeColor = 'indigo';
+    subject = `Order Confirmed: #${shortId} has been Confirmed`;
+    heading = 'Order Confirmed';
+    message = `Thank you! Your order <strong>#${escapeHtml(shortId)}</strong> has been confirmed by our team. We are checking details and preparing it for fulfillment.`;
+  } else if (status === 'payment_confirmed') {
     badgeColor = 'emerald';
     subject = `Payment Confirmed: Order #${shortId} is Verified!`;
     heading = 'Payment Verified & Confirmed';

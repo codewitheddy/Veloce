@@ -138,7 +138,7 @@ router.get('/track/:orderId', trackingRateLimiter, async (req: Request, res: Res
       ];
     }
 
-    const canCancel = normalizedStatus === 'order_received' || normalizedStatus === 'processing' || normalizedStatus === 'payment_confirmed';
+    const canCancel = normalizedStatus === 'order_received' || normalizedStatus === 'pending' || normalizedStatus === 'confirmed' || normalizedStatus === 'processing' || normalizedStatus === 'payment_confirmed';
 
     return res.json({
       success: true,

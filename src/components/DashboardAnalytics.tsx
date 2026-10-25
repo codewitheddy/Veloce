@@ -659,14 +659,16 @@ export default function DashboardAnalytics({
   };
 
   const isOrderPaid = (ord: Order) => {
-    return Boolean(ord.isPaid || ord.paymentStatus === 'paid');
+    const rawRef = String(ord.paymentReference || '').trim();
+    const hasValidRef = rawRef !== '' && !rawRef.toUpperCase().includes('PENDING') && !rawRef.toUpperCase().includes('UNPAID');
+    return Boolean(ord.isPaid || ord.paymentStatus === 'paid' || hasValidRef);
   };
 
   // Strict Order Workflow Dialog State & Handlers
   const [workflowDialog, setWorkflowDialog] = useState<{
     isOpen: boolean;
     order: Order | null;
-    actionType: 'confirm-payment' | 'start-processing' | 'mark-shipped' | 'payment-received' | 'confirm-delivery' | 'mark-completed' | 'cancel' | 'view-timeline' | 'quote-delivery' | 'refund-claim' | null;
+    actionType: 'confirm-order' | 'confirm-payment' | 'start-processing' | 'mark-shipped' | 'payment-received' | 'confirm-delivery' | 'mark-completed' | 'cancel' | 'view-timeline' | 'quote-delivery' | 'refund-claim' | null;
     trackingNumber: string;
     courierName: string;
     deliveryPerson: string;
@@ -703,7 +705,7 @@ export default function DashboardAnalytics({
     error: null,
   });
 
-  const openWorkflowDialog = (order: Order, actionType: 'confirm-payment' | 'start-processing' | 'mark-shipped' | 'payment-received' | 'confirm-delivery' | 'mark-completed' | 'cancel' | 'view-timeline' | 'quote-delivery' | 'refund-claim') => {
+  const openWorkflowDialog = (order: Order, actionType: 'confirm-order' | 'confirm-payment' | 'start-processing' | 'mark-shipped' | 'payment-received' | 'confirm-delivery' | 'mark-completed' | 'cancel' | 'view-timeline' | 'quote-delivery' | 'refund-claim') => {
     const defaultCourier = order.preferredCourier && order.preferredCourier !== 'any' ? order.preferredCourier : 'uber';
     const rawRef = order.paymentReference || '';
     const initialTx = rawRef && !rawRef.includes('PENDING') && !rawRef.includes('UNPAID') ? rawRef : '';
@@ -755,7 +757,12 @@ export default function DashboardAnalytics({
       let updated: Order;
       let claimUpdated: any = null;
 
-      if (action === 'quote-delivery') {
+      if (action === 'confirm-order') {
+        const res = await ordersApi.transitionOrderStatus(ord.id, 'confirmed', {
+          notes: workflowDialog.notes || 'Order confirmed by administrator',
+        });
+        updated = res.order;
+      } else if (action === 'quote-delivery') {
         const fee = parseFloat(workflowDialog.deliveryFeeInput) || 0;
         const courier = workflowDialog.quotedCourier || 'uber';
         const sub = ord.subtotal ?? (ord.total - (ord.shippingFee || 0));
@@ -859,8 +866,8 @@ export default function DashboardAnalytics({
       }
 
       setLiveDbOrders(prev => {
-        if (!prev) return null;
-        return prev.map(o => o.id === ord.id ? {
+        const base = prev || orders;
+        const newOrders = base.map(o => o.id === ord.id ? {
           ...o,
           ...updated,
           status: updated.status,
@@ -869,7 +876,32 @@ export default function DashboardAnalytics({
           paymentStatus: updated.status === 'completed' || updated.status === 'payment_confirmed' || updated.status === 'payment_received' ? 'paid' : (updated.paymentStatus || o.paymentStatus),
           isPaid: updated.status === 'completed' || updated.status === 'payment_confirmed' || updated.status === 'payment_received' ? true : (updated.isPaid || o.isPaid),
         } : o);
+        if (onOrdersUpdated) {
+          onOrdersUpdated(newOrders);
+        }
+        return newOrders;
       });
+
+      // Synchronize in browser localStorage & dispatch real-time update event
+      try {
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('veloce_orders_updated', {
+            detail: { orderId: ord.id, status: updated.status, order: updated }
+          }));
+          const existingStored = localStorage.getItem('veloce_orders');
+          if (existingStored) {
+            try {
+              const parsed = JSON.parse(existingStored);
+              if (Array.isArray(parsed)) {
+                const nextStored = parsed.map((item: any) => item.id === ord.id ? { ...item, ...updated, status: updated.status } : item);
+                localStorage.setItem('veloce_orders', JSON.stringify(nextStored));
+              }
+            } catch (_) {}
+          }
+        }
+      } catch (_) {}
+
+      setFollowupSuccessMessage(`Order #${ord.id} status successfully updated to ${updated.status.toUpperCase()}.`);
 
       setWorkflowDialog({
         isOpen: false,
@@ -6120,8 +6152,10 @@ admin@ropenix.co.ke`;
           }
         };
 
-        const filteredOrders = orders.filter((ord) => {
-          const matchesStatus = orderStatusFilter === 'all' || ord.status === orderStatusFilter;
+        const filteredOrders = effectiveOrders.filter((ord) => {
+          const matchesStatus = orderStatusFilter === 'all' || 
+            ord.status === orderStatusFilter ||
+            (orderStatusFilter === 'pending' && (ord.status === 'pending' || ord.status === 'order_received'));
           if (!matchesStatus) return false;
 
           const isWhatsAppChannel = ord.checkoutChannel === 'whatsapp' || ord.checkoutMode === 'whatsapp' || ord.orderSource === 'whatsapp' || ord.paymentMethod === 'whatsapp';
@@ -6133,7 +6167,7 @@ admin@ropenix.co.ke`;
           const matchesPayment = orderPaymentFilter === 'all' || effectivePayment === orderPaymentFilter;
           if (!matchesPayment) return false;
 
-          const isOrdPaid = ord.paymentStatus === 'paid';
+          const isOrdPaid = ord.paymentStatus === 'paid' || Boolean(ord.isPaid);
           const matchesSettlement = orderSettlementFilter === 'all' || (orderSettlementFilter === 'paid' ? isOrdPaid : !isOrdPaid);
           if (!matchesSettlement) return false;
 
@@ -6163,6 +6197,8 @@ admin@ropenix.co.ke`;
           return orderSortDirection === 'asc' ? comparison : -comparison;
         });
 
+        const pendingOrdersCount = effectiveOrders.filter((o) => o.status === 'pending' || o.status === 'order_received').length;
+
         return (
           <div className="mt-8 rounded-2xl border border-gray-200/80 dark:border-gray-800 bg-white dark:bg-gray-900 p-5 sm:p-6 shadow-xs">
             {/* Header Section: Title, Badges & Action Buttons */}
@@ -6177,7 +6213,7 @@ admin@ropenix.co.ke`;
                       Orders Pipeline
                     </h3>
                     <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-bold font-mono bg-indigo-50 dark:bg-indigo-950/80 text-indigo-700 dark:text-indigo-300 border border-indigo-200/60 dark:border-indigo-800/60">
-                      {orders.length} Total
+                      {effectiveOrders.length} Total
                     </span>
                     <span className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10.5px] font-semibold bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-400 border border-emerald-200/60 dark:border-emerald-800/60">
                       <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" /> Live DB Sync
@@ -6227,7 +6263,7 @@ admin@ropenix.co.ke`;
             </div>
 
             {/* Filter & Search Command Toolbar */}
-            {orders.length > 0 && (
+            {effectiveOrders.length > 0 && (
               <div className="mt-4 mb-5 p-3 rounded-xl bg-slate-50 dark:bg-slate-900/70 border border-slate-200/80 dark:border-slate-800 flex flex-col xl:flex-row items-stretch xl:items-center justify-between gap-3">
                 {/* Search Box */}
                 <div className="relative flex-1 min-w-[240px]">
@@ -6253,11 +6289,11 @@ admin@ropenix.co.ke`;
                 {/* Filter Dropdowns & Quick Selectors */}
                 <div className="flex flex-wrap items-center gap-2">
                   {/* Quick Select Pending Filter / Action */}
-                  {orders.filter((o) => o.status === 'pending').length > 0 && (
+                  {pendingOrdersCount > 0 && (
                     <button
                       type="button"
                       onClick={() => {
-                        const pendingIds = orders.filter((o) => o.status === 'pending').map((o) => o.id);
+                        const pendingIds = effectiveOrders.filter((o) => o.status === 'pending' || o.status === 'order_received').map((o) => o.id);
                         setSelectedOrderIds(pendingIds);
                         setOrderStatusFilter('pending');
                       }}
@@ -6268,7 +6304,7 @@ admin@ropenix.co.ke`;
                         <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75" />
                         <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500" />
                       </span>
-                      <span>Select Pending ({orders.filter((o) => o.status === 'pending').length})</span>
+                      <span>Select Pending ({pendingOrdersCount})</span>
                     </button>
                   )}
 
@@ -6283,6 +6319,7 @@ admin@ropenix.co.ke`;
                     >
                       <option value="all">All</option>
                       <option value="pending">Pending</option>
+                      <option value="confirmed">Confirmed</option>
                       <option value="processing">Processing</option>
                       <option value="shipped">Shipped</option>
                       <option value="completed">Completed</option>
@@ -6627,7 +6664,7 @@ admin@ropenix.co.ke`;
               </div>
             )}
 
-            {orders.length === 0 ? (
+            {effectiveOrders.length === 0 ? (
               <p className="py-8 text-center text-xs text-gray-400 italic">No Orders logged in Database ledger.</p>
             ) : (
               <div>
@@ -6635,7 +6672,7 @@ admin@ropenix.co.ke`;
                 {(orderSearchQuery.trim() !== '' || orderStatusFilter !== 'all' || orderChannelFilter !== 'all' || orderPaymentFilter !== 'all') && (
                   <div className="mb-3 text-[11px] font-semibold text-indigo-950 font-mono flex items-center justify-between">
                     <span>
-                      SHOWING {filteredOrders.length} OF {orders.length} TOTAL TRANSACTION ENTRIES
+                      SHOWING {filteredOrders.length} OF {effectiveOrders.length} TOTAL TRANSACTION ENTRIES
                     </span>
                     <button
                       onClick={() => {
@@ -6877,16 +6914,46 @@ admin@ropenix.co.ke`;
                               </td>
                               <td className="py-3">
                                 {(() => {
-                                  const normStatus = (ord.status || 'order_received').toLowerCase();
+                                  const normStatus = (ord.status || 'pending').toLowerCase();
                                   const isCod = (ord.paymentMethod || '').toLowerCase().includes('cod') || (ord.paymentMethod || '').toLowerCase().includes('cash');
+                                  const paid = isOrderPaid(ord);
 
-                                  if (normStatus === 'order_received' || (normStatus === 'pending' && !isOrderPaid(ord))) {
+                                  if (normStatus === 'order_received' || normStatus === 'pending') {
                                     return (
-                                      <div className="flex flex-col gap-0.5">
+                                      <div className="flex flex-col gap-0.5 items-start">
                                         <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-50 dark:bg-amber-950/50 text-amber-800 dark:text-amber-300 border border-amber-200/80 dark:border-amber-800 px-2.5 py-1 text-[10px] font-bold uppercase font-mono shadow-3xs">
                                           <AlertCircle className="h-3 w-3 text-amber-600 dark:text-amber-400 shrink-0 animate-pulse" />
-                                          {isCod ? 'Order Received (COD)' : 'Order Received (Awaiting M-Pesa)'}
+                                          Pending
                                         </span>
+                                        {paid ? (
+                                          <span className="text-[9px] font-mono text-emerald-600 dark:text-emerald-400 font-bold">
+                                            ✓ Paid
+                                          </span>
+                                        ) : (
+                                          <span className="text-[9px] font-mono text-amber-700 dark:text-amber-400">
+                                            {isCod ? 'COD' : 'Awaiting Payment'}
+                                          </span>
+                                        )}
+                                      </div>
+                                    );
+                                  }
+
+                                  if (normStatus === 'confirmed') {
+                                    return (
+                                      <div className="flex flex-col gap-0.5 items-start">
+                                        <span className="inline-flex items-center gap-1.5 rounded-full bg-indigo-50 dark:bg-indigo-950/50 text-indigo-800 dark:text-indigo-300 border border-indigo-200/80 dark:border-indigo-800 px-2.5 py-1 text-[10px] font-bold uppercase font-mono shadow-3xs">
+                                          <Check className="h-3 w-3 text-indigo-600 dark:text-indigo-400 shrink-0" />
+                                          Confirmed
+                                        </span>
+                                        {paid ? (
+                                          <span className="text-[9px] font-mono text-emerald-600 dark:text-emerald-400 font-bold">
+                                            ✓ Paid
+                                          </span>
+                                        ) : (
+                                          <span className="text-[9px] font-mono text-amber-600 dark:text-amber-400 font-bold">
+                                            {isCod ? 'COD' : 'Awaiting Payment'}
+                                          </span>
+                                        )}
                                       </div>
                                     );
                                   }
@@ -6895,12 +6962,12 @@ admin@ropenix.co.ke`;
                                     return (
                                       <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 dark:bg-emerald-950/50 text-emerald-800 dark:text-emerald-300 border border-emerald-200/80 dark:border-emerald-800 px-2.5 py-1 text-[10px] font-bold uppercase font-mono shadow-3xs">
                                         <ShieldCheck className="h-3 w-3 text-emerald-600 dark:text-emerald-400 shrink-0" />
-                                        M-Pesa Verified ✓
+                                        Payment Confirmed
                                       </span>
                                     );
                                   }
 
-                                  if (normStatus === 'processing' || (normStatus === 'pending' && isOrderPaid(ord))) {
+                                  if (normStatus === 'processing') {
                                     return (
                                       <span className="inline-flex items-center gap-1.5 rounded-full bg-purple-50 dark:bg-purple-950/50 text-purple-700 dark:text-purple-300 border border-purple-200/60 dark:border-purple-800 px-2.5 py-1 text-[10px] font-bold uppercase font-mono shadow-3xs">
                                         <RefreshCw className="h-3 w-3 text-purple-600 shrink-0 animate-spin" />
@@ -6913,7 +6980,7 @@ admin@ropenix.co.ke`;
                                     return (
                                       <span className="inline-flex items-center gap-1.5 rounded-full bg-blue-50 dark:bg-blue-950/50 text-blue-700 dark:text-blue-300 border border-blue-200/60 dark:border-blue-800 px-2.5 py-1 text-[10px] font-bold uppercase font-mono shadow-3xs">
                                         <Truck className="h-3 w-3 text-blue-600 shrink-0" />
-                                        Shipped / In Transit
+                                        Shipped
                                       </span>
                                     );
                                   }
@@ -6966,40 +7033,101 @@ admin@ropenix.co.ke`;
                               </td>
                               <td className="py-3 text-right">
                                 <div className="flex items-center justify-end gap-1.5">
-                                  {/* Strictly enforce only valid next action based on payment method lifecycle */}
+                                  {/* Sequential Admin Lifecycle Actions */}
                                   {(() => {
-                                    const normStatus = (ord.status || 'order_received').toLowerCase();
+                                    const normStatus = (ord.status || 'pending').toLowerCase();
                                     const isCod = (ord.paymentMethod || '').toLowerCase().includes('cod') || (ord.paymentMethod || '').toLowerCase().includes('cash');
+                                    const paid = isOrderPaid(ord);
 
-                                    if (isCod) {
-                                      // COD Flow: order_received → processing → shipped → payment_received → completed
-                                      if (normStatus === 'order_received' || (normStatus === 'pending' && !isOrderPaid(ord))) {
-                                        return (
+                                    // Step 1: Pending Order -> Admin confirms order, or checks payment
+                                    if (normStatus === 'order_received' || normStatus === 'pending') {
+                                      return (
+                                        <div className="flex items-center gap-1">
+                                          <button
+                                            type="button"
+                                            onClick={() => openWorkflowDialog(ord, 'confirm-order')}
+                                            className="rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white px-2.5 py-1 text-[11px] font-bold cursor-pointer flex items-center gap-1 shadow-xs transition-all shrink-0"
+                                            title="Confirm order receipt and advance to Confirmed"
+                                          >
+                                            <Check className="h-3.5 w-3.5" />
+                                            <span>Confirm Order</span>
+                                          </button>
+                                          {!paid && !isCod && (
+                                            <button
+                                              type="button"
+                                              onClick={() => openWorkflowDialog(ord, 'confirm-payment')}
+                                              className="rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white px-2 py-1 text-[11px] font-bold cursor-pointer flex items-center gap-1 shadow-xs transition-all shrink-0"
+                                              title="Check and verify M-Pesa payment"
+                                            >
+                                              <CreditCard className="h-3.5 w-3.5" />
+                                              <span>Check Payment</span>
+                                            </button>
+                                          )}
+                                        </div>
+                                      );
+                                    }
+
+                                    // Step 2 & 3: Confirmed Order -> Check payment if unpaid, then mark as processing
+                                    if (normStatus === 'confirmed') {
+                                      return (
+                                        <div className="flex items-center gap-1">
+                                          {!paid && !isCod && (
+                                            <button
+                                              type="button"
+                                              onClick={() => openWorkflowDialog(ord, 'confirm-payment')}
+                                              className="rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white px-2 py-1 text-[11px] font-bold cursor-pointer flex items-center gap-1 shadow-xs transition-all shrink-0"
+                                              title="Check and verify M-Pesa payment"
+                                            >
+                                              <CreditCard className="h-3.5 w-3.5" />
+                                              <span>Check Payment</span>
+                                            </button>
+                                          )}
                                           <button
                                             type="button"
                                             onClick={() => openWorkflowDialog(ord, 'start-processing')}
-                                            className="rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white px-2.5 py-1 text-[11px] font-bold cursor-pointer flex items-center gap-1 shadow-xs transition-all shrink-0"
-                                            title="Start order processing for Cash on Delivery order"
+                                            className="rounded-lg bg-purple-600 hover:bg-purple-700 text-white px-2.5 py-1 text-[11px] font-bold cursor-pointer flex items-center gap-1 shadow-xs transition-all shrink-0"
+                                            title="Move confirmed order to processing"
                                           >
                                             <Package className="h-3.5 w-3.5" />
-                                            <span>Start Processing</span>
+                                            <span>Mark Processing</span>
                                           </button>
-                                        );
-                                      }
-                                      if (normStatus === 'processing') {
-                                        return (
-                                          <button
-                                            type="button"
-                                            onClick={() => openWorkflowDialog(ord, 'mark-shipped')}
-                                            className="rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white px-2.5 py-1 text-[11px] font-bold cursor-pointer flex items-center gap-1 shadow-xs transition-all shrink-0"
-                                            title="Mark order as Dispatched / Shipped with courier"
-                                          >
-                                            <Truck className="h-3.5 w-3.5" />
-                                            <span>Mark Shipped</span>
-                                          </button>
-                                        );
-                                      }
-                                      if (normStatus === 'shipped') {
+                                        </div>
+                                      );
+                                    }
+
+                                    // Payment Confirmed -> Move to Processing
+                                    if (normStatus === 'payment_confirmed') {
+                                      return (
+                                        <button
+                                          type="button"
+                                          onClick={() => openWorkflowDialog(ord, 'start-processing')}
+                                          className="rounded-lg bg-purple-600 hover:bg-purple-700 text-white px-2.5 py-1 text-[11px] font-bold cursor-pointer flex items-center gap-1 shadow-xs transition-all shrink-0"
+                                          title="Move verified prepaid order to fulfillment"
+                                        >
+                                          <Package className="h-3.5 w-3.5" />
+                                          <span>Mark Processing</span>
+                                        </button>
+                                      );
+                                    }
+
+                                    // Step 4: Processing -> Mark Shipped
+                                    if (normStatus === 'processing') {
+                                      return (
+                                        <button
+                                          type="button"
+                                          onClick={() => openWorkflowDialog(ord, 'mark-shipped')}
+                                          className="rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white px-2.5 py-1 text-[11px] font-bold cursor-pointer flex items-center gap-1 shadow-xs transition-all shrink-0"
+                                          title="Mark order as Dispatched / Shipped with courier"
+                                        >
+                                          <Truck className="h-3.5 w-3.5" />
+                                          <span>Mark Shipped</span>
+                                        </button>
+                                      );
+                                    }
+
+                                    // Step 5: Shipped -> Complete or Collect Cash for COD
+                                    if (normStatus === 'shipped') {
+                                      if (isCod && !paid) {
                                         return (
                                           <button
                                             type="button"
@@ -7012,73 +7140,31 @@ admin@ropenix.co.ke`;
                                           </button>
                                         );
                                       }
-                                      if (normStatus === 'payment_received' || normStatus === 'delivered') {
-                                        return (
-                                          <button
-                                            type="button"
-                                            onClick={() => openWorkflowDialog(ord, 'mark-completed')}
-                                            className="rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white px-2.5 py-1 text-[11px] font-bold cursor-pointer flex items-center gap-1 shadow-xs transition-all shrink-0"
-                                            title="Complete Cash on Delivery Order Lifecycle"
-                                          >
-                                            <CheckCircle2 className="h-3.5 w-3.5" />
-                                            <span>Complete Order</span>
-                                          </button>
-                                        );
-                                      }
-                                    } else {
-                                      // M-Pesa Flow: order_received → payment_confirmed → processing → shipped → completed
-                                      if (normStatus === 'order_received' || (normStatus === 'pending' && !isOrderPaid(ord))) {
-                                        return (
-                                          <button
-                                            type="button"
-                                            onClick={() => openWorkflowDialog(ord, 'confirm-payment')}
-                                            className="rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white px-2.5 py-1 text-[11px] font-bold cursor-pointer flex items-center gap-1 shadow-xs transition-all shrink-0"
-                                            title="Verify M-Pesa transaction code & confirm payment"
-                                          >
-                                            <CreditCard className="h-3.5 w-3.5" />
-                                            <span>Confirm M-Pesa</span>
-                                          </button>
-                                        );
-                                      }
-                                      if (normStatus === 'payment_confirmed') {
-                                        return (
-                                          <button
-                                            type="button"
-                                            onClick={() => openWorkflowDialog(ord, 'start-processing')}
-                                            className="rounded-lg bg-purple-600 hover:bg-purple-700 text-white px-2.5 py-1 text-[11px] font-bold cursor-pointer flex items-center gap-1 shadow-xs transition-all shrink-0"
-                                            title="Move verified prepaid order to fulfillment"
-                                          >
-                                            <Package className="h-3.5 w-3.5" />
-                                            <span>Start Processing</span>
-                                          </button>
-                                        );
-                                      }
-                                      if (normStatus === 'processing') {
-                                        return (
-                                          <button
-                                            type="button"
-                                            onClick={() => openWorkflowDialog(ord, 'mark-shipped')}
-                                            className="rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white px-2.5 py-1 text-[11px] font-bold cursor-pointer flex items-center gap-1 shadow-xs transition-all shrink-0"
-                                            title="Mark order as Dispatched / Shipped"
-                                          >
-                                            <Truck className="h-3.5 w-3.5" />
-                                            <span>Mark Shipped</span>
-                                          </button>
-                                        );
-                                      }
-                                      if (normStatus === 'shipped') {
-                                        return (
-                                          <button
-                                            type="button"
-                                            onClick={() => openWorkflowDialog(ord, 'mark-completed')}
-                                            className="rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white px-2.5 py-1 text-[11px] font-bold cursor-pointer flex items-center gap-1 shadow-xs transition-all shrink-0"
-                                            title="Complete Prepaid Order Lifecycle"
-                                          >
-                                            <CheckCircle2 className="h-3.5 w-3.5" />
-                                            <span>Complete Order</span>
-                                          </button>
-                                        );
-                                      }
+                                      return (
+                                        <button
+                                          type="button"
+                                          onClick={() => openWorkflowDialog(ord, 'mark-completed')}
+                                          className="rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white px-2.5 py-1 text-[11px] font-bold cursor-pointer flex items-center gap-1 shadow-xs transition-all shrink-0"
+                                          title="Complete Order Lifecycle"
+                                        >
+                                          <CheckCircle2 className="h-3.5 w-3.5" />
+                                          <span>Complete Order</span>
+                                        </button>
+                                      );
+                                    }
+
+                                    if (normStatus === 'payment_received' || normStatus === 'delivered') {
+                                      return (
+                                        <button
+                                          type="button"
+                                          onClick={() => openWorkflowDialog(ord, 'mark-completed')}
+                                          className="rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white px-2.5 py-1 text-[11px] font-bold cursor-pointer flex items-center gap-1 shadow-xs transition-all shrink-0"
+                                          title="Complete Order Lifecycle"
+                                        >
+                                          <CheckCircle2 className="h-3.5 w-3.5" />
+                                          <span>Complete Order</span>
+                                        </button>
+                                      );
                                     }
 
                                     if (normStatus === 'completed') {
@@ -9714,6 +9800,7 @@ admin@ropenix.co.ke`;
             <div className="flex items-start justify-between gap-3 border-b border-slate-100 dark:border-slate-800 pb-3">
               <div className="flex items-center gap-2.5">
                 <div className={`h-10 w-10 rounded-xl flex items-center justify-center shrink-0 ${
+                  workflowDialog.actionType === 'confirm-order' ? 'bg-indigo-100 dark:bg-indigo-950/60 text-indigo-600' :
                   workflowDialog.actionType === 'quote-delivery' ? 'bg-amber-100 dark:bg-amber-950/60 text-amber-600' :
                   workflowDialog.actionType === 'confirm-payment' ? 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-600' :
                   workflowDialog.actionType === 'start-processing' ? 'bg-purple-100 dark:bg-purple-950/60 text-purple-600' :
@@ -9725,6 +9812,7 @@ admin@ropenix.co.ke`;
                   workflowDialog.actionType === 'cancel' ? 'bg-rose-100 dark:bg-rose-950/60 text-rose-600' :
                   'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300'
                 }`}>
+                  {workflowDialog.actionType === 'confirm-order' && <Check className="h-5 w-5" />}
                   {workflowDialog.actionType === 'quote-delivery' && <Calculator className="h-5 w-5" />}
                   {workflowDialog.actionType === 'confirm-payment' && <CreditCard className="h-5 w-5" />}
                   {workflowDialog.actionType === 'start-processing' && <Package className="h-5 w-5" />}
@@ -9738,6 +9826,7 @@ admin@ropenix.co.ke`;
                 </div>
                 <div>
                   <h3 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-wide">
+                    {workflowDialog.actionType === 'confirm-order' && 'Confirm Customer Order'}
                     {workflowDialog.actionType === 'quote-delivery' && 'Calculate & Send Courier Delivery Quote'}
                     {workflowDialog.actionType === 'confirm-payment' && 'Verify & Confirm M-Pesa Payment'}
                     {workflowDialog.actionType === 'start-processing' && 'Start Order Processing & Fulfillment'}
@@ -9770,6 +9859,57 @@ admin@ropenix.co.ke`;
                 <div className="space-y-0.5">
                   <div className="font-bold">Action Blocked by Workflow Engine</div>
                   <div>{workflowDialog.error}</div>
+                </div>
+              </div>
+            )}
+
+            {/* Content: Confirm Order */}
+            {workflowDialog.actionType === 'confirm-order' && (
+              <div className="space-y-4 text-xs">
+                <div className="bg-indigo-50 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-800/50 rounded-xl p-3.5 text-indigo-900 dark:text-indigo-300 space-y-1">
+                  <div className="font-bold flex items-center gap-1.5">
+                    <Check className="h-4 w-4 text-indigo-600" />
+                    Order Confirmation
+                  </div>
+                  <p className="text-[11px] text-indigo-800 dark:text-indigo-400 leading-relaxed font-light">
+                    Confirming this order acknowledges receipt and moves it from <strong>pending</strong> to <strong>confirmed</strong>. You can then verify payment and dispatch to fulfillment.
+                  </p>
+                </div>
+
+                <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/60 space-y-2">
+                  <div className="flex justify-between items-center text-xs">
+                    <span className="text-slate-500 dark:text-slate-400">Payment Status:</span>
+                    <span className={`font-mono font-bold uppercase ${isOrderPaid(workflowDialog.order) ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'}`}>
+                      {isOrderPaid(workflowDialog.order) ? '✓ Paid' : 'Awaiting Payment Verification'}
+                    </span>
+                  </div>
+                  {workflowDialog.order.mpesaReceiptNumber && (
+                    <div className="flex justify-between items-center text-xs">
+                      <span className="text-slate-500 dark:text-slate-400">M-Pesa Reference:</span>
+                      <span className="font-mono font-bold text-slate-800 dark:text-slate-200">{workflowDialog.order.mpesaReceiptNumber}</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between items-center text-xs">
+                    <span className="text-slate-500 dark:text-slate-400">Order Amount:</span>
+                    <span className="font-mono font-bold text-slate-900 dark:text-slate-100">KSh {workflowDialog.order.total?.toLocaleString()}</span>
+                  </div>
+                  <div className="flex justify-between items-center text-xs">
+                    <span className="text-slate-500 dark:text-slate-400">Items:</span>
+                    <span className="font-semibold text-slate-800 dark:text-slate-200">{workflowDialog.order.items?.length || 0} product(s)</span>
+                  </div>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300">
+                    Confirmation Notes (Optional)
+                  </label>
+                  <input
+                    type="text"
+                    value={workflowDialog.notes}
+                    onChange={(e) => setWorkflowDialog(prev => ({ ...prev, notes: e.target.value }))}
+                    placeholder="e.g. Order reviewed, inventory available, customer contacted"
+                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs focus:outline-hidden focus:ring-2 focus:ring-indigo-500"
+                  />
                 </div>
               </div>
             )}
@@ -10011,24 +10151,55 @@ admin@ropenix.co.ke`;
             {/* Content: Cancel Order */}
             {workflowDialog.actionType === 'cancel' && (
               <div className="space-y-4 text-xs">
-                <div className="bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-800/50 rounded-xl p-3.5 text-rose-900 dark:text-rose-300 space-y-1">
-                  <div className="font-bold flex items-center gap-1.5">
-                    <AlertOctagon className="h-4 w-4 text-rose-600" />
-                    Cancellation & Restock Notice
-                  </div>
-                  <p className="text-[11px] text-rose-800 dark:text-rose-400 leading-relaxed font-light">
-                    Cancelling this order will automatically restock all items in the inventory.
-                    {workflowDialog.order.paymentStatus === 'paid' || workflowDialog.order.isPaid ? (
-                      <strong className="block mt-1 text-rose-700 dark:text-rose-300">
-                        ⚠️ Because this order was paid, a Refund Claim with status <span className="font-mono">refund_requested</span> for KSh {workflowDialog.order.total.toLocaleString()} will be automatically created in the database.
-                      </strong>
-                    ) : (
-                      <span className="block mt-1 text-slate-600 dark:text-slate-400">
-                        Since no payment was made, no refund claim will be created.
-                      </span>
-                    )}
-                  </p>
-                </div>
+                {(() => {
+                  const paid = isOrderPaid(workflowDialog.order);
+                  return (
+                    <div className={`p-4 rounded-xl border space-y-2.5 ${
+                      paid
+                        ? 'bg-amber-50/90 dark:bg-amber-950/40 border-amber-300 dark:border-amber-800 text-amber-900 dark:text-amber-200'
+                        : 'bg-rose-50 dark:bg-rose-950/30 border-rose-200 dark:border-rose-800/50 text-rose-900 dark:text-rose-300'
+                    }`}>
+                      <div className="font-bold flex items-center justify-between">
+                        <div className="flex items-center gap-1.5 text-sm">
+                          <AlertOctagon className={`h-4 w-4 ${paid ? 'text-amber-600' : 'text-rose-600'}`} />
+                          <span>Cancellation & Payment Audit</span>
+                        </div>
+                        <span className={`px-2 py-0.5 rounded-full font-mono text-[10px] font-bold uppercase ${
+                          paid
+                            ? 'bg-amber-200 text-amber-900 dark:bg-amber-900 dark:text-amber-100'
+                            : 'bg-slate-200 text-slate-700 dark:bg-slate-800 dark:text-slate-300'
+                        }`}>
+                          {paid ? 'Customer Paid — Refund Required' : 'Unpaid — No Refund Required'}
+                        </span>
+                      </div>
+
+                      {paid ? (
+                        <div className="space-y-2 text-[11px] leading-relaxed">
+                          <p>
+                            <strong>⚠️ Customer Payment Verified:</strong> The customer has already paid <strong>KSh {workflowDialog.order.total.toLocaleString()}</strong> via <strong>{workflowDialog.order.paymentMethod || 'M-Pesa'}</strong>
+                            {workflowDialog.order.mpesaReceiptNumber ? ` (Ref: ${workflowDialog.order.mpesaReceiptNumber})` : ''}.
+                          </p>
+                          <div className="p-2.5 bg-amber-100/70 dark:bg-amber-900/40 rounded-lg text-amber-950 dark:text-amber-100 border border-amber-200 dark:border-amber-800/60 font-medium">
+                            ✓ A <strong>Refund Claim</strong> (<span className="font-mono text-[10px]">refund_requested</span>) for <strong>KSh {workflowDialog.order.total.toLocaleString()}</strong> will be automatically registered in the database for payout.
+                          </div>
+                          <p className="text-amber-800/80 dark:text-amber-300/80">
+                            • All {workflowDialog.order.items?.length || 0} product item(s) will be automatically returned to stock.
+                          </p>
+                        </div>
+                      ) : (
+                        <div className="space-y-1.5 text-[11px] leading-relaxed">
+                          <p>
+                            This order is <strong>unpaid</strong>. Cancelling will close the order with no financial liability.
+                          </p>
+                          <p className="text-slate-600 dark:text-slate-400">
+                            • No refund claim will be created.<br />
+                            • All {workflowDialog.order.items?.length || 0} product item(s) will be automatically restored to warehouse stock.
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
 
                 <div className="space-y-1.5">
                   <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300">
@@ -10038,7 +10209,7 @@ admin@ropenix.co.ke`;
                     rows={2}
                     value={workflowDialog.notes}
                     onChange={(e) => setWorkflowDialog(prev => ({ ...prev, notes: e.target.value }))}
-                    placeholder="e.g. Customer changed mind / duplicate order / damaged item during packing"
+                    placeholder="e.g. Customer requested cancellation / duplicate order / item damaged during packing"
                     className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs focus:outline-hidden focus:ring-2 focus:ring-rose-500"
                   />
                 </div>
@@ -10156,16 +10327,18 @@ admin@ropenix.co.ke`;
                   const isCod = (workflowDialog.order.paymentMethod || '').toLowerCase().includes('cod');
                   const s = (workflowDialog.order.status || '').toLowerCase();
 
-                  // M-Pesa: order_received (1) -> payment_confirmed (2) -> processing (3) -> shipped (4) -> completed (5)
-                  // COD: order_received (1) -> processing (2) -> shipped (3) -> payment_received (4) -> completed (5)
+                  // M-Pesa: pending/order_received -> confirmed -> payment_confirmed -> processing -> shipped -> completed
+                  // COD: pending/order_received -> confirmed -> processing -> shipped -> payment_received -> completed
                   const steps = isCod ? [
                     { key: 'order_received', label: 'Received' },
+                    { key: 'confirmed', label: 'Confirmed' },
                     { key: 'processing', label: 'Processing' },
                     { key: 'shipped', label: 'Shipped' },
                     { key: 'payment_received', label: 'Cash Paid' },
                     { key: 'completed', label: 'Completed' },
                   ] : [
                     { key: 'order_received', label: 'Received' },
+                    { key: 'confirmed', label: 'Confirmed' },
                     { key: 'payment_confirmed', label: 'M-Pesa Paid' },
                     { key: 'processing', label: 'Processing' },
                     { key: 'shipped', label: 'Shipped' },
@@ -10175,16 +10348,18 @@ admin@ropenix.co.ke`;
                   const getStepIndex = (st: string) => {
                     if (st === 'cancelled') return -1;
                     if (isCod) {
-                      if (st === 'completed') return 4;
-                      if (st === 'payment_received' || st === 'delivered') return 3;
-                      if (st === 'shipped') return 2;
-                      if (st === 'processing') return 1;
+                      if (st === 'completed') return 5;
+                      if (st === 'payment_received' || st === 'delivered') return 4;
+                      if (st === 'shipped') return 3;
+                      if (st === 'processing') return 2;
+                      if (st === 'confirmed') return 1;
                       return 0;
                     } else {
-                      if (st === 'completed') return 4;
-                      if (st === 'shipped' || st === 'delivered') return 3;
-                      if (st === 'processing') return 2;
-                      if (st === 'payment_confirmed' || (st === 'pending' && workflowDialog.order.isPaid)) return 1;
+                      if (st === 'completed') return 5;
+                      if (st === 'shipped' || st === 'delivered') return 4;
+                      if (st === 'processing') return 3;
+                      if (st === 'payment_confirmed' || (st === 'pending' && workflowDialog.order.isPaid)) return 2;
+                      if (st === 'confirmed') return 1;
                       return 0;
                     }
                   };
@@ -10296,6 +10471,7 @@ admin@ropenix.co.ke`;
                   disabled={workflowDialog.isLoading}
                   onClick={() => handleExecuteWorkflow()}
                   className={`px-4 py-2 rounded-xl text-xs font-black text-white shadow-md cursor-pointer transition-all flex items-center gap-1.5 disabled:opacity-50 ${
+                    workflowDialog.actionType === 'confirm-order' ? 'bg-indigo-600 hover:bg-indigo-700 shadow-indigo-600/20' :
                     workflowDialog.actionType === 'confirm-payment' ? 'bg-emerald-600 hover:bg-emerald-700 shadow-emerald-600/20' :
                     workflowDialog.actionType === 'start-processing' ? 'bg-purple-600 hover:bg-purple-700 shadow-purple-600/20' :
                     workflowDialog.actionType === 'mark-shipped' ? 'bg-indigo-600 hover:bg-indigo-700 shadow-indigo-600/20' :
@@ -10311,6 +10487,7 @@ admin@ropenix.co.ke`;
                     </>
                   ) : (
                     <>
+                      {workflowDialog.actionType === 'confirm-order' && <Check className="h-3.5 w-3.5" />}
                       {workflowDialog.actionType === 'confirm-payment' && <CreditCard className="h-3.5 w-3.5" />}
                       {workflowDialog.actionType === 'start-processing' && <Package className="h-3.5 w-3.5" />}
                       {workflowDialog.actionType === 'mark-shipped' && <Truck className="h-3.5 w-3.5" />}
@@ -10318,6 +10495,7 @@ admin@ropenix.co.ke`;
                       {workflowDialog.actionType === 'mark-completed' && <CheckCircle2 className="h-3.5 w-3.5" />}
                       {workflowDialog.actionType === 'cancel' && <AlertOctagon className="h-3.5 w-3.5" />}
                       <span>
+                        {workflowDialog.actionType === 'confirm-order' && 'Confirm Order'}
                         {workflowDialog.actionType === 'confirm-payment' && 'Verify & Confirm Payment'}
                         {workflowDialog.actionType === 'start-processing' && 'Start Processing'}
                         {workflowDialog.actionType === 'mark-shipped' && 'Mark as Shipped'}
