@@ -6,11 +6,12 @@
  * 
  * Safeguards:
  * 1. Processed in configurable batches (default 100).
- * 2. Idempotent: Uses deterministic IDs and INSERT IGNORE, safe to re-run.
- * 3. Tolerates missing products: Checks product existence; sets product_id = NULL
- *    if the product was deleted, preserving snapshot name/price.
- * 4. Resilient: Logs and skips malformed JSON without crashing.
- * 5. Supports --dry-run and custom --db parameters.
+ * 2. Idempotent: Uses deterministic IDs (oi_{orderId}_{itemId/index}) and INSERT IGNORE.
+ * 3. Robust Product Resolution: Matches by ID, snake_case product_id, slug, or name.
+ * 4. Tolerates missing products: If the product was deleted from catalog, sets product_id = NULL
+ *    while preserving name, price, quantity, and variation snapshots.
+ * 5. Resilient: Logs and skips malformed JSON without crashing.
+ * 6. Supports --dry-run and custom --db parameters.
  */
 
 import mysql from 'mysql2/promise';
@@ -31,9 +32,11 @@ export interface BackfillStats {
   ordersWithItems: number;
   totalJsonItems: number;
   insertedOrderItems: number;
-  skippedOrders: Array<{ orderId: string; reason: string }>;
   productsFound: number;
   productsMissingOrNull: number;
+  skippedOrders: Array<{ orderId: string; reason: string }>;
+  sampleMatched: Array<{ orderId: string; itemName: string; productId: string; matchMethod: string }>;
+  sampleMissing: Array<{ orderId: string; itemName: string; rawIdentifier: string }>;
 }
 
 export async function runOrderItemsBackfill(options: BackfillOptions = {}): Promise<BackfillStats> {
@@ -41,9 +44,11 @@ export async function runOrderItemsBackfill(options: BackfillOptions = {}): Prom
   const targetDb = (options.dbName || getDbName()).trim();
   const dryRun = Boolean(options.dryRun);
 
+  console.log(`\n=========================================================`);
   console.log(`[Backfill] Starting order_items backfill on database: ${targetDb}`);
   console.log(`[Backfill] Mode: ${dryRun ? 'DRY-RUN (No writes)' : 'LIVE EXECUTION'}`);
   console.log(`[Backfill] Batch size: ${batchSize}`);
+  console.log(`=========================================================`);
 
   const pool = mysql.createPool({
     host: getDbHost(),
@@ -61,9 +66,11 @@ export async function runOrderItemsBackfill(options: BackfillOptions = {}): Prom
     ordersWithItems: 0,
     totalJsonItems: 0,
     insertedOrderItems: 0,
-    skippedOrders: [],
     productsFound: 0,
     productsMissingOrNull: 0,
+    skippedOrders: [],
+    sampleMatched: [],
+    sampleMissing: [],
   };
 
   try {
@@ -86,12 +93,22 @@ export async function runOrderItemsBackfill(options: BackfillOptions = {}): Prom
       return stats;
     }
 
-    // 3. Cache valid product IDs in memory for fast FK resolution
-    const [productRows]: any = await pool.query('SELECT id FROM products');
-    const validProductIds = new Set<string>((productRows || []).map((p: any) => String(p.id)));
-    console.log(`[Backfill] Found ${validProductIds.size} existing products in catalog for foreign key matching.`);
+    // 3. Cache product catalog in memory for flexible resolution (ID, slug, and name)
+    const [productRows]: any = await pool.query('SELECT id, slug, name FROM products');
+    const validProductIds = new Set<string>();
+    const slugToIdMap = new Map<string, string>();
+    const nameToIdMap = new Map<string, string>();
 
-    // 4. Batch through all orders
+    for (const p of productRows || []) {
+      const pid = String(p.id).trim();
+      validProductIds.add(pid);
+      if (p.slug) slugToIdMap.set(String(p.slug).trim().toLowerCase(), pid);
+      if (p.name) nameToIdMap.set(String(p.name).trim().toLowerCase(), pid);
+    }
+
+    console.log(`[Backfill] Catalog indexed: ${validProductIds.size} products available for linking.`);
+
+    // 4. Batch process orders
     let offset = 0;
     while (offset < stats.totalOrders) {
       const [orderBatch]: any = await pool.query(
@@ -133,24 +150,52 @@ export async function runOrderItemsBackfill(options: BackfillOptions = {}): Prom
         stats.ordersWithItems++;
         stats.totalJsonItems += parsedItems.length;
 
-        // Process each item in order
+        // Process each item
         parsedItems.forEach((item, index) => {
           const rawItemId = item.id ? String(item.id).trim() : '';
           const deterministicId = rawItemId && rawItemId !== 'undefined' && rawItemId !== '[object Object]'
             ? `oi_${orderId}_${rawItemId}`
             : `oi_${orderId}_${index}`;
 
-          const rawProductId = String(item.productId || item.product_id || item.product || item.id || '').trim();
-          let matchedProductId: string | null = null;
+          const itemName = String(item.name || item.product_name || item.title || 'Ordered Item').trim();
+          const rawPidCandidate = String(item.productId || item.product_id || item.product || '').trim();
+          const rawIdCandidate = item.id && String(item.id).startsWith('prod-') ? String(item.id).trim() : '';
+          const rawSlugCandidate = String(item.slug || item.productSlug || '').trim().toLowerCase();
+          const normalizedName = itemName.toLowerCase();
 
-          if (rawProductId && validProductIds.has(rawProductId)) {
-            matchedProductId = rawProductId;
-            stats.productsFound++;
-          } else {
-            stats.productsMissingOrNull++;
+          let matchedProductId: string | null = null;
+          let matchMethod = 'none';
+
+          if (rawPidCandidate && validProductIds.has(rawPidCandidate)) {
+            matchedProductId = rawPidCandidate;
+            matchMethod = 'direct_productId';
+          } else if (rawIdCandidate && validProductIds.has(rawIdCandidate)) {
+            matchedProductId = rawIdCandidate;
+            matchMethod = 'item_id_fallback';
+          } else if (rawSlugCandidate && slugToIdMap.has(rawSlugCandidate)) {
+            matchedProductId = slugToIdMap.get(rawSlugCandidate) || null;
+            matchMethod = 'slug_mapping';
+          } else if (normalizedName && nameToIdMap.has(normalizedName)) {
+            matchedProductId = nameToIdMap.get(normalizedName) || null;
+            matchMethod = 'name_exact_match';
           }
 
-          const itemName = String(item.name || item.product_name || item.title || 'Ordered Item').trim();
+          if (matchedProductId) {
+            stats.productsFound++;
+            if (stats.sampleMatched.length < 5) {
+              stats.sampleMatched.push({ orderId, itemName, productId: matchedProductId, matchMethod });
+            }
+          } else {
+            stats.productsMissingOrNull++;
+            if (stats.sampleMissing.length < 5) {
+              stats.sampleMissing.push({
+                orderId,
+                itemName,
+                rawIdentifier: rawPidCandidate || rawIdCandidate || itemName || 'unknown',
+              });
+            }
+          }
+
           const itemPrice = typeof item.price === 'number'
             ? item.price
             : parseFloat(item.unit_price || item.price || '0') || 0;
@@ -191,20 +236,35 @@ export async function runOrderItemsBackfill(options: BackfillOptions = {}): Prom
       console.log(`[Backfill] Processed ${stats.processedOrders} / ${stats.totalOrders} orders...`);
     }
 
-    console.log('[Backfill] ✅ Order items backfill completed.');
+    console.log('\n[Backfill] ✅ Order items backfill completed.');
     console.log('---------------------------------------------------------');
-    console.log(`Total orders inspected:       ${stats.totalOrders}`);
-    console.log(`Orders with valid items JSON: ${stats.ordersWithItems}`);
-    console.log(`Total items in JSON:          ${stats.totalJsonItems}`);
-    console.log(`Rows inserted in order_items: ${stats.insertedOrderItems}`);
-    console.log(`Items matched to catalog:     ${stats.productsFound}`);
-    console.log(`Items with NULL product_id:   ${stats.productsMissingOrNull} (product no longer exists)`);
-    console.log(`Orders skipped:               ${stats.skippedOrders.length}`);
-    if (stats.skippedOrders.length > 0) {
-      console.log('Skipped orders sample:');
-      stats.skippedOrders.slice(0, 10).forEach((s) => console.log(`  - Order ${s.orderId}: ${s.reason}`));
+    console.log(`Total orders inspected:               ${stats.totalOrders}`);
+    console.log(`Orders with valid items JSON:         ${stats.ordersWithItems}`);
+    console.log(`Total items parsed from JSON:         ${stats.totalJsonItems}`);
+    console.log(`Rows newly inserted in order_items:   ${stats.insertedOrderItems}`);
+    console.log(`Items linked to catalog product:      ${stats.productsFound}`);
+    console.log(`Items with NULL product_id:           ${stats.productsMissingOrNull} (product no longer exists in catalog)`);
+    console.log(`Orders skipped:                       ${stats.skippedOrders.length}`);
+
+    if (stats.sampleMatched.length > 0) {
+      console.log('\n--- Sample Linked Items ---');
+      stats.sampleMatched.forEach((m) =>
+        console.log(`  - Order ${m.orderId}: "${m.itemName}" -> linked to product ${m.productId} via ${m.matchMethod}`)
+      );
     }
-    console.log('---------------------------------------------------------');
+
+    if (stats.sampleMissing.length > 0) {
+      console.log('\n--- Sample Unlinked Items (Product no longer in products catalog) ---');
+      stats.sampleMissing.forEach((m) =>
+        console.log(`  - Order ${m.orderId}: "${m.itemName}" (original ID: "${m.rawIdentifier}") -> preserved with product_id = NULL`)
+      );
+    }
+
+    if (stats.skippedOrders.length > 0) {
+      console.log('\n--- Skipped Orders Breakdown ---');
+      stats.skippedOrders.forEach((s) => console.log(`  - Order ${s.orderId}: ${s.reason}`));
+    }
+    console.log('---------------------------------------------------------\n');
 
     return stats;
   } finally {
@@ -212,7 +272,7 @@ export async function runOrderItemsBackfill(options: BackfillOptions = {}): Prom
   }
 }
 
-// Direct execution from CLI
+// CLI entry point
 if (process.argv[1] && process.argv[1].includes('backfill-order-items')) {
   const args = process.argv.slice(2);
   const dryRun = args.includes('--dry-run');
