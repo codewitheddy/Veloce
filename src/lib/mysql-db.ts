@@ -875,6 +875,12 @@ export async function initializeDatabaseSchema(): Promise<void> {
     await safeAddCol('pending_registrations', 'resend_window_start', 'VARCHAR(100) NULL');
     await safeAddCol('pending_registrations', 'ip_address', 'VARCHAR(100) NULL');
 
+    // Automatically normalize any legacy awaiting_delivery_quote / delivery_quoted orders to pending
+    try {
+      await pool.query("UPDATE orders SET status = 'pending' WHERE LOWER(status) IN ('awaiting_delivery_quote', 'delivery_quoted', 'order_received');");
+      await pool.query("UPDATE customer_orders SET status = 'pending' WHERE LOWER(status) IN ('awaiting_delivery_quote', 'delivery_quoted', 'order_received');");
+    } catch (_) {}
+
     isInitialized = true;
     console.log('[MySQL] All core database tables verified and active in MySQL.');
   } catch (error) {
@@ -1190,6 +1196,11 @@ function parseOrderRow(row: any): any {
   let status = row.status;
   if (typeof status !== 'string' || status === '[object Object]' || !status) {
     status = row.deliveryConfirmed ? 'delivered' : (row.trackingNumber ? 'shipped' : (row.isPaid || row.paymentStatus === 'paid' ? 'processing' : 'pending'));
+  } else {
+    const sLower = status.trim().toLowerCase();
+    if (sLower === 'awaiting_delivery_quote' || sLower === 'delivery_quoted' || sLower === 'order_received') {
+      status = 'pending';
+    }
   }
   return {
     ...row,

@@ -617,7 +617,16 @@ export default function DashboardAnalytics({
     return () => window.removeEventListener('veloce_orders_updated', handleOrdersUpdated);
   }, []);
 
-  const effectiveOrders = liveDbOrders !== null ? liveDbOrders : orders;
+  const rawOrdersList = liveDbOrders !== null ? liveDbOrders : orders;
+  const effectiveOrders = React.useMemo(() => {
+    return (rawOrdersList || []).map((o) => {
+      const rawStatus = String(o.status || '').trim().toLowerCase();
+      if (rawStatus === 'awaiting_delivery_quote' || rawStatus === 'delivery_quoted' || rawStatus === 'order_received') {
+        return { ...o, status: 'pending' as const };
+      }
+      return o;
+    });
+  }, [rawOrdersList]);
   const effectiveProducts = liveDbProducts !== null ? liveDbProducts : products;
 
   // Custom Date Range filter states for Performance Analytics
@@ -6941,7 +6950,8 @@ admin@ropenix.co.ke`;
                               </td>
                               <td className="py-3">
                                 {(() => {
-                                  const normStatus = (ord.status || 'pending').toLowerCase();
+                                  const rawStatus = (ord.status || 'pending').trim().toLowerCase();
+                                  const normStatus = (rawStatus === 'awaiting_delivery_quote' || rawStatus === 'delivery_quoted' || rawStatus === 'order_received') ? 'pending' : rawStatus;
                                   const isCod = (ord.paymentMethod || '').toLowerCase().includes('cod') || (ord.paymentMethod || '').toLowerCase().includes('cash');
                                   const paid = isOrderPaid(ord);
 
@@ -7062,7 +7072,8 @@ admin@ropenix.co.ke`;
                                 <div className="flex items-center justify-end gap-1.5">
                                   {/* Sequential Admin Lifecycle Actions */}
                                   {(() => {
-                                    const normStatus = (ord.status || 'pending').toLowerCase();
+                                    const rawStatus = (ord.status || 'pending').trim().toLowerCase();
+                                    const normStatus = (rawStatus === 'awaiting_delivery_quote' || rawStatus === 'delivery_quoted' || rawStatus === 'order_received') ? 'pending' : rawStatus;
                                     const isCod = (ord.paymentMethod || '').toLowerCase().includes('cod') || (ord.paymentMethod || '').toLowerCase().includes('cash');
                                     const paid = isOrderPaid(ord);
 

@@ -32,8 +32,8 @@ export const mapBackendOrderToFrontend = (ord: any): Order => {
   const paymentMethod: 'cod' | 'mpesa' = (rawMethod === 'cod' || rawMethod.includes('cash') || rawMethod.includes('delivery')) ? 'cod' : 'mpesa';
 
   // Normalize status
-  let status = String(ord.status || 'pending').toLowerCase();
-  if (status === 'order_received') {
+  let status = String(ord.status || 'pending').trim().toLowerCase();
+  if (status === 'order_received' || status === 'awaiting_delivery_quote' || status === 'delivery_quoted') {
     status = 'pending';
   } else if (status === 'delivered') {
     status = paymentMethod === 'cod' ? 'payment_received' : 'shipped';
